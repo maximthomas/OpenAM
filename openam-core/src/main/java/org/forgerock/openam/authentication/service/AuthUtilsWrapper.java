@@ -20,6 +20,8 @@ import com.iplanet.sso.SSOException;
 import com.sun.identity.authentication.service.AuthUtils;
 import com.sun.identity.authentication.spi.AMPostAuthProcessInterface;
 
+import java.util.Set;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -59,6 +61,10 @@ public class AuthUtilsWrapper {
      */
     public String getPostProcessLogoutURL(HttpServletRequest request) {
         return AuthUtils.getPostProcessURL(request, AMPostAuthProcessInterface.POST_PROCESS_LOGOUT_URL);
+    }
+    
+    public Set<String> getCookieDomainsForRequest(HttpServletRequest request) {
+    	return AuthUtils.getCookieDomainsForRequest(request);
     }
 
 }

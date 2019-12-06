@@ -28,8 +28,11 @@ import javax.security.auth.callback.Callback;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.security.SignatureException;
+import java.util.Set;
 
+import com.sun.identity.shared.encode.CookieUtils;
 import com.iplanet.sso.SSOToken;
+import com.sun.identity.authentication.client.AuthClientUtils;
 import com.sun.identity.authentication.service.AuthUtils;
 import com.sun.identity.authentication.spi.AuthLoginException;
 import com.sun.identity.authentication.spi.PagePropertiesCallback;
@@ -288,6 +291,11 @@ public class RestAuthenticationHandler {
                         String tokenId = ssoToken.getTokenID().toString();
                         jsonResponseObject.put(TOKEN_ID, tokenId);
                         AuditRequestContext.putProperty(TOKEN_ID, tokenId);
+                        
+                        for (String domain : (Set<String>)coreWrapper.getCookieDomainsForRequest(request)){
+                        	CookieUtils.addCookieToResponse(response, CookieUtils.newCookie(AuthUtils.getCookieName(), tokenId, "/", domain));
+                        }
+                        
                     } else {
                         jsonResponseObject.put("message", "Authentication Successful");
                     }

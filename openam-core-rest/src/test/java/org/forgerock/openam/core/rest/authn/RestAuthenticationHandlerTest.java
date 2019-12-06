@@ -80,7 +80,7 @@ public class RestAuthenticationHandlerTest {
         amAuthErrorCodeResponseStatusMapping = mock(AMAuthErrorCodeResponseStatusMapping.class);
         authIdHelper = mock(AuthIdHelper.class);
         coreWrapper = mock(CoreWrapper.class);
-
+        when(coreWrapper.getCookieDomainsForRequest(any(HttpServletRequest.class))).thenReturn(Collections.<String>emptySet());
         restAuthenticationHandler = new RestAuthenticationHandler(loginAuthenticator, restAuthCallbackHandlerManager,
                 amAuthErrorCodeResponseStatusMapping, authIdHelper, coreWrapper);
     }

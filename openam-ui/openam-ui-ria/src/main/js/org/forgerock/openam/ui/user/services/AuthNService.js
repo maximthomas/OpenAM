@@ -123,7 +123,7 @@ define([
                 AuthenticationToken.set(requirements.authId);
             }
         } else if (isAuthenticated) {
-            SessionToken.set(requirements.tokenId);
+            //SessionToken.set(requirements.tokenId);
             addRealmToStore(requirements.realm);
         }
     };

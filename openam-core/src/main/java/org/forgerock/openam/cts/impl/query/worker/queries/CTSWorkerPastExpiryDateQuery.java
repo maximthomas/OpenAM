@@ -29,6 +29,7 @@ import org.forgerock.openam.sm.datalayer.api.DataLayer;
 import org.forgerock.openam.sm.datalayer.api.query.QueryBuilder;
 import org.forgerock.openam.sm.datalayer.api.query.QueryFactory;
 import org.forgerock.openam.tokens.CoreTokenField;
+import org.forgerock.opendj.ldap.Filter;
 import org.forgerock.util.Reject;
 import org.forgerock.util.query.QueryFilter;
 import org.forgerock.util.query.QueryFilterVisitor;
@@ -41,7 +42,7 @@ import org.forgerock.util.query.QueryFilterVisitor;
  */
 public class CTSWorkerPastExpiryDateQuery<C> extends CTSWorkerBaseQuery {
 
-    private final QueryFactory<C, CoreTokenField> queryFactory;
+    private final QueryFactory<C, Filter> queryFactory;
     private final int pageSize;
 
     @Inject
@@ -60,9 +61,9 @@ public class CTSWorkerPastExpiryDateQuery<C> extends CTSWorkerBaseQuery {
 
         QueryFilter<CoreTokenField> filter = QueryFilter.lessThan(CoreTokenField.EXPIRY_DATE, now);
 
-        QueryFilterVisitor<CoreTokenField, Void, CoreTokenField> fc = queryFactory.createFilterConverter();
+        QueryFilterVisitor<Filter, Void, CoreTokenField> fc = queryFactory.createFilterConverter();
 
-        CoreTokenField accepted = filter.accept(fc, null);
+        Filter accepted = filter.accept(fc, null);
         return queryFactory.createInstance()
                 .withFilter(accepted)
                 .pageResultsBy(pageSize)

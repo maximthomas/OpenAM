@@ -36,23 +36,23 @@ import org.testng.annotations.Test;
 public class CTSWorkerPastExpiryDateQueryTest {
 
     private ConnectionFactory<Connection> mockConnectionFactory;
-    private QueryFactory<Connection, CoreTokenField> mockFactory;
+    private QueryFactory<Connection, Filter> mockFactory;
     private CoreTokenConfig mockConfig;
-    private QueryBuilder<Connection, CoreTokenField> mockBuilder;
-    private QueryFilterVisitor<CoreTokenField, Void, CoreTokenField> mockQueryFilterConverter;
+    private QueryBuilder<Connection, Filter> mockBuilder;
+    private QueryFilterVisitor<Filter, Void, CoreTokenField> mockQueryFilterConverter;
 
     @BeforeMethod
     public void setup() {
         mockConnectionFactory = mock(ConnectionFactory.class);
         mockBuilder = mock(QueryBuilder.class);
-        given(mockBuilder.withFilter(any(CoreTokenField.class))).willReturn(mockBuilder);
+        given(mockBuilder.withFilter(any(Filter.class))).willReturn(mockBuilder);
         given(mockBuilder.pageResultsBy(anyInt())).willReturn(mockBuilder);
         given(mockBuilder.returnTheseAttributes(any(CoreTokenField.class))).willReturn(mockBuilder);
 
         mockQueryFilterConverter = mock(QueryFilterVisitor.class);
         given(mockQueryFilterConverter.visitLessThanFilter(
                 (Void)isNull(), eq(CoreTokenField.EXPIRY_DATE), any(Calendar.class)))
-                .willReturn(CoreTokenField.EXPIRY_DATE);
+                .willReturn(Filter.alwaysTrue());
 
         mockFactory = mock(QueryFactory.class);
         given(mockFactory.createFilterConverter()).willReturn(mockQueryFilterConverter);

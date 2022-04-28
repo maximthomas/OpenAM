@@ -15,8 +15,6 @@
  */
 
 
-
-import org.apache.commons.lang.SystemUtils;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -34,10 +32,6 @@ public class ServerTest {
 		System.setProperty("datastax-java-driver.advanced.auth-provider.class","PlainTextAuthProvider");
 		System.setProperty("datastax-java-driver.advanced.auth-provider.username","cassandra");
 		System.setProperty("datastax-java-driver.advanced.auth-provider.password","cassandra");
-		float version = SystemUtils.JAVA_VERSION_FLOAT;
-		if(version >  1.8f) {
-			System.setProperty("use.jdk11", "true");
-		}
 	}
 	
 	@AfterClass

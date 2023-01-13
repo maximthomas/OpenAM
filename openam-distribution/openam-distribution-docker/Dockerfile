@@ -1,4 +1,4 @@
-FROM tomcat:9-jre17
+FROM tomcat:9.0-jre17-temurin
 
 MAINTAINER Open Identity Platform Community <open-identity-platform-openam@googlegroups.com>
 

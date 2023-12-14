@@ -25,6 +25,7 @@
  * $Id: KeyIdentifier.java,v 1.4 2008/07/30 05:00:44 mallas Exp $
  *
  * Portions Copyrighted 2014 ForgeRock AS
+ * Portions Copyrighted 2023 3A Systems LLC
  */
 
 package com.sun.identity.wss.security;
@@ -32,6 +33,8 @@ package com.sun.identity.wss.security;
 import java.security.cert.X509Certificate;
 import javax.xml.transform.TransformerException;
 import java.util.ResourceBundle;
+
+import com.sun.identity.common.xml.XMLUtils;
 import org.w3c.dom.Element;
 import org.w3c.dom.Document;
 import org.w3c.dom.Text;
@@ -185,9 +188,8 @@ public class KeyIdentifier {
                tokenElement = (Element) XPathAPI.selectSingleNode(
                       doc,  "//*[@ID=\"" + value + "\"]");
             } else {
-               Element nscontext =
-                   org.apache.xml.security.utils.
-                   XMLUtils.createDSctx(doc, WSSConstants.WSU_TAG,
+                Element nscontext =
+                   XMLUtils .createDSctx(doc, WSSConstants.WSU_TAG,
                                         WSSConstants.WSU_NS);
                tokenElement =  (Element) XPathAPI.selectSingleNode(
                      doc,  "//*[@" + "wsu:Id" + "=\"" + value + "\"]");

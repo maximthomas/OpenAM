@@ -25,12 +25,15 @@
  * $Id: SecurityTokenReference.java,v 1.4 2008/06/25 05:50:09 qcheng Exp $
  *
  * Portions Copyrighted 2014 ForgeRock AS
+ * Portions Copyrighted 2023 3A Systems LLC
  */
 
 package com.sun.identity.wss.security;
 
 import java.util.ResourceBundle;
 import javax.xml.transform.TransformerException;
+
+import com.sun.identity.common.xml.XMLUtils;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -238,9 +241,8 @@ public class SecurityTokenReference {
                tokenElement = (Element) XPathAPI.selectSingleNode(
                       doc,  "//*[@ID=\"" + uri + "\"]");
             } else {
-               Element nscontext =  
-                   org.apache.xml.security.utils.
-                   XMLUtils.createDSctx(doc, WSSConstants.WSU_TAG, 
+               Element nscontext =
+                       XMLUtils.createDSctx(doc, WSSConstants.WSU_TAG,
                                         WSSConstants.WSU_NS);
                tokenElement =  (Element) XPathAPI.selectSingleNode(
                      doc,  "//*[@" + "wsu:Id" + "=\"" + uri + "\"]");

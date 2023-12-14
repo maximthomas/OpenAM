@@ -25,6 +25,7 @@
  * $Id: WSFederationMetaSecurityUtils.java,v 1.6 2009/10/28 23:58:59 exu Exp $
  *
  * Portions Copyrighted 2011-2016 ForgeRock AS
+ * Portions Copyrighted 2023 3A Systems LLC
  */
 package com.sun.identity.wsfederation.meta;
 
@@ -39,6 +40,7 @@ import java.util.Set;
 
 import javax.xml.bind.JAXBException;
 
+import com.sun.identity.common.xml.XMLUtils;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -243,8 +245,7 @@ public final class WSFederationMetaSecurityUtils {
         NodeList sigElements = null;
         try {
             Element nscontext =
-                    org.apache.xml.security.utils.XMLUtils
-                            .createDSctx (doc,"ds", Constants.SignatureSpecNS);
+                    XMLUtils.createDSctx(doc,"ds", Constants.SignatureSpecNS);
             sigElements =
                     XPathAPI.selectNodeList(doc, "//ds:Signature", nscontext);
         } catch (Exception ex) {

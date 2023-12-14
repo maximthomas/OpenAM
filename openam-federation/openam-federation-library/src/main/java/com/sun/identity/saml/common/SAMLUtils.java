@@ -25,12 +25,14 @@
  * $Id: SAMLUtils.java,v 1.16 2010/01/09 19:41:06 qcheng Exp $
  *
  * Portions Copyrighted 2012-2016 ForgeRock AS.
+ * Portions Copyrighted 2023 3A Systems LLC
  */
 
 package com.sun.identity.saml.common;
 
 import static org.forgerock.openam.utils.Time.*;
 
+import java.io.ByteArrayOutputStream;
 import java.util.Collections;
 import java.util.Date;
 import java.util.Map;
@@ -1716,8 +1718,13 @@ public class SAMLUtils  extends SAMLUtilsCommon {
           try {
               Canonicalizer c14n = Canonicalizer.getInstance(
                   "http://www.w3.org/TR/2001/REC-xml-c14n-20010315");
-              byte outputBytes[] = c14n.canonicalizeSubtree(node);
-              DocumentBuilder documentBuilder = 
+              final byte[] outputBytes;
+              try(ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+                  c14n.canonicalizeSubtree(node, bos);
+                  outputBytes = bos.toByteArray();
+              }
+
+              DocumentBuilder documentBuilder =
                  XMLUtils.getSafeDocumentBuilder(false);
               Document doc = documentBuilder.parse(
                   new ByteArrayInputStream(outputBytes));

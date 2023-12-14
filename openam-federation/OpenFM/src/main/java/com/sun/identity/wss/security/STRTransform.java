@@ -29,8 +29,12 @@
 
 package com.sun.identity.wss.security;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.security.cert.X509Certificate;
+
+import org.apache.xml.security.exceptions.XMLSecurityException;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -44,6 +48,9 @@ import org.apache.xml.security.transforms.TransformSpi;
 import org.apache.xml.security.transforms.TransformationException;
 import org.apache.xml.security.keys.content.X509Data;
 import com.sun.identity.shared.xml.XMLUtils;
+import org.xml.sax.SAXException;
+
+import javax.xml.parsers.ParserConfigurationException;
 
 /**
  * This class <code>STRTransform</code> extends from <code>TransformSpi</code>
@@ -67,6 +74,23 @@ public class STRTransform extends TransformSpi {
        }
     }
 
+    @Override
+    protected XMLSignatureInput enginePerformTransform(XMLSignatureInput input, OutputStream os,
+                                                       Element transformElement, String baseURI,
+                                                       boolean secureValidation) throws IOException,
+            CanonicalizationException, InvalidCanonicalizerException,
+            TransformationException {
+        final Transform transformObject;
+        try {
+            transformObject = new Transform(transformElement, input.getSubNode().getBaseURI());
+        } catch (XMLSecurityException e) {
+            WSSUtils.debug.error("STRTransform.enginePerformTransform:: error creating transform element " + e);
+            throw new  CanonicalizationException(
+                    WSSUtils.bundle.getString("invalidElement"));
+        }
+        return enginePerformTransform(input, transformObject);
+    }
+
     /**
      * Returns the transformation engine URI.
      */
@@ -83,9 +107,8 @@ public class STRTransform extends TransformSpi {
   
         WSSUtils.debug.message("STRTransform.enginePerformTransform:: Start");
         Document doc = transformObject.getDocument();
-        Element str = null;
-        if(input.isElement()) {
-        } else {
+        final Element str;
+        if(!input.isElement()) {
            WSSUtils.debug.error("STRTransform.enginePerformTransform:: Input" +
               " is not an element");
            throw new  CanonicalizationException(
@@ -112,7 +135,11 @@ public class STRTransform extends TransformSpi {
         }
         String canonAlgo = getCanonicalizationAlgo(transformObject);
         Canonicalizer canon = Canonicalizer.getInstance(canonAlgo);
-        byte[] buf = canon.canonicalizeSubtree(dereferencedToken, "#default");
+        final byte[] buf;
+        try(ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+            canon.canonicalizeSubtree(dereferencedToken, "#default", bos);
+            buf = bos.toByteArray();
+        }
         StringBuffer bf = new StringBuffer(new String(buf));
         String bf1 = bf.toString();
 

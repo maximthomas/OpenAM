@@ -52,7 +52,6 @@ jobs:
         with:
           repository: OpenIdentityPlatform/doc.openidentityplatform.org
           path: doc.openidentityplatform.org
-          token: ${{ secrets.OIP_PAT_GH_TOKEN }}
 
       - name: Publish docs to site
         continue-on-error: true

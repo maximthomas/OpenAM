@@ -138,7 +138,7 @@ public class FSLoginHelper {
                 hostDescriptor = metaManager.getSPDescriptor(
                     realm, hostEntityID);
                 hostConfig = metaManager.getSPDescriptorConfig(
-                    realm, hostEntityID);
+                    realm, hostEntityID).getValue();
             } else {
                 FSUtils.debug.error("FSLoginHelper::setMetaInfo " 
                     + "could not get meta manager handle "
@@ -336,7 +336,7 @@ public class FSLoginHelper {
                 IDPEntries idpEntries = new IDPEntries(idpEntryList);
                 idpList = new FSIDPList(idpEntries, null);
                 int minorVersion = FSServiceUtils.getMinorVersion(
-                    hostDescriptor.getProtocolSupportEnumeration());
+                    hostDescriptor.getProtocolSupportEnumerations());
                 idpList.setMinorVersion(minorVersion);
                 authnRequest.setMinorVersion(minorVersion);
                 if (FSServiceUtils.isSigningOn ()) {
@@ -498,7 +498,7 @@ public class FSLoginHelper {
                     provider = (String) it.next();
                     providerDesc = metaManager.getIDPDescriptor(realm,provider);
                     providerConfig = 
-                        metaManager.getIDPDescriptorConfig(realm, provider);
+                        metaManager.getIDPDescriptorConfig(realm, provider).getValue();
                     if (providerDesc == null || providerConfig == null) {
                         continue;
                     } 
@@ -747,7 +747,7 @@ public class FSLoginHelper {
             } 
             authnRequest = getAuthnReq(headerMap, LRURL, true);
             authnRequest.setMinorVersion(FSServiceUtils.getMinorVersion(
-                hostDescriptor.getProtocolSupportEnumeration()));
+                hostDescriptor.getProtocolSupportEnumerations()));
             if (authnRequest == null ) {
                 FSUtils.debug.error(
                     "FSLoginHelper.createAuthnRequest()::AuthnRequest is null");
@@ -806,7 +806,7 @@ public class FSLoginHelper {
                 }
             }
             int minorVersion = FSServiceUtils.getMinorVersion(
-                hostDescriptor.getProtocolSupportEnumeration());
+                hostDescriptor.getProtocolSupportEnumerations());
             IDPEntries idpEntries = new IDPEntries(idpEntryList);
             idpList = new FSIDPList(idpEntries, null);
             idpList.setMinorVersion(minorVersion);

@@ -124,7 +124,7 @@ public class FSAssertionConsumerService extends HttpServlet {
             hostEntityId = metaManager.getEntityIDByMetaAlias(metaAlias);
             hostDesc = metaManager.getSPDescriptor(realm, hostEntityId);
             hostConfig = metaManager.getSPDescriptorConfig(
-                realm, hostEntityId);
+                realm, hostEntityId).getValue();
         } catch (Exception e) {
             FSUtils.debug.error("FSAssertionConsumerService.doGet: ", e);
             FSUtils.forwardRequest(request, response, framedPageURL);
@@ -250,7 +250,7 @@ public class FSAssertionConsumerService extends HttpServlet {
         try {
             hostEntityId = metaManager.getEntityIDByMetaAlias(metaAlias);
             hostDesc = metaManager.getSPDescriptor(realm, hostEntityId);
-            hostConfig = metaManager.getSPDescriptorConfig(realm, hostEntityId);
+            hostConfig = metaManager.getSPDescriptorConfig(realm, hostEntityId).getValue();
         } catch (Exception e) {
             FSUtils.debug.error("FSAssertionConsumerService.doPost: " +
                 "Exception when obtain host meta data:", e);

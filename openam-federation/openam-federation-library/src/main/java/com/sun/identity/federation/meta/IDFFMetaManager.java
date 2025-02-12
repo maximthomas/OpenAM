@@ -179,13 +179,13 @@ public class IDFFMetaManager {
             realm,entityId);
         
         if (descriptor != null) {
-            List idps = descriptor.getIDPDescriptor();
+            List idps = descriptor.getIDPDescriptors();
             boolean hasIDP = (idps != null) && !idps.isEmpty();
-            List sps = descriptor.getSPDescriptor();
+            List sps = descriptor.getSPDescriptors();
             boolean hasSP = (sps != null) && !sps.isEmpty();
             
-            List newIDPs = entityDescriptor.getIDPDescriptor();
-            List newSPs = entityDescriptor.getSPDescriptor();
+            List newIDPs = entityDescriptor.getIDPDescriptors();
+            List newSPs = entityDescriptor.getSPDescriptors();
             
             if ((newIDPs != null) && !newIDPs.isEmpty() && hasIDP) {
                 LogUtil.error(Level.INFO, LogUtil.SET_ENTITY_FAILED, args);

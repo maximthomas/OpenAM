@@ -78,7 +78,7 @@ public class FSRealmIDPProxyImpl implements FSRealmIDPProxy {
         try {
             Map attributes = IDFFMetaUtils.getAttributes(
                 FSUtils.getIDFFMetaManager().getSPDescriptorConfig(
-                    realm, authnRequest.getProviderId()));
+                    realm, authnRequest.getProviderId()).getValue());
             String useIntroductionForProxying = 
                 IDFFMetaUtils.getFirstAttributeValue(
                     attributes, IFSConstants.USE_INTRODUCTION_FOR_IDP_PROXY);

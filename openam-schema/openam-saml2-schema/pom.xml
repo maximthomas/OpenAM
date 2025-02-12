@@ -33,7 +33,7 @@
     <!-- Build -->
     <build>
         <plugins>
-<!--
+
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>jaxb2-maven-plugin</artifactId>
@@ -46,21 +46,27 @@
                     </execution>
                </executions>
                <configuration>
+                   <xjbSources>
+                       <xjbSource>src/main/xjb/saml2.xjb</xjbSource>
+                   </xjbSources>
                     <extension>true</extension>
-                    <schemaFiles>
-						entity-config-schema.xsd,
-						saml-schema-assertion-2.0.xsd,
-						saml-schema-metadata-2.0.xsd,
-						schema.xsd,
-						sstc-saml-metadata-ext-query.xsd,
-						sstc-saml-metadata-x509-query.xsd,
-						sstc-metadata-attr.xsd,
-						sstc-saml-attribute-ext.xsd,
-						sstc-saml-idp-discovery.xsd
-                    </schemaFiles>
+                   <sources>
+                       <source>src/main/xsd/</source>
+                   </sources>
+<!--                    <schemaFiles>-->
+<!--						entity-config-schema.xsd,-->
+<!--						saml-schema-assertion-2.0.xsd,-->
+<!--						saml-schema-metadata-2.0.xsd,-->
+<!--						schema.xsd,-->
+<!--						sstc-saml-metadata-ext-query.xsd,-->
+<!--						sstc-saml-metadata-x509-query.xsd,-->
+<!--						sstc-metadata-attr.xsd,-->
+<!--						sstc-saml-attribute-ext.xsd,-->
+<!--						sstc-saml-idp-discovery.xsd-->
+<!--                    </schemaFiles>-->
                </configuration>
            </plugin>
--->
+
         </plugins>
     </build>
 
@@ -73,10 +79,6 @@
 		<dependency>
 			<groupId>org.glassfish.metro</groupId>
 			<artifactId>wsit-impl</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>com.sun.xml.bind</groupId>
-			<artifactId>jaxb1-impl</artifactId>
 		</dependency>
     </dependencies>
 </project>

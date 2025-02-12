@@ -92,7 +92,7 @@ public class FSDefaultRealmAttributeMapper implements FSRealmAttributeMapper {
                 SPDescriptorConfigElement spConfig =
                     metaManager.getSPDescriptorConfig(realm, hostEntityId);
                 if (spConfig != null) {
-                    Map attributes = IDFFMetaUtils.getAttributes(spConfig);
+                    Map attributes = IDFFMetaUtils.getAttributes(spConfig.getValue());
                     configMap = FSServiceUtils.parseAttributeConfig((List)
                         attributes.get(IFSConstants.SP_ATTRIBUTE_MAP));
                 }

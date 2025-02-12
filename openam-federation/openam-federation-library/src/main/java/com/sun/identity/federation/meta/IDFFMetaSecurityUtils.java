@@ -30,7 +30,7 @@
 package com.sun.identity.federation.meta;
 
 import com.sun.identity.federation.common.FSUtils;
-import com.sun.identity.federation.jaxb.entityconfig.AttributeType;
+import com.sun.identity.federation.jaxb.entityconfig.AttributeElement;
 import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.federation.jaxb.entityconfig.EntityConfigElement;
 import com.sun.identity.federation.jaxb.entityconfig.IDPDescriptorConfigElement;
@@ -52,6 +52,7 @@ import com.sun.identity.liberty.ws.meta.jaxb.KeyDescriptorElement;
 import com.sun.identity.liberty.ws.meta.jaxb.IDPDescriptorType;
 import com.sun.identity.liberty.ws.meta.jaxb.SPDescriptorType;
 import com.sun.identity.liberty.ws.meta.jaxb.ProviderDescriptorType;
+import org.w3c.dom.Attr;
 
 import java.util.HashSet;
 import java.util.Iterator;
@@ -175,10 +176,10 @@ public final class IDFFMetaSecurityUtils {
                 // remove key info
                 removeKeyDescriptor(idpDesp, isSigning); 
                 if (isSigning) {
-                    setExtendedAttributeValue(idpConfig, 
+                    setExtendedAttributeValue(idpConfig.getValue(),
                         IFSConstants.SIGNING_CERT_ALIAS, null); 
                 } else {
-                    setExtendedAttributeValue(idpConfig, 
+                    setExtendedAttributeValue(idpConfig.getValue(),
                         IFSConstants.ENCRYPTION_CERT_ALIAS, null); 
                 }
             } else {
@@ -189,10 +190,10 @@ public final class IDFFMetaSecurityUtils {
                 Set value = new HashSet();
                 value.add(certAlias);
                 if (isSigning) {
-                    setExtendedAttributeValue(idpConfig, 
+                    setExtendedAttributeValue(idpConfig.getValue(),
                         IFSConstants.SIGNING_CERT_ALIAS, value); 
                 } else {
-                    setExtendedAttributeValue(idpConfig, 
+                    setExtendedAttributeValue(idpConfig.getValue(),
                         IFSConstants.ENCRYPTION_CERT_ALIAS, value); 
                 }
             }
@@ -212,10 +213,10 @@ public final class IDFFMetaSecurityUtils {
                 // remove key info
                 removeKeyDescriptor(spDesp, isSigning); 
                 if (isSigning) {
-                    setExtendedAttributeValue(spConfig, 
+                    setExtendedAttributeValue(spConfig.getValue(),
                         IFSConstants.SIGNING_CERT_ALIAS, null); 
                 } else {
-                    setExtendedAttributeValue(spConfig, 
+                    setExtendedAttributeValue(spConfig.getValue(),
                         IFSConstants.ENCRYPTION_CERT_ALIAS, null); 
                 }
             } else {
@@ -226,10 +227,10 @@ public final class IDFFMetaSecurityUtils {
                 Set value = new HashSet();
                 value.add(certAlias);
                 if (isSigning) {
-                    setExtendedAttributeValue(spConfig, 
+                    setExtendedAttributeValue(spConfig.getValue(),
                         IFSConstants.SIGNING_CERT_ALIAS, value); 
                 } else {
-                    setExtendedAttributeValue(spConfig, 
+                    setExtendedAttributeValue(spConfig.getValue(),
                         IFSConstants.ENCRYPTION_CERT_ALIAS, value); 
                 }
             }
@@ -243,26 +244,26 @@ public final class IDFFMetaSecurityUtils {
         // NOTE : we only support one signing and one encryption key right now
         // the code need to be change if we need to support multiple signing
         // and/or encryption keys in one entity
-        List keys = desp.getKeyDescriptor();
-        for (Iterator iter = keys.iterator(); iter.hasNext();) {
-            KeyDescriptorElement key = (KeyDescriptorElement) iter.next();
-            if (key.getUse().equalsIgnoreCase(newKey.getUse())) {
+        List<KeyDescriptorElement> keys = desp.getKeyDescriptors();
+        for (Iterator<KeyDescriptorElement> iter = keys.iterator(); iter.hasNext();) {
+            KeyDescriptorElement key = iter.next();
+            if (key.getUse().value().equalsIgnoreCase(newKey.getUse().value())) {
                 iter.remove();
             }
         }
-        desp.getKeyDescriptor().add(newKey);
+        desp.getKeyDescriptors().add(newKey);
     }
 
     private static void removeKeyDescriptor(ProviderDescriptorType desp,
         boolean isSigningUse) {
-        List keys = desp.getKeyDescriptor();
+        List<KeyDescriptorElement> keys = desp.getKeyDescriptors();
         String keyUse = "encryption";
         if (isSigningUse) {
             keyUse = "signing";
         }
-        for (Iterator iter = keys.iterator(); iter.hasNext();) {
-            KeyDescriptorElement key = (KeyDescriptorElement) iter.next();
-            if (key.getUse().equalsIgnoreCase(keyUse)) {
+        for (Iterator<KeyDescriptorElement> iter = keys.iterator(); iter.hasNext();) {
+            KeyDescriptorElement key = iter.next();
+            if (key.getUse().value().equalsIgnoreCase(keyUse)) {
                 iter.remove();
             }
         }
@@ -271,23 +272,19 @@ public final class IDFFMetaSecurityUtils {
     private static void setExtendedAttributeValue(
         BaseConfigType config,
         String attrName, Set attrVal) throws IDFFMetaException {
-        try {
-            List attributes = config.getAttribute();
-            for(Iterator iter = attributes.iterator(); iter.hasNext();) {
-                AttributeType avp = (AttributeType)iter.next();
-                if (avp.getName().trim().equalsIgnoreCase(attrName)) {
-                     iter.remove(); 
-                }
+        List<AttributeElement> attributes = config.getAttributes();
+        for(Iterator<AttributeElement> iter = attributes.iterator(); iter.hasNext();) {
+            AttributeElement avp = iter.next();
+            if (avp.getName().trim().equalsIgnoreCase(attrName)) {
+                 iter.remove();
             }
-            if (attrVal != null) {
-                ObjectFactory factory = new ObjectFactory();
-                AttributeType atype = factory.createAttributeType();
-                atype.setName(attrName);
-                atype.getValue().addAll(attrVal);
-                config.getAttribute().add(atype);
-            }
-        } catch (JAXBException e) {
-            throw new IDFFMetaException(e);
+        }
+        if (attrVal != null) {
+            ObjectFactory factory = new ObjectFactory();
+            AttributeElement atype = factory.createAttributeElement();
+            atype.setName(attrName);
+            atype.getValues().addAll(attrVal);
+            config.getAttributes().add(atype);
         }
     }
 

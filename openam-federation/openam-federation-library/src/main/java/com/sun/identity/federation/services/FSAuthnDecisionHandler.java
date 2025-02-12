@@ -96,7 +96,7 @@ public class FSAuthnDecisionHandler {
             if (entityConfig == null) {
                 return;
             }
-            Map attributes = IDFFMetaUtils.getAttributes(entityConfig);
+            Map attributes = IDFFMetaUtils.getAttributes(entityConfig.getValue());
             List mappings = (List) attributes.get(
                 IFSConstants.IDP_AUTHNCONTEXT_MAPPING);
             if (mappings != null && !mappings.isEmpty()) {

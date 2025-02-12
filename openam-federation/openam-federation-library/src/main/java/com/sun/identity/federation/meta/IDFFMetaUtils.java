@@ -216,7 +216,7 @@ public class IDFFMetaUtils {
             EntityDescriptorElement entityDescriptor) {
         IDPDescriptorType idpDescriptor = null;
         if (entityDescriptor != null) {
-            List idpList = entityDescriptor.getIDPDescriptor();
+            List idpList = entityDescriptor.getIDPDescriptors();
             if (idpList != null && !idpList.isEmpty()) {
                 Iterator idpIterator = idpList.iterator();
                 while (idpIterator.hasNext()) {

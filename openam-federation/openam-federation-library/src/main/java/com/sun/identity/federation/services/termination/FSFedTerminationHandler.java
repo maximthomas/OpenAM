@@ -800,7 +800,7 @@ public class FSFedTerminationHandler {
             FSFederationTerminationNotification reqFedTermination =
                 createFederationTerminationRequest(acctInfo);
             reqFedTermination.setMinorVersion(FSServiceUtils.getMinorVersion(
-                    remoteDescriptor.getProtocolSupportEnumeration()));
+                    remoteDescriptor.getProtocolSupportEnumerations()));
             if (reqFedTermination == null) {
                 if (FSUtils.debug.messageEnabled()) {
                     FSUtils.debug.message(
@@ -823,7 +823,7 @@ public class FSFedTerminationHandler {
             boolean isSOAPProfile = true;
             if (acctInfo.isRoleIDP()) {
                 List hostProfiles = hostedDescriptor.
-                    getFederationTerminationNotificationProtocolProfile();
+                    getFederationTerminationNotificationProtocolProfiles();
                 if (hostProfiles == null || hostProfiles.isEmpty()) {
                     FSUtils.debug.error("FSFedTerminationHandler::" +
                         "doFederationTermination no termination profile" +
@@ -859,7 +859,7 @@ public class FSFedTerminationHandler {
                 }
             } else {
                 List remoteProfiles = remoteDescriptor.
-                    getFederationTerminationNotificationProtocolProfile();
+                    getFederationTerminationNotificationProtocolProfiles();
                 if (remoteProfiles == null || remoteProfiles.isEmpty()) {
                     FSUtils.debug.error("FSFedTerminationHandler::" +
                         "doFederationTermination no termination profile" +

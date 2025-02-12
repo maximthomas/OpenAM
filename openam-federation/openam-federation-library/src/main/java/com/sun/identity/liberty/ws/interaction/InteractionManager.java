@@ -1038,21 +1038,15 @@ public class InteractionManager {
 
     private UserInteractionElement createUserInteractionElement(
             List acceptLanguages) {
-        UserInteractionElement ue = null; 
-        try {
-            ue =objectFactory.createUserInteractionElement();
+        UserInteractionElement ue = objectFactory.createUserInteractionElement();
+        ue.setInteract(interactionConfig
+                .getWSCSpecifiedInteractionChoice());
+        ue.setRedirect(interactionConfig.wscSupportsRedirect());
+        ue.setMaxInteractTime(
+                java.math.BigInteger.valueOf(interactionConfig
+                .getWSCSpecifiedMaxInteractionTime()));
+        ue.getLanguages().addAll(acceptLanguages);
 
-            ue.setInteract(interactionConfig
-                    .getWSCSpecifiedInteractionChoice());
-            ue.setRedirect(interactionConfig.wscSupportsRedirect());
-            ue.setMaxInteractTime(
-                    java.math.BigInteger.valueOf(interactionConfig
-                    .getWSCSpecifiedMaxInteractionTime()));
-            ue.getLanguage().addAll(acceptLanguages);
-        } catch (JAXBException je) {
-            debug.error("InteractionManager.createUserInteractionElement():"
-                    + " can not create UserInteractionElement", je);
-        }
         return ue;
     }
 
@@ -1080,14 +1074,7 @@ public class InteractionManager {
     }
 
     private SOAPFaultException newRedirectFault(String messageID) {
-        RedirectRequestElement re = null;
-        try{
-            re = objectFactory.createRedirectRequestElement();
-
-        } catch (JAXBException je) {
-            debug.error("InteractionManager.newRedirectFault():"
-                    + " can not create RedirectRequestElement", je);
-        }
+        RedirectRequestElement  re = objectFactory.createRedirectRequestElement();
 
         CorrelationHeader ch = new CorrelationHeader();
         String responseID = ch.getMessageID();
@@ -1140,13 +1127,7 @@ public class InteractionManager {
 
     private SOAPFaultException newRedirectFaultError(QName errorCode) {
         StatusElement se = null;
-        try{
-            se = objectFactory.createStatusElement();
-
-        } catch (JAXBException je) {
-            debug.error("InteractionManager.newRedirectFaultError():"
-                    + " can not create StatusElement", je);
-        }
+        se = objectFactory.createStatusElement();
 
         se.setCode(errorCode);
         List details = new ArrayList();

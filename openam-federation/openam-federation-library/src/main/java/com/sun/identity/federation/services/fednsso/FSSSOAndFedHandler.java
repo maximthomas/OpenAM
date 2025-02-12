@@ -1149,7 +1149,7 @@ public abstract class FSSSOAndFedHandler {
 
         try {
             spDescriptor = metaManager.getSPDescriptor(realm, spEntityId);
-            spConfig = metaManager.getSPDescriptorConfig(realm, spEntityId);
+            spConfig = metaManager.getSPDescriptorConfig(realm, spEntityId).getValue();
             if (!metaManager.isTrustedProvider(
                 realm, hostedEntityId, spEntityId)) 
             { 
@@ -1512,7 +1512,7 @@ public abstract class FSSSOAndFedHandler {
              localDescriptor = metaManager.getSPDescriptor(
                  realm, hostedEntityId);
              localDescriptorConfig =
-                 metaManager.getSPDescriptorConfig(realm, hostedEntityId);
+                 metaManager.getSPDescriptorConfig(realm, hostedEntityId).getValue();
          } catch (Exception e) {
              FSUtils.debug.error(
                  "FSSSOAndFedHandler.sendProxyAuthnRequest:",e);

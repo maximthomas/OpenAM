@@ -49,7 +49,7 @@ import com.sun.identity.federation.meta.IDFFMetaUtils;
 import com.sun.identity.liberty.ws.common.jaxb.xmlsig.KeyInfoType;
 import com.sun.identity.liberty.ws.common.jaxb.xmlsig.X509DataElement;
 import com.sun.identity.liberty.ws.meta.jaxb.ProviderDescriptorType;
-import com.sun.identity.liberty.ws.meta.jaxb.KeyDescriptorType;
+import com.sun.identity.liberty.ws.meta.jaxb.KeyDescriptorElement;
 import com.sun.identity.saml.common.SAMLConstants;
 import com.sun.identity.saml.xmlsig.KeyProvider;
 
@@ -186,7 +186,7 @@ public class KeyUtil {
                 entityID + " in " + role + " role.");
             return null;
         }
-        KeyDescriptorType kd =
+        KeyDescriptorElement kd =
             getKeyDescriptor(providerDescriptor, "signing");
         if (kd == null) {
             FSUtils.debug.error("KeyUtil.getVerificationCert: " +
@@ -281,21 +281,21 @@ public class KeyUtil {
      * @return KeyDescriptorType in <code>ProviderDescriptorType</code> that
      *     matched the usage type.
      */
-    public static KeyDescriptorType getKeyDescriptor(
+    public static KeyDescriptorElement getKeyDescriptor(
         ProviderDescriptorType providerDescriptor, String usage) {
         
         if (providerDescriptor == null) {
             return null;
         }
 
-        List list = providerDescriptor.getKeyDescriptor();
+        List list = providerDescriptor.getKeyDescriptors();
         Iterator iter = list.iterator();
-        KeyDescriptorType kd = null;
+        KeyDescriptorElement kd = null;
         String use = null;
-        KeyDescriptorType noUsageKD = null;
+        KeyDescriptorElement noUsageKD = null;
         while (iter.hasNext()) {
-            kd = (KeyDescriptorType)iter.next();
-            use = kd.getUse();
+            kd = (KeyDescriptorElement)iter.next();
+            use = kd.getUse().value();
             if ((use == null) || (use.trim().length() == 0)) {
 		if (noUsageKD == null) {
                     noUsageKD = kd;
@@ -337,7 +337,7 @@ public class KeyUtil {
      * @return X509Certificate contained in <code>KeyDescriptorType</code>; or
      *     <code>null</code> if no certificate is included.
      */
-    public static X509Certificate getCert(KeyDescriptorType kd) {
+    public static X509Certificate getCert(KeyDescriptorElement kd) {
 
         if (kd == null) {
             return null;

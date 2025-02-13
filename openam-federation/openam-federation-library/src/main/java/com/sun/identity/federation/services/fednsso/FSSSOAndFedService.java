@@ -243,7 +243,7 @@ public class FSSSOAndFedService  extends HttpServlet {
             hostEntityId = metaManager.getEntityIDByMetaAlias(metaAlias);
             hostedDesc = metaManager.getIDPDescriptor(realm, hostEntityId);
             hostedConfig = metaManager.getIDPDescriptorConfig(
-                realm, hostEntityId);
+                realm, hostEntityId).getValue();
         } catch (Exception e) {
             if (FSUtils.debug.messageEnabled()) {
                 FSUtils.debug.message(
@@ -368,7 +368,7 @@ public class FSSSOAndFedService  extends HttpServlet {
             hostEntityId = metaManager.getEntityIDByMetaAlias(metaAlias);
             hostedDesc = metaManager.getIDPDescriptor(realm, hostEntityId);
             hostedConfig = metaManager.getIDPDescriptorConfig(
-                realm, hostEntityId);
+                realm, hostEntityId).getValue();
         } catch (Exception e) {
             if (FSUtils.debug.messageEnabled()) {
                 FSUtils.debug.message(
@@ -427,7 +427,7 @@ public class FSSSOAndFedService  extends HttpServlet {
         try {
             hostedDesc = metaManager.getIDPDescriptor(realm, hostEntityId);
             hostedConfig = metaManager.getIDPDescriptorConfig(
-                realm, hostEntityId);
+                realm, hostEntityId).getValue();
             if (hostedConfig != null) {
                 metaAlias = hostedConfig.getMetaAlias();
             }
@@ -724,7 +724,7 @@ public class FSSSOAndFedService  extends HttpServlet {
                     IDPDescriptorType hostedDesc =
                         metaManager.getIDPDescriptor(realm, hostEntityId);
                     BaseConfigType hostedConfig =
-                        metaManager.getIDPDescriptorConfig(realm, hostEntityId);
+                        metaManager.getIDPDescriptorConfig(realm, hostEntityId).getValue();
                     FSSessionManager sessionService = 
                         FSSessionManager.getInstance(metaAlias);
                     sessionService.setAuthnRequest(

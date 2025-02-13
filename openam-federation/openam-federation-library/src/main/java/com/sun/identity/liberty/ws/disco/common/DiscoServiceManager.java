@@ -42,6 +42,7 @@ import javax.xml.transform.stream.StreamSource;
 import javax.xml.bind.*;
 
 import com.sun.identity.common.SystemConfigurationUtil;
+import com.sun.identity.liberty.ws.disco.jaxb.DiscoEntryElement;
 import com.sun.identity.liberty.ws.disco.plugins.Default64ResourceIDMapper;
 import com.sun.identity.liberty.ws.disco.plugins.DiscoEntryHandler;
 import com.sun.identity.liberty.ws.disco.plugins.NameIdentifierMapper;

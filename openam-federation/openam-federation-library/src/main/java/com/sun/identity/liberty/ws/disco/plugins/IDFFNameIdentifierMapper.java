@@ -106,7 +106,7 @@ public class IDFFNameIdentifierMapper implements NameIdentifierMapper {
 
             IDFFMetaManager metaManager = FSUtils.getIDFFMetaManager();
             String metaAlias = metaManager.getIDPDescriptorConfig(
-                "/", idpProviderID).getMetaAlias();
+                "/", idpProviderID).getValue().getMetaAlias();
             
             FSAccountManager fsaccountmgr = 
                 FSAccountManager.getInstance(metaAlias);

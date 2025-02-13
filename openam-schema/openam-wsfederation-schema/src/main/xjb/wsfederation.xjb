@@ -30,7 +30,7 @@
                xmlns:jxb="http://java.sun.com/xml/ns/jaxb"
                xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xjc="http://java.sun.com/xml/ns/jaxb/xjc" jxb:extensionBindingPrefixes="xjc">
 
-  <jxb:globalBindings generateElementProperty="false" generateElementClass="true" typesafeEnumBase="typesafeEnumClass">
+  <jxb:globalBindings generateElementProperty="false" generateElementClass="true">
     <xjc:simple />
   </jxb:globalBindings>
 

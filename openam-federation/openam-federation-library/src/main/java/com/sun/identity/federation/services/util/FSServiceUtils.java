@@ -176,10 +176,10 @@ public class FSServiceUtils {
             if (role != null) {
                 if (role.equalsIgnoreCase(IFSConstants.SP)) {
                     hostConfig = metaManager.getSPDescriptorConfig(
-                        realm, entityId);
+                        realm, entityId).getValue();
                 } else if (role.equalsIgnoreCase(IFSConstants.IDP)) {
                     hostConfig = metaManager.getIDPDescriptorConfig(
-                        realm, entityId);
+                        realm, entityId).getValue();
                 }
             }
         }catch(Exception e){
@@ -932,12 +932,12 @@ public class FSServiceUtils {
         String matching = null;
         String defaultValue = null;
         String first = null;
-        List urls = spDescriptor.getAssertionConsumerServiceURL();
+        List urls = spDescriptor.getAssertionConsumerServiceURLs();
         if (urls != null && !urls.isEmpty()) {
             Iterator iter = urls.iterator();
-            SPDescriptorType.AssertionConsumerServiceURLType curUrl = null;
+            SPDescriptorType.AssertionConsumerServiceURL curUrl = null;
             while (iter.hasNext()) {
-                curUrl = (SPDescriptorType.AssertionConsumerServiceURLType)
+                curUrl = (SPDescriptorType.AssertionConsumerServiceURL)
                     iter.next();
                 String curId = curUrl.getId();
                 String curValue = curUrl.getValue();
@@ -1031,10 +1031,10 @@ public class FSServiceUtils {
         }
         String hostedProfile =
             FSServiceUtils.getFirstProtocolProfile(
-                hostedDescriptor.getRegisterNameIdentifierProtocolProfile());
+                hostedDescriptor.getRegisterNameIdentifierProtocolProfiles());
         String remoteProfile =
             FSServiceUtils.getFirstProtocolProfile(
-                remoteDescriptor.getRegisterNameIdentifierProtocolProfile());
+                remoteDescriptor.getRegisterNameIdentifierProtocolProfiles());
         if (FSUtils.debug.messageEnabled()) {
             FSUtils.debug.message("host profile is:" + hostedProfile +
                 "\nremote profile is " + remoteProfile);

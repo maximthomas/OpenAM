@@ -139,11 +139,11 @@ public class FSTerminationReturnServlet extends HttpServlet {
             if (hostedRole != null && 
                 hostedRole.equalsIgnoreCase(IFSConstants.IDP)) {
                 hostedConfig = metaManager.getIDPDescriptorConfig(
-                    realm, hostedEntityId);
+                    realm, hostedEntityId).getValue();
             } else if (hostedRole != null &&
                 hostedRole.equalsIgnoreCase(IFSConstants.SP)) {
                 hostedConfig = metaManager.getSPDescriptorConfig(
-                    realm, hostedEntityId);
+                    realm, hostedEntityId).getValue();
             }
             if (hostedRole == null || hostedConfig == null) {
                 throw new IDFFMetaException((String) null);

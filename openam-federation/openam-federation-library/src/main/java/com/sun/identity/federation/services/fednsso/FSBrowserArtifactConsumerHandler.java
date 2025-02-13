@@ -125,7 +125,7 @@ public class FSBrowserArtifactConsumerHandler extends FSAssertionArtifactHandler
             false, null, relayState);
         this.samlRequest = samlReq;
         if (FSServiceUtils.getMinorVersion(
-                idpDescriptor.getProtocolSupportEnumeration()) ==
+                idpDescriptor.getProtocolSupportEnumerations()) ==
             IFSConstants.FF_12_PROTOCOL_MINOR_VERSION) 
         {
            samlRequest.setMinorVersion(

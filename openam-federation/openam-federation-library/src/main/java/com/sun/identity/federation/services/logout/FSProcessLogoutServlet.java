@@ -165,12 +165,12 @@ public class FSProcessLogoutServlet extends HttpServlet {
                     hostedProviderDesc = metaManager.getIDPDescriptor(
                         realm, hostedEntityId);
                     hostedConfig = metaManager.getIDPDescriptorConfig(
-                        realm, hostedEntityId);
+                        realm, hostedEntityId).getValue();
                 } else if (hostedRole.equalsIgnoreCase(IFSConstants.SP)) {
                     hostedProviderDesc = metaManager.getSPDescriptor(
                         realm, hostedEntityId);
                     hostedConfig = metaManager.getSPDescriptorConfig(
-                        realm, hostedEntityId);
+                        realm, hostedEntityId).getValue();
                 }
             }
             if (hostedProviderDesc == null){
@@ -631,7 +631,7 @@ public class FSProcessLogoutServlet extends HttpServlet {
      * @param request <code>HttpServletRequest</code> object containing the
      *  signed Logout request
      * @param remoteDescriptor the remote Provider descriptor. Used to get cert
-     * @param remoteEntity Id the remote provider's entity id
+     * @param remoteEntityId the remote provider's entity id
      * @return <code>true</code> if the signature is valid; <code>false</code>
      *  otherwise.
      * @exception SAMLException, FSException if an error occurred during the

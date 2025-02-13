@@ -145,12 +145,12 @@ public final class DiscoveryService implements RequestHandler {
         }
 
         Object body = bodies.iterator().next();
-        if (body instanceof QueryType) {
+        if (body instanceof QueryElement) {
             message.setSOAPBody(
-                lookup((QueryType) body, request));
-        } else if (body instanceof ModifyType)        {
+                lookup((QueryElement) body, request));
+        } else if (body instanceof ModifyElement)        {
             message.setSOAPBody(
-                Utils.convertJAXBToElement(update((ModifyType) body,request)));
+                Utils.convertJAXBToElement(update((ModifyElement) body,request)));
         } else {
             DiscoUtils.debug.error("DiscoService.processRequest: SOAPBody "
                         + "is not a Disco message.");
@@ -173,7 +173,7 @@ public final class DiscoveryService implements RequestHandler {
      *          ResourceID may be encrypted if required.
      */
     private org.w3c.dom.Element lookup(
-                com.sun.identity.liberty.ws.disco.jaxb.QueryType query,
+                com.sun.identity.liberty.ws.disco.jaxb.QueryElement query,
                 com.sun.identity.liberty.ws.soapbinding.Message message)
                 throws JAXBException
     {
@@ -240,7 +240,7 @@ public final class DiscoveryService implements RequestHandler {
         }
 
         Map discoEntriesMap = entryHandler.getDiscoEntries(userDN,
-                                        query.getRequestedServiceType());
+                                        query.getRequestedServiceTypes());
         Collection results = discoEntriesMap.values();
 
         Map returnMap = null;
@@ -311,23 +311,17 @@ public final class DiscoveryService implements RequestHandler {
      * @return ModifyResponseType which includes Status of the operation.
      */
     private com.sun.identity.liberty.ws.disco.jaxb.ModifyResponseElement update(
-                com.sun.identity.liberty.ws.disco.jaxb.ModifyType modify,
+                com.sun.identity.liberty.ws.disco.jaxb.ModifyElement modify,
                 com.sun.identity.liberty.ws.soapbinding.Message message)
                 throws JAXBException
     {
         DiscoUtils.debug.message("in update.");
         ModifyResponseElement resp = null;
-        StatusType status = null;
-        try {
-            resp =
-                DiscoUtils.getDiscoFactory().createModifyResponseElement();
-            status = DiscoUtils.getDiscoFactory().createStatusType();
-            resp.setStatus(status);
-        } catch (JAXBException je) {
-            DiscoUtils.debug.error("DiscoService.update: couldn't form "
-                + "ModifyResponse.");
-            throw je;
-        }
+        StatusElement status = null;
+        resp =
+            DiscoUtils.getDiscoFactory().createModifyResponseElement();
+        status = DiscoUtils.getDiscoFactory().createStatusElement();
+        resp.setStatus(status);
 
         String providerID = DiscoServiceManager.getDiscoProviderID();
         String resourceID = null;
@@ -389,8 +383,8 @@ public final class DiscoveryService implements RequestHandler {
         // get flag if policy check for modify from config
         if (DiscoServiceManager.needPolicyEvalUpdate()) {
             DiscoUtils.debug.message("DiscoService.lookup: needPolicyEval.");
-            if (!isUpdateAllowed(userDN, message, modify.getRemoveEntry(),
-                        modify.getInsertEntry(), entryHandler,
+            if (!isUpdateAllowed(userDN, message, modify.getRemoveEntries(),
+                        modify.getInsertEntries(), entryHandler,
                         DiscoServiceManager.getAuthorizer()))
             {
                 status.setCode(DiscoConstants.QNAME_FAILED);
@@ -403,7 +397,7 @@ public final class DiscoveryService implements RequestHandler {
 
         // now do the modify
         Map results = entryHandler.modifyDiscoEntries(userDN,
-                        modify.getRemoveEntry(), modify.getInsertEntry());
+                        modify.getRemoveEntries(), modify.getInsertEntries());
         String statusCode = (String) results.get(DiscoEntryHandler.STATUS_CODE);
         if (statusCode.equals(DiscoConstants.STATUS_OK)) {
             if (DiscoUtils.debug.messageEnabled()) {
@@ -462,7 +456,7 @@ public final class DiscoveryService implements RequestHandler {
                 }
                 if (!authorizer.isAuthorized(message.getToken(),
                                 DiscoConstants.ACTION_UPDATE,
-                                ((InsertEntryType) entryMap.get(entryID)).
+                                ((InsertEntry) entryMap.get(entryID)).
                                                         getResourceOffering(),
                                 env))
                 {
@@ -486,7 +480,7 @@ public final class DiscoveryService implements RequestHandler {
                 }
                 if (!authorizer.isAuthorized(message.getToken(),
                         DiscoConstants.ACTION_UPDATE,
-                        ((InsertEntryType) j.next()).getResourceOffering(),
+                        ((InsertEntry) j.next()).getResourceOffering(),
                         env))
                 {
                     DiscoUtils.debug.error("DiscoveryService.isUpdateAllowed: "

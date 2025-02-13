@@ -411,13 +411,13 @@ public class FSIntersiteTransferService extends HttpServlet {
             sessionMgr.setIDPEntityID(requestID, idpID);
             // Set the authn request version here
             int minorVersion = FSServiceUtils.getMinorVersion(
-                 idpDescriptor.getProtocolSupportEnumeration());
+                 idpDescriptor.getProtocolSupportEnumerations());
             authnRequest.setMinorVersion(minorVersion);
             authnRequest.getAuthnContext().setMinorVersion(minorVersion);
             SPDescriptorType hostDesc = 
                 metaManager.getSPDescriptor(realm, hostEntityId);
             BaseConfigType hostConfig = 
-                metaManager.getSPDescriptorConfig(realm, hostEntityId);
+                metaManager.getSPDescriptorConfig(realm, hostEntityId).getValue();
             if (IDFFMetaUtils.getBooleanAttributeValueFromConfig(
                     hostConfig, IFSConstants.ENABLE_AFFILIATION))
             {

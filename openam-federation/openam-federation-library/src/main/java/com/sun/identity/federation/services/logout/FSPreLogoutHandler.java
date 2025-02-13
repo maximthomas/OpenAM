@@ -680,7 +680,7 @@ public  class FSPreLogoutHandler {
             responseLogout.setID(IFSConstants.LOGOUTID);
             responseLogout.setMinorVersion(
                 FSServiceUtils.getMinorVersion(
-                    descriptor.getProtocolSupportEnumeration()));
+                    descriptor.getProtocolSupportEnumerations()));
             // call multi-federation protocol processing
             if (toInvokeMultiProtocol) {
                 if (FSUtils.debug.messageEnabled()) {

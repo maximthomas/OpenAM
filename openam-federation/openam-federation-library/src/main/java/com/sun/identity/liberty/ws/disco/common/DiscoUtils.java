@@ -39,6 +39,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.BitSet;
 
+import com.sun.identity.liberty.ws.disco.InsertEntry;
 import com.sun.identity.saml.assertion.NameIdentifier;
 import com.sun.identity.saml.assertion.Statement;
 import com.sun.identity.liberty.ws.disco.DiscoveryException;
@@ -104,7 +105,7 @@ public class DiscoUtils extends DiscoSDKUtils {
         Map env = null;
         Iterator k = results.iterator();
         while (k.hasNext()) {
-            InsertEntryType entry = (InsertEntryType) k.next();
+            InsertEntry entry = (InsertEntry) k.next();
             if (authorizer != null) {
                 if (env == null) {
                     env = new HashMap();

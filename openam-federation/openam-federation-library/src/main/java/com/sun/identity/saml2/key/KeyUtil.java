@@ -42,6 +42,7 @@ import java.security.cert.X509Certificate;
 import java.util.Set;
 
 import com.sun.identity.saml2.common.SAML2Utils;
+import com.sun.identity.saml2.jaxb.metadata.KeyDescriptorElement;
 import org.apache.xml.security.encryption.XMLCipher;
 
 import com.sun.identity.common.SystemConfigurationUtil;
@@ -49,7 +50,6 @@ import com.sun.identity.saml2.common.SAML2SDKUtils;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.meta.SAML2MetaUtils;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.saml2.jaxb.metadata.KeyDescriptorType;
 import com.sun.identity.saml2.jaxb.metadata.RoleDescriptorType;
 import com.sun.identity.saml2.jaxb.xmlsig.*;
 import com.sun.identity.saml2.jaxb.xmlenc.*;
@@ -224,7 +224,7 @@ public class KeyUtil {
             );
             return null;
         }
-        List<KeyDescriptorType> keyDescriptors = getKeyDescriptors(roleDescriptor, SAML2Constants.SIGNING);
+        List<KeyDescriptorElement> keyDescriptors = getKeyDescriptors(roleDescriptor, SAML2Constants.SIGNING);
         if (keyDescriptors.isEmpty()) {
             SAML2SDKUtils.debug.error(
                 classMethod+
@@ -234,7 +234,7 @@ public class KeyUtil {
             return certificates;
         }
 
-        for (KeyDescriptorType keyDescriptor : keyDescriptors) {
+        for (KeyDescriptorElement keyDescriptor : keyDescriptors) {
             certificates.add(getCert(keyDescriptor));
         }
         if (certificates.isEmpty()) {
@@ -349,17 +349,17 @@ public class KeyUtil {
      * KeyDescriptors without usage defined are also included in this list, as by definition they should be suitable for
      * any purposes.
      *
-     * @param roleDescriptor {@link RoleDescriptorType} which contains {@link KeyDescriptorType}s.
-     * @param usage Type of the {@link KeyDescriptorType}s to be retrieved. Its value is "encryption" or "signing".
-     * @return {@link KeyDescriptorType}s in {@link RoleDescriptorType} that matched the usage type.
+     * @param roleDescriptor {@link RoleDescriptorType} which contains {@link KeyDescriptorElement}s.
+     * @param usage Type of the {@link KeyDescriptorElement}s to be retrieved. Its value is "encryption" or "signing".
+     * @return {@link KeyDescriptorElement}s in {@link RoleDescriptorType} that matched the usage type.
      */
-    public static List<KeyDescriptorType> getKeyDescriptors(RoleDescriptorType roleDescriptor, String usage) {
-        List<KeyDescriptorType> keyDescriptors = roleDescriptor.getKeyDescriptor();
-        List<KeyDescriptorType> matches = new ArrayList<>(keyDescriptors.size());
-        List<KeyDescriptorType> keyDescriptorsWithoutUsage = new ArrayList<>(keyDescriptors.size());
+    public static List<KeyDescriptorElement> getKeyDescriptors(RoleDescriptorType roleDescriptor, String usage) {
+        List<KeyDescriptorElement> keyDescriptors = roleDescriptor.getKeyDescriptors();
+        List<KeyDescriptorElement> matches = new ArrayList<>(keyDescriptors.size());
+        List<KeyDescriptorElement> keyDescriptorsWithoutUsage = new ArrayList<>(keyDescriptors.size());
 
-        for (KeyDescriptorType keyDescriptor : keyDescriptors) {
-            String use = keyDescriptor.getUse();
+        for (KeyDescriptorElement keyDescriptor : keyDescriptors) {
+            String use = keyDescriptor.getUse().value();
             if (StringUtils.isBlank(use)) {
                 keyDescriptorsWithoutUsage.add(keyDescriptor);
             } else if (use.trim().toLowerCase().equals(usage)) {
@@ -396,11 +396,11 @@ public class KeyUtil {
      *                <code>null</code> if no certificate is included.
      */
     public static java.security.cert.X509Certificate getCert(
-        KeyDescriptorType kd
+            KeyDescriptorElement kd
     ) {
 
         String classMethod = "KeyUtil.getCert: ";
-        KeyInfoType ki = kd.getKeyInfo();
+        KeyInfoElement ki = kd.getKeyInfo();
         if (ki == null) {
             SAML2SDKUtils.debug.error(classMethod +
                     "No KeyInfo.");
@@ -421,7 +421,7 @@ public class KeyUtil {
             return null;
         }
         //iterate and search the X509Certificate node
-        it = data.getX509IssuerSerialOrX509SKIOrX509SubjectName().iterator();
+        it = data.getX509IssuerSerialsAndX509SKISAndX509SubjectNames().iterator();
         com.sun.identity.saml2.jaxb.xmlsig.X509DataType.X509Certificate cert = null;
         while ((cert == null) && it.hasNext()) {
             Object content = it.next();

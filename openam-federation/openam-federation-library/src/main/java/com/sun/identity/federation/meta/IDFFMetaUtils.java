@@ -36,7 +36,7 @@
 package com.sun.identity.federation.meta;
 
 import com.sun.identity.federation.common.IFSConstants;
-import com.sun.identity.federation.jaxb.entityconfig.AttributeType;
+import com.sun.identity.federation.jaxb.entityconfig.AttributeElement;
 import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.federation.jaxb.entityconfig.EntityConfigElement;
 import com.sun.identity.federation.jaxb.entityconfig.IDPDescriptorConfigElement;
@@ -190,7 +190,7 @@ public class IDFFMetaUtils {
             EntityDescriptorElement entityDescriptor) {
         SPDescriptorType spDescriptor = null;
         if (entityDescriptor != null) {
-            List spList = entityDescriptor.getSPDescriptor();
+            List<SPDescriptorType> spList = entityDescriptor.getSPDescriptors();
             if (spList != null && !spList.isEmpty()) {
                 Iterator spIterator = spList.iterator();
                 while (spIterator.hasNext()) {
@@ -243,7 +243,7 @@ public class IDFFMetaUtils {
             EntityConfigElement entityConfig) {
         SPDescriptorConfigElement spEntityConfig = null;
         if (entityConfig != null) {
-            List spCfgList = entityConfig.getSPDescriptorConfig();
+            List<BaseConfigType> spCfgList = entityConfig.getSPDescriptorConfigs();
             if (spCfgList != null && !spCfgList.isEmpty()) {
                 Iterator spCfgIterator = spCfgList.iterator();
                 while (spCfgIterator.hasNext()) {
@@ -270,7 +270,7 @@ public class IDFFMetaUtils {
             EntityConfigElement entityConfig) {
         IDPDescriptorConfigElement idpEntityConfig = null;
         if (entityConfig != null) {
-            List idpCfgList = entityConfig.getIDPDescriptorConfig();
+            List idpCfgList = entityConfig.getIDPDescriptorConfigs();
             if (idpCfgList != null && !idpCfgList.isEmpty()) {
                 Iterator idpCfgIterator = idpCfgList.iterator();
                 while (idpCfgIterator.hasNext()) {
@@ -294,10 +294,10 @@ public class IDFFMetaUtils {
      */
     public static Map getAttributes(BaseConfigType config) {
         Map attrMap = new HashMap();
-        List list = config.getAttribute();
-        for(Iterator iter = list.iterator(); iter.hasNext();) {
-            AttributeType avp = (AttributeType)iter.next();
-            attrMap.put(avp.getName(), avp.getValue());
+        List<AttributeElement> list = config.getAttributes();
+        for(Iterator<AttributeElement> iter = list.iterator(); iter.hasNext();) {
+            AttributeElement avp = iter.next();
+            attrMap.put(avp.getName(), avp.getValues());
         }
 
         return attrMap;
@@ -351,7 +351,7 @@ public class IDFFMetaUtils {
             IDPDescriptorConfigElement idpConfig =
                 metaManager.getIDPDescriptorConfig(realm, idpEntityID);
             if (idpConfig != null) {
-                Map attributes = getAttributes(idpConfig);
+                Map attributes = getAttributes(idpConfig.getValue());
                 returnVal = getFirstAttributeValue(attributes, attrName);
             }
         } catch (IDFFMetaException e) {
@@ -482,10 +482,10 @@ public class IDFFMetaUtils {
             try {
                 if (providerRole.equalsIgnoreCase(IFSConstants.IDP)) {
                     providerConfig = metaManager.getIDPDescriptorConfig(
-                        realm, providerId);
+                        realm, providerId).getValue();
                 } else if (providerRole.equalsIgnoreCase(IFSConstants.SP)) {
                     providerConfig = metaManager.getSPDescriptorConfig(
-                        realm, providerId);
+                        realm, providerId).getValue();
                 }
             } catch (IDFFMetaException ie) {
                 debug.error(

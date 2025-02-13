@@ -59,46 +59,39 @@ public class IDPPEmploymentIdentity extends IDPPBaseContainer {
       * Gets the employment identity jaxb object 
       * @param userMap user map
       * @return EmploymentIdentityElement JAXB Object.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
          IDPPUtils.debug.message("IDPPEmploymentIdentity:getContainerObj:Init");
-         try {
-             PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
-             EmploymentIdentityElement ei = 
-                 IDPPUtils.getIDPPFactory().createEmploymentIdentityElement();
-             String jobTitle = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.JOB_TITLE_ELEMENT).toLowerCase());
-             if(jobTitle != null) {
-                DSTString dstString = getDSTString(jobTitle);
-                ei.setJobTitle(dstString);
-             }
- 
-             String org = CollectionHelper.getMapAttr(userMap, 
-                getAttributeMapper().getDSAttribute(
-                    IDPPConstants.O_ELEMENT).toLowerCase());
-             if(org != null) {
-                DSTString dstString = getDSTString(org);
-                ei.setO(dstString);
-             }
-
-             Set altOs = (Set)userMap.get(
-             getAttributeMapper().getDSAttribute(
-             IDPPConstants.ALT_O_ELEMENT).toLowerCase());
-             Iterator iter = altOs.iterator();
-             while(iter.hasNext()) {
-                DSTString dstString = getDSTString((String)iter.next());
-                ei.getAltO().add(dstString);
-             }
-             ppType.setEmploymentIdentity(ei);
-             return ppType;
-         } catch (JAXBException je) {
-             IDPPUtils.debug.error(
-              "IDPPContainers:getContainerObject: JAXB failure", je); 
-              throw new IDPPException(
-              IDPPUtils.bundle.getString("jaxbFailure"));
+         PPElement ppType = IDPPUtils.getIDPPFactory().createPPElement();
+         EmploymentIdentityElement ei =
+             IDPPUtils.getIDPPFactory().createEmploymentIdentityElement();
+         String jobTitle = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.JOB_TITLE_ELEMENT).toLowerCase());
+         if(jobTitle != null) {
+            DSTString dstString = getDSTString(jobTitle);
+            ei.setJobTitle(dstString);
          }
+
+         String org = CollectionHelper.getMapAttr(userMap,
+            getAttributeMapper().getDSAttribute(
+                IDPPConstants.O_ELEMENT).toLowerCase());
+         if(org != null) {
+            DSTString dstString = getDSTString(org);
+            ei.setO(dstString);
+         }
+
+         Set altOs = (Set)userMap.get(
+         getAttributeMapper().getDSAttribute(
+         IDPPConstants.ALT_O_ELEMENT).toLowerCase());
+         Iterator iter = altOs.iterator();
+         while(iter.hasNext()) {
+            DSTString dstString = getDSTString((String)iter.next());
+            ei.getAltOs().add(dstString);
+         }
+         ppType.setEmploymentIdentity(ei);
+         return ppType;
      }
 
      /**
@@ -141,7 +134,7 @@ public class IDPPEmploymentIdentity extends IDPPBaseContainer {
       * @param select Select expression.
       * @param data list of new data objects.
       * @return Attribute key value pair for the given select.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Map getDataMapForSelect(String select, List data) 
      throws IDPPException {
@@ -209,11 +202,11 @@ public class IDPPEmploymentIdentity extends IDPPBaseContainer {
         DSTString jobTitle = null, org = null;
         List altO = null;
         if(obj != null) {
-           if(obj instanceof EmploymentIdentityType) {
-              EmploymentIdentityType eiType = (EmploymentIdentityType)obj;
+           if(obj instanceof EmploymentIdentityElement) {
+               EmploymentIdentityElement eiType = (EmploymentIdentityElement)obj;
               jobTitle = eiType.getJobTitle();
               org = eiType.getO();
-              altO = eiType.getAltO();
+              altO = eiType.getAltOs();
            } else {
               throw new IDPPException(
               IDPPUtils.bundle.getString("invalid Element"));

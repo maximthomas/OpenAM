@@ -53,6 +53,8 @@ import com.sun.identity.liberty.ws.meta.jaxb.KeyDescriptorElement;
 import com.sun.identity.saml.common.SAMLConstants;
 import com.sun.identity.saml.xmlsig.KeyProvider;
 
+import javax.xml.bind.JAXBElement;
+
 /**
  * The <code>KeyUtil</code> provides methods to obtain
  * the hosting entity's signing key and decryption key, and
@@ -237,7 +239,7 @@ public class KeyUtil {
                 entityID + " in " + role + " role.");
             return null;
         }
-        KeyDescriptorType kd =
+        KeyDescriptorElement kd =
             getKeyDescriptor(providerDescriptor, "encryption");
         if (kd == null) {
             FSUtils.debug.error("KeyUtil.getEncInfo: " +
@@ -349,10 +351,8 @@ public class KeyUtil {
             return null;
         }
         X509DataElement data = (X509DataElement) ki.getContent().get(0);
-        byte[] bt = 
-            ((com.sun.identity.liberty.ws.common.jaxb.xmlsig.X509DataType.X509Certificate)
-             data.getX509IssuerSerialOrX509SKIOrX509SubjectName().get(0)).
-            getValue();
+        byte[] bt = ((JAXBElement<byte[]>) data.getX509IssuerSerialsAndX509SKISAndX509SubjectNames().get(0)).getValue();
+
         CertificateFactory cf = null;
         try {
             cf = CertificateFactory.getInstance("X.509");

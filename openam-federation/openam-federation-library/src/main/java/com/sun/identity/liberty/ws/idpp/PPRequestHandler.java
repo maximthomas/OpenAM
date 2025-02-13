@@ -29,15 +29,13 @@
 
 package com.sun.identity.liberty.ws.idpp;
 
+import com.sun.identity.liberty.ws.idpp.jaxb.StatusElement;
+import com.sun.identity.liberty.ws.interaction.jaxb.InquiryElementType;
 import com.sun.identity.shared.xml.XMLUtils;
 import com.sun.identity.liberty.ws.idpp.jaxb.QueryResponseElement;
 import com.sun.identity.liberty.ws.idpp.jaxb.QueryElement;
-import com.sun.identity.liberty.ws.idpp.jaxb.QueryType;
-import com.sun.identity.liberty.ws.idpp.jaxb.QueryResponseType;
 import com.sun.identity.liberty.ws.idpp.jaxb.ModifyElement;
 import com.sun.identity.liberty.ws.idpp.jaxb.ModifyResponseElement;
-import com.sun.identity.liberty.ws.idpp.jaxb.ModifyType;
-import com.sun.identity.liberty.ws.idpp.jaxb.StatusType;
 import com.sun.identity.liberty.ws.dst.DSTQueryItem;
 import com.sun.identity.liberty.ws.dst.DSTModification;
 import com.sun.identity.liberty.ws.dst.DSTConstants;
@@ -69,6 +67,8 @@ import java.util.Date;
 import java.util.logging.Level;
 import javax.xml.namespace.QName;
 import javax.xml.bind.JAXBException;
+
+import com.sun.org.apache.xpath.internal.operations.Mod;
 import org.w3c.dom.Document;
 
 //Interaction imports
@@ -77,7 +77,6 @@ import com.sun.identity.liberty.ws.interaction.InteractionSOAPFaultException;
 import com.sun.identity.liberty.ws.interaction.InteractionManager;
 import com.sun.identity.liberty.ws.interaction.InteractionUtils;
 import com.sun.identity.liberty.ws.interaction.jaxb.InquiryElement;
-import com.sun.identity.liberty.ws.interaction.jaxb.InquiryType.Confirm;
 import com.sun.identity.liberty.ws.interaction.jaxb.TextElement;
 import com.sun.identity.liberty.ws.interaction.jaxb.InteractionResponseElement;
 
@@ -216,7 +215,7 @@ public class PPRequestHandler extends DSTRequestHandler {
                     "securityMechID") + "=" + 
                     requestMsg.getAuthenticationMechanism() + " ";
         }
-        List queryItems = query.getQueryItem();
+        List<QueryElement.QueryItem> queryItems = query.getQueryItems();
         if (queryItems.size() == 0) {
             if(IDPPUtils.debug.warningEnabled()) {
                IDPPUtils.debug.warning("PPRequestHandler:processQuery" +
@@ -235,8 +234,7 @@ public class PPRequestHandler extends DSTRequestHandler {
         int queryItemsSize = queryItems.size();
         for(int i= 0; i < queryItemsSize; i++) {
             boolean isQueryItemValid = true;
-            QueryType.QueryItemType item =
-                   (QueryType.QueryItemType)queryItems.get(i);
+            QueryElement.QueryItem item = queryItems.get(i);
             String select = item.getSelect();
             String ref = item.getItemID();
             if(ref == null || ref.length() == 0) {
@@ -330,7 +328,7 @@ public class PPRequestHandler extends DSTRequestHandler {
            }
 
            if(isQueryItemValid) {
-              Calendar changedSince = item.getChangedSince();
+              Calendar changedSince = item.getChangedSince().toGregorianCalendar();
               Date date = null;
               if(changedSince != null) {
                  date = changedSince.getTime();
@@ -353,7 +351,7 @@ public class PPRequestHandler extends DSTRequestHandler {
                            dstQueryItems, interactedData, request);
         List data = getData(queryResults);
         if(data != null && !data.isEmpty()) {
-           response.getData().addAll(data); 
+           response.getDatas().addAll(data);
         }
         if(LogUtil.isLogEnabled()) {
            String[] msgData = { resourceID };
@@ -366,7 +364,7 @@ public class PPRequestHandler extends DSTRequestHandler {
       * Get the data from the queried results
       * @param queryResults map of DSTQueryItems and the corresponding results.
       * @return List queried data.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      private List getData(Map queryResults) throws IDPPException {
  
@@ -375,21 +373,14 @@ public class PPRequestHandler extends DSTRequestHandler {
         Set queryItems = queryResults.keySet();
         Iterator iter = queryItems.iterator();
         while(iter.hasNext()) {
-           QueryResponseType.DataType data = null;
-           try {
-               data = IDPPUtils.getIDPPFactory().
-                       createQueryResponseTypeDataType();
-            } catch (JAXBException je) {
-                IDPPUtils.debug.error("PPRequestHandler:getData:jaxb fail", je);
-                throw new IDPPException(
-                IDPPUtils.bundle.getString("jaxbFailure"));
-            }
+            QueryResponseElement.Data data = null;
+            data = IDPPUtils.getIDPPFactory().createQueryResponseElementData();
             DSTQueryItem dstQueryItem = (DSTQueryItem)iter.next();
             List values = (List)queryResults.get(dstQueryItem);
             if(values.isEmpty()) {
                continue;
             }
-            data.getAny().addAll(values);
+            data.getAnies().addAll(values);
             data.setItemIDRef(dstQueryItem.getItemID());
             data.setId(dstQueryItem.getId());
             dataResults.add(data);
@@ -401,47 +392,41 @@ public class PPRequestHandler extends DSTRequestHandler {
      * sets the response status.
      * @param success This flag indicates whether the status is ok or failed. 
      * @param statusCode status code.
-     * @param comment.
-     * @param itemID Item ID for the reference.
+     * @param comment
+     * @param ref Item ID for the reference.
      * @return StatusType JAXB Object.
      * @exception IDPPException for any failure
      */
-    private StatusType setStatusType(boolean success, 
-         String statusCode, String comment, String ref)
+    private StatusElement setStatusType(boolean success,
+                                        String statusCode, String comment, String ref)
     throws IDPPException {
         IDPPUtils.debug.message("PPRequestHandler:setStatusType:Init");
         if(statusCode == null) {
            throw new IDPPException(
            IDPPUtils.bundle.getString("nullInputParams"));
         }
-        try {
-            StatusType status = IDPPUtils.getIDPPFactory().createStatusType();
-            if(success) {
-              QName qName = new QName(IDPPConstants.XMLNS_IDPP, statusCode);
-              status.setCode(qName);
-            } else {
-              QName qName = 
-                 new QName(IDPPConstants.XMLNS_IDPP, DSTConstants.FAILED);
-              status.setCode(qName);
+        StatusElement status = IDPPUtils.getIDPPFactory().createStatusElement();
+        if(success) {
+          QName qName = new QName(IDPPConstants.XMLNS_IDPP, statusCode);
+          status.setCode(qName);
+        } else {
+          QName qName =
+             new QName(IDPPConstants.XMLNS_IDPP, DSTConstants.FAILED);
+          status.setCode(qName);
 
-              StatusType secondStatus = 
-                   IDPPUtils.getIDPPFactory().createStatusType();
-              QName secondQ = new QName(IDPPConstants.XMLNS_IDPP, statusCode);
-              secondStatus.setCode(secondQ);
-              if(comment != null) {
-                 secondStatus.setComment(comment);
-              }
-              if(ref != null) {
-                 secondStatus.setRef(ref);
-              }
-              status.getStatus().add(secondStatus);
-            }
-            return status;
-        } catch (JAXBException je) {
-            IDPPUtils.debug.error("PPRequestHandler:setStatusType:" +
-            "jaxb failure:" , je);
-            throw new IDPPException(IDPPUtils.bundle.getString("jaxbFailure"));
+            StatusElement secondStatus =
+               IDPPUtils.getIDPPFactory().createStatusElement();
+          QName secondQ = new QName(IDPPConstants.XMLNS_IDPP, statusCode);
+          secondStatus.setCode(secondQ);
+          if(comment != null) {
+             secondStatus.setComment(comment);
+          }
+          if(ref != null) {
+             secondStatus.setRef(ref);
+          }
+          status.getStatuses().add(secondStatus);
         }
+        return status;
     }
 
     /**
@@ -499,7 +484,7 @@ public class PPRequestHandler extends DSTRequestHandler {
                     "securityMechID") + "=" + 
                     requestMsg.getAuthenticationMechanism() + " ";
         }
-        List modificationElements = modify.getModification();
+        List<ModifyElement.Modification> modificationElements = modify.getModifications();
         if(modificationElements.size() == 0) {
            IDPPUtils.debug.error("PPRequestHandler:process" +
            "ModifyRequest: Modification elements are null");
@@ -513,8 +498,8 @@ public class PPRequestHandler extends DSTRequestHandler {
         List dstModifications = new ArrayList();
         int size = modificationElements.size();
         for (int i=0; i < size; i++) {
-             ModifyType.ModificationType modificationType =
-             (ModifyType.ModificationType)modificationElements.get(i);
+            ModifyElement.Modification modificationType =
+                    modificationElements.get(i);
 
              String select = modificationType.getSelect();
              String ref = modificationType.getId();
@@ -609,16 +594,16 @@ public class PPRequestHandler extends DSTRequestHandler {
              }
 
              boolean override = modificationType.isOverrideAllowed();
-             ModifyType.ModificationType.NewDataType newData =
+            ModifyElement.Modification.NewData newData =
                         modificationType.getNewData();
              DSTModification dstModification = new DSTModification();
              dstModification.setSelect(select);
              dstModification.setOverrideAllowed(override);
              dstModification.setId(modificationType.getId());
              dstModifications.add(dstModification);
-             if(newData != null && newData.getAny() != null && 
-                newData.getAny().size() != 0) {
-                dstModification.setNewDataValue(newData.getAny());
+             if(newData != null && newData.getAnies() != null &&
+                newData.getAnies().size() != 0) {
+                dstModification.setNewDataValue(newData.getAnies());
              }
         }
 
@@ -675,18 +660,12 @@ public class PPRequestHandler extends DSTRequestHandler {
            throw new IDPPException(
            IDPPUtils.bundle.getString("nullInputParams"));
         }
-        try {
-            QueryResponseElement response =
-                   IDPPUtils.getIDPPFactory().createQueryResponseElement();
-            response.setStatus(setStatusType(true, DSTConstants.OK, null,null));
-            response.setId(SAMLUtils.generateID());
-            response.setItemIDRef(query.getItemID());
-            return response;
-        } catch (JAXBException je) {
-            IDPPUtils.debug.error("PPRequestHandler:getQueryResponse:" +
-            "JAXB failure.", je);
-            throw new IDPPException(IDPPUtils.bundle.getString("jaxbFailure"));
-        }
+        QueryResponseElement response =
+               IDPPUtils.getIDPPFactory().createQueryResponseElement();
+        response.setStatus(setStatusType(true, DSTConstants.OK, null,null));
+        response.setId(SAMLUtils.generateID());
+        response.setItemIDRef(query.getItemID());
+        return response;
 
     }
 
@@ -704,18 +683,12 @@ public class PPRequestHandler extends DSTRequestHandler {
            throw new IDPPException(
            IDPPUtils.bundle.getString("nullInputParams"));
         }
-        try {
-            ModifyResponseElement response =
-                   IDPPUtils.getIDPPFactory().createModifyResponseElement();
-            response.setStatus(setStatusType(true, DSTConstants.OK, null,null));
-            response.setId(SAMLUtils.generateID());
-            response.setItemIDRef(modify.getItemID());
-            return response;
-        } catch (JAXBException je) {
-            IDPPUtils.debug.error("PPRequestHandler:getModifyResponse:" +
-            "JAXB failure.", je);
-            throw new IDPPException(IDPPUtils.bundle.getString("jaxbFailure"));
-        }
+        ModifyResponseElement response =
+               IDPPUtils.getIDPPFactory().createModifyResponseElement();
+        response.setStatus(setStatusType(true, DSTConstants.OK, null,null));
+        response.setId(SAMLUtils.generateID());
+        response.setItemIDRef(modify.getItemID());
+        return response;
 
     }
 
@@ -766,7 +739,7 @@ public class PPRequestHandler extends DSTRequestHandler {
             inquiry.setTitle(IDPPUtils.bundle.getString(
             IDPPConstants.INTERACTION_TITLE));
 
-            List selectElements = inquiry.getSelectOrConfirmOrText();
+            List<InquiryElementType> selectElements = inquiry.getSelectsAndConfirmsAndTexts();
             Set inquirySelects = interactResourceMap.keySet();
             Iterator iter = inquirySelects.iterator();
             while(iter.hasNext()) {
@@ -811,7 +784,7 @@ public class PPRequestHandler extends DSTRequestHandler {
      * @return Confirm Interaction JAXB Confirm Element
      * @exception IDPPException
      */
-    private Confirm getInteractConfirmElement(
+    private InquiryElementType getInteractConfirmElement(
          boolean isQuery, String resource, Message msg) 
     throws IDPPException {
 
@@ -828,8 +801,8 @@ public class PPRequestHandler extends DSTRequestHandler {
        }
        
        try {
-           Confirm confirmElement =
-                JAXBObjectFactory.getObjectFactory().createInquiryTypeConfirm();
+           InquiryElementType confirmElement =
+                JAXBObjectFactory.getObjectFactory().createTextElement();
            PPInteractionHelper helper = 
                 new PPInteractionHelper(getLanguage(msg));
            confirmElement.setName(resource);
@@ -1056,7 +1029,7 @@ public class PPRequestHandler extends DSTRequestHandler {
     /**
      * Gets the service instance update header.
      * 
-     * @exception SOAPFaultException.
+     * @exception SOAPFaultException
      */
     private ServiceInstanceUpdateHeader getServiceInstanceUpdateHeader()
       throws SOAPFaultException {

@@ -222,7 +222,7 @@ public class IDFFSingleLogoutHandler implements SingleLogoutHandler {
                 ProviderDescriptorType hostedProviderDesc =
                     metaManager.getIDPDescriptor(realm, idpEntityId);
                 BaseConfigType hostedConfig = 
-                    metaManager.getIDPDescriptorConfig(realm, idpEntityId);
+                    metaManager.getIDPDescriptorConfig(realm, idpEntityId).getValue();
                 FSSingleLogoutHandler handlerObj = new FSSingleLogoutHandler();
                 handlerObj.setHostedDescriptor(hostedProviderDesc);
                 handlerObj.setHostedDescriptorConfig(hostedConfig);
@@ -300,7 +300,7 @@ public class IDFFSingleLogoutHandler implements SingleLogoutHandler {
                     }
                     IDPDescriptorConfigElement config =
                             idffManager.getIDPDescriptorConfig(realm, idpId);
-                    return config.getMetaAlias();
+                    return config.getValue().getMetaAlias();
                 }
             }
         } catch (Exception e) {

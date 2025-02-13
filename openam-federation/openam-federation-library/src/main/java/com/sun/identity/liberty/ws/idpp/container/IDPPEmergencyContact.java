@@ -59,26 +59,17 @@ public class IDPPEmergencyContact extends IDPPBaseContainer {
       * Gets the Emergency Contact Object 
       * @param userMap user map
       * @return EmergencyContactElement JAXB Object.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
         IDPPUtils.debug.message("IDPPEmergencyContact:getContainerObject:Init");
-        try {
-            PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
-            EmergencyContactElement ec =
-               IDPPUtils.getIDPPFactory().createEmergencyContactElement();
-            String emergencyContact = CollectionHelper.getMapAttr(userMap,
-                   getAttributeMapper().getDSAttribute(
-                   IDPPConstants.EMERGENCY_CONTACT_ELEMENT).toLowerCase());
-            ec.setValue(emergencyContact);
-            ppType.setEmergencyContact(ec);
-            return ppType;
-        } catch (JAXBException je) {
-            IDPPUtils.debug.error(
-            "IDPPEmergencyContact:getContainerObject: JAXB failure", je); 
-            throw new IDPPException(
-            IDPPUtils.bundle.getString("jaxbFailure"));
-        }
+         PPElement ppType = IDPPUtils.getIDPPFactory().createPPElement();
+         DSTString emergencyContact = IDPPUtils.getIDPPFactory().createDSTString();
+         emergencyContact.setValue(CollectionHelper.getMapAttr(userMap,
+                 getAttributeMapper().getDSAttribute(
+                         IDPPConstants.EMERGENCY_CONTACT_ELEMENT).toLowerCase()));
+         ppType.setEmergencyContact(emergencyContact);
+         return ppType;
      }
 
      /**
@@ -108,7 +99,7 @@ public class IDPPEmergencyContact extends IDPPBaseContainer {
       * @param select Select expression.
       * @param data list of new data objects.
       * @return Attribute key value pair for the given select.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Map getDataMapForSelect(String select, List data) 
      throws IDPPException {

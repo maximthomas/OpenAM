@@ -62,10 +62,11 @@ import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
 import com.sun.identity.saml2.jaxb.entityconfig.SPSSOConfigElement;
 import com.sun.identity.saml2.jaxb.entityconfig.XACMLAuthzDecisionQueryConfigElement;
 import com.sun.identity.saml2.jaxb.entityconfig.XACMLPDPConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.AffiliationDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.AffiliationDescriptorElement;
 import com.sun.identity.saml2.jaxb.metadata.AssertionConsumerServiceElement;
 import com.sun.identity.saml2.jaxb.metadata.EndpointType;
 import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.IndexedEndpointType;
 import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.logging.LogUtil;
@@ -471,7 +472,7 @@ public class SAML2Utils extends SAML2SDKUtils {
         Set<PrivateKey> decryptionKeys;
         List<EncryptedAssertion> encAssertions = response.getEncryptedAssertion();
         if (encAssertions != null) {
-            decryptionKeys = KeyUtil.getDecryptionKeys(spConfig);
+            decryptionKeys = KeyUtil.getDecryptionKeys(spConfig.getValue());
             for (EncryptedAssertion encAssertion : encAssertions) {
                 Assertion assertion = encAssertion.decrypt(decryptionKeys);
                 if (assertions == null) {
@@ -797,9 +798,8 @@ public class SAML2Utils extends SAML2SDKUtils {
             throw new SAML2Exception(bundle.getString("missingRecipient"));
         }
         boolean foundMatch = false;
-        for (Object o : spDesc.getAssertionConsumerService()) {
-            AssertionConsumerServiceElement acs = (AssertionConsumerServiceElement) o;
-            if (recipient.equals(acs.getLocation())) {
+        for (IndexedEndpointType o : spDesc.getAssertionConsumerServices()) {
+            if (recipient.equals(o.getLocation())) {
                 foundMatch = true;
                 break;
             }
@@ -999,7 +999,7 @@ public class SAML2Utils extends SAML2SDKUtils {
         if (config == null) {
             return null;
         }
-        Map attrs = SAML2MetaUtils.getAttributes(config);
+        Map attrs = SAML2MetaUtils.getAttributes(config.getValue());
         List value = (List) attrs.get(attrName);
         if (value != null && value.size() != 0) {
             result = ((String) value.iterator().next()).trim();
@@ -1120,21 +1120,21 @@ public class SAML2Utils extends SAML2SDKUtils {
         NameIDInfoKey infoKey = null;
         String affiliationID = nameID.getSPNameQualifier();
         if (affiliationID != null && !affiliationID.isEmpty()) {
-            AffiliationDescriptorType affiDesc =
+            AffiliationDescriptorElement affiDesc =
                     saml2MetaManager.getAffiliationDescriptor(realm, affiliationID);
             if (affiDesc == null) {
                 infoKey = new NameIDInfoKey(nameID.getValue(), hostEntityID,
                         remoteEntityID);
             } else {
                 if (SAML2Constants.SP_ROLE.equals(hostEntityRole)) {
-                    if (!affiDesc.getAffiliateMember().contains(hostEntityID)) {
+                    if (!affiDesc.getAffiliateMembers().contains(hostEntityID)) {
                         throw new SAML2Exception(SAML2Utils.bundle.getString(
                                 "spNotAffiliationMember"));
                     }
                     infoKey = new NameIDInfoKey(nameID.getValue(),
                             affiliationID, remoteEntityID);
                 } else {
-                    if (!affiDesc.getAffiliateMember().contains(
+                    if (!affiDesc.getAffiliateMembers().contains(
                             remoteEntityID)) {
                         throw new SAML2Exception(SAML2Utils.bundle.getString(
                                 "spNotAffiliationMember"));
@@ -2189,21 +2189,21 @@ public class SAML2Utils extends SAML2SDKUtils {
         try {
             BaseConfigType config = null;
             if (entityRole.equalsIgnoreCase(SAML2Constants.SP_ROLE)) {
-                config = saml2MetaManager.getSPSSOConfig(realm, hostEntityId);
+                config = saml2MetaManager.getSPSSOConfig(realm, hostEntityId).getValue();
             } else if (entityRole.equalsIgnoreCase(SAML2Constants.IDP_ROLE)) {
-                config = saml2MetaManager.getIDPSSOConfig(realm, hostEntityId);
+                config = saml2MetaManager.getIDPSSOConfig(realm, hostEntityId).getValue();
             } else if (entityRole.equalsIgnoreCase(
                     SAML2Constants.ATTR_AUTH_ROLE)) {
                 config = saml2MetaManager.getAttributeAuthorityConfig(realm,
-                        hostEntityId);
+                        hostEntityId).getValue();
             } else if (entityRole.equalsIgnoreCase(
                     SAML2Constants.AUTHN_AUTH_ROLE)) {
                 config = saml2MetaManager.getAuthnAuthorityConfig(realm,
-                        hostEntityId);
+                        hostEntityId).getValue();
             } else if (entityRole.equalsIgnoreCase(
                     SAML2Constants.ATTR_QUERY_ROLE)) {
                 config = saml2MetaManager.getAttributeQueryConfig(realm,
-                        hostEntityId);
+                        hostEntityId).getValue();
             }
 
             if (config == null) {
@@ -2637,7 +2637,7 @@ public class SAML2Utils extends SAML2SDKUtils {
                     saml2MetaManager.getSPSSOConfig(realm, spEntityID);
             Map spConfigAttrsMap = null;
             if (spEntityCfg != null) {
-                spConfigAttrsMap = SAML2MetaUtils.getAttributes(spEntityCfg);
+                spConfigAttrsMap = SAML2MetaUtils.getAttributes(spEntityCfg.getValue());
                 List cotList = (List) spConfigAttrsMap.get("cotlist");
                 String cotListStr = (String) cotList.iterator().next();
                 CircleOfTrustDescriptor cotDesc =
@@ -3214,7 +3214,7 @@ public class SAML2Utils extends SAML2SDKUtils {
                 if (spConfig == null) {
                     return null;
                 }
-                attrs = SAML2MetaUtils.getAttributes(spConfig);
+                attrs = SAML2MetaUtils.getAttributes(spConfig.getValue());
             } else {
                 idpConfig =
                         saml2MetaManager.getIDPSSOConfig(realm, entityId);
@@ -3222,7 +3222,7 @@ public class SAML2Utils extends SAML2SDKUtils {
                     debug.message("SAML2Utils.getSAEAttrs: idpconfig is null");
                     return null;
                 }
-                attrs = SAML2MetaUtils.getAttributes(idpConfig);
+                attrs = SAML2MetaUtils.getAttributes(idpConfig.getValue());
             }
 
             if (attrs == null) {
@@ -3413,14 +3413,14 @@ public class SAML2Utils extends SAML2SDKUtils {
                 pepConfig = saml2MetaManager.getPolicyEnforcementPointConfig(
                         realm, entityID);
                 if (pepConfig != null) {
-                    attrs = SAML2MetaUtils.getAttributes(pepConfig);
+                    attrs = SAML2MetaUtils.getAttributes(pepConfig.getValue());
                 }
             } else {
                 pdpConfig =
                         saml2MetaManager.getPolicyDecisionPointConfig(realm,
                                 entityID);
                 if (pdpConfig != null) {
-                    attrs = SAML2MetaUtils.getAttributes(pdpConfig);
+                    attrs = SAML2MetaUtils.getAttributes(pdpConfig.getValue());
                 }
             }
 
@@ -3552,9 +3552,9 @@ public class SAML2Utils extends SAML2SDKUtils {
         try {
             BaseConfigType config = null;
             if (role.equals(SAML2Constants.SP_ROLE)) {
-                config = saml2MetaManager.getSPSSOConfig(realm, hostEntityID);
+                config = saml2MetaManager.getSPSSOConfig(realm, hostEntityID).getValue();
             } else if (role.equals(SAML2Constants.IDP_ROLE)) {
-                config = saml2MetaManager.getIDPSSOConfig(realm, hostEntityID);
+                config = saml2MetaManager.getIDPSSOConfig(realm, hostEntityID).getValue();
             }
 
 
@@ -3706,12 +3706,12 @@ public class SAML2Utils extends SAML2SDKUtils {
                                             SPSSODescriptorElement spsso, IDPSSODescriptorElement idpsso)
             throws SAML2Exception {
 
-        List spNameIDFormatList = spsso.getNameIDFormat();
+        List spNameIDFormatList = spsso.getNameIDFormats();
 
         List idpNameIDFormatList = null;
         // idpsso is null for ECP case
         if (idpsso != null) {
-            idpNameIDFormatList = idpsso.getNameIDFormat();
+            idpNameIDFormatList = idpsso.getNameIDFormats();
         }
 
         if ((nameIDFormat == null) || (nameIDFormat.length() == 0)) {
@@ -4086,11 +4086,11 @@ public class SAML2Utils extends SAML2SDKUtils {
                     saml2MetaManager.getSPSSODescriptor(realm, spEntityID);
             List services = null;
             if (SAML2Constants.ACS_SERVICE.equals(profile)) {
-                services = spDescriptor.getAssertionConsumerService();
+                services = spDescriptor.getAssertionConsumerServices();
             } else if (SAML2Constants.SLO_SERVICE.equals(profile)) {
-                services = spDescriptor.getSingleLogoutService();
+                services = spDescriptor.getSingleLogoutServices();
             } else if (SAML2Constants.MNI_SERVICE.equals(profile)) {
-                services = spDescriptor.getManageNameIDService();
+                services = spDescriptor.getManageNameIDServices();
             }
             if ((services != null) && (!services.isEmpty())) {
                 Iterator iter = services.iterator();
@@ -4129,23 +4129,23 @@ public class SAML2Utils extends SAML2SDKUtils {
                     saml2MetaManager.getIDPSSODescriptor(realm, idpEntityID);
             List services = null;
             if (SAML2Constants.SSO_SERVICE.equals(profile)) {
-                services = idpDescriptor.getSingleSignOnService();
+                services = idpDescriptor.getSingleSignOnServices();
             } else if (SAML2Constants.NAMEID_MAPPING_SERVICE.equals(profile)) {
-                services = idpDescriptor.getNameIDMappingService();
+                services = idpDescriptor.getNameIDMappingServices();
             } else if (
                     SAML2Constants.ASSERTION_ID_REQUEST_SERVICE.equals(profile)) {
                 services = saml2MetaManager.
                         getAuthnAuthorityDescriptor(realm, idpEntityID).
-                        getAssertionIDRequestService();
+                        getAssertionIDRequestServices();
             } else if (
                     SAML2Constants.ARTIFACT_RESOLUTION_SERVICE.equals(profile)) {
-                services = idpDescriptor.getArtifactResolutionService();
+                services = idpDescriptor.getArtifactResolutionServices();
             } else if (
                     SAML2Constants.SLO_SERVICE.equals(profile)) {
-                services = idpDescriptor.getSingleLogoutService();
+                services = idpDescriptor.getSingleLogoutServices();
             } else if (
                     SAML2Constants.MNI_SERVICE.equals(profile)) {
-                services = idpDescriptor.getManageNameIDService();
+                services = idpDescriptor.getManageNameIDServices();
             }
             if ((services != null) && (!services.isEmpty())) {
                 Iterator iter = services.iterator();

@@ -61,13 +61,13 @@ public class IDPPCommonName extends IDPPBaseContainer {
       * Gets the common name jaxb element 
       * @param userMap user map
       * @return CommonNameElement JAXB Object.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
 
          IDPPUtils.debug.message("IDPPContainers:getContainerObject:Init");
          try {
-             PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
+             PPElement ppType = IDPPUtils.getIDPPFactory().createPPElement();
              CommonNameElement ce = 
                    IDPPUtils.getIDPPFactory().createCommonNameElement();
 
@@ -86,20 +86,15 @@ public class IDPPCommonName extends IDPPBaseContainer {
                  Iterator iter = altCNs.iterator();
                  while(iter.hasNext()) {
                      DSTString dstString = getDSTString((String)iter.next());
-                     ce.getAltCN().add(dstString);
+                     ce.getAltCNs().add(dstString);
                  }
              }
 
-             AnalyzedNameType analyzedName = getAnalyzedName(userMap); 
+             AnalyzedNameElement analyzedName = getAnalyzedName(userMap);
              ce.setAnalyzedName(analyzedName);
 
              ppType.setCommonName(ce);
              return ppType;
-         } catch (JAXBException je) {
-             IDPPUtils.debug.error(
-              "IDPPContainers:getContainerObject: JAXB failure", je); 
-              throw new IDPPException(
-              IDPPUtils.bundle.getString("jaxbFailure"));
          } catch (IDPPException ie) {
               IDPPUtils.debug.error("IDPPContainers:getContainerObject:" +
               "Error while creating common name.", ie);
@@ -167,7 +162,7 @@ public class IDPPCommonName extends IDPPBaseContainer {
       * @param select Select expression.
       * @param data list of new data objects.
       * @return Attribute key value pair for the given select.
-      * @throws IDPPException.
+      * @throws IDPPException
       */
      public Map getDataMapForSelect(String select, List data) 
      throws IDPPException {
@@ -259,15 +254,15 @@ public class IDPPCommonName extends IDPPBaseContainer {
      private Map getCommonNameMap(Object obj, Map map) 
      throws IDPPException {
         IDPPUtils.debug.message("IDPPCommonName:getCommonNameMap:Init");
-        AnalyzedNameType analyzedName = null;
+        AnalyzedNameElement analyzedName = null;
         DSTString cn = null;
         List altCNs = null;
         if(obj != null) {
-           if(obj instanceof CommonNameType) {
-              CommonNameType cnType = (CommonNameType)obj;
+           if(obj instanceof CommonNameElement) {
+               CommonNameElement cnType = (CommonNameElement)obj;
               analyzedName = cnType.getAnalyzedName();
               cn = cnType.getCN();
-              altCNs = cnType.getAltCN();
+              altCNs = cnType.getAltCNs();
            } else {
               throw new IDPPException(
               IDPPUtils.bundle.getString("invalid Element"));

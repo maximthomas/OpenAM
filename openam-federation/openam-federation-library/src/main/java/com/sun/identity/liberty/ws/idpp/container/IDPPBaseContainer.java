@@ -33,6 +33,9 @@ import static org.forgerock.openam.utils.Time.*;
 
 import com.sun.identity.shared.datastruct.CollectionHelper;
 import javax.xml.bind.JAXBException;
+import javax.xml.datatype.DatatypeFactory;
+import javax.xml.datatype.XMLGregorianCalendar;
+import java.util.GregorianCalendar;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Map;
@@ -140,20 +143,23 @@ public abstract class IDPPBaseContainer implements IDPPContainer {
            } else if (obj instanceof DSTURI) {
               DSTURI uri = (DSTURI)obj;
               value = uri.getValue();
-           } else if (obj instanceof DSTDate) {
-              DSTDate date = (DSTDate)obj;
-              Calendar cal = date.getValue();
+           } else if (obj instanceof DOBElement) {
+               DOBElement date = (DOBElement)obj;
+              XMLGregorianCalendar cal = date.getValue();
               if(cal != null) {
-                 value = DateFormat.getDateInstance().format(cal.getTime());
+                 value = DateFormat.getDateInstance().format(cal.toGregorianCalendar().getTime());
               }
 
-           } else if (obj instanceof DSTInteger) {
-              DSTInteger dstInt = (DSTInteger)obj;
-              value = dstInt.getValue().toString(); 
+           } else if (obj instanceof AgeElement) {
+               AgeElement dstInt = (AgeElement)obj;
+               value = dstInt.getValue().toString();
 
-           } else if (obj instanceof DSTMonthDay) {
-              DSTMonthDay dstMon = (DSTMonthDay)obj;
-              value = dstMon.getValue();
+           } else if (obj instanceof BirthdayElement) {
+               BirthdayElement dstMon = (BirthdayElement)obj;
+               XMLGregorianCalendar cal = dstMon.getValue();
+               if(cal != null) {
+                   value = DateFormat.getDateInstance().format(cal.toGregorianCalendar().getTime());
+               }
            }
 
            if(value != null) {
@@ -202,14 +208,9 @@ public abstract class IDPPBaseContainer implements IDPPContainer {
            IDPPUtils.debug.message("IDPPBaseContainer:getDSTString:null vals");
            return null;
         }
-        try {
-            DSTString dstString = IDPPUtils.getIDPPFactory().createDSTString();
-            dstString.setValue(value);
-            return dstString;
-        } catch (JAXBException je) {
-            IDPPUtils.debug.error("IDPPBaseContainer:getDSTString:jaxbFail",je);
-            return null;
-        }
+         DSTString dstString = IDPPUtils.getIDPPFactory().createDSTString();
+         dstString.setValue(value);
+         return dstString;
      }
 
      /**
@@ -217,18 +218,19 @@ public abstract class IDPPBaseContainer implements IDPPContainer {
       * @param value a String representing the value.
       * @return DSTDate JAXB object.
       */
-     protected DSTDate getDSTDate(String value) {
+     protected DOBElement getDSTDate(String value) {
         if(value == null) {
            IDPPUtils.debug.message("IDPPBaseContainer:getDSTDate:null vals");
            return null;
         }
         try {
-            DSTDate dstDate = IDPPUtils.getIDPPFactory().createDSTDate();
+            DOBElement dstDate = IDPPUtils.getIDPPFactory().createDOBElement();
             Date date = 
                  DateFormat.getDateInstance(DateFormat.MEDIUM).parse(value);
-            Calendar cal = getCalendarInstance();
+            GregorianCalendar cal = new GregorianCalendar();
             cal.setTime(date);
-            dstDate.setValue(cal);
+            XMLGregorianCalendar xmlCal = DatatypeFactory.newInstance().newXMLGregorianCalendar(cal);
+            dstDate.setValue(xmlCal);
             return dstDate;
         } catch(Exception e) {
             IDPPUtils.debug.error("IDPPBaseContainer:getDSTDate: Exception", e);
@@ -241,15 +243,21 @@ public abstract class IDPPBaseContainer implements IDPPContainer {
       * @param value a String representing the value.
       * @return DSTMonthDay JAXB object.
       */
-     protected DSTMonthDay getDSTMonthDay(String value) {
+     protected BirthdayElement getDSTMonthDay(String value) {
         if(value == null) {
            IDPPUtils.debug.message("IDPPBaseContainer:getDSTMonthDay:nullvals");
            return null;
         }
         try {
-            DSTMonthDay dstMonthDay = 
-                 IDPPUtils.getIDPPFactory().createDSTMonthDay();
-            dstMonthDay.setValue(value);
+            BirthdayElement dstMonthDay =
+                 IDPPUtils.getIDPPFactory().createBirthdayElement();
+            Date date =
+                    DateFormat.getDateInstance(DateFormat.MEDIUM).parse(value);
+            GregorianCalendar cal = new GregorianCalendar();
+            cal.setTime(date);
+            XMLGregorianCalendar xmlCal = DatatypeFactory.newInstance().newXMLGregorianCalendar(cal);
+            dstMonthDay.setValue(xmlCal);
+
             return dstMonthDay;
         } catch(Exception e) {
             IDPPUtils.debug.error("IDPPBaseContainer:getDSTMonthDay: " +
@@ -269,14 +277,9 @@ public abstract class IDPPBaseContainer implements IDPPContainer {
            IDPPUtils.debug.message("IDPPBaseContainer:getDSTURI:null vals");
            return null;
         }
-        try {
-            DSTURI dstURI = IDPPUtils.getIDPPFactory().createDSTURI();
-            dstURI.setValue(value);
-            return dstURI;
-        } catch(JAXBException je) {
-            IDPPUtils.debug.error("IDPPBaseContainer:getDSTURI: Exception", je);
-            return null;
-        }
+         DSTURI dstURI = IDPPUtils.getIDPPFactory().createDSTURI();
+         dstURI.setValue(value);
+         return dstURI;
      }
 
      /**
@@ -284,19 +287,16 @@ public abstract class IDPPBaseContainer implements IDPPContainer {
       * @param value a String representing the value.
       * @return DSTInteger JAXB object.
       */
-     protected DSTInteger getDSTInteger(String value) {
+     protected AgeElement getDSTInteger(String value) {
         if(value == null) {
            IDPPUtils.debug.message("IDPPBaseContainer:getDSTInteger:null vals");
            return null;
         }
         try {
-            DSTInteger dstInteger = 
-                 IDPPUtils.getIDPPFactory().createDSTInteger();
+            AgeElement dstInteger =
+                 IDPPUtils.getIDPPFactory().createAgeElement();
             dstInteger.setValue(new BigInteger(value));
             return dstInteger;
-        } catch(JAXBException je) {
-            IDPPUtils.debug.error("IDPPBaseContainer:getDSTInteger:Error", je);
-            return null;
         } catch(NumberFormatException nfe) {
             IDPPUtils.debug.error("IDPPBaseContainer:getDSTInteger: " +
             "Invalid number", nfe);
@@ -309,56 +309,49 @@ public abstract class IDPPBaseContainer implements IDPPContainer {
       * Gets AnalyzedName JAXB Object.
       * @param userMap user map
       * @return AnalyzedNameType JAXB Object.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
-     protected AnalyzedNameType getAnalyzedName(Map userMap) 
+     protected AnalyzedNameElement getAnalyzedName(Map userMap)
      throws IDPPException {
         IDPPUtils.debug.message("IDPPContainers:getAnalyzedName:Init");
-        AnalyzedNameType analyzedName = null;
-        try {
-            analyzedName = IDPPUtils.getIDPPFactory().createAnalyzedNameType();
+        AnalyzedNameElement analyzedName = null;
+         analyzedName = IDPPUtils.getIDPPFactory().createAnalyzedNameElement();
 
-            String value = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.SN_ELEMENT).toLowerCase());
-            if(value != null) {
-               analyzedName.setSN(getDSTString(value));
-            }
+         String value = CollectionHelper.getMapAttr(
+             userMap, getAttributeMapper().getDSAttribute(
+                 IDPPConstants.SN_ELEMENT).toLowerCase());
+         if(value != null) {
+            analyzedName.setSN(getDSTString(value));
+         }
 
-            value = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.FN_ELEMENT).toLowerCase());
-            if(value != null) {
-               analyzedName.setFN(getDSTString(value));
-            }
+         value = CollectionHelper.getMapAttr(
+             userMap, getAttributeMapper().getDSAttribute(
+                 IDPPConstants.FN_ELEMENT).toLowerCase());
+         if(value != null) {
+            analyzedName.setFN(getDSTString(value));
+         }
 
-            value = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.PT_ELEMENT).toLowerCase());
-            if(value != null) {
-               analyzedName.setPersonalTitle(getDSTString(value));
-            }
+         value = CollectionHelper.getMapAttr(
+             userMap, getAttributeMapper().getDSAttribute(
+                 IDPPConstants.PT_ELEMENT).toLowerCase());
+         if(value != null) {
+            analyzedName.setPersonalTitle(getDSTString(value));
+         }
 
-            value = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.MN_ELEMENT).toLowerCase());
+         value = CollectionHelper.getMapAttr(
+             userMap, getAttributeMapper().getDSAttribute(
+                 IDPPConstants.MN_ELEMENT).toLowerCase());
 
-            String nameScheme = 
-                 IDPPServiceManager.getInstance().getNameScheme();
-            if(nameScheme != null) {
-               analyzedName.setNameScheme(nameScheme);
-            }
-            if(nameScheme != null && nameScheme.equals(
-               IDPPConstants.NAME_SCHEME_MIDDLE) && value != null) {
-               analyzedName.setMN(getDSTString(value));
-            }
-            return analyzedName;
-        } catch (JAXBException je) {
-            IDPPUtils.debug.error("IDPPContainers:getAnalyzedName: " +
-            "JAXB failure", je);
-             throw new IDPPException(
-             IDPPUtils.bundle.getString("jaxbFailure"));
-        }
+         String nameScheme =
+              IDPPServiceManager.getInstance().getNameScheme();
+         if(nameScheme != null) {
+            analyzedName.setNameScheme(nameScheme);
+         }
+         if(nameScheme != null && nameScheme.equals(
+            IDPPConstants.NAME_SCHEME_MIDDLE) && value != null) {
+            analyzedName.setMN(getDSTString(value));
+         }
+         return analyzedName;
      }
 
      /**
@@ -419,8 +412,8 @@ public abstract class IDPPBaseContainer implements IDPPContainer {
         
         DSTString fn = null, sn= null, mn= null, pt = null;
         if(obj != null) { 
-           if(obj instanceof AnalyzedNameType) {
-              AnalyzedNameType analyzedName = (AnalyzedNameType)obj;
+           if(obj instanceof AnalyzedNameElement) {
+               AnalyzedNameElement analyzedName = (AnalyzedNameElement)obj;
               fn = analyzedName.getFN();
               sn = analyzedName.getSN();
               mn =  analyzedName.getMN();

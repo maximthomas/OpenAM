@@ -61,60 +61,53 @@ public class IDPPFacade extends IDPPBaseContainer {
       * Gets the Facade JAXB Element. 
       * @param userMap user map
       * @return FacadeElement JAXB Object.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
 
          IDPPUtils.debug.message("IDPPFacade:getContainerObject:Init");
-         try {
-             PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
-             FacadeElement fe = 
-                  IDPPUtils.getIDPPFactory().createFacadeElement();
+         PPElement ppType = IDPPUtils.getIDPPFactory().createPPElement();
+         FacadeElement fe =
+              IDPPUtils.getIDPPFactory().createFacadeElement();
 
-             String mugShot = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.MUGSHOT_ELEMENT).toLowerCase());
+         String mugShot = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.MUGSHOT_ELEMENT).toLowerCase());
 
-             if(mugShot != null) {
-                fe.setMugShot(getDSTURI(mugShot));
-             }
-
-             String webSite = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.WEBSITE_ELEMENT).toLowerCase());
-             if(webSite != null) {
-                fe.setWebSite(getDSTURI(webSite));
-             }
-
-             String namePronounced = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.NAME_PRONOUNCED_ELEMENT).toLowerCase());
-             if(namePronounced != null) {
-                fe.setNamePronounced(getDSTURI(namePronounced));
-             }
-
-             String greetSound = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.GREET_SOUND_ELEMENT).toLowerCase());
-             if(greetSound != null) {
-                fe.setGreetSound(getDSTURI(greetSound));
-             }
-
-             String greetMeSound = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.GREET_ME_SOUND_ELEMENT).toLowerCase());
-             if(greetMeSound != null) {
-                fe.setGreetMeSound(getDSTURI(greetMeSound));
-             }
-             ppType.setFacade(fe);
-
-             return ppType;
-         } catch (JAXBException je) {
-             IDPPUtils.debug.error(
-              "IDPPFacade:getContainerObject: JAXB failure", je); 
-              throw new IDPPException(
-              IDPPUtils.bundle.getString("jaxbFailure"));
+         if(mugShot != null) {
+            fe.setMugShot(getDSTURI(mugShot));
          }
+
+         String webSite = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.WEBSITE_ELEMENT).toLowerCase());
+         if(webSite != null) {
+            fe.setWebSite(getDSTURI(webSite));
+         }
+
+         String namePronounced = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.NAME_PRONOUNCED_ELEMENT).toLowerCase());
+         if(namePronounced != null) {
+            fe.setNamePronounced(getDSTURI(namePronounced));
+         }
+
+         String greetSound = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.GREET_SOUND_ELEMENT).toLowerCase());
+         if(greetSound != null) {
+            fe.setGreetSound(getDSTURI(greetSound));
+         }
+
+         String greetMeSound = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.GREET_ME_SOUND_ELEMENT).toLowerCase());
+         if(greetMeSound != null) {
+            fe.setGreetMeSound(getDSTURI(greetMeSound));
+         }
+         ppType.setFacade(fe);
+
+         return ppType;
      }
 
      /**
@@ -162,7 +155,7 @@ public class IDPPFacade extends IDPPBaseContainer {
       * @param select Select Expression.
       * @param data list of new data objects.
       * @return Map Key/value data map.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Map getDataMapForSelect(String select, List data) 
      throws IDPPException {

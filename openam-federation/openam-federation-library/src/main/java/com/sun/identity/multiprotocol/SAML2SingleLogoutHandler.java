@@ -244,7 +244,7 @@ public class SAML2SingleLogoutHandler implements SingleLogoutHandler {
                     }
                     IDPSSOConfigElement config =
                             saml2Manager.getIDPSSOConfig(realm, idpId);
-                    return config.getMetaAlias();
+                    return config.getValue().getMetaAlias();
                 }
             }
         } catch (Exception e) {
@@ -341,7 +341,7 @@ public class SAML2SingleLogoutHandler implements SingleLogoutHandler {
             SPSSODescriptorElement sp = null;
             sp = SAML2Utils.getSAML2MetaManager().
                     getSPSSODescriptor(realm, spEntityID);
-            List slosList = sp.getSingleLogoutService();
+            List slosList = sp.getSingleLogoutServices();
             
             // get IDP entity config for basic auth info
             SPSSOConfigElement spConfig = SAML2Utils.
@@ -352,7 +352,7 @@ public class SAML2SingleLogoutHandler implements SingleLogoutHandler {
                 LogoutUtil.doLogout(idpMetaAlias,
                     spEntityID, slosList, null, SAML2Constants.SOAP,
                     relayState, sessIndex[0], pair.getNameID(), request,
-                    response, paramsMap, spConfig);
+                    response, paramsMap, spConfig.getValue());
             } catch (SAML2Exception ex) {
                 debug.error("SAML2SLOHandler:handleSOAPSLO.doLogout" , ex);
                 soapFailCount++;

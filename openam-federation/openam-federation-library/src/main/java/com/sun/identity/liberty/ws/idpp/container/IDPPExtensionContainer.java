@@ -64,18 +64,18 @@ public class IDPPExtensionContainer extends IDPPBaseContainer {
       * Gets the container extension jaxb object.
       * @param userMap user map
       * @return ExtensionElement JAXB Object.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
         IDPPUtils.debug.message("IDPPContainers:getContainerObject:Init");
         try {
-            PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
+            PPElement ppType = IDPPUtils.getIDPPFactory().createPPElement();
             ExtensionElement ee = 
                      IDPPUtils.getIDPPFactory().createExtensionElement();
 
             IDPPExtension extension = getExtensionContainerClass(); 
             if(extension != null) {
-               ee.getAny().addAll(extension.getExtAttributes());
+               ee.getAnies().addAll(extension.getExtAttributes());
                ppType.setExtension(ee);
                return ppType;
             }
@@ -92,7 +92,7 @@ public class IDPPExtensionContainer extends IDPPBaseContainer {
                String extValue = CollectionHelper.getMapAttr(userMap,
                     getAttributeMapper().getDSAttribute(extName).toLowerCase());
                if(extValue != null) {
-                  ee.getAny().add(getISExtension(extName, extValue));
+                  ee.getAnies().add(getISExtension(extName, extValue));
                }
             }
 
@@ -175,7 +175,7 @@ public class IDPPExtensionContainer extends IDPPBaseContainer {
       * @param select Select expression.
       * @param data list of new data objects.
       * @return Attribute key value pair for the given select.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Map getDataMapForSelect(String select, List data) 
      throws IDPPException {
@@ -231,23 +231,17 @@ public class IDPPExtensionContainer extends IDPPBaseContainer {
       * Gets the PP ISExtension element.
       * @param attrName Extension attribute name.
       * @param attrValue Extension attribute value.
-      * @exception IDPPException.
+      * @exception IDPPException
       */ 
      private PPISExtensionElement getISExtension(
-         String attrName, String attrValue) throws IDPPException {
+         String attrName, String attrValue) {
          IDPPUtils.debug.message("IDPPExtensionContainer.getISExtension:Init");
-         try {
-             com.sun.identity.liberty.ws.idpp.plugin.jaxb.ObjectFactory fac =
-             new com.sun.identity.liberty.ws.idpp.plugin.jaxb.ObjectFactory();
-             PPISExtensionElement ext = fac.createPPISExtensionElement();
-             ext.setName(attrName);
-             ext.setValue(attrValue);
-             return ext;
-         } catch (JAXBException je) {
-             IDPPUtils.debug.error("IDPPExtensionContainer.getISExtension:" +
-             "Fails in creating PP Extension element.", je);
-             throw new IDPPException(IDPPUtils.bundle.getString("jaxbFailure"));
-         }
+         com.sun.identity.liberty.ws.idpp.plugin.jaxb.ObjectFactory fac =
+         new com.sun.identity.liberty.ws.idpp.plugin.jaxb.ObjectFactory();
+         PPISExtensionElement ext = fac.createPPISExtensionElement();
+         ext.setName(attrName);
+         ext.setValue(attrValue);
+         return ext;
      }
  
      /**

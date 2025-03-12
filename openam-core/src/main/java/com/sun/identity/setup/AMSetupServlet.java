@@ -25,6 +25,7 @@
  * $Id: AMSetupServlet.java,v 1.117 2010/01/20 17:01:35 veiming Exp $
  *
  * Portions Copyrighted 2010-2016 ForgeRock AS.
+ * Portions Copyrighted 2025 3A Systems LLC.
  */
 
 package com.sun.identity.setup;
@@ -1486,6 +1487,15 @@ public class AMSetupServlet extends HttpServlet {
                         + "Unable to rebuild indexes in OpenDJ: " + ret);
                 throw new Exception("Unable to rebuild indexes in OpenDJ: " + ret);
             }
+            int sleepTime = 10;
+            while (!dsConfig.isDServerUp() && (sleepTime-- > 0)) {
+                // sleep one second a time
+                Thread.sleep(1000);
+            }
+            if (!dsConfig.isDServerUp()) {
+                throw new ConfigurationException("AMSetupServlet.writeSchemaFiles: OpenDJ cannot be started.");
+            }
+
         }
 
         for (String schemaFile : absSchemaFiles) {

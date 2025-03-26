@@ -37,7 +37,7 @@
 			<version>3.19.0-GA</version>
 		</dependency>
 		<dependency>
-			  <groupId>com.datastax.oss</groupId>
+			  <groupId>org.apache.cassandra</groupId>
 			  <artifactId>java-driver-query-builder</artifactId>
 		</dependency>
 		<dependency>

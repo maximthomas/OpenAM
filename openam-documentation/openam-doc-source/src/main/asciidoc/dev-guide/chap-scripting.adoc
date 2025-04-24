@@ -384,6 +384,8 @@ Authentication API functionality includes:
 
 * xref:#scripting-api-authn-request-data[Accessing Request Data]
 
+* xref:#scripting-api-authn-session-data[Accessing User Session Data]
+
 
 [#scripting-api-authn-state]
 ===== Accessing Authentication State
@@ -502,7 +504,23 @@ a|`String[]`
 a|Return the array of String values of the named request parameter, or `null` if parameter is not set.
 |===
 
+[#scripting-api-authn-session-data]
+===== Accessing User Session Data
+Server-side scripts can set user session properties using the `sessionProperties` object.
 
+[#scripted-api-authn-session-data-methods]
+.Authentication Script Session Data Methods
+[cols="22%,33%,11%,34%"]
+|===
+|Method |Parameters |Return Type |Description
+
+a|`sessionProperties.put`
+a|`Property Name` (type: `String`)
+
+`Property Value` (type: `String`)
+a|`Void`
+a|New session attribute value
+|===
 
 [#scripting-api-authz]
 ==== Authorization API Functionality

@@ -12,6 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2014-2016 ForgeRock AS.
+ * Portions copyright 2025 3A Systems LLC.
  */
 package org.forgerock.openam.authentication.modules.scripted;
 
@@ -48,6 +49,7 @@ import javax.security.auth.Subject;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.login.LoginException;
 import java.security.Principal;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -75,6 +77,8 @@ public class Scripted extends AMLoginModule {
     public static final String CLIENT_SCRIPT_OUTPUT_DATA_VARIABLE_NAME = "clientScriptOutputData";
     public static final String REQUEST_DATA_VARIABLE_NAME = "requestData";
     public static final String SHARED_STATE = "sharedState";
+
+    public static final String SESSION_PROPERTIES = "sessionProperties";
 
     private String userName;
     private boolean clientSideScriptEnabled;
@@ -148,6 +152,8 @@ public class Scripted extends AMLoginModule {
                 scriptVariables.put(FAILED_ATTR_NAME, FAILURE_VALUE);
                 scriptVariables.put(HTTP_CLIENT_VARIABLE_NAME, httpClient);
                 scriptVariables.put(IDENTITY_REPOSITORY, identityRepository);
+                Map<String, String> sessionProperties = new HashMap<>();
+                scriptVariables.put(SESSION_PROPERTIES, sessionProperties);
 
                 try {
                     scriptEvaluator.evaluateScript(getServerSideScript(), scriptVariables);
@@ -160,9 +166,14 @@ public class Scripted extends AMLoginModule {
                 userName = (String) scriptVariables.get(USERNAME_VARIABLE_NAME);
                 sharedState.put(CLIENT_SCRIPT_OUTPUT_DATA_VARIABLE_NAME, clientScriptOutputData);
 
+                for (Map.Entry<String, String> entry : sessionProperties.entrySet()) {
+                    setUserSessionProperty(entry.getKey(), entry.getValue());
+                }
+
                 if (state != SUCCESS_VALUE) {
                     throw new AuthLoginException("Authentication failed");
                 }
+
 
                 return state;
             default:

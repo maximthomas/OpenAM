@@ -14,7 +14,7 @@
   information: "Portions copyright [year] [name of copyright owner]".
 
   Copyright 2012-2015 ForgeRock AS.
-  Portions Copyrighted 2024 3A Systems LLC
+  Portions Copyrighted 2024-2025 3A Systems LLC
  -->
 
 <!DOCTYPE ModuleProperties PUBLIC "=//iPlanet//Authentication Module Properties XML Interface 1.0 DTD//EN"
@@ -63,7 +63,7 @@
     <!-- For registration -->
     <Callbacks length="3" order="5" timeout="120" header="Register your device with OpenAM">
         <TextOutputCallback>
-            Scan the barcode image below with the ForgeRock Authenticator App. Once registered click the button to
+            Scan the barcode image below with an Authenticator App. Once registered click the button to
             enter your verification code and login.
         </TextOutputCallback>
         <TextOutputCallback messageType="script">PLACEHOLDER</TextOutputCallback>

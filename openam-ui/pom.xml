@@ -261,7 +261,7 @@
 			            <artifactItem>
 			              <groupId>org.openidentityplatform.commons.ui.libs</groupId>
 			              <artifactId>moment</artifactId>
-			              <version>2.28.0</version>
+			              <version>2.30.1</version>
 			              <packaging>js</packaging>
 			              <classifier>min</classifier>
 			              <downloadUrl>https://cdnjs.cloudflare.com/ajax/libs/moment.js/{version}/{artifactId}.{classifier}.{packaging}</downloadUrl>

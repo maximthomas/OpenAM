@@ -60,7 +60,7 @@ require.config({
         "jsonEditor"       : "libs/jsoneditor-0.7.23-custom",
         "lodash"           : "libs/lodash-3.10.1-min",
         "microplugin"      : "libs/microplugin-0.0.3",
-        "moment"           : "libs/moment-2.28.0-min",
+        "moment"           : "libs/moment-2.30.1-min",
         "popoverclickaway" : "libs/popover-clickaway",
         "qrcode"           : "libs/qrcode-1.4.4-min",
         "react-bootstrap"  : "libs/react-bootstrap-0.30.1-min",

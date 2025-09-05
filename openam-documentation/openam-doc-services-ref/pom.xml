@@ -54,7 +54,7 @@
                 <configuration>
                     <mainClass>org.openidentityplatform.openam.docs.services.Generator</mainClass>
                     <arguments>
-                        <argument>${project.basedir}/../../openam-server-only/target/OpenAM-ServerOnly-${project.version}</argument>
+                        <argument>${project.basedir}${file.separator}..${file.separator}..${file.separator}openam-server-only${file.separator}target${file.separator}OpenAM-ServerOnly-${project.version}</argument>
                         <argument>${build.outputDirectory}</argument>
                     </arguments>
                 </configuration>

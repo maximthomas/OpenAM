@@ -33,7 +33,36 @@
     <!-- Build -->
     <build>
         <plugins>
-<!--
+            <plugin>
+                <groupId>org.jvnet.jaxb</groupId>
+                <artifactId>jaxb-maven-plugin</artifactId>
+                <version>3.0.2</version>
+                <executions>
+                    <execution>
+                        <id>xjc-saml2</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <schemaDirectory>src/main/xsd</schemaDirectory>
+                    <schemaIncludes>
+                        <include>entity-config-schema.xsd</include>
+                        <include>saml-schema-assertion-2.0.xsd</include>
+                        <include>saml-schema-metadata-2.0.xsd</include>
+                        <include>schema.xsd</include>
+                        <include>sstc-saml-metadata-ext-query.xsd</include>
+                        <include>sstc-saml-metadata-x509-query.xsd</include>
+                        <include>sstc-metadata-attr.xsd</include>
+                        <include>sstc-saml-attribute-ext.xsd</include>
+                        <include>sstc-saml-idp-discovery.xsd</include>
+                    </schemaIncludes>
+                    <bindingDirectory>src/main/xjb</bindingDirectory>
+                    <extension>true</extension>
+                </configuration>
+            </plugin>
+            <!--
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>jaxb2-maven-plugin</artifactId>
@@ -60,7 +89,7 @@
                     </schemaFiles>
                </configuration>
            </plugin>
--->
+           -->
         </plugins>
     </build>
 

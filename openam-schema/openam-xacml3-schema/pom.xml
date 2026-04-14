@@ -40,13 +40,14 @@
                 <plugins>
                     <!-- Generate the Latest XACML Java POJOs for WD-17 -->
                     <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>jaxb2-maven-plugin</artifactId>
+                        <groupId>org.jvnet.jaxb</groupId>
+                        <artifactId>jaxb-maven-plugin</artifactId>
+                        <version>3.0.2</version>
                         <executions>
                             <execution>
                                 <id>xjc-xacml</id>
                                 <goals>
-                                    <goal>xjc</goal>
+                                    <goal>generate</goal>
                                 </goals>
                                 <configuration>
                                     <packageName>com.sun.identity.entitlement.xacml3.core</packageName>
@@ -60,14 +61,36 @@
                         <configuration>
                             <extension>true</extension>
                         </configuration>
-                        <dependencies>
-                            <dependency>
-                                <groupId>com.sun.xml.bind</groupId>
-                                <artifactId>jaxb-xjc</artifactId>
-                                <version>2.1.10</version>
-                            </dependency>
-                        </dependencies>
                     </plugin>
+<!--                    <plugin>-->
+<!--                        <groupId>org.codehaus.mojo</groupId>-->
+<!--                        <artifactId>jaxb2-maven-plugin</artifactId>-->
+<!--                        <executions>-->
+<!--                            <execution>-->
+<!--                                <id>xjc-xacml</id>-->
+<!--                                <goals>-->
+<!--                                    <goal>xjc</goal>-->
+<!--                                </goals>-->
+<!--                                <configuration>-->
+<!--                                    <packageName>com.sun.identity.entitlement.xacml3.core</packageName>-->
+<!--                                    <failOnNoSchemas>true</failOnNoSchemas>-->
+<!--                                    <bindingDirectory>${project.basedir}/src/main/resources/xjb</bindingDirectory>-->
+<!--                                    <schemaDirectory>${project.basedir}/src/main/resources/xsd</schemaDirectory>-->
+<!--                                    <verbose>true</verbose>-->
+<!--                                </configuration>-->
+<!--                            </execution>-->
+<!--                        </executions>-->
+<!--                        <configuration>-->
+<!--                            <extension>true</extension>-->
+<!--                        </configuration>-->
+<!--                        <dependencies>-->
+<!--                            <dependency>-->
+<!--                                <groupId>com.sun.xml.bind</groupId>-->
+<!--                                <artifactId>jaxb-xjc</artifactId>-->
+<!--                                <version>2.1.10</version>-->
+<!--                            </dependency>-->
+<!--                        </dependencies>-->
+<!--                    </plugin>-->
                 </plugins>
             </build>
         </profile>

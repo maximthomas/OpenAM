@@ -33,7 +33,40 @@
     <!-- Build -->
     <build>
         <plugins>
-<!--
+            <plugin>
+                <groupId>org.jvnet.jaxb</groupId>
+                <artifactId>jaxb-maven-plugin</artifactId>
+                <version>3.0.2</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <schemaDirectory>src/main/xsd</schemaDirectory>
+                    <schemaIncludes>
+                        <include>lib-id-sis-pp.xsd</include>
+                        <include>lib-arch-metadata.xsd</include>
+                        <include>idff-entity-config-schema.xsd</include>
+                        <include>lib-arch-disco-svc.xsd</include>
+                        <include>lib-arch-interact-svc.xsd</include>
+                        <include>lib-arch-paos.xsd</include>
+                        <include>lib-arch-soap-binding.xsd</include>
+                        <include>lib-arch-security-fmwk.xsd</include>
+                        <include>secext.xsd</include>
+                        <include>discoentry.xsd</include>
+                        <include>ppextension.xsd</include>
+                        <include>lib-idwsf-authn-svc.xsd</include>
+                        <include>liberty-idwsf-disco-svc-v1.1.xsd</include>
+                        <include>liberty-idwsf-soap-binding-v1.1.xsd</include>
+                    </schemaIncludes>
+                    <bindingDirectory>src/main/xjb</bindingDirectory>
+                    <extension>true</extension>
+                </configuration>
+            </plugin>
+            <!--
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>jaxb2-maven-plugin</artifactId>
@@ -66,7 +99,7 @@
                     </schemaFiles>
                </configuration>
            </plugin>
--->
+           -->
         </plugins>
     </build>
 

@@ -45,6 +45,8 @@ import java.util.Calendar;
 import java.util.Iterator;
 import java.lang.NumberFormatException;
 import java.math.BigInteger;
+
+import org.forgerock.openam.utils.Time;
 import org.w3c.dom.Document;
 import com.sun.identity.liberty.ws.idpp.common.*;
 import com.sun.identity.liberty.ws.idpp.jaxb.*;
@@ -223,8 +225,8 @@ public abstract class IDPPBaseContainer implements IDPPContainer {
             DSTDate dstDate = IDPPUtils.getIDPPFactory().createDSTDate();
             Date date = 
                  DateFormat.getDateInstance(DateFormat.MEDIUM).parse(value);
-            XMLGregorianCalendar cal = getXMLGregorianCalendarInstance(date);
-            dstDate.setValue(cal);
+            XMLGregorianCalendar xmlCal = getXMLGregorianCalendarInstance(date);
+            dstDate.setValue(xmlCal);
             return dstDate;
         } catch(Exception e) {
             IDPPUtils.debug.error("IDPPBaseContainer:getDSTDate: Exception", e);

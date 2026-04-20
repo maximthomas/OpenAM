@@ -30,6 +30,7 @@ package com.sun.identity.liberty.ws.idpp.container;
 
 import com.sun.identity.shared.datastruct.CollectionHelper;
 import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBElement;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -181,7 +182,7 @@ public class IDPPCommonName extends IDPPBaseContainer {
         switch(attrType) {
                case IDPPConstants.SN_ELEMENT_INT:
                    if((dataElement == null) || 
-                      (dataElement instanceof SNElement)) {
+                      (dataElement instanceof JAXBElement && "SN".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
                       map = getAttributeMap(expContext, dataElement, map);
                       break;
                    } else {
@@ -190,7 +191,7 @@ public class IDPPCommonName extends IDPPBaseContainer {
                    }
                case IDPPConstants.FN_ELEMENT_INT:
                    if((dataElement == null) || 
-                      (dataElement instanceof FNElement)) {
+                      (dataElement instanceof JAXBElement && "FN".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
                       map = getAttributeMap(expContext, dataElement, map);
                    } else {
                       throw new IDPPException(
@@ -199,7 +200,7 @@ public class IDPPCommonName extends IDPPBaseContainer {
                    break;
                case IDPPConstants.MN_ELEMENT_INT:
                    if((dataElement == null) || 
-                      (dataElement instanceof MNElement)) {
+                      (dataElement instanceof JAXBElement && "MN".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
                       map = getAttributeMap(expContext, dataElement, map);
                    } else {
                       throw new IDPPException(
@@ -208,7 +209,7 @@ public class IDPPCommonName extends IDPPBaseContainer {
                    break;
                case IDPPConstants.PT_ELEMENT_INT:
                    if((dataElement == null) || 
-                      (dataElement instanceof PersonalTitleElement)) {
+                      (dataElement instanceof JAXBElement && "PersonalTitle".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
                       map = getAttributeMap(expContext, dataElement, map);
                    } else {
                       throw new IDPPException(
@@ -217,7 +218,7 @@ public class IDPPCommonName extends IDPPBaseContainer {
                    break;
                case IDPPConstants.CN_ELEMENT_INT:
                    if((dataElement == null) ||
-                      (dataElement instanceof CNElement)) {
+                      (dataElement instanceof JAXBElement && "CN".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
                       map = getAttributeMap(expContext, dataElement, map);
                    } else {
                       throw new IDPPException(

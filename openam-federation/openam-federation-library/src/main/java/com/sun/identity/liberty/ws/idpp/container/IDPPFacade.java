@@ -30,6 +30,7 @@ package com.sun.identity.liberty.ws.idpp.container;
 
 import com.sun.identity.shared.datastruct.CollectionHelper;
 import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBElement;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -61,60 +62,53 @@ public class IDPPFacade extends IDPPBaseContainer {
       * Gets the Facade JAXB Element. 
       * @param userMap user map
       * @return FacadeElement JAXB Object.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
 
          IDPPUtils.debug.message("IDPPFacade:getContainerObject:Init");
-         try {
-             PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
-             FacadeElement fe = 
-                  IDPPUtils.getIDPPFactory().createFacadeElement();
+         PPType ppType = IDPPUtils.getIDPPFactory().createPPType();
+         FacadeType fe =
+              IDPPUtils.getIDPPFactory().createFacadeType();
 
-             String mugShot = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.MUGSHOT_ELEMENT).toLowerCase());
+         String mugShot = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.MUGSHOT_ELEMENT).toLowerCase());
 
-             if(mugShot != null) {
-                fe.setMugShot(getDSTURI(mugShot));
-             }
-
-             String webSite = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.WEBSITE_ELEMENT).toLowerCase());
-             if(webSite != null) {
-                fe.setWebSite(getDSTURI(webSite));
-             }
-
-             String namePronounced = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.NAME_PRONOUNCED_ELEMENT).toLowerCase());
-             if(namePronounced != null) {
-                fe.setNamePronounced(getDSTURI(namePronounced));
-             }
-
-             String greetSound = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.GREET_SOUND_ELEMENT).toLowerCase());
-             if(greetSound != null) {
-                fe.setGreetSound(getDSTURI(greetSound));
-             }
-
-             String greetMeSound = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.GREET_ME_SOUND_ELEMENT).toLowerCase());
-             if(greetMeSound != null) {
-                fe.setGreetMeSound(getDSTURI(greetMeSound));
-             }
-             ppType.setFacade(fe);
-
-             return ppType;
-         } catch (JAXBException je) {
-             IDPPUtils.debug.error(
-              "IDPPFacade:getContainerObject: JAXB failure", je); 
-              throw new IDPPException(
-              IDPPUtils.bundle.getString("jaxbFailure"));
+         if(mugShot != null) {
+            fe.setMugShot(getDSTURI(mugShot));
          }
+
+         String webSite = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.WEBSITE_ELEMENT).toLowerCase());
+         if(webSite != null) {
+            fe.setWebSite(getDSTURI(webSite));
+         }
+
+         String namePronounced = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.NAME_PRONOUNCED_ELEMENT).toLowerCase());
+         if(namePronounced != null) {
+            fe.setNamePronounced(getDSTURI(namePronounced));
+         }
+
+         String greetSound = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.GREET_SOUND_ELEMENT).toLowerCase());
+         if(greetSound != null) {
+            fe.setGreetSound(getDSTURI(greetSound));
+         }
+
+         String greetMeSound = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.GREET_ME_SOUND_ELEMENT).toLowerCase());
+         if(greetMeSound != null) {
+            fe.setGreetMeSound(getDSTURI(greetMeSound));
+         }
+         ppType.setFacade(fe);
+
+         return ppType;
      }
 
      /**
@@ -162,7 +156,7 @@ public class IDPPFacade extends IDPPBaseContainer {
       * @param select Select Expression.
       * @param data list of new data objects.
       * @return Map Key/value data map.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Map getDataMapForSelect(String select, List data) 
      throws IDPPException {
@@ -185,7 +179,7 @@ public class IDPPFacade extends IDPPBaseContainer {
 
         if(expContext.equals(IDPPConstants.MUGSHOT_ELEMENT)) {
            if((dataElement == null) || 
-                      (dataElement instanceof MugShotElement)) {
+                      (dataElement instanceof JAXBElement && "MugShot".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
               map = getAttributeMap(expContext, dataElement, map);
            } else  {
               throw new IDPPException(
@@ -193,7 +187,7 @@ public class IDPPFacade extends IDPPBaseContainer {
            }
         } else if(expContext.equals(IDPPConstants.WEBSITE_ELEMENT)) {
            if((dataElement == null) || 
-                      (dataElement instanceof WebSiteElement)) {
+                      (dataElement instanceof JAXBElement && "WebSite".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
               map = getAttributeMap(expContext, dataElement, map);
            } else  {
               throw new IDPPException(
@@ -201,7 +195,7 @@ public class IDPPFacade extends IDPPBaseContainer {
            }
         } else if(expContext.equals(IDPPConstants.NAME_PRONOUNCED_ELEMENT)) {
            if((dataElement == null) || 
-                      (dataElement instanceof NamePronouncedElement)) {
+                      (dataElement instanceof JAXBElement && "NamePronounced".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
               map = getAttributeMap(expContext, dataElement, map);
            } else  {
               throw new IDPPException(
@@ -209,7 +203,7 @@ public class IDPPFacade extends IDPPBaseContainer {
            }
         } else if(expContext.equals(IDPPConstants.GREET_SOUND_ELEMENT)) {
            if((dataElement == null) || 
-                      (dataElement instanceof GreetSoundElement)) {
+                      (dataElement instanceof JAXBElement && "GreetSound".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
               map = getAttributeMap(expContext, dataElement, map);
            } else  {
               throw new IDPPException(
@@ -217,7 +211,7 @@ public class IDPPFacade extends IDPPBaseContainer {
            }
         } else if(expContext.equals(IDPPConstants.GREET_ME_SOUND_ELEMENT)) {
            if((dataElement == null) || 
-                      (dataElement instanceof GreetMeSoundElement)) {
+                      (dataElement instanceof JAXBElement && "GreetMeSound".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
               map = getAttributeMap(expContext, dataElement, map);
            } else  {
               throw new IDPPException(
@@ -225,7 +219,7 @@ public class IDPPFacade extends IDPPBaseContainer {
            }
         } else if(expContext.equals(IDPPConstants.FACADE_ELEMENT)) {
            if((dataElement == null) || 
-                      (dataElement instanceof FacadeElement)) {
+                      (dataElement instanceof JAXBElement && "Facade".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
                map = getFacadeMap(dataElement, map);
            } else  {
               throw new IDPPException(
@@ -254,7 +248,7 @@ public class IDPPFacade extends IDPPBaseContainer {
          DSTURI greetSound = null;
          DSTURI greetMeSound = null;
          if(obj != null) {
-            FacadeElement fe = (FacadeElement)obj;
+            FacadeType fe = (FacadeType)obj;
             mugShot = fe.getMugShot();
             webSite = fe.getWebSite();
             namePronounced = fe.getNamePronounced();

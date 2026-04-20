@@ -68,7 +68,7 @@ import com.sun.identity.saml2.assertion.Issuer;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
@@ -301,7 +301,7 @@ public class IDPArtifactResolution {
             return SOAPCommunicator.getInstance().createSOAPFault(SAML2Constants.CLIENT_FAULT,
                     "invalidIssuerInRequest", null);
         }
-        SPSSODescriptorElement spSSODescriptor = null;
+        SPSSODescriptorType spSSODescriptor = null;
         try {
             spSSODescriptor = IDPSSOUtil.metaManager.
                       getSPSSODescriptor(realm, spEntityID);

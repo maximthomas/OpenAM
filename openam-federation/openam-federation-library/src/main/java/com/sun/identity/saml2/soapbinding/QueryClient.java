@@ -41,11 +41,10 @@ import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2SDKUtils;
 import com.sun.identity.saml2.common.SAML2Utils;
-import com.sun.identity.saml2.jaxb.entityconfig.XACMLAuthzDecisionQueryConfigElement;
-import com.sun.identity.saml2.jaxb.entityconfig.XACMLPDPConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.XACMLAuthzDecisionQueryDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.XACMLAuthzServiceElement;
-import com.sun.identity.saml2.jaxb.metadata.XACMLPDPDescriptorElement;
+import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
+import com.sun.identity.saml2.jaxb.metadata.EndpointType;
+import com.sun.identity.saml2.jaxb.metadata.XACMLAuthzDecisionQueryDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.XACMLPDPDescriptorType;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
@@ -64,12 +63,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.security.Key;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -157,8 +153,8 @@ public class QueryClient {
                 xacmlQuery.setVersion(SAML2Constants.VERSION_2_0);
                 xacmlQuery.setIssueInstant(newDate());
 
-                XACMLPDPConfigElement pdpConfig = getPDPConfig(realm,
-                                                               pdpEntityID);
+                BaseConfigType pdpConfig = getPDPConfig(realm,
+                        pdpEntityID);
                 if (pdpConfig != null) {
                     String wantQuerySigned = getAttributeValueFromPDPConfig(
                                              pdpConfig,
@@ -176,7 +172,7 @@ public class QueryClient {
                 }
                 // retrieve endpoint from meta data
                 String endPoint = null;
-                XACMLAuthzDecisionQueryConfigElement pepConfig =
+                BaseConfigType pepConfig =
                             getPEPConfig(realm,pepEntityID);
                 endPoint = getPDPEndPoint(pdpEntityID);
                 if (debug.messageEnabled()) {
@@ -418,24 +414,20 @@ public class QueryClient {
         String classMethod = "QueryClient:getPDPEndPoint";
         if (saml2MetaManager != null)  {
             try {
-                XACMLPDPDescriptorElement pdpDescriptor =
+                XACMLPDPDescriptorType pdpDescriptor =
                         saml2MetaManager.
                         getPolicyDecisionPointDescriptor(null,
                         pdpEntityID);
                 if (pdpDescriptor != null) {
-                    List xacmlPDP = pdpDescriptor.getXACMLAuthzService();
+                    List<EndpointType> xacmlPDP = pdpDescriptor.getXACMLAuthzService();
                     if (xacmlPDP != null) {
-                        Iterator i = xacmlPDP.iterator();
+                        Iterator<EndpointType> i = xacmlPDP.iterator();
                         while (i.hasNext()) {
-                            Object o = (Object) i.next();
-                            if (o instanceof XACMLAuthzServiceElement) {
-                                XACMLAuthzServiceElement xType =
-                                        (XACMLAuthzServiceElement) o;
-                                endPoint = xType.getLocation();
-                                if (debug.messageEnabled()) {
-                                    debug.message(classMethod +
-                                            "EndPoint :" + endPoint);
-                                }
+                            EndpointType o = i.next();
+                            endPoint = o.getLocation();
+                            if (debug.messageEnabled()) {
+                                debug.message(classMethod +
+                                        "EndPoint :" + endPoint);
                             }
                             break;
                         }
@@ -458,15 +450,15 @@ public class QueryClient {
      * Returns the extended Policy Enforcement Point Configuration.
      *
      * @param realm the realm of the entity.
-     * @param pepEntityId identifier of the PEP.
+     * @param pepEntityID identifier of the PEP.
      * @return the <code>XACMLAuthzDecisionQueryConfigElement</code> object.
      * @exception <code>SAML2Exception</code> if there is an error retreiving
      *            the extended configuration.
      */
-    private static XACMLAuthzDecisionQueryConfigElement getPEPConfig(
+    private static BaseConfigType getPEPConfig(
             String realm,
             String pepEntityID) throws SAML2Exception {
-        XACMLAuthzDecisionQueryConfigElement pepConfig = null;
+        BaseConfigType pepConfig = null;
         String classMethod = "QueryClient:getPEPConfig";
         if (saml2MetaManager != null)  {
             try {
@@ -491,16 +483,16 @@ public class QueryClient {
      * Returns the extended Policy Decision Point Configuration.
      *
      * @param realm the realm of the entity.
-     * @param pdpEntityId identifier of the PDP.
+     * @param pdpEntityID identifier of the PDP.
      * @return the <code>XACMLPDPConfigElement</code> object.
      * @exception <code>SAML2Exception</code> if there is an error retreiving
      *            the extended configuration.
      */
-    private static XACMLPDPConfigElement getPDPConfig(
+    private static BaseConfigType getPDPConfig(
             String realm,
             String pdpEntityID) throws SAML2Exception {
         
-        XACMLPDPConfigElement pdpConfig = null;
+        BaseConfigType pdpConfig = null;
         String classMethod = "QueryClient:getPDPConfig";
         if (saml2MetaManager != null)  {
             try {
@@ -564,8 +556,7 @@ public class QueryClient {
             verifySignedResponse(pepEntityID,pdpEntityID, samlResponse);
             try {
                 // check if assertion needs to be encrypted,signed.
-                XACMLAuthzDecisionQueryConfigElement pepConfig =
-                        saml2MetaManager.getPolicyEnforcementPointConfig(realm,
+                BaseConfigType pepConfig = saml2MetaManager.getPolicyEnforcementPointConfig(realm,
                         pepEntityID);
                 String assertionEncrypted = getAttributeValueFromPEPConfig(
                         pepConfig,SAML2Constants.WANT_ASSERTION_ENCRYPTED);
@@ -615,7 +606,7 @@ public class QueryClient {
                 // validate Issuer  in Assertion
                 Iterator assertionIter = assertions.iterator();
                 Set<X509Certificate> verificationCerts = null;
-                XACMLPDPDescriptorElement pdpDesc = null;
+                XACMLPDPDescriptorType pdpDesc = null;
                 if (wantAssertionSigned) {
                     pdpDesc =
                             saml2MetaManager.getPolicyDecisionPointDescriptor(
@@ -732,7 +723,7 @@ public class QueryClient {
      *             retreiving the value.
      */
     private static String getAttributeValueFromPEPConfig(
-            XACMLAuthzDecisionQueryConfigElement pepConfig,String attrName)
+            BaseConfigType pepConfig,String attrName)
             throws SAML2MetaException {
         String classMethod = "QueryClient:getAttributeValueFromPEPConfig:";
         if (debug.messageEnabled()) {
@@ -765,7 +756,7 @@ public class QueryClient {
      *             retreiving the value.
      */
     private static String getAttributeValueFromPDPConfig(
-            XACMLPDPConfigElement pdpConfig,String attrName)
+            BaseConfigType pdpConfig,String attrName)
             throws SAML2MetaException {
 
         String classMethod = "QueryClient:getAttributeValueFromPDPConfig:";
@@ -774,10 +765,10 @@ public class QueryClient {
         }
         String result = null;
 
-        Map attrs = SAML2MetaUtils.getAttributes(pdpConfig);
+        Map<String, List<String>> attrs = SAML2MetaUtils.getAttributes(pdpConfig);
 
         if (attrs != null) {
-            List value = (List) attrs.get(attrName);
+            List value = attrs.get(attrName);
             if (value != null && value.size() != 0) {
                 result = (String) value.get(0);
             }
@@ -802,11 +793,10 @@ public class QueryClient {
      */
     private static boolean wantAssertionSigned(String realm,String pepEntityID)
     throws SAML2MetaException {
-        XACMLAuthzDecisionQueryDescriptorElement
-                pepDescriptor  =
-                saml2MetaManager.
+
+        XACMLAuthzDecisionQueryDescriptorType pepDescriptor = saml2MetaManager.
                 getPolicyEnforcementPointDescriptor(realm,
-                pepEntityID);
+                        pepEntityID);
         
         return pepDescriptor.isWantAssertionsSigned();
     }
@@ -826,8 +816,7 @@ public class QueryClient {
         SAML2Exception {
 
         KeyProvider keyProvider = KeyUtil.getKeyProviderInstance();
-        XACMLAuthzDecisionQueryConfigElement pepConfig =
-                              getPEPConfig(realm,pepEntityID);
+        BaseConfigType pepConfig = getPEPConfig(realm, pepEntityID);
 
         String alias =
                 getAttributeValueFromPEPConfig(pepConfig,
@@ -864,8 +853,7 @@ public class QueryClient {
         String classMethod = "QueryClient:verifySignedResponse: ";
         
         String realm = "/";
-        XACMLAuthzDecisionQueryConfigElement pepConfig =
-                getPEPConfig(realm,pepEntityID);
+        BaseConfigType pepConfig = getPEPConfig(realm, pepEntityID);
         
         String wantResponseSigned =
                 getAttributeValueFromPEPConfig(pepConfig,
@@ -874,7 +862,7 @@ public class QueryClient {
         boolean valid;
         if (wantResponseSigned != null &&
                 wantResponseSigned.equalsIgnoreCase("true")) {
-            XACMLPDPDescriptorElement pdpDescriptor = saml2MetaManager.getPolicyDecisionPointDescriptor(null,
+            XACMLPDPDescriptorType pdpDescriptor = saml2MetaManager.getPolicyDecisionPointDescriptor(null,
                     pdpEntityID);
             Set<X509Certificate> signingCerts = KeyUtil.getPDPVerificationCerts(pdpDescriptor, pdpEntityID);
             if (!signingCerts.isEmpty()) {

@@ -30,6 +30,7 @@ package com.sun.identity.liberty.ws.idpp.container;
 
 import com.sun.identity.shared.datastruct.CollectionHelper;
 import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBElement;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Map;
@@ -111,7 +112,7 @@ public class IDPPEmergencyContact extends IDPPBaseContainer {
            dataElement = data.get(0);
         }
         if((dataElement == null) || 
-           (dataElement instanceof EmergencyContactElement)) {
+           (dataElement instanceof JAXBElement && "EmergencyContact".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
            Map map = new HashMap();
            map = getAttributeMap(
            IDPPConstants.EMERGENCY_CONTACT_ELEMENT, dataElement, map);

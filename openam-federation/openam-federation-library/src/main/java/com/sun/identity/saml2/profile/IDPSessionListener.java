@@ -47,9 +47,8 @@ import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2FailoverUtils;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.saml2.jaxb.entityconfig.SPSSOConfigElement;
 import com.sun.identity.saml2.jaxb.metadata.EndpointType;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
@@ -289,7 +288,7 @@ public class IDPSessionListener
     private void initiateIDPSingleLogout(String sessionIndex, String metaAlias, String realm, String binding,
             NameID nameID, String spEntityID, Map paramsMap)
             throws SAML2MetaException, SAML2Exception, SessionException {
-        SPSSODescriptorElement spsso = sm.getSPSSODescriptor(realm, spEntityID);
+        SPSSODescriptorType spsso = sm.getSPSSODescriptor(realm, spEntityID);
         if (spsso == null) {
             String[] data = {spEntityID};
             LogUtil.error(Level.INFO, LogUtil.SP_METADATA_ERROR, data, null);
@@ -307,7 +306,7 @@ public class IDPSessionListener
             return;
         }
 
-        SPSSOConfigElement spConfig = sm.getSPSSOConfig(realm, spEntityID);
+        BaseConfigType spConfig = sm.getSPSSOConfig(realm, spEntityID);
 
         LogoutUtil.doLogout(metaAlias, spEntityID, slosList, null, binding, null, sessionIndex, nameID, null, null,
                 paramsMap, spConfig);

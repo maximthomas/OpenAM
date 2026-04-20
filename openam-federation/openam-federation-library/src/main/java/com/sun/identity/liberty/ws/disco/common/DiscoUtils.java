@@ -50,6 +50,8 @@ import com.sun.identity.liberty.ws.disco.jaxb.*;
 import com.sun.identity.liberty.ws.disco.jaxb11.*;
 import com.sun.identity.liberty.ws.disco.plugins.NameIdentifierMapper;
 import com.sun.identity.liberty.ws.disco.plugins.jaxb.*;
+import jakarta.xml.bind.JAXBElement;
+import com.sun.identity.liberty.ws.disco.jaxb.DirectiveType;
 import com.sun.identity.liberty.ws.interfaces.Authorizer;
 import com.sun.identity.liberty.ws.meta.jaxb.SPDescriptorType;
 import com.sun.identity.liberty.ws.security.*;
@@ -180,25 +182,27 @@ public class DiscoUtils extends DiscoSDKUtils {
             Object directive = iter0.next();
             List descIDRefs =
                 ((DirectiveType) directive).getDescriptionIDRefs();
-            if (directive instanceof EncryptResourceIDElement) {
-                debug.message("DiscoService: has encrypt D");
-                current = doEncryption(current);
-            } else if
-                (directive instanceof AuthenticateRequesterElement)
-            {
-                setMap(descIDRefs, AUTHN, descIDDirectiveMap, all);
-            } else if
-                (directive instanceof AuthorizeRequesterElement)
-            {
-                setMap(descIDRefs, AUTHO, descIDDirectiveMap, all);
-            } else if
-                (directive instanceof AuthenticateSessionContextElement)
-            {
-                setMap(descIDRefs, SESSION, descIDDirectiveMap, all);
-            } else if
-                (directive instanceof GenerateBearerTokenElement)
-            {
-                setMap(descIDRefs, BEARER, descIDDirectiveMap, all);
+            if (directive instanceof JAXBElement) {
+                String elementName = ((JAXBElement<?>) directive).getName().getLocalPart();
+                
+                if ("EncryptResourceID".equals(elementName)) {
+                    debug.message("DiscoService: has encrypt D");
+                    current = doEncryption(current);
+                } else if ("AuthenticateRequester".equals(elementName)) {
+                    setMap(descIDRefs, AUTHN, descIDDirectiveMap, all);
+                } else if ("AuthorizeRequester".equals(elementName)) {
+                    setMap(descIDRefs, AUTHO, descIDDirectiveMap, all);
+                } else if ("AuthenticateSessionContext".equals(elementName)) {
+                    setMap(descIDRefs, SESSION, descIDDirectiveMap, all);
+                } else if ("GenerateBearerToken".equals(elementName)) {
+                    setMap(descIDRefs, BEARER, descIDDirectiveMap, all);
+                } else {
+                    if (debug.messageEnabled()) {
+                        debug.message("DiscoUtils.handleDirective: directive not "
+                            + "supported.");
+                    }
+                    continue;
+                }
             } else {
                 if (debug.messageEnabled()) {
                     debug.message("DiscoUtils.handleDirective: directive not "

@@ -34,15 +34,15 @@ import java.security.PublicKey;
 import java.security.cert.X509Certificate;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
 import javax.xml.bind.JAXBException;
 
 import com.sun.identity.saml.xmlsig.AMSignatureProvider;
+import com.sun.identity.saml2.jaxb.entityconfig.EntityConfigType;
+import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorType;
 import com.sun.identity.saml2.jaxb.metadata.KeyDescriptorType;
-import com.sun.identity.saml2.jaxb.metadata.SSODescriptorType;
 import org.forgerock.openam.utils.CollectionUtils;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -69,15 +69,8 @@ import com.sun.identity.saml.xmlsig.XMLSignatureManager;
 
 import com.sun.identity.saml2.jaxb.entityconfig.AttributeType;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.saml2.jaxb.entityconfig.EntityConfigElement; 
-import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
 import com.sun.identity.saml2.jaxb.entityconfig.ObjectFactory;
-import com.sun.identity.saml2.jaxb.entityconfig.SPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.KeyDescriptorElement;
 import com.sun.identity.saml2.jaxb.metadata.RoleDescriptorType;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.key.KeyUtil;
 
@@ -165,7 +158,7 @@ public final class SAML2MetaSecurityUtils {
      * @throws SAML2MetaException if unable to sign the entity descriptor. 
      * @throws JAXBException if the entity descriptor is invalid.
      */
-    public static Document sign(String realm, EntityDescriptorElement descriptor)
+    public static Document sign(String realm, EntityDescriptorType descriptor)
             throws JAXBException, SAML2MetaException {
         if (descriptor == null) {
             throw new SAML2MetaException("Unable to sign null descriptor");
@@ -173,7 +166,7 @@ public final class SAML2MetaSecurityUtils {
 
 
         SAML2MetaManager metaManager = new SAML2MetaManager();
-        EntityConfigElement cfgElem = metaManager.getEntityConfig(realm, descriptor.getEntityID());
+        EntityConfigType cfgElem = metaManager.getEntityConfig(realm, descriptor.getEntityID());
         boolean isHosted;
         if (cfgElem == null) {
             //if there is no EntityConfig, this is considered as a remote entity
@@ -467,13 +460,13 @@ public final class SAML2MetaSecurityUtils {
         String entityID, Set<String> certAliases, boolean isSigning, boolean isIDP,
         String encAlgo, int keySize) throws SAML2MetaException { 
         SAML2MetaManager metaManager = new SAML2MetaManager();
-        EntityConfigElement config = 
+        EntityConfigType config =
             metaManager.getEntityConfig(realm, entityID);
         if (!config.isHosted()) {
             String[] args = {entityID, realm};
             throw new SAML2MetaException("entityNotHosted", args);
         }
-        EntityDescriptorElement desp = metaManager.getEntityDescriptor(realm, entityID);
+        EntityDescriptorType desp = metaManager.getEntityDescriptor(realm, entityID);
         BaseConfigType baseConfig;
         RoleDescriptorType descriptor;
         if (isIDP) {
@@ -520,13 +513,13 @@ public final class SAML2MetaSecurityUtils {
     }
 
     private static void updateKeyDescriptor(RoleDescriptorType desp, Set<KeyDescriptorType> keyDescriptors) {
-        String use = keyDescriptors.iterator().next().getUse();
+        String use = keyDescriptors.iterator().next().getUse().value();
         List<KeyDescriptorType> keys = desp.getKeyDescriptor();
 
         Iterator<KeyDescriptorType> iterator = keys.iterator();
         while (iterator.hasNext()) {
             final KeyDescriptorType keyDescriptor = iterator.next();
-            if (keyDescriptor.getUse().equalsIgnoreCase(use)) {
+            if (keyDescriptor.getUse().value().equalsIgnoreCase(use)) {
                 iterator.remove();
             }
         }
@@ -536,15 +529,15 @@ public final class SAML2MetaSecurityUtils {
 
     private static void removeKeyDescriptor(RoleDescriptorType desp,
         boolean isSigningUse) {
-        List keys = desp.getKeyDescriptor();
-        for (Iterator iter = keys.iterator(); iter.hasNext();) {
-            KeyDescriptorElement key = (KeyDescriptorElement) iter.next();
+        List<KeyDescriptorType> keys = desp.getKeyDescriptor();
+        for (Iterator<KeyDescriptorType> iter = keys.iterator(); iter.hasNext();) {
+            KeyDescriptorType key = iter.next();
             String keyUse = "encryption";
             if (isSigningUse) {
                 keyUse = "signing";
             }
             if ((key.getUse() != null) && 
-                key.getUse().equalsIgnoreCase(keyUse)) {
+                key.getUse().value().equalsIgnoreCase(keyUse)) {
                 iter.remove();
             }
         }
@@ -553,27 +546,23 @@ public final class SAML2MetaSecurityUtils {
     private static void setExtendedAttributeValue(
         BaseConfigType config,
         String attrName, Set attrVal) throws SAML2MetaException {
-        try {
-            List attributes = config.getAttribute();
-            for(Iterator iter = attributes.iterator(); iter.hasNext();) {
-                AttributeType avp = (AttributeType)iter.next();
-                if (avp.getName().trim().equalsIgnoreCase(attrName)) {
-                     iter.remove(); 
-                }
+        List attributes = config.getAttribute();
+        for(Iterator iter = attributes.iterator(); iter.hasNext();) {
+            AttributeType avp = (AttributeType)iter.next();
+            if (avp.getName().trim().equalsIgnoreCase(attrName)) {
+                 iter.remove();
             }
-            if (attrVal != null) {
-                ObjectFactory factory = new ObjectFactory();
-                AttributeType atype = factory.createAttributeType();
-                atype.setName(attrName);
-                atype.getValue().addAll(attrVal);
-                config.getAttribute().add(atype);
-            }
-        } catch (JAXBException e) {
-            throw new SAML2MetaException(e);
+        }
+        if (attrVal != null) {
+            ObjectFactory factory = new ObjectFactory();
+            AttributeType atype = factory.createAttributeType();
+            atype.setName(attrName);
+            atype.getValue().addAll(attrVal);
+            config.getAttribute().add(atype);
         }
     }
 
-    private static KeyDescriptorElement getKeyDescriptor(
+    private static KeyDescriptorType getKeyDescriptor(
         String certAlias, boolean isSigning, String encAlgo, int keySize) 
         throws SAML2MetaException {
      
@@ -603,7 +592,7 @@ public final class SAML2MetaSecurityUtils {
                   .append("</EncryptionMethod>");
             }
             sb.append("</KeyDescriptor>");
-            return (KeyDescriptorElement) 
+            return (KeyDescriptorType)
                 SAML2MetaUtils.convertStringToJAXB(sb.toString());
         } catch (JAXBException e) {
             throw new SAML2MetaException(e);

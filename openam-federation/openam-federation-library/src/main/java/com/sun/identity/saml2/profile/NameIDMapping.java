@@ -33,16 +33,16 @@ import static org.forgerock.openam.utils.Time.*;
 
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import com.sun.identity.saml2.jaxb.metadata.EndpointType;
 import jakarta.xml.soap.SOAPException;
 import jakarta.xml.soap.SOAPMessage;
 
 import com.sun.identity.saml2.common.SOAPCommunicator;
-import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
 import org.w3c.dom.Element;
 
 import com.sun.identity.plugin.session.SessionException;
@@ -60,10 +60,8 @@ import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2SDKUtils;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.NameIDMappingServiceElement;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
 import com.sun.identity.saml2.jaxb.metadata.RoleDescriptorType;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
 import com.sun.identity.saml2.key.EncInfo;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
@@ -179,7 +177,7 @@ public class NameIDMapping {
             String nimURL = SAML2Utils.getParameter(paramsMap,
                 "nimURL");
             if (nimURL == null) {
-                NameIDMappingServiceElement nameIDMappingService =
+                EndpointType nameIDMappingService =
                     getNameIDMappingService(realm, idpEntityID, binding);
 
                 if (nameIDMappingService != null) {
@@ -436,28 +434,28 @@ public class NameIDMapping {
      *     provider's SSO configuration.
      * @throws SessionException invalid or expired single-sign-on session
      */
-    static public NameIDMappingServiceElement getNameIDMappingService(
+    static public EndpointType getNameIDMappingService(
         String realm, String entityId, String binding)
         throws SAML2MetaException {
 
 
-        IDPSSODescriptorElement idpSSODesc = metaManager.getIDPSSODescriptor(
-            realm, entityId);
+        IDPSSODescriptorType idpSSODesc = metaManager.getIDPSSODescriptor(
+                realm, entityId);
         if (idpSSODesc == null) {
             SAML2Utils.debug.error(SAML2Utils.bundle.getString("noIDPEntry"));
             return null;
         }
 
-        List list = idpSSODesc.getNameIDMappingService();
+        List<EndpointType> list = idpSSODesc.getNameIDMappingService();
 
-        NameIDMappingServiceElement nimService = null;
+        EndpointType nimService = null;
         if ((list != null) && !list.isEmpty()) {
             if (binding == null) {
-                return (NameIDMappingServiceElement)list.get(0);
+                return (EndpointType)list.get(0);
             }
             Iterator it = list.iterator();
             while (it.hasNext()) {
-                nimService = (NameIDMappingServiceElement)it.next();  
+                nimService = (EndpointType)it.next();
                 if (binding.equalsIgnoreCase(nimService.getBinding())) {
                     return nimService;
                 }
@@ -568,7 +566,7 @@ public class NameIDMapping {
     private static boolean verifyNIMResponse(NameIDMappingResponse nimResponse,
         String realm, String idpEntityID) throws SAML2Exception {
 
-        IDPSSODescriptorElement idpSSODesc = metaManager.getIDPSSODescriptor(
+        IDPSSODescriptorType idpSSODesc = metaManager.getIDPSSODescriptor(
             realm, idpEntityID);
         Set<X509Certificate> signingCerts = KeyUtil.getVerificationCerts(idpSSODesc, idpEntityID,
                 SAML2Constants.IDP_ROLE);
@@ -590,7 +588,7 @@ public class NameIDMapping {
         if (nameID == null) {
             EncryptedID encryptedID = nimRequest.getEncryptedID();
             try {
-                final IDPSSOConfigElement idpSsoConfig = metaManager.getIDPSSOConfig(realm, idpEntityID);
+                final BaseConfigType idpSsoConfig = metaManager.getIDPSSOConfig(realm, idpEntityID);
                 nameID = encryptedID.decrypt(KeyUtil.getDecryptionKeys(idpSsoConfig));
             } catch (SAML2Exception ex) {
                 if (SAML2Utils.debug.messageEnabled()) {

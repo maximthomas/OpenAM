@@ -47,9 +47,9 @@ import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2FailoverUtils;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.EndpointType;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
@@ -78,7 +78,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.xml.soap.SOAPMessage;
 
-import org.forgerock.openam.audit.AMAuditEventBuilderUtils;
 import org.forgerock.openam.federation.saml2.SAML2TokenRepositoryException;
 import org.forgerock.openam.saml2.SAML2Store;
 import org.forgerock.openam.saml2.audit.SAML2EventLogger;
@@ -278,7 +277,7 @@ public class SPSingleLogout {
             }
 
             // get SPSSODescriptor
-            SPSSODescriptorElement spsso =
+            SPSSODescriptorType spsso =
                 sm.getSPSSODescriptor(realm,spEntityID);
 
             if (spsso == null) {
@@ -436,7 +435,7 @@ public class SPSingleLogout {
 
 
         // get IDPSSODescriptor
-        IDPSSODescriptorElement idpsso =
+        IDPSSODescriptorType idpsso =
             sm.getIDPSSODescriptor(realm,nameIdInfoKey.getRemoteEntityID());
 
         if (idpsso == null) {
@@ -447,7 +446,7 @@ public class SPSingleLogout {
                 SAML2Utils.bundle.getString("metaDataError"));
         }
 
-        List slosList = idpsso.getSingleLogoutService();
+        List<EndpointType> slosList = idpsso.getSingleLogoutService();
         if (slosList == null) {
             String[] data = {nameIdInfoKey.getRemoteEntityID()};
             LogUtil.error(Level.INFO,LogUtil.SLO_NOT_FOUND,data,
@@ -456,7 +455,7 @@ public class SPSingleLogout {
                 SAML2Utils.bundle.getString("sloServiceListNotfound"));
         }
         // get IDP entity config in case of SOAP, for basic auth info
-        IDPSSOConfigElement idpConfig = null;
+        BaseConfigType idpConfig = null;
         if (binding.equals(SAML2Constants.SOAP)) {
             idpConfig = sm.getIDPSSOConfig(
                 realm,
@@ -639,7 +638,7 @@ public class SPSingleLogout {
                 throw new SAML2Exception(SAML2Utils.bundle.getString(
                     "invalidSignInResponse"));
             }
-            SPSSODescriptorElement spsso =
+            SPSSODescriptorType spsso =
                 sm.getSPSSODescriptor(realm, spEntityID);
             String loc = getSLOResponseLocationOrLocation(spsso, binding); 
             if (!SAML2Utils.verifyDestination(logoutRes.getDestination(),
@@ -884,7 +883,7 @@ public class SPSingleLogout {
                 throw new SAML2Exception(SAML2Utils.bundle.getString(
                     "invalidSignInRequest"));
             }
-            SPSSODescriptorElement spsso =
+            SPSSODescriptorType spsso =
                 sm.getSPSSODescriptor(realm, spEntityID);
             String loc = getSLOResponseLocationOrLocation(spsso, binding);
             if (!SAML2Utils.verifyDestination(logoutReq.getDestination(),
@@ -895,7 +894,7 @@ public class SPSingleLogout {
         }
         
         // get IDPSSODescriptor
-        IDPSSODescriptorElement idpsso =
+        IDPSSODescriptorType idpsso =
             sm.getIDPSSODescriptor(realm,idpEntityID);
         
         if (idpsso == null) {
@@ -1459,7 +1458,7 @@ public class SPSingleLogout {
     }
    
     private static String getSLOResponseLocationOrLocation(
-        SPSSODescriptorElement spsso, String binding) {
+        SPSSODescriptorType spsso, String binding) {
         String location = null;
         if (spsso != null) {
             List sloList = spsso.getSingleLogoutService();

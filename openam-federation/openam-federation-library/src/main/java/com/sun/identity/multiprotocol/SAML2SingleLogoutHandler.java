@@ -36,9 +36,9 @@ import com.sun.identity.plugin.session.SessionProvider;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
-import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.entityconfig.SPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.SSODescriptorType;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
 import com.sun.identity.saml2.meta.SAML2MetaUtils;
 import com.sun.identity.saml2.profile.IDPCache;
@@ -243,8 +243,7 @@ public class SAML2SingleLogoutHandler implements SingleLogoutHandler {
                                 "SAML2SingleLogoutHandler.findIDPMetaAlias : " +
                                 "found IDP " + idpId + " in COT " + cotName);
                     }
-                    IDPSSOConfigElement config =
-                            saml2Manager.getIDPSSOConfig(realm, idpId);
+                    BaseConfigType config = saml2Manager.getIDPSSOConfig(realm, idpId);
                     return config.getMetaAlias();
                 }
             }
@@ -339,13 +338,13 @@ public class SAML2SingleLogoutHandler implements SingleLogoutHandler {
                 debug.message("SAML2SLOHanlder.handleSOAPSLO: "
                     + "SP for " + sessIndex[0] + " is " + spEntityID);
             }
-            SPSSODescriptorElement sp = null;
+            SSODescriptorType sp = null;
             sp = SAML2Utils.getSAML2MetaManager().
                     getSPSSODescriptor(realm, spEntityID);
             List slosList = sp.getSingleLogoutService();
             
             // get IDP entity config for basic auth info
-            SPSSOConfigElement spConfig = SAML2Utils.
+            BaseConfigType spConfig = SAML2Utils.
                     getSAML2MetaManager().getSPSSOConfig(realm, spEntityID);
             HashMap paramsMap = new HashMap();
             paramsMap.put(SAML2Constants.ROLE, SAML2Constants.IDP_ROLE);

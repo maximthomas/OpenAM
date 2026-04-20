@@ -59,15 +59,11 @@ import com.sun.identity.saml2.assertion.SubjectConfirmation;
 import com.sun.identity.saml2.assertion.SubjectConfirmationData;
 import com.sun.identity.saml2.idpdiscovery.IDPDiscoveryConstants;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.entityconfig.SPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.entityconfig.XACMLAuthzDecisionQueryConfigElement;
-import com.sun.identity.saml2.jaxb.entityconfig.XACMLPDPConfigElement;
 import com.sun.identity.saml2.jaxb.metadata.AffiliationDescriptorType;
-import com.sun.identity.saml2.jaxb.metadata.AssertionConsumerServiceElement;
 import com.sun.identity.saml2.jaxb.metadata.EndpointType;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.IndexedEndpointType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
@@ -411,8 +407,8 @@ public class SAML2Utils extends SAML2SDKUtils {
         if (saml2MetaManager == null) {
             throw new SAML2Exception(bundle.getString("nullMetaManager"));
         }
-        SPSSOConfigElement spConfig = null;
-        SPSSODescriptorElement spDesc = null;
+        BaseConfigType spConfig = null;
+        SPSSODescriptorType spDesc = null;
         spConfig = saml2MetaManager.getSPSSOConfig(
                 orgName, hostEntityId);
         spDesc = saml2MetaManager.getSPSSODescriptor(orgName, hostEntityId);
@@ -424,7 +420,7 @@ public class SAML2Utils extends SAML2SDKUtils {
         //  4.1.4.3   Verify any signatures present on the assertion(s) or the response
         boolean responseIsSigned = false;
         if (response.isSigned()) {
-            IDPSSODescriptorElement idpSSODescriptor = null;
+            IDPSSODescriptorType idpSSODescriptor = null;
             try {
                 idpSSODescriptor = saml2MetaManager.getIDPSSODescriptor(orgName, idpEntityId);
             } catch (SAML2MetaException sme) {
@@ -514,7 +510,7 @@ public class SAML2Utils extends SAML2SDKUtils {
         // validate the assertions
         Map smap = null;
         Map bearerMap = null;
-        IDPSSODescriptorElement idp = null;
+        IDPSSODescriptorType idp = null;
         Set<X509Certificate> verificationCerts = null;
         boolean allAssertionsSigned = true;
         for (Assertion assertion : assertions) {
@@ -672,7 +668,7 @@ public class SAML2Utils extends SAML2SDKUtils {
 
     private static Map isBearerSubjectConfirmation(final List subjectConfirms,
                                                    final String inRespToResponse,
-                                                   final SPSSODescriptorElement spDesc,
+                                                   final SPSSODescriptorType spDesc,
                                                    final String assertionID,
                                                    int timeskew)
             throws SAML2Exception {
@@ -786,7 +782,7 @@ public class SAML2Utils extends SAML2SDKUtils {
      * @param subjectConfData The {@link SubjectConfirmationData} element to validate.
      * @throws SAML2Exception If there was a validation error.
      */
-    public static void validateRecipient(SPSSODescriptorElement spDesc, String assertionID,
+    public static void validateRecipient(SPSSODescriptorType spDesc, String assertionID,
             SubjectConfirmationData subjectConfData) throws SAML2Exception {
         String recipient = subjectConfData.getRecipient();
         if (StringUtils.isEmpty(recipient)) {
@@ -798,9 +794,8 @@ public class SAML2Utils extends SAML2SDKUtils {
             throw new SAML2Exception(bundle.getString("missingRecipient"));
         }
         boolean foundMatch = false;
-        for (Object o : spDesc.getAssertionConsumerService()) {
-            AssertionConsumerServiceElement acs = (AssertionConsumerServiceElement) o;
-            if (recipient.equals(acs.getLocation())) {
+        for (IndexedEndpointType o : spDesc.getAssertionConsumerService()) {
+            if (recipient.equals(o.getLocation())) {
                 foundMatch = true;
                 break;
             }
@@ -912,7 +907,7 @@ public class SAML2Utils extends SAML2SDKUtils {
                                final String orgName,
                                final String hostEntityId,
                                final String idpEntityId,
-                               final SPSSOConfigElement spConfig,
+                               final BaseConfigType spConfig,
                                final Date notOnOrAfterTime)
             throws SAML2Exception {
         // use the first AuthnStmt
@@ -994,7 +989,7 @@ public class SAML2Utils extends SAML2SDKUtils {
      * if not configured, or an error occured in the process.
      */
     public static String getAttributeValueFromSPSSOConfig(
-            SPSSOConfigElement config,
+            BaseConfigType config,
             String attrName) {
         String result = null;
         if (config == null) {
@@ -2250,12 +2245,12 @@ public class SAML2Utils extends SAML2SDKUtils {
      */
     public static boolean isDualRole(String hostEntityId, String realm) {
         try {
-            SPSSOConfigElement spConfig =
+            BaseConfigType spConfig =
                     saml2MetaManager.getSPSSOConfig(realm, hostEntityId);
             if (spConfig == null) {
                 return false;
             }
-            IDPSSOConfigElement idpConfig =
+            BaseConfigType idpConfig =
                     saml2MetaManager.getIDPSSOConfig(realm, hostEntityId);
             return idpConfig != null;
         } catch (Exception e) {
@@ -2400,11 +2395,11 @@ public class SAML2Utils extends SAML2SDKUtils {
 
         Set<X509Certificate> signingCerts;
         if (hostEntityRole.equalsIgnoreCase(SAML2Constants.IDP_ROLE)) {
-            SPSSODescriptorElement spSSODesc =
+            SPSSODescriptorType spSSODesc =
                     saml2MetaManager.getSPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(spSSODesc, remoteEntity, SAML2Constants.SP_ROLE);
         } else {
-            IDPSSODescriptorElement idpSSODesc =
+            IDPSSODescriptorType idpSSODesc =
                     saml2MetaManager.getIDPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(idpSSODesc, remoteEntity, SAML2Constants.IDP_ROLE);
         }
@@ -2634,8 +2629,7 @@ public class SAML2Utils extends SAML2SDKUtils {
                 debug.message(classMethod + "spEntityID is :" + spEntityID);
             }
 
-            SPSSOConfigElement spEntityCfg =
-                    saml2MetaManager.getSPSSOConfig(realm, spEntityID);
+            BaseConfigType spEntityCfg = saml2MetaManager.getSPSSOConfig(realm, spEntityID);
             Map spConfigAttrsMap = null;
             if (spEntityCfg != null) {
                 spConfigAttrsMap = SAML2MetaUtils.getAttributes(spEntityCfg);
@@ -3205,8 +3199,8 @@ public class SAML2Utils extends SAML2SDKUtils {
             return null;
         }
         try {
-            IDPSSOConfigElement idpConfig = null;
-            SPSSOConfigElement spConfig = null;
+            BaseConfigType idpConfig = null;
+            BaseConfigType spConfig = null;
             Map attrs = null;
 
             if (role.equalsIgnoreCase(SAML2Constants.SP_ROLE)) {
@@ -3407,8 +3401,8 @@ public class SAML2Utils extends SAML2SDKUtils {
         }
         String result = null;
         try {
-            XACMLAuthzDecisionQueryConfigElement pepConfig = null;
-            XACMLPDPConfigElement pdpConfig = null;
+            BaseConfigType pepConfig = null;
+            BaseConfigType pdpConfig = null;
             Map attrs = null;
             if (entityRole.equalsIgnoreCase(SAML2Constants.PEP_ROLE)) {
                 pepConfig = saml2MetaManager.getPolicyEnforcementPointConfig(
@@ -3704,7 +3698,7 @@ public class SAML2Utils extends SAML2SDKUtils {
      * @throws SAML2Exception if name ID format is not supported.
      */
     public static String verifyNameIDFormat(String nameIDFormat,
-                                            SPSSODescriptorElement spsso, IDPSSODescriptorElement idpsso)
+                                            SPSSODescriptorType spsso, IDPSSODescriptorType idpsso)
             throws SAML2Exception {
 
         List spNameIDFormatList = spsso.getNameIDFormat();
@@ -4083,7 +4077,7 @@ public class SAML2Utils extends SAML2SDKUtils {
             return false;
         }
         try {
-            SPSSODescriptorElement spDescriptor =
+            SPSSODescriptorType spDescriptor =
                     saml2MetaManager.getSPSSODescriptor(realm, spEntityID);
             List services = null;
             if (SAML2Constants.ACS_SERVICE.equals(profile)) {
@@ -4126,7 +4120,7 @@ public class SAML2Utils extends SAML2SDKUtils {
             return false;
         }
         try {
-            IDPSSODescriptorElement idpDescriptor =
+            IDPSSODescriptorType idpDescriptor =
                     saml2MetaManager.getIDPSSODescriptor(realm, idpEntityID);
             List services = null;
             if (SAML2Constants.SSO_SERVICE.equals(profile)) {

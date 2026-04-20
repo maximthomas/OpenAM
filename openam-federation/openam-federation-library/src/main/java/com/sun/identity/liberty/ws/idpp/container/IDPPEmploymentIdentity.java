@@ -30,6 +30,7 @@ package com.sun.identity.liberty.ws.idpp.container;
 
 import com.sun.identity.shared.datastruct.CollectionHelper;
 import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBElement;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -152,7 +153,7 @@ public class IDPPEmploymentIdentity extends IDPPBaseContainer {
         switch(attrType) {
                case IDPPConstants.JOB_TITLE_ELEMENT_INT:
                    if((dataElement == null) || 
-                      (dataElement instanceof JobTitleElement)) {
+                      (dataElement instanceof JAXBElement && "JobTitle".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
                       map = getAttributeMap(expContext, dataElement, map);
                       break;
                    } else {
@@ -161,7 +162,7 @@ public class IDPPEmploymentIdentity extends IDPPBaseContainer {
                    }
                case IDPPConstants.O_ELEMENT_INT:
                    if((dataElement == null) || 
-                      (dataElement instanceof OElement)) {
+                      (dataElement instanceof JAXBElement && "O".equals(((JAXBElement<?>) dataElement).getName().getLocalPart()))) {
                       map = getAttributeMap(expContext, dataElement, map);
                    } else {
                       throw new IDPPException(

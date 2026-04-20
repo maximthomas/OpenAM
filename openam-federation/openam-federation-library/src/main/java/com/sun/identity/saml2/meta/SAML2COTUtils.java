@@ -29,29 +29,27 @@
 
 package com.sun.identity.saml2.meta;
 
-import javax.xml.bind.JAXBException;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.HashSet;
-import java.util.logging.Level;
+
+import com.sun.identity.saml2.jaxb.metadata.AttributeAuthorityDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.AuthnAuthorityDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.RoleDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.XACMLAuthzDecisionQueryDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.XACMLPDPDescriptorType;
+import com.sun.identity.saml2.jaxb.metadataextquery.AttributeQueryDescriptorType;
 import com.sun.identity.shared.debug.Debug;
-import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.common.SAML2Constants;
-import com.sun.identity.saml2.jaxb.entityconfig.AffiliationConfigElement;
 import com.sun.identity.saml2.jaxb.entityconfig.AttributeType;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.saml2.jaxb.entityconfig.ObjectFactory;
-import com.sun.identity.saml2.jaxb.entityconfig.EntityConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.AttributeAuthorityDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.AuthnAuthorityDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.XACMLPDPDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.XACMLAuthzDecisionQueryDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadataextquery.AttributeQueryDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorElement;
+import com.sun.identity.saml2.jaxb.entityconfig.EntityConfigType;
+import jakarta.xml.bind.JAXBElement;
+import jakarta.xml.bind.JAXBException;
+
 import java.util.ArrayList;
 
 /**
@@ -101,7 +99,7 @@ public class SAML2COTUtils {
         } 
         ObjectFactory objFactory = new ObjectFactory();
         // Check whether the entity id existed in the DS
-        EntityDescriptorElement edes = metaManager.getEntityDescriptor(
+        EntityDescriptorType edes = metaManager.getEntityDescriptor(
                 realm, entityId);
         if (edes == null) {
             debug.error(classMethod +"No such entity: " + entityId);
@@ -117,7 +115,7 @@ public class SAML2COTUtils {
                 + realm + " an affiliation? " + isAffiliation);
         }
 
-        EntityConfigElement eConfig = metaManager.getEntityConfig(
+        EntityConfigType eConfig = metaManager.getEntityConfig(
             realm, entityId);
         if (eConfig == null) {
             BaseConfigType bctype = null;
@@ -125,55 +123,53 @@ public class SAML2COTUtils {
             atype.setName(SAML2Constants.COT_LIST);
             atype.getValue().add(name);
             // add to eConfig
-            EntityConfigElement ele =objFactory.createEntityConfigElement();
+            EntityConfigType ele =objFactory.createEntityConfigType();
             ele.setEntityID(entityId);
             ele.setHosted(false);
             if (isAffiliation) {
                 // handle affiliation case
-                bctype = objFactory.createAffiliationConfigElement();
+                bctype = new BaseConfigType() {};
                 bctype.getAttribute().add(atype);
                 ele.setAffiliationConfig(bctype);
             } else {
-                List ll =
+                List<JAXBElement<BaseConfigType>> ll =
                     ele.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
                 // Decide which role EntityDescriptorElement includes
-                List list =
+                List<RoleDescriptorType> list =
                     edes.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
 
-                for(Iterator iter = list.iterator(); iter.hasNext();) {
+                for(Iterator<RoleDescriptorType> iter = list.iterator(); iter.hasNext();) {
                     Object obj = iter.next();
-                    if (obj instanceof SPSSODescriptorElement) {
-                        bctype = objFactory.createSPSSOConfigElement();
+                    if (obj instanceof SPSSODescriptorType) {
+                        bctype = new BaseConfigType() {};
                         bctype.getAttribute().add(atype);
-                        ll.add(bctype);
-                    } else if (obj instanceof IDPSSODescriptorElement) {
-                        bctype = objFactory.createIDPSSOConfigElement();
+                        ll.add(objFactory.createSPSSOConfig(bctype));
+                    } else if (obj instanceof IDPSSODescriptorType) {
+                        bctype = new BaseConfigType() {};
                         bctype.getAttribute().add(atype);
-                        ll.add(bctype);
-                    } else if (obj instanceof XACMLPDPDescriptorElement) {
-                        bctype = objFactory.createXACMLPDPConfigElement();
+                        ll.add(objFactory.createIDPSSOConfig(bctype));
+                    } else if (obj instanceof XACMLPDPDescriptorType) {
+                        bctype = new BaseConfigType() {};
                         bctype.getAttribute().add(atype);
-                        ll.add(bctype);
-                    } else if (obj instanceof 
-                        XACMLAuthzDecisionQueryDescriptorElement) 
+                        ll.add(objFactory.createXACMLPDPConfig(bctype));
+                    } else if (obj instanceof
+                            XACMLAuthzDecisionQueryDescriptorType)
                     {
-                        bctype =
-                        objFactory.createXACMLAuthzDecisionQueryConfigElement();
+                        bctype =  new BaseConfigType() {};
                         bctype.getAttribute().add(atype);
-                        ll.add(bctype);
-                    } else if (obj instanceof AttributeAuthorityDescriptorElement) {
-                        bctype = 
-                            objFactory.createAttributeAuthorityConfigElement();
+                        ll.add(objFactory.createXACMLAuthzDecisionQueryConfig(bctype));
+                    } else if (obj instanceof AttributeAuthorityDescriptorType) {
+                        bctype = new BaseConfigType() {};
                         bctype.getAttribute().add(atype);
-                        ll.add(bctype);
-                    } else if (obj instanceof  AttributeQueryDescriptorElement){
-                        bctype = objFactory.createAttributeQueryConfigElement();
+                        ll.add(objFactory.createAttributeAuthorityConfig(bctype));
+                    } else if (obj instanceof AttributeQueryDescriptorType){
+                        bctype = new BaseConfigType() {};
                         bctype.getAttribute().add(atype);
-                        ll.add(bctype);
-                    } else if (obj instanceof AuthnAuthorityDescriptorElement) {
-                        bctype = objFactory.createAuthnAuthorityConfigElement();
+                        ll.add(objFactory.createAttributeQueryConfig(bctype));
+                    } else if (obj instanceof AuthnAuthorityDescriptorType) {
+                        bctype = new BaseConfigType() {};
                         bctype.getAttribute().add(atype);
-                        ll.add(bctype);
+                        ll.add(objFactory.createAuthnAuthorityConfig(bctype));
                     }
                 }
             }
@@ -182,8 +178,7 @@ public class SAML2COTUtils {
             boolean needToSave = true;
             List elist = null; 
             if (isAffiliation) {
-                AffiliationConfigElement affiliationCfgElm =
-                    metaManager.getAffiliationConfig(realm, entityId);
+                BaseConfigType affiliationCfgElm = metaManager.getAffiliationConfig(realm, entityId);
                 elist = new ArrayList();
                 elist.add(affiliationCfgElm);
             } else {
@@ -253,14 +248,14 @@ public class SAML2COTUtils {
             metaManager = new SAML2MetaManager(callerSession);
         }
         // Check whether the entity id existed in the DS
-        EntityDescriptorElement edes = metaManager.getEntityDescriptor(
+        EntityDescriptorType edes = metaManager.getEntityDescriptor(
                 realm, entityId);
         if (edes == null) {
             debug.error(classMethod +"No such entity: " + entityId);
             String[] data = {realm, entityId};
             throw new SAML2MetaException("entityid_invalid", data);
         }
-        EntityConfigElement eConfig = metaManager.getEntityConfig(
+        EntityConfigType eConfig = metaManager.getEntityConfig(
                 realm, entityId);
 
         boolean isAffiliation = false;
@@ -275,8 +270,7 @@ public class SAML2COTUtils {
         if (eConfig != null) {
             List elist = null; 
             if (isAffiliation) {
-                AffiliationConfigElement affiliationCfgElm =
-                    metaManager.getAffiliationConfig(realm, entityId);
+                BaseConfigType affiliationCfgElm = metaManager.getAffiliationConfig(realm, entityId);
                 elist = new ArrayList();
                 elist.add(affiliationCfgElm);
             } else {

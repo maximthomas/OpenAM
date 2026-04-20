@@ -34,10 +34,8 @@ import static org.forgerock.openam.utils.Time.*;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.security.Key;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.util.Date;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.List;
@@ -45,6 +43,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.logging.Level;
+
+import com.sun.identity.saml2.jaxb.metadata.EndpointType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -77,9 +78,7 @@ import com.sun.identity.saml2.common.SAML2SDKUtils;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.saml2.jaxb.metadata.AffiliationDescriptorType;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.ManageNameIDServiceElement;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
 import com.sun.identity.saml2.key.EncInfo;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.logging.LogUtil;
@@ -225,11 +224,10 @@ public class DoManageNameID {
         
         try {
             String binding = 
-                SAML2Utils.getParameter(paramsMap, SAML2Constants.BINDING); 
-        
-            ManageNameIDServiceElement mniService =
-                getMNIServiceElement(realm, remoteEntityID, 
-                hostEntityRole, binding);
+                SAML2Utils.getParameter(paramsMap, SAML2Constants.BINDING);
+
+            EndpointType mniService = getMNIServiceElement(realm, remoteEntityID,
+                    hostEntityRole, binding);
             if (binding == null) {
                 binding = mniService.getBinding();
             }
@@ -364,9 +362,8 @@ public class DoManageNameID {
         try {
             if (binding == null) {
                 String realm = SAML2MetaUtils.getRealmByMetaAlias(metaAlias);
-                ManageNameIDServiceElement mniService =
-                    getMNIServiceElement(realm, remoteEntityID,
-                                       hostEntityRole, null);
+                EndpointType mniService = getMNIServiceElement(realm, remoteEntityID,
+                        hostEntityRole, null);
                 if (mniService != null) {
                     binding = mniService.getBinding();
                 }
@@ -477,10 +474,10 @@ public class DoManageNameID {
         boolean valid;
         Set<X509Certificate> signingCerts;
         if (hostEntityRole.equalsIgnoreCase(SAML2Constants.IDP_ROLE)) {
-            SPSSODescriptorElement spSSODesc = metaManager.getSPSSODescriptor(realm, remoteEntity);
+            SPSSODescriptorType spSSODesc = metaManager.getSPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(spSSODesc, remoteEntity, SAML2Constants.SP_ROLE);
         } else {
-            IDPSSODescriptorElement idpSSODesc = metaManager.getIDPSSODescriptor(realm, remoteEntity);
+            IDPSSODescriptorType idpSSODesc = metaManager.getIDPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(idpSSODesc, remoteEntity, SAML2Constants.IDP_ROLE);
         }
 
@@ -590,10 +587,10 @@ public class DoManageNameID {
         boolean valid;
         Set<X509Certificate> signingCerts;
         if (hostEntityRole.equalsIgnoreCase(SAML2Constants.IDP_ROLE)) {
-            SPSSODescriptorElement spSSODesc = metaManager.getSPSSODescriptor(realm, remoteEntity);
+            SPSSODescriptorType spSSODesc = metaManager.getSPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(spSSODesc, remoteEntity, SAML2Constants.SP_ROLE);
         } else {
-            IDPSSODescriptorElement idpSSODesc = metaManager.getIDPSSODescriptor(realm, remoteEntity);
+            IDPSSODescriptorType idpSSODesc = metaManager.getIDPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(idpSSODesc, remoteEntity, SAML2Constants.IDP_ROLE);
         }
         
@@ -742,9 +739,8 @@ public class DoManageNameID {
         }
         
         try {
-            ManageNameIDServiceElement mniService =
-                getMNIServiceElement(realm, remoteEntityID, 
-                hostRole, SAML2Constants.HTTP_REDIRECT);
+            EndpointType mniService = getMNIServiceElement(realm, remoteEntityID,
+                    hostRole, SAML2Constants.HTTP_REDIRECT);
             String mniURL = mniService.getResponseLocation();
             if (mniURL == null){
                 mniURL = mniService.getLocation();
@@ -1767,11 +1763,11 @@ public class DoManageNameID {
         return AccountUtils.removeAccountFederation(nameInfo, userID);
     }
     
-    private static ManageNameIDServiceElement getMNIServiceElement(
+    private static EndpointType getMNIServiceElement(
                     String realm, String entityID,  
                     String hostEntityRole, String binding)
         throws SAML2MetaException, SessionException, SAML2Exception {
-        ManageNameIDServiceElement mniService = null;
+        EndpointType mniService = null;
         String method = "getMNIServiceElement: ";
         
         if (debug.messageEnabled()) {
@@ -1850,12 +1846,12 @@ public class DoManageNameID {
         
         EncInfo encInfo = null;
         if (hostEntityRole.equalsIgnoreCase(SAML2Constants.IDP_ROLE)) {
-            SPSSODescriptorElement spSSODesc =
+            SPSSODescriptorType spSSODesc =
                 metaManager.getSPSSODescriptor(realm, remoteEntity);
             encInfo = KeyUtil.getEncInfo(spSSODesc, remoteEntity,
                 SAML2Constants.SP_ROLE);
         } else {
-            IDPSSODescriptorElement idpSSODesc = 
+            IDPSSODescriptorType idpSSODesc =
                  metaManager.getIDPSSODescriptor(realm, remoteEntity);
             encInfo = KeyUtil.getEncInfo(idpSSODesc, remoteEntity,
                  SAML2Constants.IDP_ROLE);
@@ -1960,29 +1956,28 @@ public class DoManageNameID {
      *                            provider's SSO configuration.
      * @throws SessionException invalid or expired single-sign-on session
      */
-    static public ManageNameIDServiceElement getIDPManageNameIDConfig(
+    static public EndpointType getIDPManageNameIDConfig(
                                                  String realm, 
                                                  String entityId,
                                                  String binding)
         throws SAML2MetaException, SessionException {
-        ManageNameIDServiceElement mni = null;
+        EndpointType mni = null;
 
-        IDPSSODescriptorElement idpSSODesc = 
-                    metaManager.getIDPSSODescriptor(realm, entityId);
+        IDPSSODescriptorType idpSSODesc = metaManager.getIDPSSODescriptor(realm, entityId);
         if (idpSSODesc == null) {
                 debug.error(SAML2Utils.bundle.getString("noIDPEntry"));
             return null;
         }
 
-        List list = idpSSODesc.getManageNameIDService();
+        List<EndpointType> list = idpSSODesc.getManageNameIDService();
 
         if ((list != null) && !list.isEmpty()) {
             if (binding == null) {
-                return (ManageNameIDServiceElement)list.get(0);
+                return list.get(0);
             }
-            Iterator it = list.iterator();
+            Iterator<EndpointType> it = list.iterator();
             while (it.hasNext()) {
-                mni = (ManageNameIDServiceElement)it.next();  
+                mni = it.next();
                 if (binding.equalsIgnoreCase(mni.getBinding())) {
                     break;
                 }
@@ -2003,27 +1998,26 @@ public class DoManageNameID {
      *                            provider's SSO configuration.
      * @throws SessionException invalid or expired single-sign-on session.
      */
-    static public ManageNameIDServiceElement getSPManageNameIDConfig(
+    static public EndpointType getSPManageNameIDConfig(
                                                 String realm, String entityId,
                                                 String binding)
         throws SAML2MetaException, SessionException {
-        ManageNameIDServiceElement mni = null;
+        EndpointType mni = null;
 
-        SPSSODescriptorElement spSSODesc = 
-                          metaManager.getSPSSODescriptor(realm, entityId);
+        SPSSODescriptorType spSSODesc = metaManager.getSPSSODescriptor(realm, entityId);
         if (spSSODesc == null) {
             return null;
         }
 
-        List list = spSSODesc.getManageNameIDService();
+        List<EndpointType> list = spSSODesc.getManageNameIDService();
 
         if ((list != null) && !list.isEmpty()) {
             if (binding == null) {
-                return (ManageNameIDServiceElement)list.get(0);
+                return list.get(0);
             }
-            Iterator it = list.iterator();
+            Iterator<EndpointType> it = list.iterator();
             while (it.hasNext()) {
-                mni = (ManageNameIDServiceElement)it.next();  
+                mni = it.next();
                 if (binding.equalsIgnoreCase(mni.getBinding())) {
                     break;
                 }
@@ -2288,8 +2282,8 @@ public class DoManageNameID {
                 throw new SAML2Exception(SAML2Utils.bundle.getString(
                 "invalidSignInRequest"));
             }
-            ManageNameIDServiceElement mniService = getMNIServiceElement(realm,
-                remoteEntityID, hostEntityRole, SAML2Constants.HTTP_POST);
+            EndpointType mniService = getMNIServiceElement(realm,
+                    remoteEntityID, hostEntityRole, SAML2Constants.HTTP_POST);
             String mniURL = mniService.getResponseLocation();
             if (mniURL == null){
                 mniURL = mniService.getLocation();

@@ -69,10 +69,9 @@ import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.saml2.jaxb.metadata.EndpointType;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
 import com.sun.identity.saml2.jaxb.metadata.KeyDescriptorType;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.SingleLogoutServiceElement;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import com.sun.identity.saml2.key.EncInfo;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.logging.LogUtil;
@@ -580,7 +579,7 @@ public class LogoutUtil {
 
     /**
      * Based on the preferred SAML binding this method tries to choose the most appropriate
-     * {@link SingleLogoutServiceElement} that can be used to send the logout request to. The algorithm itself is
+     * {@link EndpointType} that can be used to send the logout request to. The algorithm itself is
      * simple:
      * <ul>
      *  <li>When asynchronous binding was used with the initial logout request, it is preferred to use asynchronous
@@ -594,20 +593,20 @@ public class LogoutUtil {
      * @return The most appropriate SLO service location that can be used for sending the logout request. If there is
      * no appropriate logout endpoint, null is returned.
      */
-    public static SingleLogoutServiceElement getMostAppropriateSLOServiceLocation(
-            List<SingleLogoutServiceElement> sloList, String preferredBinding) {
+    public static EndpointType getMostAppropriateSLOServiceLocation(
+            List<EndpointType> sloList, String preferredBinding) {
         //shortcut for the case when SLO isn't supported at all
         if (sloList.isEmpty()) {
             return null;
         }
 
-        Map<String, SingleLogoutServiceElement> sloBindings =
-                new HashMap<String, SingleLogoutServiceElement>(sloList.size());
-        for (SingleLogoutServiceElement sloEndpoint : sloList) {
+        Map<String, EndpointType> sloBindings =
+                new HashMap<String, EndpointType>(sloList.size());
+        for (EndpointType sloEndpoint : sloList) {
             sloBindings.put(sloEndpoint.getBinding(), sloEndpoint);
         }
 
-        SingleLogoutServiceElement endpoint = sloBindings.get(preferredBinding);
+        EndpointType endpoint = sloBindings.get(preferredBinding);
         if (endpoint == null) {
             //if the requested binding isn't supported let's try to find the most appropriate SLO endpoint
             if (preferredBinding.equals(SAML2Constants.HTTP_POST)) {
@@ -645,11 +644,11 @@ public class LogoutUtil {
                 "Number of single logout services = " +
                 n);
         }
-        SingleLogoutServiceElement slos = null;
+        EndpointType slos = null;
         String location = null;
         String binding = null;
         for (int i=0; i<n; i++) {
-            slos = (SingleLogoutServiceElement)sloList.get(i);
+            slos = (EndpointType)sloList.get(i);
             if (slos != null) {
                 binding = slos.getBinding();
             }
@@ -692,11 +691,11 @@ public class LogoutUtil {
                 "Number of single logout services = " +
                 n);
         }
-        SingleLogoutServiceElement slos = null;
+        EndpointType slos = null;
         String resLocation = null;
         String binding = null;
         for (int i=0; i<n; i++) {
-            slos = (SingleLogoutServiceElement)sloList.get(i);
+            slos = (EndpointType)sloList.get(i);
             if (slos != null) {
                 binding = slos.getBinding();
             }
@@ -891,10 +890,10 @@ public class LogoutUtil {
         boolean valid = false;
         Set<X509Certificate> signingCerts;
         if (hostEntityRole.equalsIgnoreCase(SAML2Constants.IDP_ROLE)) {
-            SPSSODescriptorElement spSSODesc = metaManager.getSPSSODescriptor(realm, remoteEntity);
+            SPSSODescriptorType spSSODesc = metaManager.getSPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(spSSODesc, remoteEntity, SAML2Constants.SP_ROLE);
         } else {
-            IDPSSODescriptorElement idpSSODesc = metaManager.getIDPSSODescriptor(realm, remoteEntity);
+            IDPSSODescriptorType idpSSODesc = metaManager.getIDPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(idpSSODesc, remoteEntity, SAML2Constants.IDP_ROLE);
         }
 
@@ -1017,10 +1016,10 @@ public class LogoutUtil {
 
         Set<X509Certificate> signingCerts;
         if (hostEntityRole.equalsIgnoreCase(SAML2Constants.IDP_ROLE)) {
-            SPSSODescriptorElement spSSODesc = metaManager.getSPSSODescriptor(realm, remoteEntity);
+            SPSSODescriptorType spSSODesc = metaManager.getSPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(spSSODesc, remoteEntity, SAML2Constants.SP_ROLE);
         } else {
-            IDPSSODescriptorElement idpSSODesc = metaManager.getIDPSSODescriptor(realm, remoteEntity);
+            IDPSSODescriptorType idpSSODesc = metaManager.getIDPSSODescriptor(realm, remoteEntity);
             signingCerts = KeyUtil.getVerificationCerts(idpSSODesc, remoteEntity, SAML2Constants.IDP_ROLE);
         }
         
@@ -1065,13 +1064,13 @@ public class LogoutUtil {
         EncInfo encryptInfo = null;
         KeyDescriptorType keyDescriptor = null;
         if (hostEntityRole.equalsIgnoreCase(SAML2Constants.IDP_ROLE)) {
-            SPSSODescriptorElement spSSODesc =
+            SPSSODescriptorType spSSODesc =
                 metaManager.getSPSSODescriptor(realm, remoteEntity);
             keyDescriptor = KeyUtil.getKeyDescriptor(spSSODesc, "encryption");
             encryptInfo = KeyUtil.getEncInfo(spSSODesc, remoteEntity,
                 SAML2Constants.SP_ROLE);
         } else {
-            IDPSSODescriptorElement idpSSODesc = 
+            IDPSSODescriptorType idpSSODesc =
                 metaManager.getIDPSSODescriptor(realm, remoteEntity);
             keyDescriptor = KeyUtil.getKeyDescriptor(idpSSODesc, "encryption");
             encryptInfo = KeyUtil.getEncInfo(idpSSODesc, remoteEntity,
@@ -1248,9 +1247,8 @@ public class LogoutUtil {
         try {
             if (binding == null) {
                 String realm = SAML2MetaUtils.getRealmByMetaAlias(metaAlias);
-                SingleLogoutServiceElement sloService =
-                    getSLOServiceElement(realm, remoteEntityID,
-                                       hostEntityRole, null);
+                EndpointType sloService = getSLOServiceElement(realm, remoteEntityID,
+                        hostEntityRole, null);
                 if (sloService != null) {
                     binding = sloService.getBinding();
                 }
@@ -1269,11 +1267,11 @@ public class LogoutUtil {
         return binding;
     }
 
-    private static SingleLogoutServiceElement getSLOServiceElement(
+    private static EndpointType getSLOServiceElement(
                     String realm, String entityID,  
                     String hostEntityRole, String binding)
         throws SAML2MetaException, SessionException, SAML2Exception {
-        SingleLogoutServiceElement sloService = null;
+        EndpointType sloService = null;
         String method = "getSLOServiceElement: ";
         
         if (debug.messageEnabled()) {
@@ -1298,37 +1296,38 @@ public class LogoutUtil {
     /**
      * Returns first SingleLogout configuration in an entity under
      * the realm.
-     * @param realm The realm under which the entity resides.
+     *
+     * @param realm    The realm under which the entity resides.
      * @param entityId ID of the entity to be retrieved.
-     * @param binding bind type need to has to be matched.
+     * @param binding  bind type need to has to be matched.
      * @return <code>SingleLogoutServiceElement</code> for the entity or null
      * @throws SAML2MetaException if unable to retrieve the first identity
      *                            provider's SSO configuration.
-     * @throws SessionException invalid or expired single-sign-on session
+     * @throws SessionException   invalid or expired single-sign-on session
      */
-    static public SingleLogoutServiceElement getIDPSLOConfig(
+    static public EndpointType getIDPSLOConfig(
                                                  String realm, 
                                                  String entityId,
                                                  String binding)
         throws SAML2MetaException, SessionException {
-        SingleLogoutServiceElement slo = null;
+        EndpointType slo = null;
 
-        IDPSSODescriptorElement idpSSODesc = 
+        IDPSSODescriptorType idpSSODesc =
                     metaManager.getIDPSSODescriptor(realm, entityId);
         if (idpSSODesc == null) {
                 debug.error("Identity Provider SSO config is missing.");
             return null;
         }
 
-        List list = idpSSODesc.getSingleLogoutService();
+        List<EndpointType> list = idpSSODesc.getSingleLogoutService();
 
         if ((list != null) && !list.isEmpty()) {
             if (binding == null) {
-                return (SingleLogoutServiceElement)list.get(0);
+                return list.get(0);
             }
-            Iterator it = list.iterator();
+            Iterator<EndpointType> it = list.iterator();
             while (it.hasNext()) {
-                slo = (SingleLogoutServiceElement)it.next();  
+                slo = it.next();
                 if (binding.equalsIgnoreCase(slo.getBinding())) {
                     break;
                 }
@@ -1349,27 +1348,26 @@ public class LogoutUtil {
      *                            provider's SSO configuration.
      * @throws SessionException invalid or expired single-sign-on session
      */
-    static public SingleLogoutServiceElement getSPSLOConfig(
+    static public EndpointType getSPSLOConfig(
                                                 String realm, String entityId,
                                                 String binding)
         throws SAML2MetaException, SessionException {
-        SingleLogoutServiceElement slo = null;
+        EndpointType slo = null;
 
-        SPSSODescriptorElement spSSODesc = 
-                          metaManager.getSPSSODescriptor(realm, entityId);
+        SPSSODescriptorType spSSODesc = metaManager.getSPSSODescriptor(realm, entityId);
         if (spSSODesc == null) {
             return null;
         }
 
-        List list = spSSODesc.getSingleLogoutService();
+        List<EndpointType> list = spSSODesc.getSingleLogoutService();
 
         if ((list != null) && !list.isEmpty()) {
             if (binding == null) {
-                return (SingleLogoutServiceElement)list.get(0);
+                return list.get(0);
             }
-            Iterator it = list.iterator();
+            Iterator<EndpointType> it = list.iterator();
             while (it.hasNext()) {
-                slo = (SingleLogoutServiceElement)it.next();  
+                slo = it.next();
                 if (binding.equalsIgnoreCase(slo.getBinding())) {
                     break;
                 }

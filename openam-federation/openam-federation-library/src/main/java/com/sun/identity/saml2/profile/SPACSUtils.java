@@ -67,12 +67,11 @@ import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.common.SOAPCommunicator;
 import com.sun.identity.saml2.ecp.ECPFactory;
 import com.sun.identity.saml2.ecp.ECPRelayState;
-import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.entityconfig.SPSSOConfigElement;
+import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.saml2.jaxb.metadata.AffiliationDescriptorType;
-import com.sun.identity.saml2.jaxb.metadata.ArtifactResolutionServiceElement;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.IndexedEndpointType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
@@ -99,7 +98,6 @@ import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.text.MessageFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -321,7 +319,7 @@ public class SPACSUtils {
         }
 
         String idpEntityID = getIDPEntityID(art, request, response, orgName, sm);
-        IDPSSODescriptorElement idp = null;
+        IDPSSODescriptorType idp = null;
         try {
             idp = sm.getIDPSSODescriptor(orgName, idpEntityID);
         } catch (SAML2MetaException se) {
@@ -389,7 +387,7 @@ public class SPACSUtils {
             SOAPConnection con = SOAPCommunicator.getInstance().openSOAPConnection();
             SOAPMessage msg = SOAPCommunicator.getInstance().createSOAPMessage(resolveString, true);
 
-            IDPSSOConfigElement config = null;
+            BaseConfigType config = null;
             config = sm.getIDPSSOConfig(orgName, idpEntityID);
             location = SAML2Utils.fillInBasicAuthInfo(
                 config, location);
@@ -490,21 +488,21 @@ public class SPACSUtils {
     private static String getIDPArtifactResolutionServiceUrl(
                 int endpointIndex,
                 String idpEntityID,
-                IDPSSODescriptorElement idp,
+                IDPSSODescriptorType idp,
                 HttpServletRequest request,
                 HttpServletResponse response)
                 throws SAML2Exception,IOException
     {
         // find the artifact resolution service url
-        List arsList=idp.getArtifactResolutionService();
-        ArtifactResolutionServiceElement ars = null;
+        List<IndexedEndpointType> arsList=idp.getArtifactResolutionService();
+        IndexedEndpointType ars = null;
         String location = null;
         String defaultLocation = null;
         String firstLocation = null;
         int index;
         boolean isDefault = false;
         for (int i=0; i<arsList.size(); i++) {
-            ars = (ArtifactResolutionServiceElement)arsList.get(i);
+            ars = arsList.get(i);
             location = ars.getLocation();
             //String binding = ars.getBinding();
             index = ars.getIndex();
@@ -560,7 +558,7 @@ public class SPACSUtils {
                                                 HttpServletRequest request,
                                                 HttpServletResponse response,
                                                 String idpEntityID,
-                                                IDPSSODescriptorElement idp,
+                                                IDPSSODescriptorType idp,
                                                 String orgName,
                                                 String hostEntityId,
                                                 SAML2MetaManager sm)
@@ -822,7 +820,7 @@ public class SPACSUtils {
         }
 
         String idpEntityID = resp.getIssuer().getValue();
-        IDPSSODescriptorElement idpDesc = null;
+        IDPSSODescriptorType idpDesc = null;
         try {
             idpDesc = metaManager.getIDPSSODescriptor(orgName, idpEntityID);
         } catch (SAML2MetaException se) {
@@ -1040,9 +1038,8 @@ public class SPACSUtils {
             SAML2Utils.debug.message(classMethod + "Assertions : " +
                                      assertions);
         }
-       
-        SPSSOConfigElement spssoconfig =
-            metaManager.getSPSSOConfig(realm, hostEntityId);
+
+        BaseConfigType spssoconfig = metaManager.getSPSSOConfig(realm, hostEntityId);
 
         // get mappers
         SPAccountMapper acctMapper = SAML2Utils.getSPAccountMapper(realm, hostEntityId);
@@ -1080,7 +1077,7 @@ public class SPACSUtils {
         }
         respInfo.setNameId(nameId);
 
-        SPSSODescriptorElement spDesc = null;
+        SPSSODescriptorType spDesc = null;
         try {
             spDesc = metaManager.getSPSSODescriptor(realm, hostEntityId);
         } catch (SAML2MetaException ex) {
@@ -1096,7 +1093,7 @@ public class SPACSUtils {
         }
         String nameIDFormat = nameId.getFormat();
         if (nameIDFormat != null) {
-            List spNameIDFormatList = spDesc.getNameIDFormat();
+            List<String> spNameIDFormatList = spDesc.getNameIDFormat();
 
             if ((spNameIDFormatList != null) && (!spNameIDFormatList.isEmpty())
                 && (!spNameIDFormatList.contains(nameIDFormat))) {
@@ -1417,7 +1414,7 @@ public class SPACSUtils {
         return session;
     }
 
-    private static boolean getNeedNameIDEncrypted(boolean needAssertionEncrypted, SPSSOConfigElement spssoconfig) {
+    private static boolean getNeedNameIDEncrypted(boolean needAssertionEncrypted, BaseConfigType spssoconfig) {
         if (!needAssertionEncrypted) {
             return Boolean.parseBoolean(SAML2Utils.getAttributeValueFromSPSSOConfig(spssoconfig,
                     SAML2Constants.WANT_NAMEID_ENCRYPTED));
@@ -1426,7 +1423,7 @@ public class SPACSUtils {
         return false;
     }
 
-    public static boolean getNeedAttributeEncrypted(boolean needAssertionEncrypted, SPSSOConfigElement spssoconfig) {
+    public static boolean getNeedAttributeEncrypted(boolean needAssertionEncrypted, BaseConfigType spssoconfig) {
         if (!needAssertionEncrypted) {
             return Boolean.parseBoolean(SAML2Utils.getAttributeValueFromSPSSOConfig(spssoconfig,
                     SAML2Constants.WANT_ATTRIBUTE_ENCRYPTED));
@@ -1810,8 +1807,8 @@ public class SPACSUtils {
     {
         String result = null;
         try {
-            SPSSOConfigElement config = sm.getSPSSOConfig(orgName,
-                                                        hostEntityId);
+            BaseConfigType config = sm.getSPSSOConfig(orgName,
+                    hostEntityId);
             if (config == null) {
                 return null;
             }
@@ -2075,7 +2072,7 @@ public class SPACSUtils {
             throws SAML2Exception {
 
         final EncryptedID encId = assertionSubject.getEncryptedID();
-        final SPSSOConfigElement spssoconfig = metaManager.getSPSSOConfig(realm, spEntityId);
+        final BaseConfigType spssoconfig = metaManager.getSPSSOConfig(realm, spEntityId);
         final Set<PrivateKey> decryptionKeys = KeyUtil.getDecryptionKeys(spssoconfig);
         final SPAccountMapper acctMapper = SAML2Utils.getSPAccountMapper(realm, spEntityId);
 
@@ -2097,7 +2094,7 @@ public class SPACSUtils {
             nameId = encId.decrypt(decryptionKeys);
         }
 
-        SPSSODescriptorElement spDesc = null;
+        SPSSODescriptorType spDesc = null;
         try {
             spDesc = metaManager.getSPSSODescriptor(realm, spEntityId);
         } catch (SAML2MetaException ex) {

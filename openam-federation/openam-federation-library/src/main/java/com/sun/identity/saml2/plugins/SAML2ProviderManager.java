@@ -37,7 +37,7 @@ import com.sun.identity.liberty.ws.util.ProviderManager;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorType;
 import com.sun.identity.saml2.jaxb.metadata.SSODescriptorType;
 import com.sun.identity.saml2.key.EncInfo;
 import com.sun.identity.saml2.key.KeyUtil;
@@ -60,7 +60,7 @@ public class SAML2ProviderManager implements ProviderManager {
      *     exist.
      */
     public boolean containsProvider(String providerID) {
-        EntityDescriptorElement ed = null;
+        EntityDescriptorType ed = null;
         try {
             ed = metaManager.getEntityDescriptor("/", providerID);
         } catch (SAML2MetaException smex) {

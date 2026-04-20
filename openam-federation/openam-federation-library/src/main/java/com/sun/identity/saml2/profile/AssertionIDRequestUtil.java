@@ -41,11 +41,13 @@ import java.net.URL;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+
+import com.sun.identity.saml2.jaxb.metadata.EndpointType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.xml.soap.SOAPException;
@@ -67,12 +69,10 @@ import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.saml2.jaxb.metadata.AttributeAuthorityDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.AssertionIDRequestServiceElement;
-import com.sun.identity.saml2.jaxb.metadata.AuthnAuthorityDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.AttributeAuthorityDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.AuthnAuthorityDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
 import com.sun.identity.saml2.jaxb.metadata.RoleDescriptorType;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
@@ -489,14 +489,14 @@ public class AssertionIDRequestUtil {
         String samlAuthorityEntityID, String role, String realm,
         String binding, StringBuffer location) throws SAML2Exception {
 
-        List aIDReqServices = null;
+        List<EndpointType> aIDReqServices = null;
         RoleDescriptorType roled = null;
         try {
             if (role == null) {
                 throw new SAML2Exception(SAML2Utils.bundle.getString(
                     "unsupportedRole"));
             } else if (role.equals(SAML2Constants.IDP_ROLE)) {
-                IDPSSODescriptorElement idpd =
+                IDPSSODescriptorType idpd =
                     metaManager.getIDPSSODescriptor(realm,
                     samlAuthorityEntityID);
                 if (idpd == null) {
@@ -506,7 +506,7 @@ public class AssertionIDRequestUtil {
                 aIDReqServices = idpd.getAssertionIDRequestService();
                 roled = idpd;
             } else if (role.equals(SAML2Constants.AUTHN_AUTH_ROLE)) {
-                AuthnAuthorityDescriptorElement attrd =
+                AuthnAuthorityDescriptorType attrd =
                     metaManager.getAuthnAuthorityDescriptor(realm,
                     samlAuthorityEntityID);
                 if (attrd == null) {
@@ -516,7 +516,7 @@ public class AssertionIDRequestUtil {
                 aIDReqServices = attrd.getAssertionIDRequestService();
                 roled = attrd;
             } else if (role.equals(SAML2Constants.ATTR_AUTH_ROLE)) {
-                AttributeAuthorityDescriptorElement aad =
+                AttributeAuthorityDescriptorType aad =
                     metaManager.getAttributeAuthorityDescriptor(realm,
                     samlAuthorityEntityID);
                 if (aad == null) {
@@ -546,9 +546,8 @@ public class AssertionIDRequestUtil {
                 SAML2Utils.bundle.getString("aIDReqServiceNotFound"));
         }
 
-        for(Iterator iter = aIDReqServices.iterator(); iter.hasNext(); ) {
-            AssertionIDRequestServiceElement aIDReqService =
-                (AssertionIDRequestServiceElement)iter.next();
+        for(Iterator<EndpointType> iter = aIDReqServices.iterator(); iter.hasNext(); ) {
+            EndpointType aIDReqService = iter.next();
             if (binding.equalsIgnoreCase(aIDReqService.getBinding())) {
                 location.append(aIDReqService.getLocation());
                 break;
@@ -596,8 +595,8 @@ public class AssertionIDRequestUtil {
                 "assertionIDRequestIssuerInvalid"));
         }
 
-        SPSSODescriptorElement spSSODesc = metaManager.getSPSSODescriptor(
-            realm, requestedEntityID);
+        SPSSODescriptorType spSSODesc = metaManager.getSPSSODescriptor(
+                realm, requestedEntityID);
         if (spSSODesc == null) {
             throw new SAML2Exception(SAML2Utils.bundle.getString(
                 "assertionIDRequestIssuerNotFound"));

@@ -38,6 +38,8 @@ import java.util.logging.Level;
 
 import com.sun.identity.saml2.common.SAML2FailoverUtils;
 import com.sun.identity.saml2.common.SOAPCommunicator;
+import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
+import com.sun.identity.saml2.jaxb.metadata.EndpointType;
 import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.protocol.RequesterID;
 import com.sun.identity.saml2.protocol.impl.RequesterIDImpl;
@@ -55,10 +57,8 @@ import com.sun.identity.saml2.assertion.Issuer;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
-import com.sun.identity.saml2.jaxb.entityconfig.SPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
@@ -74,7 +74,6 @@ import com.sun.identity.saml2.protocol.ProtocolFactory;
 import com.sun.identity.saml2.protocol.Scoping;
 import java.io.IOException;
 import java.security.PrivateKey;
-import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ArrayList;
@@ -88,7 +87,7 @@ import jakarta.xml.soap.SOAPException;
 import com.sun.identity.plugin.session.SessionManager;
 import com.sun.identity.plugin.session.SessionProvider;
 import com.sun.identity.plugin.session.SessionException;
-import com.sun.identity.saml2.jaxb.metadata.SingleSignOnServiceElement;
+
 import com.sun.identity.saml2.plugins.SAML2ServiceProviderAdapter;
 import com.sun.identity.saml2.protocol.IDPList;
 import org.forgerock.openam.federation.saml2.SAML2TokenRepositoryException;
@@ -168,7 +167,7 @@ public class IDPProxyUtil {
     public static void sendProxyAuthnRequest(
             AuthnRequest authnRequest,
             String preferredIDP,
-            SPSSODescriptorElement spSSODescriptor,
+            SPSSODescriptorType spSSODescriptor,
             String hostedEntityId,
             HttpServletRequest request,
             HttpServletResponse response,
@@ -178,14 +177,14 @@ public class IDPProxyUtil {
             throws SAML2Exception, IOException {
         String classMethod = "IDPProxyUtil.sendProxyAuthnRequest: ";
         String destination = null;
-        SPSSODescriptorElement localDescriptor = null;
-        SPSSOConfigElement localDescriptorConfig = null;
-        IDPSSODescriptorElement idpDescriptor = null;
+        SPSSODescriptorType localDescriptor = null;
+        BaseConfigType localDescriptorConfig = null;
+        IDPSSODescriptorType idpDescriptor = null;
         String binding;
         try {
             idpDescriptor = IDPSSOUtil.metaManager.getIDPSSODescriptor(realm, preferredIDP);
-            List<SingleSignOnServiceElement> ssoServiceList = idpDescriptor.getSingleSignOnService();
-            SingleSignOnServiceElement endpoint = getMatchingSSOEndpoint(ssoServiceList, originalBinding);
+            List<EndpointType> ssoServiceList = idpDescriptor.getSingleSignOnService();
+            EndpointType endpoint = getMatchingSSOEndpoint(ssoServiceList, originalBinding);
             if (endpoint == null) {
                 SAML2Utils.debug.error(classMethod + "Single Sign-on service is not found for the proxying IDP.");
                 throw new SAML2Exception(SAML2Utils.bundle.getString("ssoServiceNotFoundIDPProxy"));
@@ -304,11 +303,11 @@ public class IDPProxyUtil {
         }
     }
 
-    private static SingleSignOnServiceElement getMatchingSSOEndpoint(List<SingleSignOnServiceElement> endpoints,
+    private static EndpointType getMatchingSSOEndpoint(List<EndpointType> endpoints,
             String preferredBinding) {
-        SingleSignOnServiceElement preferredEndpoint = null;
+        EndpointType preferredEndpoint = null;
         boolean isFirst = true;
-        for (SingleSignOnServiceElement endpoint : endpoints) {
+        for (EndpointType endpoint : endpoints) {
             if (isFirst) {
                 //If there is no match, we should use the first endpoint in the list
                 preferredEndpoint = endpoint;
@@ -346,7 +345,7 @@ public class IDPProxyUtil {
             }
             newRequest.setID(requestID); 
          
-            SPSSODescriptorElement localDescriptor = IDPSSOUtil.metaManager.getSPSSODescriptor(realm, hostedEntityId);
+            SPSSODescriptorType localDescriptor = IDPSSOUtil.metaManager.getSPSSODescriptor(realm, hostedEntityId);
 
             newRequest.setDestination(XMLUtils.escapeSpecialCharacters(destination));
             newRequest.setConsent(origRequest.getConsent());
@@ -402,7 +401,7 @@ public class IDPProxyUtil {
             } else {
                 //handling the alwaysIdpProxy case -> the incoming request
                 //did not contained a Scoping field
-                SPSSOConfigElement spConfig = getSPSSOConfigByAuthnRequest(realm, origRequest);
+                BaseConfigType spConfig = getSPSSOConfigByAuthnRequest(realm, origRequest);
                 Map<String, List<String>> spConfigAttrMap = SAML2MetaUtils.getAttributes(spConfig);
                 scoping = ProtocolFactory.getInstance().createScoping();
                 String proxyCountParam = SPSSOFederate.getParameter(spConfigAttrMap,
@@ -471,7 +470,7 @@ public class IDPProxyUtil {
         String realm)
         throws SAML2Exception
     {
-        SPSSOConfigElement spConfig;
+        BaseConfigType spConfig;
         Map spConfigAttrsMap = null;
         Scoping scoping = authnRequest.getScoping();
 
@@ -799,7 +798,7 @@ public class IDPProxyUtil {
         try {
             String location = null;  
             // get IDPSSODescriptor
-            IDPSSODescriptorElement idpsso =
+            IDPSSODescriptorType idpsso =
                 sm.getIDPSSODescriptor(realm,idpEntityID);
             if (idpsso == null) {
                 String[] data = {idpEntityID};
@@ -1080,7 +1079,7 @@ public class IDPProxyUtil {
 
         String logoutAll = request.getParameter(SAML2Constants.LOGOUT_ALL);
         HashMap paramsMap = new HashMap();
-        IDPSSOConfigElement config = sm.getIDPSSOConfig(realm, spEntityID);
+       BaseConfigType config = sm.getIDPSSOConfig(realm, spEntityID);
         paramsMap.put("metaAlias", config.getMetaAlias());
         paramsMap.put(SAML2Constants.ROLE, SAML2Constants.IDP_ROLE);
         paramsMap.put(SAML2Constants.BINDING, SAML2Constants.HTTP_REDIRECT);
@@ -1195,7 +1194,7 @@ public class IDPProxyUtil {
         return idpProxyFinder;
     }
 
-    private static SPSSOConfigElement getSPSSOConfigByAuthnRequest(
+    private static BaseConfigType getSPSSOConfigByAuthnRequest(
             String realm, AuthnRequest request) throws SAML2MetaException {
         return IDPSSOUtil.metaManager.getSPSSOConfig(
                 realm, request.getIssuer().getValue());

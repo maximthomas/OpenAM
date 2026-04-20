@@ -28,6 +28,7 @@
  */
 package com.sun.identity.saml2.key;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -42,6 +43,9 @@ import java.security.cert.X509Certificate;
 import java.util.Set;
 
 import com.sun.identity.saml2.common.SAML2Utils;
+import com.sun.identity.saml2.jaxb.metadata.XACMLAuthzDecisionQueryDescriptorType;
+import com.sun.identity.saml2.jaxb.metadata.XACMLPDPDescriptorType;
+import jakarta.xml.bind.JAXBElement;
 import org.apache.xml.security.encryption.XMLCipher;
 
 import com.sun.identity.common.SystemConfigurationUtil;
@@ -56,8 +60,6 @@ import com.sun.identity.saml2.jaxb.xmlenc.*;
 
 import com.sun.identity.saml.common.SAMLConstants;
 import com.sun.identity.saml.xmlsig.KeyProvider;
-import com.sun.identity.saml2.jaxb.metadata.XACMLAuthzDecisionQueryDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.XACMLPDPDescriptorElement;
 import org.forgerock.openam.utils.CollectionUtils;
 import org.forgerock.openam.utils.StringUtils;
 
@@ -307,23 +309,20 @@ public class KeyUtil {
             );
             return null;
         }
-        List emList = kd.getEncryptionMethod();
+        List<EncryptionMethodType> emList = kd.getEncryptionMethod();
         EncryptionMethodType em = null;
         String algorithm = null;
         int keySize = 0;
         if (emList != null && !emList.isEmpty()) {            
-            em = (EncryptionMethodType)emList.get(0);
+            em = emList.get(0);
             if (em != null) {
                 algorithm = em.getAlgorithm();
-                List cList = em.getContent();
-                if (cList != null) {
-                    Iterator cIter = cList.iterator();
-                    while (cIter.hasNext()) {
-                        Object cObject = cIter.next();
-                        if (cObject instanceof EncryptionMethodType.KeySize) {
-                            keySize =
-                                ((EncryptionMethodType.KeySize)(cList.get(0))).
-                                    getValue().intValue();
+                List<Object> content = em.getContent();
+                for (Object obj : content) {
+                    if (obj instanceof JAXBElement) {
+                        JAXBElement<?> jaxb = (JAXBElement<?>) obj;
+                        if ("KeySize".equals(jaxb.getName().getLocalPart())) {
+                            keySize = ((JAXBElement<BigInteger>) jaxb).getValue().intValue();
                             break;
                         }
                     }
@@ -359,7 +358,7 @@ public class KeyUtil {
         List<KeyDescriptorType> keyDescriptorsWithoutUsage = new ArrayList<>(keyDescriptors.size());
 
         for (KeyDescriptorType keyDescriptor : keyDescriptors) {
-            String use = keyDescriptor.getUse();
+            String use = keyDescriptor.getUse().value();
             if (StringUtils.isBlank(use)) {
                 keyDescriptorsWithoutUsage.add(keyDescriptor);
             } else if (use.trim().toLowerCase().equals(usage)) {
@@ -409,11 +408,11 @@ public class KeyUtil {
         }
         //iterate and search the X509DataElement node
         Iterator it = ki.getContent().iterator();
-        X509DataElement data = null;
+        X509DataType data = null;
         while ((data == null) && it.hasNext()) {
             Object content = it.next();
-            if (content instanceof X509DataElement) {
-                data = (X509DataElement) content;
+            if (content instanceof X509DataType) {
+                data = (X509DataType) content;
             }
         }
         if (data == null) {
@@ -422,12 +421,12 @@ public class KeyUtil {
         }
         //iterate and search the X509Certificate node
         it = data.getX509IssuerSerialOrX509SKIOrX509SubjectName().iterator();
-        com.sun.identity.saml2.jaxb.xmlsig.X509DataType.X509Certificate cert = null;
+        JAXBElement<byte[]> cert = null;
         while ((cert == null) && it.hasNext()) {
             Object content = it.next();
-            if (content instanceof 
-                com.sun.identity.saml2.jaxb.xmlsig.X509DataType.X509Certificate) {
-                cert = (com.sun.identity.saml2.jaxb.xmlsig.X509DataType.X509Certificate) content;
+            if (content instanceof JAXBElement
+                    && "X509Certificate".equals(((JAXBElement<?>)content).getName().getLocalPart())) {
+                cert = (JAXBElement<byte[]>) content;
             }
         }
         if (cert == null) {
@@ -469,8 +468,8 @@ public class KeyUtil {
      * @param entityID Policy Enforcement Point (PEP) entity identifier.
      * @return The Set of signing {@link X509Certificate}s for verifying the partner entity's signature.
      */
-    public static Set<X509Certificate> getPEPVerificationCerts(XACMLAuthzDecisionQueryDescriptorElement pepDescriptor,
-            String entityID) {
+    public static Set<X509Certificate> getPEPVerificationCerts(XACMLAuthzDecisionQueryDescriptorType pepDescriptor,
+                                                               String entityID) {
         return getVerificationCerts(pepDescriptor, entityID, SAML2Constants.PEP_ROLE);
     }
 
@@ -486,7 +485,7 @@ public class KeyUtil {
      * and data encryption strength 
      */        
     public static EncInfo getPEPEncInfo(
-       XACMLAuthzDecisionQueryDescriptorElement pepDesc,String pepEntityID) {
+       XACMLAuthzDecisionQueryDescriptorType pepDesc,String pepEntityID) {
 
         String classMethod = "KeyUtil.getEncInfo: ";
         String role=SAML2Constants.PEP_ROLE;
@@ -545,19 +544,22 @@ public class KeyUtil {
             );
             return null;
         }
-        List emList = kd.getEncryptionMethod();
+        List<EncryptionMethodType> emList = kd.getEncryptionMethod();
         EncryptionMethodType em = null;
         String algorithm = null;
         int keySize = 0;
         if (emList != null && !emList.isEmpty()) {            
-            em = (EncryptionMethodType)emList.get(0);
+            em = emList.get(0);
             if (em != null) {
-                algorithm = em.getAlgorithm();
-                List cList = em.getContent();
-                if (cList != null) {
-                    keySize =
-                        ((EncryptionMethodType.KeySize)(cList.get(0))).
-                        getValue().intValue();
+                List<Object> content = em.getContent();
+                for (Object obj : content) {
+                    if (obj instanceof JAXBElement) {
+                        JAXBElement<?> jaxb = (JAXBElement<?>) obj;
+                        if ("KeySize".equals(jaxb.getName().getLocalPart())) {
+                            keySize = ((JAXBElement<BigInteger>) jaxb).getValue().intValue();
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -584,8 +586,8 @@ public class KeyUtil {
      * @param entityID partner entity's ID.
      * @return The Set of signing {@link X509Certificate}s for verifying the partner entity's signature.
      */
-    public static Set<X509Certificate> getPDPVerificationCerts(XACMLPDPDescriptorElement pdpDescriptor,
-            String entityID) {
+    public static Set<X509Certificate> getPDPVerificationCerts(XACMLPDPDescriptorType pdpDescriptor,
+                                                               String entityID) {
         return getVerificationCerts(pdpDescriptor, entityID, SAML2Constants.PDP_ROLE);
     }
 

@@ -32,14 +32,12 @@ import com.sun.identity.cot.COTException;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.common.SAML2Constants;
-import com.sun.identity.saml2.jaxb.assertion.AttributeElement;
-import com.sun.identity.saml2.jaxb.assertion.AttributeValueElement;
-import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.entityconfig.SPSSOConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorElement;
+import com.sun.identity.saml2.jaxb.assertion.AttributeType;
+import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
+import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorType;
 import com.sun.identity.saml2.jaxb.metadata.ExtensionsType;
-import com.sun.identity.saml2.jaxb.metadataattr.EntityAttributesElement;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadataattr.EntityAttributesType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
 import com.sun.identity.saml2.meta.SAML2MetaUtils;
 import com.sun.identity.saml2.meta.SAML2MetaException;
@@ -75,7 +73,7 @@ public class SAML2IDPProxyFRImpl implements SAML2IDPFinder {
     public static String SESSION_ATTR_NAME_SPREQUESTER = "_SPREQUESTER_";
     public static String SESSION_ATTR_NAME_REQAUTHNCONTEXT = "_REQAUTHNCONTEXT_";
 
-    SPSSODescriptorElement spSSODescriptor = null;
+    SPSSODescriptorType spSSODescriptor = null;
     String relayState = "";
     String binding = "";
 
@@ -139,8 +137,7 @@ public class SAML2IDPProxyFRImpl implements SAML2IDPFinder {
             }
 
             // Read the local metadata of the SP that made the request
-            SPSSOConfigElement spEntityCfg =
-                    sm.getSPSSOConfig(realm, authnRequest.getIssuer().getValue());
+            BaseConfigType spEntityCfg = sm.getSPSSOConfig(realm, authnRequest.getIssuer().getValue());
             Map spConfigAttrsMap = null;
             if (spEntityCfg != null) {
                 spConfigAttrsMap = SAML2MetaUtils.getAttributes(spEntityCfg);
@@ -314,7 +311,7 @@ public class SAML2IDPProxyFRImpl implements SAML2IDPFinder {
     private String selectIDPBasedOnLOA(List<String> idpList, String realm, AuthnRequest authnRequest) {
 
         String classMethod = "selectIdPBasedOnLOA";
-        EntityDescriptorElement idpDesc = null;
+        EntityDescriptorType idpDesc = null;
         Set authnRequestContextSet = null;
         String idps = "";
 
@@ -349,14 +346,14 @@ public class SAML2IDPProxyFRImpl implements SAML2IDPFinder {
                                 debugMessage(classMethod, "Extensions content found for idp: " + idp);
                                 Iterator idpExtensionsI = idpExtensions.iterator();
                                 while (idpExtensionsI.hasNext()) {
-                                    EntityAttributesElement eael = (EntityAttributesElement) idpExtensionsI.next();
+                                    EntityAttributesType eael = (EntityAttributesType) idpExtensionsI.next();
                                     if (eael != null) {
                                         debugMessage(classMethod, "Entity Attributes found for idp: " + idp);
                                         List attribL = eael.getAttributeOrAssertion();
                                         if (attribL != null || !attribL.isEmpty()) {
                                             Iterator attrI = attribL.iterator();
                                             while (attrI.hasNext()) {
-                                                AttributeElement ae = (AttributeElement) attrI.next();
+                                                AttributeType ae = (AttributeType) attrI.next();
                                                 // TODO: Verify what type of element this is (Attribute or assertion)
                                                 // For validation purposes
                                                 List av = ae.getAttributeValue();

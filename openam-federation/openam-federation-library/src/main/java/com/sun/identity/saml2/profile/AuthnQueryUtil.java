@@ -32,12 +32,15 @@ package com.sun.identity.saml2.profile;
 import static org.forgerock.openam.utils.Time.*;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.Set;
+
+import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
+import com.sun.identity.saml2.jaxb.metadata.EndpointType;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.xml.soap.SOAPException;
@@ -61,10 +64,7 @@ import com.sun.identity.saml2.assertion.Subject;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
-import com.sun.identity.saml2.jaxb.entityconfig.AuthnAuthorityConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.AuthnAuthorityDescriptorElement;
-import com.sun.identity.saml2.jaxb.metadata.AuthnQueryServiceElement;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.AuthnAuthorityDescriptorType;
 import com.sun.identity.saml2.key.KeyUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
@@ -111,7 +111,7 @@ public class AuthnQueryUtil {
         throws SAML2Exception {
 
         SAML2MetaManager metaManager = SAML2Utils.getSAML2MetaManager();
-        AuthnAuthorityDescriptorElement aad = null;
+        AuthnAuthorityDescriptorType aad = null;
         try {
             aad = metaManager.getAuthnAuthorityDescriptor(realm,
                 authnAuthorityEntityID);
@@ -133,10 +133,9 @@ public class AuthnQueryUtil {
         }
 
         String location = null;
-        List authnService = aad.getAuthnQueryService();
-        for(Iterator iter = authnService.iterator(); iter.hasNext(); ) {
-            AuthnQueryServiceElement authnService1 =
-                (AuthnQueryServiceElement)iter.next();
+        List<EndpointType> authnService = aad.getAuthnQueryService();
+        for(Iterator<EndpointType> iter = authnService.iterator(); iter.hasNext(); ) {
+            EndpointType authnService1 = iter.next();
             if (binding.equalsIgnoreCase(authnService1.getBinding())) {
                 location = authnService1.getLocation();
                 break;
@@ -184,7 +183,7 @@ public class AuthnQueryUtil {
 
         Issuer issuer = authnQuery.getIssuer();
         String spEntityID = issuer.getValue();        
-        AuthnAuthorityDescriptorElement aad = null;
+        AuthnAuthorityDescriptorType aad = null;
         SAML2MetaManager metaManager = SAML2Utils.getSAML2MetaManager();
         try {
             aad = metaManager.getAuthnAuthorityDescriptor(realm,
@@ -389,8 +388,8 @@ public class AuthnQueryUtil {
             throw new SAML2Exception(SAML2Utils.bundle.getString(
                 "authnQueryIssuerInvalid"));
         }
-        SPSSODescriptorElement spSSODesc = SAML2Utils.getSAML2MetaManager()
-            .getSPSSODescriptor(realm, spEntityID);
+        SPSSODescriptorType spSSODesc = SAML2Utils.getSAML2MetaManager()
+                .getSPSSODescriptor(realm, spEntityID);
         if (spSSODesc == null) {
             throw new SAML2Exception(SAML2Utils.bundle.getString(
                 "authnQueryIssuerNotFound"));
@@ -439,7 +438,7 @@ public class AuthnQueryUtil {
 
     private static Response sendAuthnQuerySOAP(AuthnQuery authnQuery,
         String authnServiceURL, String authnAuthorityEntityID, String realm,
-        AuthnAuthorityDescriptorElement aad) throws SAML2Exception {
+        AuthnAuthorityDescriptorType aad) throws SAML2Exception {
 
         String authnQueryXMLString = authnQuery.toXMLString(true, true);
         if (SAML2Utils.debug.messageEnabled()) {
@@ -449,8 +448,7 @@ public class AuthnQueryUtil {
                 "authnServiceURL= " + authnServiceURL);
         }
 
-        AuthnAuthorityConfigElement config =
-            metaManager.getAuthnAuthorityConfig(realm, authnAuthorityEntityID);
+        BaseConfigType config = metaManager.getAuthnAuthorityConfig(realm, authnAuthorityEntityID);
         authnServiceURL = SAML2Utils.fillInBasicAuthInfo(config,
             authnServiceURL);
         
@@ -481,8 +479,8 @@ public class AuthnQueryUtil {
     }
 
     private static void verifyResponse(Response response,
-        AuthnQuery authnQuery, String authnAuthorityEntityID, String realm,
-        AuthnAuthorityDescriptorElement aad) throws SAML2Exception {
+                                       AuthnQuery authnQuery, String authnAuthorityEntityID, String realm,
+                                       AuthnAuthorityDescriptorType aad) throws SAML2Exception {
 
         String authnQueryID = authnQuery.getID();
         if ((authnQueryID != null) &&

@@ -36,10 +36,10 @@ import java.util.Hashtable;
 
 import com.sun.identity.shared.debug.Debug;
 
-import com.sun.identity.saml2.jaxb.entityconfig.EntityConfigElement;
-import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorElement;
+import com.sun.identity.saml2.jaxb.entityconfig.EntityConfigType;
+import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorType;
 import com.sun.identity.saml2.jaxb.metadataattr.EntityAttributesType;
-import com.sun.identity.saml2.jaxb.metadataattr.EntityAttributesElement;
+import com.sun.identity.saml2.jaxb.metadataattr.EntityAttributesType;
 import com.sun.identity.saml2.jaxb.metadataattr.ObjectFactory;
 
 /**
@@ -63,12 +63,12 @@ class SAML2MetaCache
      * @return <code>EntityDescriptorElement</code> for the entity or null
      *         if not found. 
      */
-    static EntityDescriptorElement getEntityDescriptor(
+    static EntityDescriptorType getEntityDescriptor(
             String realm, String entityId) 
     {
         String cacheKey = buildCacheKey(realm, entityId);
-        EntityDescriptorElement descriptor =
-	    (EntityDescriptorElement)descriptorCache.get(cacheKey);
+        EntityDescriptorType descriptor =
+	    (EntityDescriptorType)descriptorCache.get(cacheKey);
         if (debug.messageEnabled()) {
             debug.message("SAML2MetaCache.getEntityDescriptor: cacheKey = " +
                           cacheKey + ", found = " + (descriptor != null));
@@ -83,7 +83,7 @@ class SAML2MetaCache
      * @param descriptor <code>EntityDescriptorElement</code> for the entity. 
      */
     static void putEntityDescriptor(String realm, String entityId,
-            EntityDescriptorElement descriptor)
+                                    EntityDescriptorType descriptor)
     {
         String cacheKey = buildCacheKey(realm, entityId);
         if (descriptor != null) {
@@ -110,12 +110,12 @@ class SAML2MetaCache
      * @return <code>EntityConfigElement</code> object for the entity or null
      *         if not found.
      */
-    static EntityConfigElement getEntityConfig(
+    static EntityConfigType getEntityConfig(
             String realm, String entityId)
     {
         String cacheKey = buildCacheKey(realm, entityId);
-        EntityConfigElement config =
-	    (EntityConfigElement)configCache.get(cacheKey);
+        EntityConfigType config =
+	    (EntityConfigType)configCache.get(cacheKey);
         if (debug.messageEnabled()) {
             debug.message("SAML2MetaCache.getEntityConfig: cacheKey = " +
 			  cacheKey + ", found = " + (config != null));
@@ -130,7 +130,7 @@ class SAML2MetaCache
      * @param config <code>EntityConfigElement</code> object for the entity.
      */
     static void putEntityConfig(String realm, String entityId,
-        EntityConfigElement config) {
+        EntityConfigType config) {
         String cacheKey = buildCacheKey(realm, entityId);
         if (config != null) {
             if (debug.messageEnabled()) {
@@ -163,7 +163,7 @@ class SAML2MetaCache
      * Build cache key for descriptorCache and configCache based on realm and
      * entity ID.
      * @param realm The realm under which the entity resides.
-     * @param entityID The entity ID or the name of circle of trust.
+     * @param entityId The entity ID or the name of circle of trust.
      * @return The cache key.
      */
     private static String buildCacheKey(String realm, String entityId) {

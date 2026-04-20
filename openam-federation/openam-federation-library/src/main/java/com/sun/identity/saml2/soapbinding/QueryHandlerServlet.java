@@ -42,7 +42,7 @@ import com.sun.identity.saml2.assertion.Assertion;
 import com.sun.identity.saml2.assertion.AssertionFactory;
 import com.sun.identity.saml2.assertion.EncryptedAssertion;
 import com.sun.identity.saml2.assertion.Issuer;
-import com.sun.identity.saml2.jaxb.metadata.XACMLAuthzDecisionQueryDescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.XACMLAuthzDecisionQueryDescriptorType;
 import com.sun.identity.saml2.key.EncInfo;
 import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
@@ -356,10 +356,9 @@ public class QueryHandlerServlet extends HttpServlet {
         }
         if (pdpWantAuthzQuerySigned) {                        
             if (samlRequest.isSigned()) {
-                XACMLAuthzDecisionQueryDescriptorElement pep =
-                        SAML2Utils.getSAML2MetaManager().
+                XACMLAuthzDecisionQueryDescriptorType pep = SAML2Utils.getSAML2MetaManager().
                         getPolicyEnforcementPointDescriptor(
-                        realm,pepEntityID);
+                                realm, pepEntityID);
                 Set<X509Certificate> verificationCerts = KeyUtil.getPEPVerificationCerts(pep, pepEntityID);
                 if (verificationCerts.isEmpty() || !samlRequest.isSignatureValid(verificationCerts)) {
                     // error
@@ -409,13 +408,12 @@ public class QueryHandlerServlet extends HttpServlet {
                     realm,SAML2Constants.PEP_ROLE,
                     pepEntityID,
                     SAML2Constants.WANT_ASSERTION_ENCRYPTED);
-            
-            
-            XACMLAuthzDecisionQueryDescriptorElement
-                    pepDescriptor  = SAML2Utils.
+
+
+            XACMLAuthzDecisionQueryDescriptorType pepDescriptor = SAML2Utils.
                     getSAML2MetaManager().
                     getPolicyEnforcementPointDescriptor(realm,
-                    pepEntityID);
+                            pepEntityID);
             
             EncInfo encInfo = null;
             boolean wantAssertionSigned=pepDescriptor.isWantAssertionsSigned();

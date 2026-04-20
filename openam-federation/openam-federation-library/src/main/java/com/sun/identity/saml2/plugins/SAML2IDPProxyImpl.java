@@ -35,7 +35,7 @@ import com.sun.identity.cot.COTException;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.common.SAML2Constants;
-import com.sun.identity.saml2.jaxb.entityconfig.SPSSOConfigElement;
+import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
 import com.sun.identity.saml2.meta.SAML2MetaUtils;
 import com.sun.identity.saml2.meta.SAML2MetaException;
@@ -90,8 +90,7 @@ public class SAML2IDPProxyImpl implements SAML2IDPFinder {
                 throw new SAML2Exception(
                     SAML2Utils.bundle.getString("errorMetaManager"));
             }
-            SPSSOConfigElement spEntityCfg =
-                sm.getSPSSOConfig(realm, authnRequest.getIssuer().getValue());
+            BaseConfigType spEntityCfg = sm.getSPSSOConfig(realm, authnRequest.getIssuer().getValue());
             Map spConfigAttrsMap = null;
             if (spEntityCfg != null) {
                 spConfigAttrsMap = SAML2MetaUtils.getAttributes(spEntityCfg);

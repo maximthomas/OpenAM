@@ -46,9 +46,8 @@ import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.saml2.jaxb.entityconfig.IDPSSOConfigElement;
 import com.sun.identity.saml2.jaxb.metadata.EndpointType;
-import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.IDPSSODescriptorType;
 import com.sun.identity.saml2.logging.LogUtil;
 import com.sun.identity.saml2.meta.SAML2MetaException;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
@@ -232,7 +231,7 @@ public class SPSessionListener implements SessionListener {
     private static void initiateSPSingleLogout(String metaAlias, String realm, String binding,
             NameIDInfoKey nameIdInfoKey, SPFedSession fedSession, Map paramsMap)
             throws SAML2MetaException, SAML2Exception, SessionException {
-        IDPSSODescriptorElement idpsso = sm.getIDPSSODescriptor(realm, nameIdInfoKey.getRemoteEntityID());
+        IDPSSODescriptorType idpsso = sm.getIDPSSODescriptor(realm, nameIdInfoKey.getRemoteEntityID());
 
         if (idpsso == null) {
             String[] data = {nameIdInfoKey.getRemoteEntityID()};
@@ -252,7 +251,7 @@ public class SPSessionListener implements SessionListener {
             return;
         }
 
-        IDPSSOConfigElement idpConfig = sm.getIDPSSOConfig(realm, nameIdInfoKey.getRemoteEntityID());
+        BaseConfigType idpConfig = sm.getIDPSSOConfig(realm, nameIdInfoKey.getRemoteEntityID());
 
         LogoutUtil.doLogout(metaAlias, nameIdInfoKey.getRemoteEntityID(), slosList, null, binding, null,
                 fedSession.idpSessionIndex, fedSession.info.getNameID(), null, null, paramsMap, idpConfig);

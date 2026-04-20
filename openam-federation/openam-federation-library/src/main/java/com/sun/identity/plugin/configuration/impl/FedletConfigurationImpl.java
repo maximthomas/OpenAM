@@ -33,7 +33,7 @@ import com.sun.identity.plugin.configuration.ConfigurationException;
 import com.sun.identity.plugin.configuration.ConfigurationInstance;
 import com.sun.identity.plugin.configuration.ConfigurationListener;
 import com.sun.identity.saml2.common.SAML2Constants;
-import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.EntityDescriptorType;
 import com.sun.identity.saml2.meta.SAML2MetaConstants;
 import com.sun.identity.saml2.meta.SAML2MetaSecurityUtils;
 import com.sun.identity.saml2.meta.SAML2MetaUtils;
@@ -277,8 +277,8 @@ public class FedletConfigurationImpl implements ConfigurationInstance {
     private String getEntityID(String metaXML) {
         try {
             Object obj = SAML2MetaUtils.convertStringToJAXB(metaXML);
-            if (obj instanceof EntityDescriptorElement) {
-                return ((EntityDescriptorElement) obj).getEntityID();
+            if (obj instanceof EntityDescriptorType) {
+                return ((EntityDescriptorType) obj).getEntityID();
             }
         } catch (JAXBException jaxbe) {
             debug.error("FedletConfigImpl.getEntityID: " + metaXML, jaxbe);

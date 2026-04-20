@@ -32,7 +32,7 @@ import com.sun.identity.plugin.session.SessionException;
 import com.sun.identity.saml.common.SAMLUtils;
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.common.SAML2Utils;
-import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.SPSSODescriptorType;
 import com.sun.identity.saml2.plugins.SAML2IdentityProviderAdapter;
 import com.sun.identity.saml2.protocol.AuthnRequest;
 import org.forgerock.openam.saml2.IDPRequestValidator;
@@ -175,7 +175,7 @@ public class IDPSSOFederate {
                     IDPProxyUtil.sendProxyAuthnRequest(
                             (AuthnRequest) paramsMap.get("authnReq"),
                             preferredIDP,
-                            (SPSSODescriptorElement) paramsMap.get("spSSODescriptor"),
+                            (SPSSODescriptorType) paramsMap.get("spSSODescriptor"),
                             (String) paramsMap.get("idpEntityID"),
                             request,
                             response,

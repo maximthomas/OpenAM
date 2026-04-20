@@ -30,9 +30,26 @@
     Portions Copyrighted 2010 ForgeRock AS
 -->
 
-<jxb:bindings version="1.0"
-               xmlns:jxb="http://java.sun.com/xml/ns/jaxb"
-               xmlns:xs="http://www.w3.org/2001/XMLSchema">
+<jxb:bindings
+        version="3.0"
+        xmlns:jxb="https://jakarta.ee/xml/ns/jaxb"
+        xmlns:xs="http://www.w3.org/2001/XMLSchema"
+        xmlns:xjc="http://java.sun.com/xml/ns/jaxb/xjc"
+        jxb:extensionBindingPrefixes="xjc">
+
+<!-- ================================================================
+         Global options applied to every schema processed in this run.
+         ================================================================ -->
+    <jxb:globalBindings >
+        <!--<xjc:simple />-->
+        <!-- Use java.util.Calendar for xsd:dateTime — consistent with
+             the original JAXB 1.0 behaviour and the rest of OpenAM. -->
+        <jxb:javaType name="java.util.Calendar"
+                      xmlType="xs:dateTime"
+                      parseMethod="jakarta.xml.bind.DatatypeConverter.parseDateTime"
+                      printMethod="jakarta.xml.bind.DatatypeConverter.printDateTime"/>
+    </jxb:globalBindings>
+
 
   <jxb:bindings schemaLocation="../xsd/xenc-schema.xsd" node="/xs:schema">
     <jxb:schemaBindings>

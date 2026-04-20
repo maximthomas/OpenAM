@@ -31,7 +31,7 @@ package com.sun.identity.federation.services;
 
 import com.sun.identity.federation.common.FSUtils;
 import com.sun.identity.federation.common.IFSConstants;
-import com.sun.identity.federation.jaxb.entityconfig.IDPDescriptorConfigElement;
+import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.federation.message.FSSubject;
 import com.sun.identity.federation.meta.IDFFMetaException;
 import com.sun.identity.federation.meta.IDFFMetaManager;
@@ -109,8 +109,7 @@ public class FSDefaultAttributePlugin implements FSAttributePlugin {
         try {
             IDFFMetaManager metaManager = FSUtils.getIDFFMetaManager();
             if (metaManager != null) {
-                IDPDescriptorConfigElement idpConfig =
-                    metaManager.getIDPDescriptorConfig(realm, hostEntityId);
+                BaseConfigType idpConfig = metaManager.getIDPDescriptorConfig(realm, hostEntityId);
                 if (idpConfig != null) {
                     Map attributes = IDFFMetaUtils.getAttributes(idpConfig);
                     attributeMap = FSServiceUtils.parseAttributeConfig((List)

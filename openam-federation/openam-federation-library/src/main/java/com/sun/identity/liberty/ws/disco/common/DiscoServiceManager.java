@@ -42,6 +42,7 @@ import javax.xml.transform.stream.StreamSource;
 import javax.xml.bind.*;
 
 import com.sun.identity.common.SystemConfigurationUtil;
+import com.sun.identity.liberty.ws.disco.jaxb.InsertEntryType;
 import com.sun.identity.liberty.ws.disco.plugins.Default64ResourceIDMapper;
 import com.sun.identity.liberty.ws.disco.plugins.DiscoEntryHandler;
 import com.sun.identity.liberty.ws.disco.plugins.NameIdentifierMapper;
@@ -283,12 +284,12 @@ public class DiscoServiceManager implements ConfigurationListener {
      * configured. A default value will be configured during installation.
      * @return Bootstrapping <code>DiscoEntryElement</code>
      */
-    public static synchronized DiscoEntryElement getBootstrappingDiscoEntry() {
-        DiscoEntryElement bootDiscoEntry = null;
+    public static synchronized InsertEntryType getBootstrappingDiscoEntry() {
+        InsertEntryType bootDiscoEntry = null;
         if ((bootDiscoEntryStr != null) && (bootDiscoEntryStr.length() != 0)) {
             try {
                 Unmarshaller u = jc.createUnmarshaller();
-                bootDiscoEntry = (DiscoEntryElement) u.unmarshal(
+                bootDiscoEntry = (InsertEntryType) u.unmarshal(
                         XMLUtils.createSAXSource(new InputSource(new StringReader(bootDiscoEntryStr))));
             } catch (Exception e) {
                 debug.error("DiscoServiceManager.setValues: "

@@ -40,16 +40,17 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.security.SecureRandom;
+
+import com.sun.identity.liberty.ws.disco.jaxb.ResourceIDType;
 import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.shared.locale.Locale;
 import com.sun.identity.shared.encode.Base64;
-import com.sun.identity.liberty.ws.idpp.jaxb.QueryElement;
+import com.sun.identity.liberty.ws.idpp.jaxb.QueryType;
 import com.sun.identity.liberty.ws.idpp.jaxb.DSTString;
-import com.sun.identity.liberty.ws.idpp.jaxb.QueryResponseElement;
+import com.sun.identity.liberty.ws.idpp.jaxb.QueryResponseType;
 import com.sun.identity.liberty.ws.idpp.jaxb.QueryResponseType;
 import com.sun.identity.liberty.ws.idpp.jaxb.ObjectFactory;
 import com.sun.identity.liberty.ws.idpp.jaxb.QueryType;
-import com.sun.identity.liberty.ws.idpp.jaxb.ResourceIDElement;
 import com.sun.identity.liberty.ws.interfaces.ResourceIDMapper;
 import com.sun.identity.liberty.ws.idpp.*;
 import com.sun.identity.plugin.datastore.DataStoreProvider;
@@ -183,11 +184,11 @@ public class IDPPUtils {
       * @param includeCommonAttr include common attribute or not 
       * @return QueryElement JAXB object.
       */
-     public static QueryElement createQueryElement(List queryExpressions, 
+     public static QueryType createQueryElement(List queryExpressions,
                                                    String resourceID,
                                                    boolean includeCommonAttr)
      throws JAXBException, IDPPException {
-         QueryElement query = idppFactory.createQueryElement(); 
+         QueryType query = idppFactory.createQueryType();
          if(queryExpressions == null || resourceID == null
             || queryExpressions.size() == 0) {
             debug.error("IDPPUtils:createQueryElement: Either query" +
@@ -197,8 +198,8 @@ public class IDPPUtils {
          query.setResourceID(createResourceIDElement(resourceID));
          query.setId(SAMLUtils.generateID());
          for (int i =0; i < queryExpressions.size(); i++) {
-              QueryType.QueryItemType item = 
-              idppFactory.createQueryTypeQueryItemType();
+              QueryType.QueryItem item =
+              idppFactory.createQueryTypeQueryItem();
               item.setId(SAMLUtils.generateID()); 
               item.setIncludeCommonAttributes(includeCommonAttr);
               item.setItemID(SAMLUtils.generateID());
@@ -213,7 +214,7 @@ public class IDPPUtils {
       * @param response QueryResponseElement  
       * @return List of data elements.
       */
-     public static List getQueryDataElements(QueryResponseElement response)
+     public static List getQueryDataElements(QueryResponseType response)
       throws JAXBException, IDPPException {
          if(response == null) {
             debug.error("IDPPUtils:getQueryDataElements:response is null");
@@ -227,14 +228,13 @@ public class IDPPUtils {
       * @param resourceID resource id string.
       * @return ResourceIDType JAXB object.
       */
-     public static ResourceIDElement createResourceIDElement (String resourceID)
-      throws JAXBException, IDPPException {
+     public static ResourceIDType createResourceIDElement (String resourceID)
+      throws IDPPException {
          if(resourceID == null) {
             debug.error("IDPPUtils:ResourceIDType: Resource id is null");
             throw new IDPPException("ResourceID is null");
          }
-         ResourceIDElement resourceIDElement = 
-               idppFactory.createResourceIDElement();
+         ResourceIDType resourceIDElement = new ResourceIDType();
          resourceIDElement.setValue(resourceID);
          return resourceIDElement;
      }

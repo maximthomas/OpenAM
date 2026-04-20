@@ -59,46 +59,38 @@ public class IDPPEmploymentIdentity extends IDPPBaseContainer {
       * Gets the employment identity jaxb object 
       * @param userMap user map
       * @return EmploymentIdentityElement JAXB Object.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
          IDPPUtils.debug.message("IDPPEmploymentIdentity:getContainerObj:Init");
-         try {
-             PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
-             EmploymentIdentityElement ei = 
-                 IDPPUtils.getIDPPFactory().createEmploymentIdentityElement();
-             String jobTitle = CollectionHelper.getMapAttr(
-                userMap, getAttributeMapper().getDSAttribute(
-                    IDPPConstants.JOB_TITLE_ELEMENT).toLowerCase());
-             if(jobTitle != null) {
-                DSTString dstString = getDSTString(jobTitle);
-                ei.setJobTitle(dstString);
-             }
- 
-             String org = CollectionHelper.getMapAttr(userMap, 
-                getAttributeMapper().getDSAttribute(
-                    IDPPConstants.O_ELEMENT).toLowerCase());
-             if(org != null) {
-                DSTString dstString = getDSTString(org);
-                ei.setO(dstString);
-             }
-
-             Set altOs = (Set)userMap.get(
-             getAttributeMapper().getDSAttribute(
-             IDPPConstants.ALT_O_ELEMENT).toLowerCase());
-             Iterator iter = altOs.iterator();
-             while(iter.hasNext()) {
-                DSTString dstString = getDSTString((String)iter.next());
-                ei.getAltO().add(dstString);
-             }
-             ppType.setEmploymentIdentity(ei);
-             return ppType;
-         } catch (JAXBException je) {
-             IDPPUtils.debug.error(
-              "IDPPContainers:getContainerObject: JAXB failure", je); 
-              throw new IDPPException(
-              IDPPUtils.bundle.getString("jaxbFailure"));
+         PPType ppType = IDPPUtils.getIDPPFactory().createPPType();
+         EmploymentIdentityType ei = IDPPUtils.getIDPPFactory().createEmploymentIdentityType();
+         String jobTitle = CollectionHelper.getMapAttr(
+            userMap, getAttributeMapper().getDSAttribute(
+                IDPPConstants.JOB_TITLE_ELEMENT).toLowerCase());
+         if(jobTitle != null) {
+            DSTString dstString = getDSTString(jobTitle);
+            ei.setJobTitle(dstString);
          }
+
+         String org = CollectionHelper.getMapAttr(userMap,
+            getAttributeMapper().getDSAttribute(
+                IDPPConstants.O_ELEMENT).toLowerCase());
+         if(org != null) {
+            DSTString dstString = getDSTString(org);
+            ei.setO(dstString);
+         }
+
+         Set altOs = (Set)userMap.get(
+         getAttributeMapper().getDSAttribute(
+         IDPPConstants.ALT_O_ELEMENT).toLowerCase());
+         Iterator iter = altOs.iterator();
+         while(iter.hasNext()) {
+            DSTString dstString = getDSTString((String)iter.next());
+            ei.getAltO().add(dstString);
+         }
+         ppType.setEmploymentIdentity(ei);
+         return ppType;
      }
 
      /**

@@ -38,13 +38,11 @@ package com.sun.identity.federation.meta;
 import com.sun.identity.federation.common.IFSConstants;
 import com.sun.identity.federation.jaxb.entityconfig.AttributeType;
 import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.federation.jaxb.entityconfig.EntityConfigElement;
-import com.sun.identity.federation.jaxb.entityconfig.IDPDescriptorConfigElement;
-import com.sun.identity.federation.jaxb.entityconfig.SPDescriptorConfigElement;
-import com.sun.identity.shared.debug.Debug;
-import com.sun.identity.liberty.ws.meta.jaxb.EntityDescriptorElement;
+import com.sun.identity.federation.jaxb.entityconfig.EntityConfigType;
+import com.sun.identity.liberty.ws.meta.jaxb.EntityDescriptorType;
 import com.sun.identity.liberty.ws.meta.jaxb.IDPDescriptorType;
 import com.sun.identity.liberty.ws.meta.jaxb.SPDescriptorType;
+import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.shared.xml.XMLUtils;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -187,16 +185,16 @@ public class IDFFMetaUtils {
      * @return the <code>SPDescriptorType</code> object.
      */
     public static SPDescriptorType getSPDescriptor(
-            EntityDescriptorElement entityDescriptor) {
+            EntityDescriptorType entityDescriptor) {
         SPDescriptorType spDescriptor = null;
         if (entityDescriptor != null) {
-            List spList = entityDescriptor.getSPDescriptor();
+            List<SPDescriptorType> spList = entityDescriptor.getSPDescriptor();
             if (spList != null && !spList.isEmpty()) {
-                Iterator spIterator = spList.iterator();
+                Iterator<SPDescriptorType> spIterator = spList.iterator();
                 while (spIterator.hasNext()) {
-                    Object eObj = spIterator.next();
-                    if (eObj instanceof SPDescriptorType) {
-                        spDescriptor = (SPDescriptorType) eObj;
+                    SPDescriptorType eObj = spIterator.next();
+                    if (eObj != null) {
+                        spDescriptor = eObj;
                         break;
                     }
                 }
@@ -213,16 +211,16 @@ public class IDFFMetaUtils {
      * @return the <code>IDPDescriptorType</code> object.
      */
     public static IDPDescriptorType getIDPDescriptor(
-            EntityDescriptorElement entityDescriptor) {
+            EntityDescriptorType entityDescriptor) {
         IDPDescriptorType idpDescriptor = null;
         if (entityDescriptor != null) {
-            List idpList = entityDescriptor.getIDPDescriptor();
+            List<IDPDescriptorType> idpList = entityDescriptor.getIDPDescriptor();
             if (idpList != null && !idpList.isEmpty()) {
-                Iterator idpIterator = idpList.iterator();
+                Iterator<IDPDescriptorType> idpIterator = idpList.iterator();
                 while (idpIterator.hasNext()) {
-                    Object eObj = idpIterator.next();
-                    if (eObj instanceof IDPDescriptorType) {
-                        idpDescriptor = (IDPDescriptorType) eObj;
+                    IDPDescriptorType eObj = idpIterator.next();
+                    if (eObj != null) {
+                        idpDescriptor = eObj;
                         break;
                     }
                 }
@@ -239,17 +237,17 @@ public class IDFFMetaUtils {
      * @param entityConfig the <code>EntityConfigElement</code> object.
      * @return the <code>SPDescriptorEntityConfigElement</code> object.
      */
-    public static SPDescriptorConfigElement getSPDescriptorConfig(
-            EntityConfigElement entityConfig) {
-        SPDescriptorConfigElement spEntityConfig = null;
+    public static BaseConfigType getSPDescriptorConfig(
+            EntityConfigType entityConfig) {
+        BaseConfigType spEntityConfig = null;
         if (entityConfig != null) {
-            List spCfgList = entityConfig.getSPDescriptorConfig();
+            List<BaseConfigType> spCfgList = entityConfig.getSPDescriptorConfig();
             if (spCfgList != null && !spCfgList.isEmpty()) {
-                Iterator spCfgIterator = spCfgList.iterator();
+                Iterator<BaseConfigType> spCfgIterator = spCfgList.iterator();
                 while (spCfgIterator.hasNext()) {
-                    Object eObj = spCfgIterator.next();
-                    if (eObj instanceof SPDescriptorConfigElement) {
-                        spEntityConfig = (SPDescriptorConfigElement) eObj;
+                    BaseConfigType eObj = spCfgIterator.next();
+                    if (eObj != null) {
+                        spEntityConfig = eObj;
                         break;
                     }
                 }
@@ -266,17 +264,17 @@ public class IDFFMetaUtils {
      * @param entityConfig the <code>EntityConfigElement</code> object.
      * @return the <code>IDPDescriptorEntityConfigElement</code> object.
      */
-    public static IDPDescriptorConfigElement getIDPDescriptorConfig(
-            EntityConfigElement entityConfig) {
-        IDPDescriptorConfigElement idpEntityConfig = null;
+    public static BaseConfigType getIDPDescriptorConfig(
+            EntityConfigType entityConfig) {
+        BaseConfigType idpEntityConfig = null;
         if (entityConfig != null) {
-            List idpCfgList = entityConfig.getIDPDescriptorConfig();
+            List<BaseConfigType> idpCfgList = entityConfig.getIDPDescriptorConfig();
             if (idpCfgList != null && !idpCfgList.isEmpty()) {
-                Iterator idpCfgIterator = idpCfgList.iterator();
+                Iterator<BaseConfigType> idpCfgIterator = idpCfgList.iterator();
                 while (idpCfgIterator.hasNext()) {
-                    Object eObj = idpCfgIterator.next();
-                    if (eObj instanceof IDPDescriptorConfigElement) {
-                        idpEntityConfig = (IDPDescriptorConfigElement) eObj;
+                    BaseConfigType eObj = idpCfgIterator.next();
+                    if (eObj != null) {
+                        idpEntityConfig = eObj;
                         break;
                     }
                 }
@@ -348,8 +346,7 @@ public class IDFFMetaUtils {
         }
         String returnVal = null;
         try {
-            IDPDescriptorConfigElement idpConfig =
-                metaManager.getIDPDescriptorConfig(realm, idpEntityID);
+            BaseConfigType idpConfig = metaManager.getIDPDescriptorConfig(realm, idpEntityID);
             if (idpConfig != null) {
                 Map attributes = getAttributes(idpConfig);
                 returnVal = getFirstAttributeValue(attributes, attrName);

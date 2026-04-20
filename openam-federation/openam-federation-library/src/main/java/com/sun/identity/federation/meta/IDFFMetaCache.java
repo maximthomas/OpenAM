@@ -29,8 +29,8 @@
 package com.sun.identity.federation.meta;
 
 
-import com.sun.identity.federation.jaxb.entityconfig.EntityConfigElement;
-import com.sun.identity.liberty.ws.meta.jaxb.EntityDescriptorElement;
+import com.sun.identity.federation.jaxb.entityconfig.EntityConfigType;
+import com.sun.identity.liberty.ws.meta.jaxb.EntityDescriptorType;
 import com.sun.identity.shared.debug.Debug;
 import java.util.Hashtable;
 
@@ -64,13 +64,13 @@ public class IDFFMetaCache {
      * @return <code>EntityDescriptorElement</code> for the entity or null
      *         if not found. 
      */
-    public static EntityDescriptorElement getEntityDescriptor(
+    public static EntityDescriptorType getEntityDescriptor(
         String realm, String entityID)
     {
         String classMethod = "IDFFMetaCache:getEntityDescriptor" ;
         String cacheKey = buildCacheKey(realm, entityID);
-        EntityDescriptorElement entityDescriptor =
-            (EntityDescriptorElement)entityDescriptorCache.get(cacheKey);
+        EntityDescriptorType entityDescriptor =
+            (EntityDescriptorType)entityDescriptorCache.get(cacheKey);
         if (debug.messageEnabled()) {
             if (entityDescriptor != null) {
                 debug.message(classMethod + " Entity Descriptor found for : "
@@ -92,7 +92,7 @@ public class IDFFMetaCache {
      *        the entity.
      */
     public static void setEntityDescriptor(String realm, String entityID,
-            EntityDescriptorElement entityDescriptor) {
+                                           EntityDescriptorType entityDescriptor) {
         String cacheKey = buildCacheKey(realm, entityID);
         if (entityDescriptor != null) {
             entityDescriptorCache.put(cacheKey,entityDescriptor);
@@ -110,12 +110,12 @@ public class IDFFMetaCache {
      * @return <code>EntityConfigElement</code> object for the entity or null
      *         if not found.
      */
-    public static EntityConfigElement getEntityConfig(
+    public static EntityConfigType getEntityConfig(
         String realm, String entityID) {
         String classMethod = "IDFFMetaCache:getEntityConfig";
         String cacheKey = buildCacheKey(realm, entityID);
-        EntityConfigElement entityConfig =
-                (EntityConfigElement)entityConfigCache.get(cacheKey);
+        EntityConfigType entityConfig =
+                (EntityConfigType)entityConfigCache.get(cacheKey);
         if (debug.messageEnabled()) {
             if (entityConfig != null) {
                 debug.message(classMethod + "Entity Config found for "
@@ -135,7 +135,7 @@ public class IDFFMetaCache {
      * @param entityConfig Entity Configuration Object.
      */
     public static void setEntityConfig(String realm, String entityID,
-            EntityConfigElement entityConfig) {
+            EntityConfigType entityConfig) {
         String cacheKey = buildCacheKey(realm, entityID);
         if (entityConfig != null) {
             entityConfigCache.put(cacheKey,entityConfig);
@@ -219,7 +219,7 @@ public class IDFFMetaCache {
      * Build cache key for descriptorCache and configCache based on realm and
      * entity ID.
      * @param realm The realm under which the entity resides.
-     * @param entityID The entity ID or the name of circle of trust.
+     * @param entityId The entity ID or the name of circle of trust.
      * @return The cache key.
      */
     private static String buildCacheKey(String realm, String entityId) {

@@ -34,7 +34,7 @@ import com.sun.identity.common.SystemConfigurationUtil;
 import com.sun.identity.federation.common.FSException;
 import com.sun.identity.federation.common.FSUtils;
 import com.sun.identity.federation.common.IFSConstants;
-import com.sun.identity.federation.jaxb.entityconfig.IDPDescriptorConfigElement;
+import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.federation.meta.IDFFMetaException;
 import com.sun.identity.federation.meta.IDFFMetaManager;
 import com.sun.identity.federation.meta.IDFFMetaUtils;
@@ -92,8 +92,7 @@ public class FSAuthnDecisionHandler {
             return;
         }
         try {
-            IDPDescriptorConfigElement entityConfig = 
-                metaManager.getIDPDescriptorConfig(realm, entityID);
+            BaseConfigType entityConfig = metaManager.getIDPDescriptorConfig(realm, entityID);
             if (entityConfig == null) {
                 return;
             }

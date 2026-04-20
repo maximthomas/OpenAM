@@ -32,10 +32,8 @@ package com.sun.identity.federation.meta;
 import com.sun.identity.federation.common.FSUtils;
 import com.sun.identity.federation.jaxb.entityconfig.AttributeType;
 import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.federation.jaxb.entityconfig.EntityConfigElement;
-import com.sun.identity.federation.jaxb.entityconfig.IDPDescriptorConfigElement;
+import com.sun.identity.federation.jaxb.entityconfig.EntityConfigType;
 import com.sun.identity.federation.jaxb.entityconfig.ObjectFactory;
-import com.sun.identity.federation.jaxb.entityconfig.SPDescriptorConfigElement;
 import java.security.KeyStore;
 import java.security.cert.X509Certificate;
 import java.util.List;
@@ -47,8 +45,8 @@ import com.sun.identity.saml.xmlsig.KeyProvider;
 
 import com.sun.identity.federation.key.KeyUtil;
 import com.sun.identity.federation.common.IFSConstants;
-import com.sun.identity.liberty.ws.meta.jaxb.EntityDescriptorElement;
-import com.sun.identity.liberty.ws.meta.jaxb.KeyDescriptorElement;
+import com.sun.identity.liberty.ws.meta.jaxb.EntityDescriptorType;
+import com.sun.identity.liberty.ws.meta.jaxb.KeyDescriptorType;
 import com.sun.identity.liberty.ws.meta.jaxb.IDPDescriptorType;
 import com.sun.identity.liberty.ws.meta.jaxb.SPDescriptorType;
 import com.sun.identity.liberty.ws.meta.jaxb.ProviderDescriptorType;
@@ -152,17 +150,16 @@ public final class IDFFMetaSecurityUtils {
         String entityID, String certAlias, boolean isSigning, boolean isIDP,
         String encAlgo, int keySize) throws IDFFMetaException { 
         IDFFMetaManager metaManager = FSUtils.getIDFFMetaManager();
-        EntityConfigElement config = 
-            metaManager.getEntityConfig(realm, entityID);
+        EntityConfigType config =
+                metaManager.getEntityConfig(realm, entityID);
         if (!config.isHosted()) {
             String[] args = {entityID, realm};
             throw new IDFFMetaException("entityNotHosted", args);
         }
-        EntityDescriptorElement desp = metaManager.getEntityDescriptor(
+        EntityDescriptorType desp = metaManager.getEntityDescriptor(
             realm, entityID);
         if (isIDP) {
-            IDPDescriptorConfigElement idpConfig = 
-                IDFFMetaUtils.getIDPDescriptorConfig(config);
+            BaseConfigType idpConfig = IDFFMetaUtils.getIDPDescriptorConfig(config);
             IDPDescriptorType idpDesp = 
                 IDFFMetaUtils.getIDPDescriptor(desp);
             if ((idpConfig == null) || (idpDesp == null)) {
@@ -182,7 +179,7 @@ public final class IDFFMetaSecurityUtils {
                         IFSConstants.ENCRYPTION_CERT_ALIAS, null); 
                 }
             } else {
-                KeyDescriptorElement kde = 
+                KeyDescriptorType kde =
                     getKeyDescriptor(certAlias, isSigning, encAlgo, keySize);
                 updateKeyDescriptor(idpDesp, kde);
                 // update extended metadata
@@ -199,8 +196,7 @@ public final class IDFFMetaSecurityUtils {
             metaManager.setEntityDescriptor(realm, desp);
             metaManager.setEntityConfig(realm, config); 
         } else {
-            SPDescriptorConfigElement spConfig = 
-                IDFFMetaUtils.getSPDescriptorConfig(config);
+            BaseConfigType spConfig = IDFFMetaUtils.getSPDescriptorConfig(config);
             SPDescriptorType spDesp = 
                 IDFFMetaUtils.getSPDescriptor(desp);
             if ((spConfig == null) || (spDesp == null)) {
@@ -219,8 +215,7 @@ public final class IDFFMetaSecurityUtils {
                         IFSConstants.ENCRYPTION_CERT_ALIAS, null); 
                 }
             } else {
-                KeyDescriptorElement kde = 
-                    getKeyDescriptor(certAlias, isSigning, encAlgo, keySize);
+                KeyDescriptorType kde = getKeyDescriptor(certAlias, isSigning, encAlgo, keySize);
                 updateKeyDescriptor(spDesp, kde);
                 // update extended metadata
                 Set value = new HashSet();
@@ -238,15 +233,15 @@ public final class IDFFMetaSecurityUtils {
         }
     }
 
-    private static void updateKeyDescriptor(ProviderDescriptorType desp, 
-        KeyDescriptorElement newKey) {
+    private static void updateKeyDescriptor(ProviderDescriptorType desp,
+                                            KeyDescriptorType newKey) {
         // NOTE : we only support one signing and one encryption key right now
         // the code need to be change if we need to support multiple signing
         // and/or encryption keys in one entity
         List keys = desp.getKeyDescriptor();
         for (Iterator iter = keys.iterator(); iter.hasNext();) {
-            KeyDescriptorElement key = (KeyDescriptorElement) iter.next();
-            if (key.getUse().equalsIgnoreCase(newKey.getUse())) {
+            KeyDescriptorType key = (KeyDescriptorType) iter.next();
+            if (key.getUse().value().equalsIgnoreCase(newKey.getUse().value())) {
                 iter.remove();
             }
         }
@@ -255,14 +250,14 @@ public final class IDFFMetaSecurityUtils {
 
     private static void removeKeyDescriptor(ProviderDescriptorType desp,
         boolean isSigningUse) {
-        List keys = desp.getKeyDescriptor();
+        List<KeyDescriptorType> keys = desp.getKeyDescriptor();
         String keyUse = "encryption";
         if (isSigningUse) {
             keyUse = "signing";
         }
-        for (Iterator iter = keys.iterator(); iter.hasNext();) {
-            KeyDescriptorElement key = (KeyDescriptorElement) iter.next();
-            if (key.getUse().equalsIgnoreCase(keyUse)) {
+        for (Iterator<KeyDescriptorType> iter = keys.iterator(); iter.hasNext();) {
+            KeyDescriptorType key = iter.next();
+            if (key.getUse().value().equalsIgnoreCase(keyUse)) {
                 iter.remove();
             }
         }
@@ -271,27 +266,23 @@ public final class IDFFMetaSecurityUtils {
     private static void setExtendedAttributeValue(
         BaseConfigType config,
         String attrName, Set attrVal) throws IDFFMetaException {
-        try {
-            List attributes = config.getAttribute();
-            for(Iterator iter = attributes.iterator(); iter.hasNext();) {
-                AttributeType avp = (AttributeType)iter.next();
-                if (avp.getName().trim().equalsIgnoreCase(attrName)) {
-                     iter.remove(); 
-                }
+        List attributes = config.getAttribute();
+        for(Iterator iter = attributes.iterator(); iter.hasNext();) {
+            AttributeType avp = (AttributeType)iter.next();
+            if (avp.getName().trim().equalsIgnoreCase(attrName)) {
+                 iter.remove();
             }
-            if (attrVal != null) {
-                ObjectFactory factory = new ObjectFactory();
-                AttributeType atype = factory.createAttributeType();
-                atype.setName(attrName);
-                atype.getValue().addAll(attrVal);
-                config.getAttribute().add(atype);
-            }
-        } catch (JAXBException e) {
-            throw new IDFFMetaException(e);
+        }
+        if (attrVal != null) {
+            ObjectFactory factory = new ObjectFactory();
+            AttributeType atype = factory.createAttributeType();
+            atype.setName(attrName);
+            atype.getValue().addAll(attrVal);
+            config.getAttribute().add(atype);
         }
     }
 
-    private static KeyDescriptorElement getKeyDescriptor(
+    private static KeyDescriptorType getKeyDescriptor(
         String certAlias, boolean isSigning, String encAlgo, int keySize) 
         throws IDFFMetaException {
      
@@ -320,7 +311,7 @@ public final class IDFFMetaSecurityUtils {
               .append("</X509Data>\n")
               .append("</KeyInfo>\n");
             sb.append("</KeyDescriptor>\n");
-            return (KeyDescriptorElement) 
+            return (KeyDescriptorType)
                 IDFFMetaUtils.convertStringToJAXB(sb.toString());
         } catch (JAXBException e) {
             throw new IDFFMetaException(e);

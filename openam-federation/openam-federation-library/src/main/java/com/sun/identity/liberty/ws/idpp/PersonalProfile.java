@@ -105,7 +105,7 @@ public class PersonalProfile {
       *                       it's value.
       * @return Map map of processed query items and the correspoding list 
       * of results.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
       public Map queryData(Object credential,
                           String resourceID, 
@@ -254,7 +254,7 @@ public class PersonalProfile {
       /**
        * Replaces senders prefix with idpp prefix that's configured
        * in the service.
-       * @param String select.
+       * @param select
        * @return returns select string with configured idpp prefix.
        */
       private String replacePrefix(String select) {
@@ -412,10 +412,10 @@ public class PersonalProfile {
 
       /**
        * Gets the user data for given list of DST Query items.
-       * @param String userDN.
-       * @param List list of DSTQueryItems.
+       * @param userDN
+       * @param dstQueryItems of DSTQueryItems.
        * @return Map of user attribute value pairs.
-       * @throws IDPPException.
+       * @throws IDPPException
        */
       private Map getUserData(String userDN, List dstQueryItems) 
       throws IDPPException {
@@ -489,7 +489,7 @@ public class PersonalProfile {
      *                       it's value. 
      * @param request a Document object 
      * @return true if successful in modifying the data.
-     * @exception IDPPException.
+     * @exception IDPPException
      */
       public boolean modifyData(Object credential,
                                 String resourceID,
@@ -541,7 +541,7 @@ public class PersonalProfile {
             DSTModification modification = (DSTModification)iter.next(); 
             String select = modification.getSelect();
             boolean override = modification.isOverrideAllowed();
-            List dataObject = modification.getNewDataValue(); 
+            List dataObject = modification.getNewDataValue();
             String containerContext = getContainerFromSelect(select);
             IDPPContainer container = 
                    getIDPPContainer(containerContext, userDN); 

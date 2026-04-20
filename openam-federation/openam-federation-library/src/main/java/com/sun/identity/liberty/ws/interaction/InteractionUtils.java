@@ -28,8 +28,8 @@
 
 package com.sun.identity.liberty.ws.interaction;
 
-import com.sun.identity.liberty.ws.interaction.jaxb.InteractionResponseElement;
-import com.sun.identity.liberty.ws.interaction.jaxb.UserInteractionElement;
+import com.sun.identity.liberty.ws.interaction.jaxb.InteractionResponseType;
+import com.sun.identity.liberty.ws.interaction.jaxb.UserInteractionHeaderType;
 import com.sun.identity.liberty.ws.interaction.jaxb.ParameterType;
 import com.sun.identity.liberty.ws.soapbinding.Message;
 import java.util.Collections;
@@ -59,7 +59,7 @@ public class InteractionUtils {
      *          String objects
      */
     public static Map getParameters(
-            InteractionResponseElement interactionResponseElement) {
+            InteractionResponseType interactionResponseElement) {
         List parameters = interactionResponseElement.getParameter();
         Map pm = new HashMap();
         Iterator iter = parameters.iterator();
@@ -86,7 +86,7 @@ public class InteractionUtils {
      */
     public static List getInteractionLangauge(Message message) {
         List languages = null;
-        UserInteractionElement ue 
+        UserInteractionHeaderType ue
                 = InteractionManager.getUserInteractionElement(message);
         if (ue != null) {
             languages = ue.getLanguage();

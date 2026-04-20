@@ -39,6 +39,7 @@ import java.security.PublicKey;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 
+import jakarta.xml.bind.JAXBElement;
 import org.apache.xml.security.encryption.XMLCipher;
 
 import com.sun.identity.common.SystemConfigurationUtil;
@@ -47,7 +48,7 @@ import com.sun.identity.federation.common.IFSConstants;
 import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.federation.meta.IDFFMetaUtils;
 import com.sun.identity.liberty.ws.common.jaxb.xmlsig.KeyInfoType;
-import com.sun.identity.liberty.ws.common.jaxb.xmlsig.X509DataElement;
+import com.sun.identity.liberty.ws.common.jaxb.xmlsig.X509DataType;
 import com.sun.identity.liberty.ws.meta.jaxb.ProviderDescriptorType;
 import com.sun.identity.liberty.ws.meta.jaxb.KeyDescriptorType;
 import com.sun.identity.saml.common.SAMLConstants;
@@ -295,7 +296,7 @@ public class KeyUtil {
         KeyDescriptorType noUsageKD = null;
         while (iter.hasNext()) {
             kd = (KeyDescriptorType)iter.next();
-            use = kd.getUse();
+            use = kd.getUse().value();
             if ((use == null) || (use.trim().length() == 0)) {
 		if (noUsageKD == null) {
                     noUsageKD = kd;
@@ -348,11 +349,9 @@ public class KeyUtil {
             
             return null;
         }
-        X509DataElement data = (X509DataElement) ki.getContent().get(0);
-        byte[] bt = 
-            ((com.sun.identity.liberty.ws.common.jaxb.xmlsig.X509DataType.X509Certificate)
-             data.getX509IssuerSerialOrX509SKIOrX509SubjectName().get(0)).
-            getValue();
+        X509DataType data = (X509DataType) ki.getContent().get(0);
+        byte[] bt = ((JAXBElement<byte[] >)data.getX509IssuerSerialOrX509SKIOrX509SubjectName().get(0)).getValue();
+
         CertificateFactory cf = null;
         try {
             cf = CertificateFactory.getInstance("X.509");

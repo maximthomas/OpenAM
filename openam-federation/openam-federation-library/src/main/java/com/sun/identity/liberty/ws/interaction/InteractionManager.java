@@ -36,14 +36,15 @@ import com.sun.identity.common.PeriodicCleanUpMap;
 import com.sun.identity.common.SystemTimerPool;
 import com.sun.identity.common.TaskRunnable;
 import com.sun.identity.common.TimerPool;
+import com.sun.identity.liberty.ws.interaction.jaxb.InteractionResponseType;
+import com.sun.identity.liberty.ws.interaction.jaxb.UserInteractionHeaderType;
 import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.shared.encode.URLEncDec;
 import com.sun.identity.liberty.ws.common.LogUtil;
-import com.sun.identity.liberty.ws.interaction.jaxb.InquiryElement;
-import com.sun.identity.liberty.ws.interaction.jaxb.InteractionResponseElement;
-import com.sun.identity.liberty.ws.interaction.jaxb.RedirectRequestElement;
-import com.sun.identity.liberty.ws.interaction.jaxb.StatusElement;
-import com.sun.identity.liberty.ws.interaction.jaxb.UserInteractionElement;
+import com.sun.identity.liberty.ws.interaction.jaxb.InquiryType;
+import com.sun.identity.liberty.ws.interaction.jaxb.InteractionResponseType;
+import com.sun.identity.liberty.ws.interaction.jaxb.RedirectRequestType;
+import com.sun.identity.liberty.ws.interaction.jaxb.StatusType;
 import com.sun.identity.liberty.ws.soapbinding.Client;
 import com.sun.identity.liberty.ws.soapbinding.CorrelationHeader;
 import com.sun.identity.liberty.ws.soapbinding.Message;
@@ -289,7 +290,7 @@ public class InteractionManager {
                         + "Accept-Language specified by httpRequest="
                         + acceptLanguages);
             }
-            UserInteractionElement ue = createUserInteractionElement(
+            UserInteractionHeaderType ue = createUserInteractionElement(
                     acceptLanguages);
             String id = SAMLUtils.generateID();
             ue.setId(id);
@@ -629,7 +630,7 @@ public class InteractionManager {
      *
      */
     public Message handleInteraction(Message requestMessage,
-            InquiryElement inquiryElement) throws InteractionException, 
+            InquiryType inquiryElement) throws InteractionException,
             InteractionSOAPFaultException, SOAPFaultException {
         return handleInteraction(requestMessage, inquiryElement, null);
     }
@@ -654,7 +655,7 @@ public class InteractionManager {
      * 
      */
     public Message handleInteraction(Message requestMessage,
-           InquiryElement inquiryElement, String language)
+                                     InquiryType inquiryElement, String language)
            throws InteractionException, 
            InteractionSOAPFaultException, SOAPFaultException {
 
@@ -676,8 +677,7 @@ public class InteractionManager {
         }
 
         //Check wsc provided UserInteraction header
-        UserInteractionElement ue 
-                = getUserInteractionElement(requestMessage);
+        UserInteractionHeaderType ue = getUserInteractionElement(requestMessage);
         if (ue == null) {
             SOAPFaultException sfe = newRedirectFaultError(
                     QNAME_INTERACTION_REQUIRED);
@@ -805,7 +805,7 @@ public class InteractionManager {
     }
 
     private void setInquiryElement(String messageID, 
-            InquiryElement inquiryElement) {
+            InquiryType inquiryElement) {
         CacheEntry cacheEntry = cache.getCacheEntry(messageID);
         if ( cacheEntry == null) {
             cacheEntry = new CacheEntry(messageID);
@@ -815,8 +815,8 @@ public class InteractionManager {
 
     }
 
-    InquiryElement getInquiryElement(String messageID) {
-        InquiryElement inquiryElement = null;
+    InquiryType getInquiryElement(String messageID) {
+        InquiryType inquiryElement = null;
         CacheEntry cacheEntry = cache.getCacheEntry(messageID);
         if ( cacheEntry != null) {
             inquiryElement = cacheEntry.getInquiryElement();
@@ -825,7 +825,7 @@ public class InteractionManager {
     }
 
     void setInteractionResponseElement(String messageID, 
-            InteractionResponseElement interactionResponse) {
+            InteractionResponseType interactionResponse) {
         CacheEntry cacheEntry = cache.getCacheEntry(messageID);
         if ( cacheEntry == null) {
             cacheEntry = new CacheEntry(messageID);
@@ -847,10 +847,10 @@ public class InteractionManager {
      *
      * 
      */
-    public InteractionResponseElement getInteractionResponseElement(
+    public InteractionResponseType getInteractionResponseElement(
             Message requestMessage) 
             throws InteractionException {
-        InteractionResponseElement interactionResponseElement = null;
+        InteractionResponseType interactionResponseElement = null;
         CorrelationHeader ch = requestMessage.getCorrelationHeader();
         String messageID = ch.getRefToMessageID();
         CacheEntry cacheEntry = null;
@@ -1037,29 +1037,24 @@ public class InteractionManager {
         return language;
     }
 
-    private UserInteractionElement createUserInteractionElement(
+    private UserInteractionHeaderType createUserInteractionElement(
             List acceptLanguages) {
-        UserInteractionElement ue = null; 
-        try {
-            ue =objectFactory.createUserInteractionElement();
+        UserInteractionHeaderType ue = null;
+        ue =objectFactory.createUserInteractionHeaderType();
 
-            ue.setInteract(interactionConfig
-                    .getWSCSpecifiedInteractionChoice());
-            ue.setRedirect(interactionConfig.wscSupportsRedirect());
-            ue.setMaxInteractTime(
-                    java.math.BigInteger.valueOf(interactionConfig
-                    .getWSCSpecifiedMaxInteractionTime()));
-            ue.getLanguage().addAll(acceptLanguages);
-        } catch (JAXBException je) {
-            debug.error("InteractionManager.createUserInteractionElement():"
-                    + " can not create UserInteractionElement", je);
-        }
+        ue.setInteract(interactionConfig
+                .getWSCSpecifiedInteractionChoice());
+        ue.setRedirect(interactionConfig.wscSupportsRedirect());
+        ue.setMaxInteractTime(
+                BigInteger.valueOf(interactionConfig
+                .getWSCSpecifiedMaxInteractionTime()));
+        ue.getLanguage().addAll(acceptLanguages);
         return ue;
     }
 
-    static UserInteractionElement getUserInteractionElement(
+    static UserInteractionHeaderType getUserInteractionElement(
             Message message) {
-        UserInteractionElement ue = null; 
+        UserInteractionHeaderType ue = null;
         List list = message.getOtherSOAPHeaders();
         try {
             list = Utils.convertElementToJAXB(list);
@@ -1071,9 +1066,9 @@ public class InteractionManager {
         }
         Iterator iter = list.iterator();
         while (iter.hasNext()) {
-            Object obj = (Object)iter.next();
-            if (obj instanceof UserInteractionElement) {
-                ue = (UserInteractionElement)obj;
+            Object obj = iter.next();
+            if (obj instanceof UserInteractionHeaderType) {
+                ue = (UserInteractionHeaderType)obj;
                 break;
             }
         }
@@ -1081,14 +1076,8 @@ public class InteractionManager {
     }
 
     private SOAPFaultException newRedirectFault(String messageID) {
-        RedirectRequestElement re = null;
-        try{
-            re = objectFactory.createRedirectRequestElement();
-
-        } catch (JAXBException je) {
-            debug.error("InteractionManager.newRedirectFault():"
-                    + " can not create RedirectRequestElement", je);
-        }
+        RedirectRequestType re = null;
+        re = objectFactory.createRedirectRequestType();
 
         CorrelationHeader ch = new CorrelationHeader();
         String responseID = ch.getMessageID();
@@ -1140,14 +1129,8 @@ public class InteractionManager {
     }
 
     private SOAPFaultException newRedirectFaultError(QName errorCode) {
-        StatusElement se = null;
-        try{
-            se = objectFactory.createStatusElement();
-
-        } catch (JAXBException je) {
-            debug.error("InteractionManager.newRedirectFaultError():"
-                    + " can not create StatusElement", je);
-        }
+        StatusType se = null;
+        se = objectFactory.createStatusType();
 
         se.setCode(errorCode);
         List details = new ArrayList();
@@ -1182,9 +1165,9 @@ public class InteractionManager {
         }
 
         if ( (details != null) && (details.size() > 0)
-                    && (details.get(0) instanceof RedirectRequestElement)) {
-            RedirectRequestElement rre 
-                    = (RedirectRequestElement)details.get(0);
+                    && (details.get(0) instanceof RedirectRequestType)) {
+            RedirectRequestType rre
+                    = (RedirectRequestType)details.get(0);
             if (rre != null) {
                 redirectURL = rre.getRedirectURL();
             }
@@ -1293,8 +1276,8 @@ public class InteractionManager {
         String messageID; //key
         String requestMessageID;
         Message requestMessage;
-        InquiryElement inquiryElement;
-        InteractionResponseElement interactionResponseElement;
+        InquiryType inquiryElement;
+        InteractionResponseType interactionResponseElement;
         String connectTo;
         String certAlias;
         String soapAction;
@@ -1327,20 +1310,20 @@ public class InteractionManager {
             return requestMessageID;
         }
 
-        void setInquiryElement(InquiryElement inquiryElement) {
+        void setInquiryElement(InquiryType inquiryElement) {
             this.inquiryElement = inquiryElement;
         }
 
-        InquiryElement getInquiryElement() {
+        InquiryType getInquiryElement() {
             return inquiryElement;
         }
 
         void setInteractionResponseElement(
-                InteractionResponseElement interactionResponseElement) {
+                InteractionResponseType interactionResponseElement) {
             this.interactionResponseElement = interactionResponseElement;
         }
 
-        InteractionResponseElement getInteractionResponseElement() {
+        InteractionResponseType getInteractionResponseElement() {
             return interactionResponseElement;
         }
 

@@ -34,6 +34,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.ResourceBundle;
+
+import com.sun.identity.liberty.ws.disco.jaxb.InsertEntryType;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -51,7 +53,6 @@ import com.sun.identity.liberty.ws.disco.jaxb.ObjectFactory;
 import com.sun.identity.liberty.ws.disco.jaxb.ResourceIDType;
 import com.sun.identity.liberty.ws.disco.jaxb.ResourceOfferingType;
 import com.sun.identity.liberty.ws.disco.jaxb.ServiceInstanceType;
-import com.sun.identity.liberty.ws.disco.plugins.jaxb.DiscoEntryElement;
 import com.sun.identity.liberty.ws.disco.ResourceOffering;
 import com.sun.identity.liberty.ws.interfaces.ResourceIDMapper;
 import com.sun.identity.liberty.ws.security.SecurityAssertion;
@@ -115,8 +116,7 @@ public class AuthnSvcUtils {
     {
 
         try {
-            DiscoEntryElement discoEntry = (DiscoEntryElement)
-                      DiscoServiceManager.getBootstrappingDiscoEntry();
+            InsertEntryType discoEntry = DiscoServiceManager.getBootstrappingDiscoEntry();
             ResourceOfferingType offering = discoEntry.getResourceOffering();
             if (!DiscoServiceManager.useImpliedResource()) {
                 ServiceInstanceType serviceInstance =

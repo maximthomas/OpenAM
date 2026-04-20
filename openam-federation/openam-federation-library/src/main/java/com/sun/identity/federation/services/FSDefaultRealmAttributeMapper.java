@@ -31,7 +31,7 @@ package com.sun.identity.federation.services;
 
 import com.sun.identity.federation.common.FSUtils;
 import com.sun.identity.federation.common.IFSConstants;
-import com.sun.identity.federation.jaxb.entityconfig.SPDescriptorConfigElement;
+import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.federation.meta.IDFFMetaException;
 import com.sun.identity.federation.meta.IDFFMetaManager;
 import com.sun.identity.federation.meta.IDFFMetaUtils;
@@ -89,8 +89,7 @@ public class FSDefaultRealmAttributeMapper implements FSRealmAttributeMapper {
         try {
             IDFFMetaManager metaManager = FSUtils.getIDFFMetaManager();
             if (metaManager != null) {
-                SPDescriptorConfigElement spConfig =
-                    metaManager.getSPDescriptorConfig(realm, hostEntityId);
+                BaseConfigType spConfig = metaManager.getSPDescriptorConfig(realm, hostEntityId);
                 if (spConfig != null) {
                     Map attributes = IDFFMetaUtils.getAttributes(spConfig);
                     configMap = FSServiceUtils.parseAttributeConfig((List)

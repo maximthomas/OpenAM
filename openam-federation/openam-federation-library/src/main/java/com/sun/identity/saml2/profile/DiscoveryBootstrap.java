@@ -40,11 +40,11 @@ import com.sun.identity.federation.message.common.IDPProvidedNameIdentifier;
 import com.sun.identity.liberty.ws.disco.common.DiscoConstants;
 import com.sun.identity.liberty.ws.disco.common.DiscoServiceManager;
 import com.sun.identity.liberty.ws.disco.common.DiscoUtils;
+import com.sun.identity.liberty.ws.disco.jaxb.InsertEntryType;
 import com.sun.identity.liberty.ws.disco.jaxb.ObjectFactory;
 import com.sun.identity.liberty.ws.disco.jaxb.ResourceIDType;
 import com.sun.identity.liberty.ws.disco.jaxb.ResourceOfferingType;
 import com.sun.identity.liberty.ws.disco.jaxb.ServiceInstanceType;
-import com.sun.identity.liberty.ws.disco.plugins.jaxb.DiscoEntryElement;
 import com.sun.identity.liberty.ws.disco.ResourceOffering;
 import com.sun.identity.liberty.ws.interfaces.ResourceIDMapper;
 import com.sun.identity.liberty.ws.security.SessionContext;
@@ -141,8 +141,7 @@ public class DiscoveryBootstrap {
                 "DiscoveryBootstrap.getResourceOffering:Init");
         }
 
-        DiscoEntryElement discoEntry =
-            DiscoServiceManager.getBootstrappingDiscoEntry();
+        InsertEntryType discoEntry = DiscoServiceManager.getBootstrappingDiscoEntry();
         if (discoEntry == null) {
             throw new SAML2Exception(
                 SAML2Utils.bundle.getString("missingUnivID"));

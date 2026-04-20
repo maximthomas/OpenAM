@@ -40,7 +40,6 @@ import com.sun.identity.liberty.ws.disco.common.DiscoConstants;
 import com.sun.identity.liberty.ws.disco.common.DiscoServiceManager;
 import com.sun.identity.liberty.ws.disco.common.DiscoUtils;
 import com.sun.identity.liberty.ws.disco.jaxb.*;
-import com.sun.identity.liberty.ws.disco.plugins.jaxb.DiscoEntryElement;
 import com.sun.identity.liberty.ws.interfaces.ResourceIDMapper;
 import com.sun.identity.liberty.ws.security.*;
 import com.sun.identity.saml.assertion.*;
@@ -133,8 +132,7 @@ public class FSDiscoveryBootStrap {
             .append("AttributeValue").append(SAMLConstants.assertionDeclareStr)
             .append(">").append(SAMLConstants.NL);
 
-        DiscoEntryElement discoEntry =
-            DiscoServiceManager.getBootstrappingDiscoEntry();
+        InsertEntryType discoEntry = DiscoServiceManager.getBootstrappingDiscoEntry();
         if (discoEntry == null) {
             throw new FSException("nullDiscoveryOffering", null);
         }

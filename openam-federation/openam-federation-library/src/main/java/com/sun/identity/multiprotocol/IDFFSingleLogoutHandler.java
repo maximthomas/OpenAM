@@ -33,7 +33,6 @@ import com.sun.identity.cot.CircleOfTrustManager;
 import com.sun.identity.federation.common.FSUtils;
 import com.sun.identity.federation.common.IFSConstants;
 import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.federation.jaxb.entityconfig.IDPDescriptorConfigElement;
 import com.sun.identity.federation.meta.IDFFMetaManager;
 import com.sun.identity.federation.services.FSSessionManager;
 import com.sun.identity.federation.services.FSSessionPartner;
@@ -299,8 +298,7 @@ public class IDFFSingleLogoutHandler implements SingleLogoutHandler {
                                 "IDFFSingleLogoutHandler.findIDPMetaAlias : " +
                                 "found IDP " + idpId + " in COT " + cotName);
                     }
-                    IDPDescriptorConfigElement config =
-                            idffManager.getIDPDescriptorConfig(realm, idpId);
+                    BaseConfigType config = idffManager.getIDPDescriptorConfig(realm, idpId);
                     return config.getMetaAlias();
                 }
             }

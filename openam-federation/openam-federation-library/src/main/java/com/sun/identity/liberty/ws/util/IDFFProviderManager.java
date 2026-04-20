@@ -35,7 +35,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.sun.identity.federation.common.IFSConstants;
-import com.sun.identity.federation.jaxb.entityconfig.EntityConfigElement;
+import com.sun.identity.federation.jaxb.entityconfig.EntityConfigType;
 import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.federation.key.EncInfo;
 import com.sun.identity.federation.key.KeyUtil;
@@ -110,7 +110,7 @@ public class IDFFProviderManager implements ProviderManager {
      *     false if it doesn't.
      */
     public boolean isNameIDEncryptionEnabled(String providerID) {
-        EntityConfigElement entityConfig = null;
+        EntityConfigType entityConfig = null;
         try {
             entityConfig = idffMetaManager.getEntityConfig(
                 ROOT_REALM, providerID);

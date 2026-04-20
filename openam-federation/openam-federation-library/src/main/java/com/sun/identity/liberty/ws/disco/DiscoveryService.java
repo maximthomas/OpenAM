@@ -310,24 +310,18 @@ public final class DiscoveryService implements RequestHandler {
      *          identities that can be used in access control
      * @return ModifyResponseType which includes Status of the operation.
      */
-    private com.sun.identity.liberty.ws.disco.jaxb.ModifyResponseElement update(
+    private com.sun.identity.liberty.ws.disco.jaxb.ModifyResponseType update(
                 com.sun.identity.liberty.ws.disco.jaxb.ModifyType modify,
                 com.sun.identity.liberty.ws.soapbinding.Message message)
                 throws JAXBException
     {
         DiscoUtils.debug.message("in update.");
-        ModifyResponseElement resp = null;
+        ModifyResponseType resp = null;
         StatusType status = null;
-        try {
-            resp =
-                DiscoUtils.getDiscoFactory().createModifyResponseElement();
-            status = DiscoUtils.getDiscoFactory().createStatusType();
-            resp.setStatus(status);
-        } catch (JAXBException je) {
-            DiscoUtils.debug.error("DiscoService.update: couldn't form "
-                + "ModifyResponse.");
-            throw je;
-        }
+        resp =
+            DiscoUtils.getDiscoFactory().createModifyResponseType();
+        status = DiscoUtils.getDiscoFactory().createStatusType();
+        resp.setStatus(status);
 
         String providerID = DiscoServiceManager.getDiscoProviderID();
         String resourceID = null;

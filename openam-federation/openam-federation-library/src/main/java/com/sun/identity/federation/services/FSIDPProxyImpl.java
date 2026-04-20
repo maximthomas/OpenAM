@@ -30,7 +30,6 @@
 
 package com.sun.identity.federation.services;
 
-import com.sun.identity.federation.jaxb.entityconfig.SPDescriptorConfigElement;
 import com.sun.identity.federation.message.FSAuthnRequest;
 import com.sun.identity.federation.meta.IDFFMetaException;
 import com.sun.identity.federation.meta.IDFFMetaManager;

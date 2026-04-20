@@ -61,63 +61,56 @@ public class IDPPDemographics extends IDPPBaseContainer {
       * Gets the common name jaxb element 
       * @param userMap user map
       * @return CommonNameElement JAXB Object.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
 
          IDPPUtils.debug.message("IDPPDemographics:getContainerObject:Init");
 
-         try {
-             PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
-             DemographicsElement de = 
-                  IDPPUtils.getIDPPFactory().createDemographicsElement();
+         PPType ppType = IDPPUtils.getIDPPFactory().createPPType();
+         DemographicsType de =
+              IDPPUtils.getIDPPFactory().createDemographicsType();
 
-             String displayLang = CollectionHelper.getMapAttr(userMap, 
-               getAttributeMapper().getDSAttribute(
-               IDPPConstants.DEMO_GRAPHICS_DISPLAY_LANG_ELEMENT).toLowerCase());
+         String displayLang = CollectionHelper.getMapAttr(userMap,
+           getAttributeMapper().getDSAttribute(
+           IDPPConstants.DEMO_GRAPHICS_DISPLAY_LANG_ELEMENT).toLowerCase());
 
-             if(displayLang != null) {
-                de.setDisplayLanguage(getDSTString(displayLang));
-             }
-
-             Set languages = (Set)userMap.get(
-                getAttributeMapper().getDSAttribute(
-                IDPPConstants.DEMO_GRAPHICS_LANGUAGE_ELEMENT).toLowerCase());
-             Iterator iter = languages.iterator();
-             while(iter.hasNext()) {
-                de.getLanguage().add(getDSTString((String)iter.next()));
-             }
-
-             String birthDay = CollectionHelper.getMapAttr(userMap, 
-               getAttributeMapper().getDSAttribute(
-               IDPPConstants.DEMO_GRAPHICS_BIRTH_DAY_ELEMENT).toLowerCase());
-             if(birthDay != null) {
-                de.setBirthday(getDSTMonthDay(birthDay));
-             }
-
-             String age = CollectionHelper.getMapAttr(userMap,
-              getAttributeMapper().getDSAttribute(
-              IDPPConstants.DEMO_GRAPHICS_AGE_ELEMENT).toLowerCase());
-             if(age != null) {
-                de.setAge(getDSTInteger(age));
-             }
-
-             String timeZone = CollectionHelper.getMapAttr(userMap,
-                 getAttributeMapper().getDSAttribute(
-                 IDPPConstants.DEMO_GRAPHICS_TIME_ZONE_ELEMENT).toLowerCase());
-             if(timeZone != null) {
-                de.setTimeZone(getDSTString(timeZone));
-             }
-
-             ppType.setDemographics(de);
-
-             return ppType;
-         } catch (JAXBException je) {
-             IDPPUtils.debug.error(
-              "IDPPDemographics:getContainerObject: JAXB failure", je); 
-              throw new IDPPException(
-              IDPPUtils.bundle.getString("jaxbFailure"));
+         if(displayLang != null) {
+            de.setDisplayLanguage(getDSTString(displayLang));
          }
+
+         Set languages = (Set)userMap.get(
+            getAttributeMapper().getDSAttribute(
+            IDPPConstants.DEMO_GRAPHICS_LANGUAGE_ELEMENT).toLowerCase());
+         Iterator iter = languages.iterator();
+         while(iter.hasNext()) {
+            de.getLanguage().add(getDSTString((String)iter.next()));
+         }
+
+         String birthDay = CollectionHelper.getMapAttr(userMap,
+           getAttributeMapper().getDSAttribute(
+           IDPPConstants.DEMO_GRAPHICS_BIRTH_DAY_ELEMENT).toLowerCase());
+         if(birthDay != null) {
+            de.setBirthday(getDSTMonthDay(birthDay));
+         }
+
+         String age = CollectionHelper.getMapAttr(userMap,
+          getAttributeMapper().getDSAttribute(
+          IDPPConstants.DEMO_GRAPHICS_AGE_ELEMENT).toLowerCase());
+         if(age != null) {
+            de.setAge(getDSTInteger(age));
+         }
+
+         String timeZone = CollectionHelper.getMapAttr(userMap,
+             getAttributeMapper().getDSAttribute(
+             IDPPConstants.DEMO_GRAPHICS_TIME_ZONE_ELEMENT).toLowerCase());
+         if(timeZone != null) {
+            de.setTimeZone(getDSTString(timeZone));
+         }
+
+         ppType.setDemographics(de);
+
+         return ppType;
      }
 
      /**
@@ -172,7 +165,7 @@ public class IDPPDemographics extends IDPPBaseContainer {
       * @param select Select expression.
       * @param data list of new data objects.
       * @return Map Attribute key value pair map for the given select.
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      public Map getDataMapForSelect(String select, List data) 
      throws IDPPException {
@@ -195,8 +188,8 @@ public class IDPPDemographics extends IDPPBaseContainer {
            dataElement = data.get(0);
         }
         if(expContext.equals(IDPPConstants.DEMOGRAPHICS_ELEMENT)) {
-           if((dataElement == null) || 
-              (dataElement instanceof DemographicsElement)) {
+           if((dataElement == null) ||
+              (dataElement instanceof DemographicsType)) {
                map = getDemographicsMap(dataElement, map);
            } else {
                throw new IDPPException(
@@ -205,7 +198,7 @@ public class IDPPDemographics extends IDPPBaseContainer {
         } else if(expContext.equals(
               IDPPConstants.DEMO_GRAPHICS_DISPLAY_LANG_ELEMENT)) {
            if((dataElement == null) || 
-              (dataElement instanceof DisplayLanguageElement)) {
+              (dataElement instanceof DSTString)) {
                map = getAttributeMap(
                IDPPConstants.DEMO_GRAPHICS_DISPLAY_LANG_ELEMENT, 
                dataElement, map);
@@ -216,7 +209,7 @@ public class IDPPDemographics extends IDPPBaseContainer {
         } else if(expContext.equals(
               IDPPConstants.DEMO_GRAPHICS_BIRTH_DAY_ELEMENT)) {
            if((dataElement == null) || 
-              (dataElement instanceof BirthdayElement)) {
+              (dataElement instanceof DSTMonthDay)) {
                map = getAttributeMap(
                IDPPConstants.DEMO_GRAPHICS_BIRTH_DAY_ELEMENT,
                dataElement, map);
@@ -227,7 +220,7 @@ public class IDPPDemographics extends IDPPBaseContainer {
         } else if(expContext.equals(
               IDPPConstants.DEMO_GRAPHICS_AGE_ELEMENT)) {
            if((dataElement == null) || 
-              (dataElement instanceof AgeElement)) {
+              (dataElement instanceof DSTInteger)) {
                map = getAttributeMap(IDPPConstants.DEMO_GRAPHICS_AGE_ELEMENT,
                dataElement, map);
            } else {
@@ -237,7 +230,7 @@ public class IDPPDemographics extends IDPPBaseContainer {
         } else if(expContext.equals(
            IDPPConstants.DEMO_GRAPHICS_LANGUAGE_ELEMENT)) {
            if((dataElement == null) || 
-              (dataElement instanceof LanguageElement)) {
+              (dataElement instanceof List)) {
                map = getLanguageMap(data, map);
            } else {
                throw new IDPPException(
@@ -261,7 +254,7 @@ public class IDPPDemographics extends IDPPBaseContainer {
       * @param obj DemographicsType JAXB object.
       * @param map map that sets attribute/value pairs.
       * @return Map Attribute value pair map that needs to be modified. 
-      * @exception IDPPException.
+      * @exception IDPPException
       */
      private Map getDemographicsMap(Object obj, Map map) 
         throws IDPPException {

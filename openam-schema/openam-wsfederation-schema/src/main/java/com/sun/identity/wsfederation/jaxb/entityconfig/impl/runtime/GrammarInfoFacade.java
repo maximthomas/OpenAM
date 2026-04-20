@@ -10,8 +10,8 @@ package com.sun.identity.wsfederation.jaxb.entityconfig.impl.runtime;
 import java.util.ArrayList;
 import java.util.StringTokenizer;
 
-import javax.xml.bind.JAXBContext;
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBException;
 
 import com.sun.xml.bind.GrammarImpl;
 import com.sun.xml.bind.Messages;

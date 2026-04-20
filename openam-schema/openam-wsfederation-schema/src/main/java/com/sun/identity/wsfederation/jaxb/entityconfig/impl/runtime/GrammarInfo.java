@@ -7,7 +7,7 @@
 
 package com.sun.identity.wsfederation.jaxb.entityconfig.impl.runtime;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 
 /**
  * Keeps the information about the grammar as a whole.

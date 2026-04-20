@@ -18,6 +18,7 @@ package org.forgerock.openam.utils;
 
 import java.util.Calendar;
 import java.util.Date;
+import java.util.GregorianCalendar;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.ServiceLoader;
@@ -26,6 +27,10 @@ import java.util.TimeZone;
 import org.forgerock.util.time.TimeService;
 import org.joda.time.DateTimeUtils;
 import org.slf4j.LoggerFactory;
+
+import javax.xml.datatype.DatatypeConfigurationException;
+import javax.xml.datatype.DatatypeFactory;
+import javax.xml.datatype.XMLGregorianCalendar;
 
 /**
  * The source of all time-based information in OpenAM.
@@ -106,6 +111,25 @@ public enum Time implements DateTimeUtils.MillisProvider {
     public static Calendar getCalendarInstance() {
         Calendar calendar = Calendar.getInstance();
         return setCalendarTime(calendar);
+    }
+    public static XMLGregorianCalendar getXMLGregorianCalendarInstance() throws DatatypeConfigurationException {
+
+        Calendar calendar = getCalendarInstance();
+
+        GregorianCalendar gCalendar = new GregorianCalendar();
+        gCalendar.setTime(calendar.getTime());
+        gCalendar.setTimeZone(calendar.getTimeZone());
+
+        return DatatypeFactory.newInstance()
+                .newXMLGregorianCalendar(gCalendar);
+    }
+
+    public static XMLGregorianCalendar getXMLGregorianCalendarInstance(Date date) throws DatatypeConfigurationException {
+        GregorianCalendar gCalendar = new GregorianCalendar();
+        gCalendar.setTime(date);
+
+        return DatatypeFactory.newInstance()
+                .newXMLGregorianCalendar(gCalendar);
     }
 
     /**

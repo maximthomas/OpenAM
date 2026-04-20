@@ -878,11 +878,16 @@ public class AttributeQueryUtil {
             if ((jaxbValues != null) && (!jaxbValues.isEmpty())) {
                 List newValues = new ArrayList();
                 for(Iterator iterV = jaxbValues.iterator(); iterV.hasNext();) {
-                    AttributeValue jaxbValeu =
-                        (AttributeValueElement)iter.next();
-                    List content = jaxbValeu.getContent();
-                    if ((content != null) && (!content.isEmpty())) {
-                        newValues.add(content.get(0));
+                    Object jaxbValue = iterV.next();
+                    if (jaxbValue instanceof jakarta.xml.bind.JAXBElement) {
+                        jakarta.xml.bind.JAXBElement<?> jaxbElement = 
+                            (jakarta.xml.bind.JAXBElement<?>) jaxbValue;
+                        Object content = jaxbElement.getValue();
+                        if (content != null) {
+                            newValues.add(content);
+                        }
+                    } else {
+                        newValues.add(jaxbValue);
                     }
                 }
                 if (!newValues.isEmpty()) {
@@ -1025,9 +1030,19 @@ public class AttributeQueryUtil {
 
         List valuesS = new ArrayList();
         for(Iterator iter = attrValuesS.iterator(); iter.hasNext(); ) {
-            AttributeValueElement attrValueElem =
-                (AttributeValueElement)iter.next();
-            valuesS.addAll(attrValueElem.getContent());
+            Object attrValueElem = iter.next();
+            if (attrValueElem instanceof jakarta.xml.bind.JAXBElement) {
+                jakarta.xml.bind.JAXBElement<?> jaxbElement = 
+                    (jakarta.xml.bind.JAXBElement<?>) attrValueElem;
+                Object content = jaxbElement.getValue();
+                if (content instanceof List) {
+                    valuesS.addAll((List) content);
+                } else if (content != null) {
+                    valuesS.add(content);
+                }
+            } else if (attrValueElem != null) {
+                valuesS.add(attrValueElem);
+            }
         }
 
         try {
@@ -1097,7 +1112,7 @@ public class AttributeQueryUtil {
 
     private static void verifyResponse(Response response,
         AttributeQuery attrQuery, String attrAuthorityEntityID,
-        AttributeAuthorityDescriptorElement aad)
+        AttributeAuthorityDescriptorType aad)
         throws SAML2Exception {
 
         String attrQueryID = attrQuery.getID();
@@ -1163,8 +1178,8 @@ public class AttributeQueryUtil {
 
         List attrServices = aad.getAttributeService();
         for(Iterator iter = attrServices.iterator(); iter.hasNext(); ) {
-            AttributeServiceElement attrService =
-                (AttributeServiceElement)iter.next();
+            AttributeServiceType attrService =
+                (AttributeServiceType)iter.next();
             if (isValidAttributeService(binding, attrService,
                 attrQueryProfile)) {
                 SAML2Utils.debug.message("AttributeQueryUtil.findLocation: found valid service");
@@ -1177,7 +1192,7 @@ public class AttributeQueryUtil {
     }
 
     private static boolean isValidAttributeService(String binding,
-        AttributeServiceElement attrService, String attrQueryProfile) {
+        AttributeServiceType attrService, String attrQueryProfile) {
     
         if (!binding.equalsIgnoreCase(attrService.getBinding())) {
             return false;
@@ -1251,9 +1266,8 @@ public class AttributeQueryUtil {
         String realm, String attrAuthorityEntityID, String attrName)
     {
         try {
-            AttributeAuthorityConfigElement config =
-                metaManager.getAttributeAuthorityConfig(realm,
-                attrAuthorityEntityID);
+            BaseConfigType config = metaManager.getAttributeAuthorityConfig(realm,
+                    attrAuthorityEntityID);
             Map attrs = SAML2MetaUtils.getAttributes(config);
             String value = null;
             List values = (List) attrs.get(attrName);
@@ -1337,7 +1351,7 @@ public class AttributeQueryUtil {
             throws SAML2Exception {
         final String classMethod = "AttributeQueryUtil.getAttributesForFedlet: ";
 
-        AttributeQueryConfigElement attrQueryConfig = metaManager.getAttributeQueryConfig("/", spEntityID);
+        BaseConfigType attrQueryConfig = metaManager.getAttributeQueryConfig("/", spEntityID);
         if (attrQueryConfig == null) {
             if (SAML2Utils.debug.messageEnabled()) {
                 SAML2Utils.debug.message(classMethod + "Attribute Query Config is null");
@@ -1492,7 +1506,7 @@ public class AttributeQueryUtil {
         if (!wantNameIDEncrypted) {
             subject.setNameID(nameID);
         } else {
-            AttributeAuthorityDescriptorElement aad =
+            AttributeAuthorityDescriptorType aad =
                   metaManager.getAttributeAuthorityDescriptor("/", idpEntityID);
 
             EncInfo encInfo = KeyUtil.getEncInfo(aad, idpEntityID,

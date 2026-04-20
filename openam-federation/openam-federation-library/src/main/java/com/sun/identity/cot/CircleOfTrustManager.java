@@ -28,7 +28,6 @@
  */
 package com.sun.identity.cot;
 
-import javax.xml.bind.JAXBException;
 import com.sun.identity.federation.meta.IDFFCOTUtils;
 import com.sun.identity.federation.meta.IDFFMetaException;
 import com.sun.identity.federation.meta.IDFFMetaManager;
@@ -48,6 +47,8 @@ import com.sun.identity.saml2.meta.SAML2MetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationCOTUtils;
 import com.sun.identity.wsfederation.meta.WSFederationMetaException;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
+import jakarta.xml.bind.JAXBException;
+
 import java.lang.reflect.InvocationTargetException;
 import java.util.Collections;
 import java.util.HashMap;
@@ -424,7 +425,7 @@ public class CircleOfTrustManager {
      *         configuration.
      */
     void updateEntityConfig(String realm, String cotName, String protocolType, 
-        String entityID) throws COTException,JAXBException {
+        String entityID) throws COTException, JAXBException {
         if (protocolType.equalsIgnoreCase(COTConstants.IDFF)) {
             try {
                 (new IDFFCOTUtils(callerSession)).updateEntityConfig(

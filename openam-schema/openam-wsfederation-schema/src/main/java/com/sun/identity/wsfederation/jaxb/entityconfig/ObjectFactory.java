@@ -63,11 +63,11 @@ public class ObjectFactory
      *     the Class object of the javacontent interface to instantiate
      * @return
      *     a new instance
-     * @throws JAXBException
+     * @throws jakarta.xml.bind.JAXBException
      *     if an error occurs
      */
     public java.lang.Object newInstance(java.lang.Class javaContentInterface)
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return super.newInstance(javaContentInterface);
     }
@@ -117,7 +117,7 @@ public class ObjectFactory
      *     if an error occurs
      */
     public com.sun.identity.wsfederation.jaxb.entityconfig.AttributeType createAttributeType()
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return new com.sun.identity.wsfederation.jaxb.entityconfig.impl.AttributeTypeImpl();
     }
@@ -129,7 +129,7 @@ public class ObjectFactory
      *     if an error occurs
      */
     public com.sun.identity.wsfederation.jaxb.entityconfig.AttributeElement createAttributeElement()
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return new com.sun.identity.wsfederation.jaxb.entityconfig.impl.AttributeElementImpl();
     }
@@ -141,7 +141,7 @@ public class ObjectFactory
      *     if an error occurs
      */
     public com.sun.identity.wsfederation.jaxb.entityconfig.FederationConfigType createFederationConfigType()
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return new com.sun.identity.wsfederation.jaxb.entityconfig.impl.FederationConfigTypeImpl();
     }
@@ -149,11 +149,11 @@ public class ObjectFactory
     /**
      * Create an instance of SPSSOConfigElement
      * 
-     * @throws JAXBException
+     * @throws jakarta.xml.bind.JAXBException
      *     if an error occurs
      */
     public com.sun.identity.wsfederation.jaxb.entityconfig.SPSSOConfigElement createSPSSOConfigElement()
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return new com.sun.identity.wsfederation.jaxb.entityconfig.impl.SPSSOConfigElementImpl();
     }
@@ -161,11 +161,11 @@ public class ObjectFactory
     /**
      * Create an instance of IDPSSOConfigElement
      * 
-     * @throws JAXBException
+     * @throws jakarta.xml.bind.JAXBException
      *     if an error occurs
      */
     public com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement createIDPSSOConfigElement()
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return new com.sun.identity.wsfederation.jaxb.entityconfig.impl.IDPSSOConfigElementImpl();
     }
@@ -173,11 +173,11 @@ public class ObjectFactory
     /**
      * Create an instance of FederationConfigElement
      * 
-     * @throws JAXBException
+     * @throws jakarta.xml.bind.JAXBException
      *     if an error occurs
      */
     public com.sun.identity.wsfederation.jaxb.entityconfig.FederationConfigElement createFederationConfigElement()
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return new com.sun.identity.wsfederation.jaxb.entityconfig.impl.FederationConfigElementImpl();
     }
@@ -189,7 +189,7 @@ public class ObjectFactory
      *     if an error occurs
      */
     public com.sun.identity.wsfederation.jaxb.entityconfig.ValueElement createValueElement()
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return new com.sun.identity.wsfederation.jaxb.entityconfig.impl.ValueElementImpl();
     }
@@ -201,7 +201,7 @@ public class ObjectFactory
      *     if an error occurs
      */
     public com.sun.identity.wsfederation.jaxb.entityconfig.ValueElement createValueElement(java.lang.String value)
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return new com.sun.identity.wsfederation.jaxb.entityconfig.impl.ValueElementImpl(value);
     }
@@ -213,7 +213,7 @@ public class ObjectFactory
      *     if an error occurs
      */
     public com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType createBaseConfigType()
-        throws javax.xml.bind.JAXBException
+        throws jakarta.xml.bind.JAXBException
     {
         return new com.sun.identity.wsfederation.jaxb.entityconfig.impl.BaseConfigTypeImpl();
     }

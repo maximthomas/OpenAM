@@ -27,7 +27,7 @@
  */
 package com.sun.identity.federation.meta;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import com.sun.identity.cot.COTConstants;
 import com.sun.identity.federation.jaxb.entityconfig.AttributeType;
 import com.sun.identity.federation.jaxb.entityconfig.BaseConfigType;

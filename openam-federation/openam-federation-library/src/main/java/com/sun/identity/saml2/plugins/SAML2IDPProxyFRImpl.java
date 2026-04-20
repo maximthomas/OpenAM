@@ -361,19 +361,24 @@ public class SAML2IDPProxyFRImpl implements SAML2IDPFinder {
                                                     debugMessage(classMethod, "Attribute Values found for idp: " + idp);
                                                     Iterator avI = av.iterator();
                                                     while (avI.hasNext()) {
-                                                        AttributeValueElement ave = (AttributeValueElement) avI.next();
-                                                        if (ave != null) {
-                                                            List contentL = ave.getContent();
-                                                            debugMessage(classMethod, "Attribute Value Elements found for idp: " + idp
-                                                                    + "-->" + contentL);
-                                                            if (contentL != null || !contentL.isEmpty()) {
-                                                                Set idpContextSet = trimmedListToSet(contentL);
-                                                                debugMessage(classMethod, "idpContextSet = " + idpContextSet);
-                                                                idpContextSet.retainAll(authnRequestContextSet);
-                                                                if (idpContextSet != null && !idpContextSet.isEmpty()) {
-                                                                    idps = idp + " " + idps;
-                                                                    debugMessage(classMethod, "Extension Values found for idp " + idp
-                                                                            + ": " + idpContextSet);
+                                                        Object avObj = avI.next();
+                                                        if (avObj instanceof jakarta.xml.bind.JAXBElement) {
+                                                            jakarta.xml.bind.JAXBElement<?> jaxbElement = 
+                                                                (jakarta.xml.bind.JAXBElement<?>) avObj;
+                                                            Object content = jaxbElement.getValue();
+                                                            if (content instanceof List) {
+                                                                List contentL = (List) content;
+                                                                debugMessage(classMethod, "Attribute Value Elements found for idp: " + idp
+                                                                        + "-->" + contentL);
+                                                                if (contentL != null && !contentL.isEmpty()) {
+                                                                    Set idpContextSet = trimmedListToSet(contentL);
+                                                                    debugMessage(classMethod, "idpContextSet = " + idpContextSet);
+                                                                    idpContextSet.retainAll(authnRequestContextSet);
+                                                                    if (idpContextSet != null && !idpContextSet.isEmpty()) {
+                                                                        idps = idp + " " + idps;
+                                                                        debugMessage(classMethod, "Extension Values found for idp " + idp
+                                                                                + ": " + idpContextSet);
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -404,7 +409,7 @@ public class SAML2IDPProxyFRImpl implements SAML2IDPFinder {
     private String selectIDPBasedOnAuthContext(List idpList, String realm, AuthnRequest authnRequest) {
 
         String classMethod = "selectIdPBasedOnLOA";
-        EntityDescriptorElement idpDesc = null;
+        EntityDescriptorType idpDesc = null;
         Set authnRequestContextSet = null;
         String idps = "";
 
@@ -620,7 +625,7 @@ public class SAML2IDPProxyFRImpl implements SAML2IDPFinder {
         List result = null;
         try {
 
-            IDPSSOConfigElement config = SAML2Utils.getSAML2MetaManager().getIDPSSOConfig(
+            BaseConfigType config = SAML2Utils.getSAML2MetaManager().getIDPSSOConfig(
                                           realm, hostEntityId);
             Map attrs = SAML2MetaUtils.getAttributes(config);
             List value = (List) attrs.get(attrName);

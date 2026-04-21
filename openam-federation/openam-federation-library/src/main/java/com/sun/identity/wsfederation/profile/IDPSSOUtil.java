@@ -35,9 +35,9 @@ import com.sun.identity.federation.common.IFSConstants;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
-import com.sun.identity.wsfederation.jaxb.wsfederation.TokenIssuerEndpointElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
+import com.sun.identity.wsfederation.jaxb.wsaddr.EndpointReferenceType;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 import com.sun.identity.wsfederation.meta.WSFederationMetaException;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
@@ -46,6 +46,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.Map;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.xml.bind.JAXBElement;
 
 /**
  * The utility class is used by the identity provider to process 
@@ -82,8 +83,7 @@ public class IDPSSOUtil {
             // It's not in the system config,
             // try to get it from IDP config
             try {
-                IDPSSOConfigElement config = 
-                    WSFederationUtils.getMetaManager().getIDPSSOConfig(
+                BaseConfigType config = WSFederationUtils.getMetaManager().getIDPSSOConfig(
                         realm, hostEntityId);
                 authUrl = WSFederationMetaUtils.getAttribute(config, 
                     SAML2Constants.AUTH_URL);
@@ -132,7 +132,7 @@ public class IDPSSOUtil {
     {
         WSFederationMetaManager metaManager = 
             WSFederationUtils.getMetaManager();
-        FederationElement sp = 
+        FederationType sp =
             metaManager.getEntityDescriptor(realm, entityId);
         if ( wreply == null )
         {
@@ -145,13 +145,14 @@ public class IDPSSOUtil {
             // Just return first TokenIssuerEndpoint in the Federation
             for ( Object o: sp.getAny() )
             {
-                if ( o instanceof TokenIssuerEndpointElement )
+                if (o instanceof JAXBElement
+                        && "TokenIssuerEndpoint".equals(((JAXBElement<?>)o).getName().getLocalPart()))
                 {
                     try {
                         URL replyUrl = new URL(wreply);
                         URL thisUrl = new URL(
-                          ((TokenIssuerEndpointElement)o).getAddress().
-                          getValue());
+                                ((JAXBElement<EndpointReferenceType>)o).getValue().getAddress().getValue()
+                          );
                         if ( replyUrl.equals(thisUrl))
                             return wreply;
                     } catch (MalformedURLException mue) {

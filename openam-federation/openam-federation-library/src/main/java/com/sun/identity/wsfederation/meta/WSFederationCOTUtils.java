@@ -29,6 +29,7 @@
 
 package com.sun.identity.wsfederation.meta;
 
+import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.JAXBException;
 import java.util.Iterator;
 import java.util.List;
@@ -36,9 +37,9 @@ import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.wsfederation.jaxb.entityconfig.AttributeType;
 import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.wsfederation.jaxb.entityconfig.FederationConfigElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.FederationConfigType;
 import com.sun.identity.wsfederation.jaxb.entityconfig.ObjectFactory;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 
 /**
  * <code>WSFederationCOTUtils</code> provides utility methods to update
@@ -83,43 +84,43 @@ public class WSFederationCOTUtils {
         }
         ObjectFactory objFactory = new ObjectFactory();
         // Check whether the entity id existed in the DS
-        FederationElement edes = metaManager.getEntityDescriptor(
+        FederationType edes = metaManager.getEntityDescriptor(
                 realm, entityId);
         if (edes == null) {
             debug.error(classMethod +"No such entity: " + entityId);
             String[] data = {realm, entityId};
             throw new WSFederationMetaException("entityid_invalid", data);
         }
-        FederationConfigElement eConfig = 
+        FederationConfigType eConfig =
             metaManager.getEntityConfig(realm, entityId);
         if (eConfig == null) {
-            BaseConfigType bctype = null;
+            JAXBElement<BaseConfigType> bctype = null;
             AttributeType atype = objFactory.createAttributeType();
             atype.setName(SAML2Constants.COT_LIST);
             atype.getValue().add(name);
             // add to eConfig
-            FederationConfigElement ele = 
-                objFactory.createFederationConfigElement();
+            FederationConfigType ele =
+                objFactory.createFederationConfigType();
             ele.setFederationID(entityId);
             ele.setHosted(false);
-            List ll =
+            List<JAXBElement<BaseConfigType>> ll =
                     ele.getIDPSSOConfigOrSPSSOConfig();
             // Decide which role EntityDescriptorElement includes
             // Right now, it is either an SP or an IdP
             // IdP will have UriNamedClaimTypesOffered
             if (metaManager.getUriNamedClaimTypesOffered(edes) != 
                 null) {
-                bctype = objFactory.createIDPSSOConfigElement();
-                bctype.getAttribute().add(atype);
+                bctype = objFactory.createIDPSSOConfig(new BaseConfigType() {});
+                bctype.getValue().getAttribute().add(atype);
                 ll.add(bctype);
             } else {
-                bctype = objFactory.createSPSSOConfigElement();
-                bctype.getAttribute().add(atype);
+                bctype = objFactory.createSPSSOConfig(new BaseConfigType() {});
+                bctype.getValue().getAttribute().add(atype);
                 ll.add(bctype);
             }
             metaManager.setEntityConfig(realm,ele);
         } else {
-            List elist = eConfig.
+            List<JAXBElement<BaseConfigType>> elist = eConfig.
                     getIDPSSOConfigOrSPSSOConfig();
             for (Iterator iter = elist.iterator(); iter.hasNext();) {
                 BaseConfigType bConfig = (BaseConfigType)iter.next();
@@ -183,26 +184,26 @@ public class WSFederationCOTUtils {
             metaManager = new WSFederationMetaManager();
         }
         // Check whether the entity id existed in the DS
-        FederationElement edes = metaManager.getEntityDescriptor(
+        FederationType edes = metaManager.getEntityDescriptor(
                 realm, entityId);
         if (edes == null) {
             debug.error(classMethod +"No such entity: " + entityId);
             String[] data = {realm, entityId};
             throw new WSFederationMetaException("entityid_invalid", data);
         }
-        FederationConfigElement eConfig = 
+        FederationConfigType eConfig =
             metaManager.getEntityConfig(realm, entityId);
         if (eConfig != null) {
-            List elist = eConfig.
+            List<JAXBElement<BaseConfigType>> elist = eConfig.
                     getIDPSSOConfigOrSPSSOConfig();
-            for (Iterator iter = elist.iterator(); iter.hasNext();) {
-                BaseConfigType bConfig = (BaseConfigType)iter.next();
-                List list = bConfig.getAttribute();
-                for (Iterator iter2 = list.iterator(); iter2.hasNext();) {
-                    AttributeType avp = (AttributeType)iter2.next();
+            for (Iterator<JAXBElement<BaseConfigType>> iter = elist.iterator(); iter.hasNext();) {
+                BaseConfigType bConfig = iter.next().getValue();
+                List<AttributeType> list = bConfig.getAttribute();
+                for (Iterator<AttributeType> iter2 = list.iterator(); iter2.hasNext();) {
+                    AttributeType avp = iter2.next();
                     if (avp.getName().trim().equalsIgnoreCase(
                             SAML2Constants.COT_LIST)) {
-                        List avpl = avp.getValue();
+                        List<String> avpl = avp.getValue();
                         if (avpl != null && !avpl.isEmpty() &&
                                 containsValue(avpl,name)) {
                             avpl.remove(name);

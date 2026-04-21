@@ -38,7 +38,7 @@ import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.wsfederation.common.WSFederationConstants;
 import com.sun.identity.wsfederation.common.WSFederationException;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.SPSSOConfigElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.wsfederation.logging.LogUtil;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
@@ -142,9 +142,8 @@ public class RPSigninResponse extends WSFederationAction {
         if (realm == null || realm.length() == 0) {
             realm = "/";
         }
-        
-        SPSSOConfigElement spssoconfig =
-                metaManager.getSPSSOConfig(realm, spEntityId);
+
+        BaseConfigType spssoconfig = metaManager.getSPSSOConfig(realm, spEntityId);
 
         int timeskew = SAML2Constants.ASSERTION_TIME_SKEW_DEFAULT;
         String timeskewStr = WSFederationMetaUtils.getAttribute(spssoconfig,
@@ -348,7 +347,7 @@ public class RPSigninResponse extends WSFederationAction {
         }
     }
 
-    private boolean isAssertionCacheEnabled(SPSSOConfigElement spssoconfig) {          
+    private boolean isAssertionCacheEnabled(BaseConfigType spssoconfig) {
          String enabled = WSFederationMetaUtils.getAttribute(spssoconfig,
                SAML2Constants.ASSERTION_CACHE_ENABLED);
          if(enabled == null) {

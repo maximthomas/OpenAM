@@ -32,6 +32,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -66,7 +67,6 @@ import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.shared.whitelist.URLPatternMatcher;
 import com.sun.identity.wsfederation.common.WSFederationException;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
 import com.sun.identity.wsfederation.profile.SAML11RequestedSecurityToken;
@@ -94,7 +94,7 @@ public class ActiveRequest extends WSFederationAction {
     }
 
     /**
-     * Processes the incoming SOAP request {@link #parseAndValidateRequest(SOAPMessage, IDPSSOConfigElement) parsing
+     * Processes the incoming SOAP request {@link #parseAndValidateRequest(SOAPMessage, BaseConfigType) parsing
      * and validating the request}, and then authenticating the end-user using a customizable {@link WsFedAuthenticator}
      * implementation. In case of a successful login, a SAML1.1 RequestedSecurityToken is returned in a SOAP message.
      *
@@ -119,7 +119,7 @@ public class ActiveRequest extends WSFederationAction {
             throw new WSFederationException(BUNDLE_NAME, "nullIDPEntityID", null);
         }
 
-        final IDPSSOConfigElement idpConfig = metaManager.getIDPSSOConfig(realm, idpEntityId);
+        final BaseConfigType idpConfig = metaManager.getIDPSSOConfig(realm, idpEntityId);
         if (idpConfig == null) {
             DEBUG.error("Cannot find configuration for IdP " + idpEntityId);
             throw new WSFederationException(BUNDLE_NAME, "unableToFindIDPConfiguration", null);
@@ -209,7 +209,7 @@ public class ActiveRequest extends WSFederationAction {
         }
     }
 
-    private void parseAndValidateRequest(SOAPMessage soapMessage, IDPSSOConfigElement idpConfig) throws SOAPException,
+    private void parseAndValidateRequest(SOAPMessage soapMessage, BaseConfigType idpConfig) throws SOAPException,
             WSFederationException {
         final SOAPHeader soapHeader = soapMessage.getSOAPHeader();
         final NodeList headerNodes = soapHeader.getChildNodes();

@@ -32,6 +32,7 @@ import static org.forgerock.openam.utils.AttributeUtils.*;
 
 import java.util.Set;
 
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
 import org.forgerock.openam.utils.CollectionUtils;
 import org.forgerock.openam.utils.StringUtils;
 
@@ -47,7 +48,6 @@ import com.sun.identity.shared.encode.Base64;
 import com.sun.identity.wsfederation.common.WSFederationConstants;
 import com.sun.identity.wsfederation.common.WSFederationException;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
 
 /**
@@ -95,9 +95,8 @@ public class DefaultIDPAccountMapper extends DefaultAccountMapper
             throw new WSFederationException(WSFederationUtils.bundle.getString(
                    "invalidSSOToken")); 
         }
-        
-        IDPSSOConfigElement idpConfig = 
-            WSFederationUtils.getMetaManager().getIDPSSOConfig(
+
+        BaseConfigType idpConfig = WSFederationUtils.getMetaManager().getIDPSSOConfig(
                 realm, hostEntityID);
 
         String name2 = null;

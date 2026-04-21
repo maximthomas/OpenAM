@@ -40,10 +40,10 @@ import java.util.Map;
 import java.util.ResourceBundle;
 import java.util.Set;
 
-import javax.xml.bind.JAXBContext;
-import javax.xml.bind.JAXBException;
-import javax.xml.bind.Marshaller;
-import javax.xml.bind.Unmarshaller;
+import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBException;
+import jakarta.xml.bind.Marshaller;
+import jakarta.xml.bind.Unmarshaller;
 
 import com.sun.identity.saml2.jaxb.entityconfig.EntityConfigType;
 import com.sun.identity.saml2.jaxb.metadataextquery.AttributeQueryDescriptorType;
@@ -81,7 +81,7 @@ public final class SAML2MetaUtils {
         "com.sun.identity.saml2.jaxb.xmlsig:" +
         "com.sun.identity.saml2.jaxb.assertion:" +
         "com.sun.identity.saml2.jaxb.metadata:" +
-	"com.sun.identity.saml2.jaxb.metadataattr:" +
+        "com.sun.identity.saml2.jaxb.metadataattr:" +
         "com.sun.identity.saml2.jaxb.entityconfig:" +
         "com.sun.identity.saml2.jaxb.schema";
     private static final String JAXB_PACKAGE_LIST_PROP =

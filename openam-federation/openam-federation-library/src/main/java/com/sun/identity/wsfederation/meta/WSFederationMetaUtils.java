@@ -44,10 +44,10 @@ import java.util.ResourceBundle;
 import java.util.Set;
 
 import jakarta.servlet.http.HttpServletRequest;
-import javax.xml.bind.JAXBContext;
-import javax.xml.bind.JAXBException;
-import javax.xml.bind.Marshaller;
-import javax.xml.bind.Unmarshaller;
+import jakarta.xml.bind.JAXBContext;
+import jakarta.xml.bind.JAXBException;
+import jakarta.xml.bind.Marshaller;
+import jakarta.xml.bind.Unmarshaller;
 
 import org.forgerock.openam.utils.CollectionUtils;
 import org.forgerock.openam.utils.StringUtils;
@@ -57,8 +57,6 @@ import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.shared.locale.Locale;
 import com.sun.identity.shared.xml.XMLUtils;
 import com.sun.identity.wsfederation.common.WSFederationConstants;
-import com.sun.identity.wsfederation.jaxb.entityconfig.AttributeElement;
-import com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement;
 
 import org.xml.sax.InputSource;
 
@@ -268,15 +266,15 @@ public final class WSFederationMetaUtils {
             objFactory = 
             new com.sun.identity.wsfederation.jaxb.entityconfig.ObjectFactory();
 
-        List attributeList = config.getAttribute();
+        List<AttributeType> attributeList = config.getAttribute();
 
         attributeList.clear();
 
         // add the new content
         for (String key : map.keySet())
         {
-            AttributeElement
-                avp = objFactory.createAttributeElement();
+            AttributeType
+                avp = objFactory.createAttributeType();
             avp.setName(key);
             avp.getValue().addAll(map.get(key));
             
@@ -292,9 +290,9 @@ public final class WSFederationMetaUtils {
      */
     public static String getAttribute(BaseConfigType config, String key)
     {
-        List<AttributeElement> list = config.getAttribute();
+        List<AttributeType> list = config.getAttribute();
 
-        for (AttributeElement avp : list) {
+        for (AttributeType avp : list) {
             if (avp.getName().equals(key)) {
                 return CollectionUtils.getFirstItem(avp.getValue());
             }
@@ -430,7 +428,7 @@ public final class WSFederationMetaUtils {
      * @param request The HTTP request corresponding to the current WS-Fed action.
      * @return The Base URL of the OpenAM deployment.
      */
-    public static String getEndpointBaseUrl(IDPSSOConfigElement idpConfig, HttpServletRequest request) {
+    public static String getEndpointBaseUrl(BaseConfigType idpConfig, HttpServletRequest request) {
         String endpointBaseUrl = getAttribute(idpConfig, WSFederationConstants.ENDPOINT_BASE_URL);
         if (StringUtils.isEmpty(endpointBaseUrl)) {
             endpointBaseUrl = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort()

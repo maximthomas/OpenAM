@@ -42,7 +42,7 @@ import com.sun.identity.saml.assertion.NameIdentifier;
 import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.shared.DateUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.wsfederation.meta.WSFederationMetaException;
 import java.io.IOException;
 import java.util.Collections;
@@ -58,7 +58,7 @@ import com.sun.identity.saml.assertion.Assertion;
 import com.sun.identity.saml.xmlsig.XMLSignatureManager; 
 import com.sun.identity.saml2.common.SAML2Exception;
 import com.sun.identity.saml2.xmlsig.SigManager;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 import com.sun.identity.wsfederation.key.KeyUtil;
 import com.sun.identity.wsfederation.logging.LogUtil;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
@@ -282,7 +282,7 @@ public class WSFederationUtils {
         String id = assertion.getAssertionID();
         
         try {
-            FederationElement idp = 
+            FederationType idp =
                 metaManager.getEntityDescriptor(realm, issuer);
             X509Certificate cert = KeyUtil.getVerificationCert(idp, issuer, 
                 true);
@@ -508,7 +508,7 @@ public class WSFederationUtils {
     public static SAML11RequestedSecurityToken createSAML11Token(String realm, String idpEntityId, String spEntityId,
             Object session, String spTokenIssuerName, String authMethod, boolean wantAssertionSigned)
             throws WSFederationException {
-        final IDPSSOConfigElement idpConfig = metaManager.getIDPSSOConfig(realm, idpEntityId);
+        final BaseConfigType idpConfig = metaManager.getIDPSSOConfig(realm, idpEntityId);
         if (idpConfig == null) {
             debug.error("Cannot find configuration for IdP " + idpEntityId);
             throw new WSFederationException(WSFederationUtils.bundle.getString("unableToFindIDPConfiguration"));

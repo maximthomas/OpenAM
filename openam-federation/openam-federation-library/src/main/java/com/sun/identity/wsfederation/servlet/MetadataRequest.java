@@ -34,14 +34,14 @@ import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.wsfederation.common.WSFederationConstants;
 import com.sun.identity.wsfederation.common.WSFederationException;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
 import java.io.IOException;
 import java.util.List;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 
 
 /**
@@ -98,7 +98,7 @@ public class MetadataRequest extends WSFederationAction {
             }
         }
 
-        FederationElement fedElem = 
+        FederationType fedElem =
             metaManager.getEntityDescriptor(realm, entityId);
 
         String metaXML = null;

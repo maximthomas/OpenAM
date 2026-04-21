@@ -44,7 +44,7 @@ import com.sun.identity.saml.common.SAMLConstants;
 import com.sun.identity.saml.xmlsig.KeyProvider;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
 import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
 
 /**
@@ -150,7 +150,7 @@ public class KeyUtil {
      * entity's signature
      */    
     public static X509Certificate getVerificationCert(
-        FederationElement fed,
+        FederationType fed,
         String entityID,
         boolean isIDP
     ) {
@@ -198,7 +198,7 @@ public class KeyUtil {
      *                <code>null</code> if no certificate is included.
      */
     public static java.security.cert.X509Certificate getCert(
-        FederationElement fed ) {
+        FederationType fed ) {
         String classMethod = "KeyUtil.getCert: ";
         
         byte[] bt = WSFederationUtils.getMetaManager().

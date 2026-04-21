@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
 
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -43,7 +44,6 @@ import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.wsfederation.common.WSFederationConstants;
 import com.sun.identity.wsfederation.common.WSFederationException;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
 
@@ -87,7 +87,7 @@ public class MexRequest extends WSFederationAction {
             throw new WSFederationException(WSFederationConstants.BUNDLE_NAME, "nullIDPEntityID", null);
         }
 
-        final IDPSSOConfigElement idpConfig = metaManager.getIDPSSOConfig(realm, idpEntityId);
+        final BaseConfigType idpConfig = metaManager.getIDPSSOConfig(realm, idpEntityId);
         if (idpConfig == null) {
             DEBUG.error("Cannot find configuration for IdP " + idpEntityId);
             throw new WSFederationException(WSFederationConstants.BUNDLE_NAME, "unableToFindIDPConfiguration", null);

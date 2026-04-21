@@ -37,7 +37,7 @@ import com.sun.identity.wsfederation.common.WSFederationConstants;
 import com.sun.identity.wsfederation.common.WSFederationException;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
 import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 import com.sun.identity.wsfederation.logging.LogUtil;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
@@ -150,7 +150,7 @@ public class IPRPSignoutRequest extends WSFederationAction {
                 if ( idpList != null && idpList.length > 0 
                     && idpList[0] != null && idpList[0].length()>0 )
                 {
-                    FederationElement fed = 
+                    FederationType fed =
                         metaManager.getEntityDescriptor(realm, 
                         idpList[0]);
                     String endpoint = 
@@ -191,7 +191,7 @@ public class IPRPSignoutRequest extends WSFederationAction {
                         {
                             displayName = spList[i];
                         }
-                        FederationElement fed = 
+                        FederationType fed =
                             metaManager.getEntityDescriptor(realm, 
                             spList[i]);
                         String endpoint = 

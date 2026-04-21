@@ -28,7 +28,7 @@
 
 package com.sun.identity.liberty.ws.idpp.container;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.JAXBElement;
 import java.util.Set;
 import java.util.HashSet;

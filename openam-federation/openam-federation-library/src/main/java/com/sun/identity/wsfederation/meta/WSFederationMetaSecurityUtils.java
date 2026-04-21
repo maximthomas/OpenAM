@@ -37,9 +37,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 
 import com.sun.identity.saml.xmlsig.AMSignatureProvider;
+import com.sun.identity.wsfederation.jaxb.wsfederation.TokenKeyInfoType;
+import jakarta.xml.bind.JAXBElement;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -62,12 +64,9 @@ import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.saml2.key.KeyUtil;
 
 import com.sun.identity.wsfederation.jaxb.entityconfig.AttributeType;
-import com.sun.identity.wsfederation.jaxb.entityconfig.FederationConfigElement;
-import com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.FederationConfigType;
 import com.sun.identity.wsfederation.jaxb.entityconfig.ObjectFactory;
-import com.sun.identity.wsfederation.jaxb.entityconfig.SPSSOConfigElement;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
-import com.sun.identity.wsfederation.jaxb.wsfederation.TokenSigningKeyInfoElement;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
 
 /**
@@ -139,9 +138,9 @@ public final class WSFederationMetaSecurityUtils {
      * @throws JAXBException if the entity descriptor is invalid.
      */
     public static Document sign(
-        FederationElement descriptor,
-        SPSSOConfigElement spconfig,
-        IDPSSOConfigElement idpconfig
+        FederationType descriptor,
+        BaseConfigType spconfig,
+        BaseConfigType idpconfig
     ) throws JAXBException, WSFederationMetaException
     {
 /* JUST GET IT TO COMPILE!!!
@@ -464,17 +463,16 @@ public final class WSFederationMetaSecurityUtils {
         String entityID, String certAlias, boolean isIDP)
         throws WSFederationMetaException {
         WSFederationMetaManager metaManager = new WSFederationMetaManager();
-        FederationConfigElement config =
+        FederationConfigType config =
             metaManager.getEntityConfig(realm, entityID);
         if (!config.isHosted()) {
             String[] args = {entityID, realm};
             throw new WSFederationMetaException("entityNotHosted", args);
         }
-        FederationElement desp = 
+        FederationType desp =
             metaManager.getEntityDescriptor(realm, entityID);
         if (isIDP) {
-            IDPSSOConfigElement idpConfig =
-                metaManager.getIDPSSOConfig(realm, entityID);
+            BaseConfigType idpConfig = metaManager.getIDPSSOConfig(realm, entityID);
             if ((idpConfig == null) || (desp == null)) {
                 String[] args = {entityID, realm};
                 throw new WSFederationMetaException("entityNotIDP", args);
@@ -486,7 +484,7 @@ public final class WSFederationMetaSecurityUtils {
                 setExtendedAttributeValue(idpConfig,
                         SAML2Constants.SIGNING_CERT_ALIAS, null);
             } else {
-                TokenSigningKeyInfoElement kde = getKeyDescriptor(certAlias);
+                TokenKeyInfoType kde = getKeyDescriptor(certAlias);
                 updateKeyDescriptor(desp, kde);
                 // update extended metadata
                 Set value = new HashSet();
@@ -495,8 +493,7 @@ public final class WSFederationMetaSecurityUtils {
                         SAML2Constants.SIGNING_CERT_ALIAS, value);
             }
         } else {
-            SPSSOConfigElement spConfig =
-                metaManager.getSPSSOConfig(realm, entityID);
+            BaseConfigType spConfig = metaManager.getSPSSOConfig(realm, entityID);
             if ((spConfig == null) || (desp == null)) {
                 String[] args = {entityID, realm};
                 throw new WSFederationMetaException("entityNotSP", args);
@@ -508,7 +505,7 @@ public final class WSFederationMetaSecurityUtils {
                 setExtendedAttributeValue(spConfig,
                     SAML2Constants.SIGNING_CERT_ALIAS, null);
             } else {
-                TokenSigningKeyInfoElement kde = getKeyDescriptor(certAlias);
+                TokenKeyInfoType kde = getKeyDescriptor(certAlias);
                 updateKeyDescriptor(desp, kde);
                 // update extended metadata
                 Set value = new HashSet();
@@ -521,29 +518,31 @@ public final class WSFederationMetaSecurityUtils {
         metaManager.setEntityConfig(realm, config);
     }
 
-    private static void updateKeyDescriptor(FederationElement desp,
-        TokenSigningKeyInfoElement newKey) {
+    private static void updateKeyDescriptor(FederationType desp,
+                                            TokenKeyInfoType newKey) {
         // NOTE : we only support one signing and one encryption key right now 
         // the code need to be change if we need to support multiple signing
         // and/or encryption keys in one entity
-        List objList = desp.getAny();
-        for (Iterator iter = objList.iterator(); iter.hasNext();) {
+        List<Object> objList = desp.getAny();
+        for (Iterator<Object> iter = objList.iterator(); iter.hasNext();) {
             Object o = iter.next();
-            if (o instanceof TokenSigningKeyInfoElement) {
+            if (o instanceof JAXBElement
+                    && "TokenSigningKeyInfo".equals(((JAXBElement<?>)o).getName().getLocalPart())) {
                 iter.remove();
             }
         }
         desp.getAny().add(0,newKey);
     }
 
-    private static void removeKeyDescriptor(FederationElement desp) {
+    private static void removeKeyDescriptor(FederationType desp) {
         // NOTE : we only support one signing and one encryption key right now 
         // the code need to be change if we need to support multiple signing
         // and/or encryption keys in one entity
-        List objList = desp.getAny();
-        for (Iterator iter = objList.iterator(); iter.hasNext();) {
+        List<Object> objList = desp.getAny();
+        for (Iterator<Object> iter = objList.iterator(); iter.hasNext();) {
             Object o = iter.next();
-            if (o instanceof TokenSigningKeyInfoElement) {
+            if (o instanceof JAXBElement
+                    && "TokenSigningKeyInfo".equals(((JAXBElement<?>)o).getName().getLocalPart())) {
                 iter.remove();
             }
         }
@@ -551,27 +550,23 @@ public final class WSFederationMetaSecurityUtils {
 
     private static void setExtendedAttributeValue(BaseConfigType config,
         String attrName, Set attrVal) throws WSFederationMetaException {
-        try {
-            List attributes = config.getAttribute();
-            for(Iterator iter = attributes.iterator(); iter.hasNext();) {
-                AttributeType avp = (AttributeType)iter.next();
-                if (avp.getName().trim().equalsIgnoreCase(attrName)) {
-                     iter.remove();
-                }
+        List attributes = config.getAttribute();
+        for(Iterator iter = attributes.iterator(); iter.hasNext();) {
+            AttributeType avp = (AttributeType)iter.next();
+            if (avp.getName().trim().equalsIgnoreCase(attrName)) {
+                 iter.remove();
             }
-            if (attrVal != null) {
-                ObjectFactory factory = new ObjectFactory();
-                AttributeType atype = factory.createAttributeType();
-                atype.setName(attrName);
-                atype.getValue().addAll(attrVal);
-                config.getAttribute().add(atype);
-            }
-        } catch (JAXBException e) {
-            throw new WSFederationMetaException(e);
+        }
+        if (attrVal != null) {
+            ObjectFactory factory = new ObjectFactory();
+            AttributeType atype = factory.createAttributeType();
+            atype.setName(attrName);
+            atype.getValue().addAll(attrVal);
+            config.getAttribute().add(atype);
         }
     }
 
-    private static TokenSigningKeyInfoElement getKeyDescriptor(String certAlias)
+    private static TokenKeyInfoType getKeyDescriptor(String certAlias)
         throws WSFederationMetaException {
         try {
             String certString =
@@ -588,7 +583,7 @@ public final class WSFederationMetaSecurityUtils {
               .append("</X509Data>\n")
               .append("</SecurityTokenReference>\n");
             sb.append("</TokenSigningKeyInfo>\n");
-            return (TokenSigningKeyInfoElement)
+            return (TokenKeyInfoType)
                 WSFederationMetaUtils.convertStringToJAXB(sb.toString());
         } catch (JAXBException e) {
             throw new WSFederationMetaException(e);

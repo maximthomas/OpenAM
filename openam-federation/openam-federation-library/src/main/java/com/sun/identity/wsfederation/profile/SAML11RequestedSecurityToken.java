@@ -50,8 +50,8 @@ import com.sun.identity.shared.xml.XMLUtils;
 import com.sun.identity.wsfederation.common.WSFederationConstants;
 import com.sun.identity.wsfederation.common.WSFederationException;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.SPSSOConfigElement;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 import com.sun.identity.wsfederation.logging.LogUtil;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
@@ -198,7 +198,7 @@ public class SAML11RequestedSecurityToken implements RequestedSecurityToken {
             Date notAfter = new Date(issueInstant.getTime() + period);
             WSFederationMetaManager metaManager =
                 WSFederationUtils.getMetaManager();
-            FederationElement idp = 
+            FederationType idp =
                 metaManager.getEntityDescriptor(realm, idpEntityId);
 
             String issuer = metaManager.getTokenIssuerName(idp);
@@ -358,8 +358,7 @@ public class SAML11RequestedSecurityToken implements RequestedSecurityToken {
                 WSFederationUtils.bundle.getString("untrustedIssuer"));
         }
 
-        SPSSOConfigElement spConfig = 
-            metaManager.getSPSSOConfig(realm, hostEntityId);
+        BaseConfigType spConfig = metaManager.getSPSSOConfig(realm, hostEntityId);
         if ( spConfig == null )
         {
             debug.error(classMethod + "cannot find configuration for SP " 

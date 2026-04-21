@@ -67,7 +67,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.logging.Level;
 import javax.xml.namespace.QName;
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import org.w3c.dom.Document;
 
 //Interaction imports

@@ -25,7 +25,7 @@ import java.util.List;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 
 public class KeyUtilTest {
 
@@ -42,11 +42,11 @@ public class KeyUtilTest {
         String idpMetadata = XMLUtils.print(
                 XMLUtils.toDOMDocument(ClassLoader.getSystemResourceAsStream(XML_DOCUMENT_TO_LOAD),
                     SAML2Utils.debug), "UTF-8");
-        EntityDescriptorElement element = SAML2MetaUtils.getEntityDescriptorElement(idpMetadata);
-        List descriptors = element.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
+        EntityDescriptorType element = SAML2MetaUtils.getEntityDescriptorElement(idpMetadata);
+        List<RoleDescriptorType> descriptors = element.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
         for (Object descriptor : descriptors) {
-            if (descriptor instanceof IDPSSODescriptorElement) {
-                KeyDescriptorType type = KeyUtil.getKeyDescriptor((IDPSSODescriptorElement)descriptor, "signing");
+            if (descriptor instanceof IDPSSODescriptorType) {
+                KeyDescriptorType type = KeyUtil.getKeyDescriptor((IDPSSODescriptorType)descriptor, "signing");
                 Assert.assertNotNull(type);
                 break;
             }

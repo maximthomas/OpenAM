@@ -32,7 +32,7 @@ package com.sun.identity.liberty.ws.idpp.container;
 import static org.forgerock.openam.utils.Time.*;
 
 import com.sun.identity.shared.datastruct.CollectionHelper;
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import javax.xml.datatype.DatatypeFactory;
 import javax.xml.datatype.XMLGregorianCalendar;
 import java.util.Set;

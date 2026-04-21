@@ -33,7 +33,7 @@ import com.sun.identity.saml2.common.SAML2Constants;
 import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
 import com.sun.identity.wsfederation.common.WSFederationException;
-import com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.wsfederation.meta.WSFederationMetaException;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
 import java.util.HashSet;
@@ -87,8 +87,7 @@ public class DefaultIDPAuthenticationMethodMapper
         String classRef = null;
 
         try {
-            IDPSSOConfigElement config = 
-                WSFederationUtils.getMetaManager().getIDPSSOConfig(
+            BaseConfigType config = WSFederationUtils.getMetaManager().getIDPSSOConfig(
                     realm, idpEntityID);
             attrs = WSFederationMetaUtils.getAttributes(config);
         } catch (WSFederationMetaException sme) {

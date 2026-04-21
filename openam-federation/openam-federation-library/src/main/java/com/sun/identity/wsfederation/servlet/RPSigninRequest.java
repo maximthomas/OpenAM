@@ -42,13 +42,14 @@ import com.sun.identity.wsfederation.common.WSFederationConstants;
 import com.sun.identity.wsfederation.common.WSFederationException;
 import java.io.IOException;
 import java.util.Date;
+
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.SPSSOConfigElement;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
 import java.util.ArrayList;
@@ -124,8 +125,7 @@ public class RPSigninRequest extends WSFederationAction {
                 "invalidMetaAlias", args);
         }
 
-        SPSSOConfigElement spConfig = 
-            metaManager.getSPSSOConfig(spRealm,spEntityId);
+        BaseConfigType spConfig = metaManager.getSPSSOConfig(spRealm, spEntityId);
         if ( spConfig==null ) {
             String[] args = {spEntityId, spRealm};
             throw new WSFederationException(WSFederationConstants.BUNDLE_NAME,
@@ -209,7 +209,7 @@ public class RPSigninRequest extends WSFederationAction {
             }
         }
 
-        FederationElement sp = 
+        FederationType sp =
             metaManager.getEntityDescriptor(spRealm,spEntityId);
         String spIssuerName = 
             metaManager.getTokenIssuerName(sp);
@@ -253,7 +253,7 @@ public class RPSigninRequest extends WSFederationAction {
             }
         }
 
-        FederationElement idp = null;
+        FederationType idp = null;
         if ( idpEntityId != null )
         {
             idp = metaManager.getEntityDescriptor(null,

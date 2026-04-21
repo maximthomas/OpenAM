@@ -28,13 +28,14 @@
 
 package com.sun.identity.wsfederation.meta;
 
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.FederationConfigType;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 import java.util.Hashtable;
 
 import com.sun.identity.shared.debug.Debug;
 
-import com.sun.identity.wsfederation.jaxb.entityconfig.FederationConfigElement;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.FederationConfigType;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 
 /**
  * The <code>WSFederationMetaCache</code> provides a metadata cache for the
@@ -56,14 +57,14 @@ class WSFederationMetaCache
      * Returns the standard metadata entity descriptor under the realm from
      * cache.
      * @param realm The realm under which the entity resides.
-     * @param entityId ID of the entity to be retrieved. 
+     * @param federationId ID of the entity to be retrieved.
      * @return <code>FederationElement</code> for the entity or null
      *         if not found. 
      */
-    static FederationElement getFederation(String realm, String federationId) {
+    static FederationType getFederation(String realm, String federationId) {
         String cacheKey = buildCacheKey(realm, federationId);
-        FederationElement federation =
-	    (FederationElement)federationCache.get(cacheKey);
+        FederationType federation =
+	    (FederationType)federationCache.get(cacheKey);
         if (debug.messageEnabled()) {
             debug.message("WSFederationMetaCache.getEntityDescriptor: " + 
                 "cacheKey = " + cacheKey + ", found = " + (federation != null));
@@ -74,11 +75,11 @@ class WSFederationMetaCache
     /**
      * Adds the standard metadata entity descriptor under the realm to cache.
      * @param realm The realm under which the entity resides.
-     * @param entityId ID of the entity to be retrieved. 
-     * @param descriptor <code>FederationElement</code> for the entity. 
+     * @param federationId ID of the entity to be retrieved.
+     * @param federation <code>FederationElement</code> for the entity.
      */
     static void putFederation(String realm, String federationId,
-            FederationElement federation)
+            FederationType federation)
     {
         String cacheKey = buildCacheKey(realm, federationId);
         if (federation != null) {
@@ -105,12 +106,12 @@ class WSFederationMetaCache
      * @return <code>FederationConfigElement</code> object for the entity or 
      * null if not found.
      */
-    static FederationConfigElement getEntityConfig(
+    static FederationConfigType getEntityConfig(
             String realm, String entityId)
     {
         String cacheKey = buildCacheKey(realm, entityId);
-        FederationConfigElement config =
-	    (FederationConfigElement)configCache.get(cacheKey);
+        FederationConfigType config =
+	    (FederationConfigType)configCache.get(cacheKey);
         if (debug.messageEnabled()) {
             debug.message("SAML2MetaCache.getEntityConfig: cacheKey = " +
 			  cacheKey + ", found = " + (config != null));
@@ -125,7 +126,7 @@ class WSFederationMetaCache
      * @param config <code>FederationConfigElement</code> object for the entity.
      */
     static void putEntityConfig(String realm, String entityId,
-        FederationConfigElement config) {
+        FederationConfigType config) {
         String cacheKey = buildCacheKey(realm, entityId);
         if (config != null) {
             if (debug.messageEnabled()) {
@@ -155,7 +156,7 @@ class WSFederationMetaCache
      * Build cache key for federationCache and configCache based on realm and
      * entity ID.
      * @param realm The realm under which the entity resides.
-     * @param entityID The entity ID or the name of circle of trust.
+     * @param entityId The entity ID or the name of circle of trust.
      * @return The cache key.
      */
     private static String buildCacheKey(String realm, String entityId) {

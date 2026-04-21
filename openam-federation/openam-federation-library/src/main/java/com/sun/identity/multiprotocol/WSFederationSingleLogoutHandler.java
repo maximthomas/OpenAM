@@ -36,7 +36,7 @@ import com.sun.identity.plugin.session.SessionProvider;
 import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.wsfederation.common.WSFederationConstants;
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.IDPSSOConfigElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import java.net.URLEncoder;
 import java.util.HashMap;
@@ -220,8 +220,7 @@ public class WSFederationSingleLogoutHandler implements SingleLogoutHandler {
                             "WSFedSingleLogoutHandler.findIDPMetaAlias : " +
                             "found IDP " + idpId + " in COT " + cotName);
                     }
-                    IDPSSOConfigElement config =
-                        metaManager.getIDPSSOConfig(realm, idpId);
+                    BaseConfigType config = metaManager.getIDPSSOConfig(realm, idpId);
                     return config.getMetaAlias();
                 }
             }

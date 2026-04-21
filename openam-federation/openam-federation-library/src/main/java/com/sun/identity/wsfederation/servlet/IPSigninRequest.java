@@ -39,14 +39,14 @@ import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.shared.encode.URLEncDec;
 import com.sun.identity.wsfederation.common.WSFederationConstants;
 import com.sun.identity.wsfederation.common.WSFederationException;
-import com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement;
+import com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType;
+import com.sun.identity.wsfederation.jaxb.wsfederation.FederationType;
 
 import java.io.IOException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import com.sun.identity.wsfederation.common.WSFederationUtils;
-import com.sun.identity.wsfederation.jaxb.entityconfig.SPSSOConfigElement;
 import com.sun.identity.wsfederation.logging.LogUtil;
 import com.sun.identity.wsfederation.meta.WSFederationMetaManager;
 import com.sun.identity.wsfederation.meta.WSFederationMetaUtils;
@@ -267,7 +267,7 @@ public class IPSigninRequest extends WSFederationAction {
                 WSFederationUtils.bundle.getString("unableTofindACSURL"));
         }
 
-        final SPSSOConfigElement spConfig = WSFederationUtils.getMetaManager().getSPSSOConfig(realm, spEntityId);
+        final BaseConfigType spConfig = WSFederationUtils.getMetaManager().getSPSSOConfig(realm, spEntityId);
         if (spConfig == null) {
             debug.error("Cannot find configuration for SP " + spEntityId);
             throw new WSFederationException(WSFederationUtils.bundle.getString("unableToFindSPConfiguration"));
@@ -286,7 +286,7 @@ public class IPSigninRequest extends WSFederationAction {
         boolean wantAssertionSigned = strWantAssertionSigned != null ? Boolean.parseBoolean(strWantAssertionSigned)
                 : true;
 
-        FederationElement sp = WSFederationUtils.getMetaManager().getEntityDescriptor(realm, spEntityId);
+        FederationType sp = WSFederationUtils.getMetaManager().getEntityDescriptor(realm, spEntityId);
         String spTokenIssuerName = WSFederationUtils.getMetaManager().getTokenIssuerName(sp);
 
         // generate a response for the authn request

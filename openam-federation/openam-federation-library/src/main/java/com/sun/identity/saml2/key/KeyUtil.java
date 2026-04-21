@@ -358,7 +358,7 @@ public class KeyUtil {
         List<KeyDescriptorType> keyDescriptorsWithoutUsage = new ArrayList<>(keyDescriptors.size());
 
         for (KeyDescriptorType keyDescriptor : keyDescriptors) {
-            String use = keyDescriptor.getUse().value();
+            String use = keyDescriptor.getUse() != null ? keyDescriptor.getUse().value() : null;
             if (StringUtils.isBlank(use)) {
                 keyDescriptorsWithoutUsage.add(keyDescriptor);
             } else if (use.trim().toLowerCase().equals(usage)) {

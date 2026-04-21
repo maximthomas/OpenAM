@@ -78,7 +78,7 @@ import com.sun.identity.saml2.jaxb.metadata.EncryptionMethodElement;
 import com.sun.identity.saml2.jaxb.xmlenc.EncryptionMethodType;
 import com.sun.identity.shared.datastruct.OrderedSet;
 import com.sun.identity.console.federation.SAMLv2AuthContexts;
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 
 import org.apache.xml.security.encryption.XMLCipher;
 import org.forgerock.openam.utils.StringUtils;

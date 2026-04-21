@@ -32,9 +32,13 @@
 Portions Copyrighted [2013] [ForgeRock US]
 -->
 
-<jaxb:bindings xmlns:jaxb="http://java.sun.com/xml/ns/jaxb"
-               xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-               version="2.0">
+<jxb:bindings
+        version="3.0"
+        xmlns:jxb="https://jakarta.ee/xml/ns/jaxb"
+        xmlns:xs="http://www.w3.org/2001/XMLSchema"
+        xmlns:xjc="http://java.sun.com/xml/ns/jaxb/xjc"
+        jxb:extensionBindingPrefixes="xjc">
+
   <jaxb:bindings schemaLocation="../xsd/xacml-core-v3-schema-wd-17.xsd"  node="/xsd:schema">
     <jaxb:schemaBindings>
       <jaxb:package name="com.sun.identity.entitlement.xacml3.core"/>

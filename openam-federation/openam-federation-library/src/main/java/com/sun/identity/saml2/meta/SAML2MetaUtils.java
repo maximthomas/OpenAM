@@ -82,15 +82,15 @@ public final class SAML2MetaUtils {
         "com.sun.identity.saml2.jaxb.assertion:" +
         "com.sun.identity.saml2.jaxb.metadata:" +
         "com.sun.identity.saml2.jaxb.metadataattr:" +
-        "com.sun.identity.saml2.jaxb.entityconfig:" +
-        "com.sun.identity.saml2.jaxb.schema";
+        "com.sun.identity.saml2.jaxb.entityconfig";
+        //"com.sun.identity.saml2.jaxb.schema";
     private static final String JAXB_PACKAGE_LIST_PROP =
         "com.sun.identity.liberty.ws.jaxb.packageList";
     private static JAXBContext jaxbContext = null;
     private static final String PROP_JAXB_FORMATTED_OUTPUT =
                                         "jaxb.formatted.output";
     private static final String PROP_NAMESPACE_PREFIX_MAPPER =
-                                    "com.sun.xml.bind.namespacePrefixMapper";
+                                    "org.glassfish.jaxb.namespacePrefixMapper";
 
     private static NamespacePrefixMapperImpl nsPrefixMapper =
                                             new NamespacePrefixMapperImpl();
@@ -630,8 +630,8 @@ public final class SAML2MetaUtils {
 
         Object element = preProcessSAML2Document(doc);
 
-        return (element instanceof EntityDescriptorType) ?
-            (EntityDescriptorType)element : null;
+        return (element instanceof JAXBElement && ((JAXBElement<?>)element).getValue() instanceof EntityDescriptorType) ?
+            (EntityDescriptorType)((JAXBElement<?>) element).getValue() : null;
     }
 
     /**

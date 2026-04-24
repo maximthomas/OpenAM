@@ -164,7 +164,7 @@ public class DiscoveryBootstrap {
          String univID = values[0];
 
         try {
-            ResourceOfferingType offering = discoEntry.getResourceOffering();
+            ResourceOfferingType offering = discoEntry.getValue().getResourceOffering();
             ServiceInstanceType serviceInstance = offering.getServiceInstance();
             String providerID = serviceInstance.getProviderID();
             if (!DiscoServiceManager.useImpliedResource()) {

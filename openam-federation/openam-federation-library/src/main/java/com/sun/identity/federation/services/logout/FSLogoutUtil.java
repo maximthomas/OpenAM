@@ -1037,12 +1037,12 @@ public class FSLogoutUtil {
                     IFSConstants.IDP.equalsIgnoreCase(hostedRole))
                 {
                     hostedConfig = metaManager.getIDPDescriptorConfig(
-                        realm, hostedEntityId);
+                        realm, hostedEntityId).getValue();
                } else if (hostedEntityId != null &&
                     IFSConstants.SP.equalsIgnoreCase(hostedRole))
                 {
                     hostedConfig = metaManager.getSPDescriptorConfig(
-                        realm, hostedEntityId);
+                        realm, hostedEntityId).getValue();
                 }
                 retURL = FSServiceUtils.getLogoutDonePageURL(
                     request, hostedConfig, providerAlias);

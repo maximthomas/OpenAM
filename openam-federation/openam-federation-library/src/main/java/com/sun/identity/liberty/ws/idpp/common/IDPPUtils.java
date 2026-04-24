@@ -40,6 +40,8 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.security.SecureRandom;
+
+import com.sun.identity.liberty.ws.disco.jaxb.ResourceIDType;
 import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.shared.locale.Locale;
 import com.sun.identity.shared.encode.Base64;
@@ -187,23 +189,23 @@ public class IDPPUtils {
                                                    String resourceID,
                                                    boolean includeCommonAttr)
      throws JAXBException, IDPPException {
-         QueryElement query = idppFactory.createQueryElement(); 
+         QueryElement query = idppFactory.createQueryElement(idppFactory.createQueryType());
          if(queryExpressions == null || resourceID == null
             || queryExpressions.size() == 0) {
             debug.error("IDPPUtils:createQueryElement: Either query" +
             " expressions or resource id is null.");
             throw new IDPPException("ResourceID or query expressions are null");
          }
-         query.setResourceID(createResourceIDElement(resourceID));
-         query.setId(SAMLUtils.generateID());
+         query.getValue().setResourceID(createResourceIDElement(resourceID));
+         query.getValue().setId(SAMLUtils.generateID());
          for (int i =0; i < queryExpressions.size(); i++) {
-              QueryType.QueryItemType item = 
-              idppFactory.createQueryTypeQueryItemType();
+              QueryType.QueryItem item =
+              idppFactory.createQueryTypeQueryItem();
               item.setId(SAMLUtils.generateID()); 
               item.setIncludeCommonAttributes(includeCommonAttr);
               item.setItemID(SAMLUtils.generateID());
               item.setSelect(addIDPPPrefix((String)queryExpressions.get(i)));
-              query.getQueryItem().add(item);
+              query.getValue().getQueryItem().add(item);
          }
          return query; 
      }
@@ -219,7 +221,7 @@ public class IDPPUtils {
             debug.error("IDPPUtils:getQueryDataElements:response is null");
             throw new IDPPException("response is null");
          }
-         return response.getData();
+         return response.getValue().getData();
      }
      
      /**
@@ -234,8 +236,8 @@ public class IDPPUtils {
             throw new IDPPException("ResourceID is null");
          }
          ResourceIDElement resourceIDElement = 
-               idppFactory.createResourceIDElement();
-         resourceIDElement.setValue(resourceID);
+               idppFactory.createResourceIDElement(new ResourceIDType());
+         resourceIDElement.getValue().setValue(resourceID);
          return resourceIDElement;
      }
 

@@ -140,7 +140,7 @@ public class FSDiscoveryBootStrap {
         }
 
         try {
-            ResourceOfferingType offering = discoEntry.getResourceOffering();
+            ResourceOfferingType offering = discoEntry.getValue().getResourceOffering();
             ServiceInstanceType serviceInstance = offering.getServiceInstance();
             String providerID = serviceInstance.getProviderID();
             if (!DiscoServiceManager.useImpliedResource()) {

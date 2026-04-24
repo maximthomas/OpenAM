@@ -1778,7 +1778,7 @@ public class FSSingleLogoutHandler {
                     try {
                         BaseConfigType sourceSPConfig = 
                             metaManager.getSPDescriptorConfig(
-                                realm, sourceEntityId);
+                                realm, sourceEntityId).getValue();
                         String enabledString = 
                             IDFFMetaUtils.getFirstAttributeValueFromConfig(
                                 sourceSPConfig, IFSConstants.ENABLE_IDP_PROXY);
@@ -1808,7 +1808,7 @@ public class FSSingleLogoutHandler {
                         FSSingleLogoutHandler handler =
                             new FSSingleLogoutHandler();
                         proxySPConfig = metaManager.getSPDescriptorConfig(
-                            realm, hostedEntityId);
+                            realm, hostedEntityId).getValue();
                         proxySPDescriptor = metaManager.getSPDescriptor(
                             realm, hostedEntityId);
                         handler.setHostedDescriptor(proxySPDescriptor);

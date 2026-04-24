@@ -325,12 +325,12 @@ public class FSPostLogin {
                 {
                     isIDP = true;
                     hostedConfig = metaManager.getIDPDescriptorConfig(
-                        realm, entityID);
+                        realm, entityID).getValue();
                 } else if (providerRole != null &&
                     providerRole.equalsIgnoreCase(IFSConstants.SP))
                 {
                     hostedConfig = metaManager.getSPDescriptorConfig(
-                        realm, entityID);
+                        realm, entityID).getValue();
                 }
             } catch (IDFFMetaException ie) {
                 FSUtils.debug.error("FSPostLogin::setMetaInfo: exception:",ie);

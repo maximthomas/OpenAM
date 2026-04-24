@@ -318,16 +318,11 @@ public final class DiscoveryService implements RequestHandler {
         DiscoUtils.debug.message("in update.");
         ModifyResponseElement resp = null;
         StatusType status = null;
-        try {
-            resp =
-                DiscoUtils.getDiscoFactory().createModifyResponseElement();
-            status = DiscoUtils.getDiscoFactory().createStatusType();
-            resp.setStatus(status);
-        } catch (JAXBException je) {
-            DiscoUtils.debug.error("DiscoService.update: couldn't form "
-                + "ModifyResponse.");
-            throw je;
-        }
+        resp =
+            DiscoUtils.getDiscoFactory().createModifyResponseElement(
+                    DiscoUtils.getDiscoFactory().createModifyResponseType());
+        status = DiscoUtils.getDiscoFactory().createStatusType();
+        resp.getValue().setStatus(DiscoUtils.getDiscoFactory().createStatusElement(status));
 
         String providerID = DiscoServiceManager.getDiscoProviderID();
         String resourceID = null;
@@ -415,7 +410,7 @@ public final class DiscoveryService implements RequestHandler {
             List entryIds = (List) results.get(
                                         DiscoEntryHandler.NEW_ENTRY_IDS);
             if ((entryIds != null) && (entryIds.size() != 0)) {
-                resp.getNewEntryIDs().addAll(entryIds);
+                resp.getValue().getNewEntryIDs().addAll(entryIds);
             }
             String[] data = { logMsg };
             LogUtil.access(Level.INFO,

@@ -70,7 +70,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
 
          IDPPUtils.debug.message("IDPPAddressCard:getContainerObject:Init");
          try {
-             PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
+             PPType ppType = IDPPUtils.getIDPPFactory().createPPType();
 
              Set addressCards = (Set)userMap.get(
                   getAttributeMapper().getDSAttribute(
@@ -116,7 +116,8 @@ public class IDPPAddressCard extends IDPPBaseContainer {
          }
 
          AddressCardElement ace =
-            IDPPUtils.getIDPPFactory().createAddressCardElement();
+            IDPPUtils.getIDPPFactory().createAddressCardElement(
+                    IDPPUtils.getIDPPFactory().createAddressCardType());
 
          StringTokenizer st = new StringTokenizer(entry, 
               IDPPConstants.ATTRIBUTE_SEPARATOR);
@@ -182,18 +183,18 @@ public class IDPPAddressCard extends IDPPBaseContainer {
             return null;
          }
 
-         AddressType ae = IDPPUtils.getIDPPFactory().createAddressElement();
+         AddressType ae = IDPPUtils.getIDPPFactory().createAddressType();
          ae.setC(getDSTString(country));
          ae.setSt(getDSTString(state));
          ae.setL(getDSTString(city));
          ae.setPostalAddress(getDSTString(postalAddress));
          ae.setPostalCode(getDSTString(postalCode));
 
-         ace.setNick(getDSTString(nick));
-         ace.getAddrType().add(getDSTURI(addrType));
-         ace.setAddress(ae);
-         ace.setLComment(getDSTString(lComment));
-         ace.setId(id);
+         ace.getValue().setNick(getDSTString(nick));
+         ace.getValue().getAddrType().add(getDSTURI(addrType));
+         ace.getValue().setAddress(IDPPUtils.getIDPPFactory().createAddressElement(ae));
+         ace.getValue().setLComment(getDSTString(lComment));
+         ace.getValue().setId(id);
 
          return ace;
      }
@@ -305,7 +306,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
            } else if(dataElement instanceof AddressCardElement) {
               AddressCardElement addr = (AddressCardElement)dataElement;
               if(addressType == null || addressType.length() == 0) {
-                 List list = addr.getAddrType();
+                 List list = addr.getValue().getAddrType();
                  if(list != null && list.size() != 0) {
                     DSTURI addressURI = (DSTURI)list.get(0);
                     addressType = addressURI.getValue(); 
@@ -419,7 +420,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
         StringBuffer sb = new StringBuffer();
         sb.append("AddrType").append("=").append(addressType).append("|");
 
-        AddressType ae = ace.getAddress(); 
+        AddressType ae = ace.getValue().getAddress().getValue();
         if(ae == null) {
            IDPPUtils.debug.error("IDPPAddressContainer.createAddressCard:" +
             "Address Element is null");
@@ -431,12 +432,12 @@ public class IDPPAddressCard extends IDPPBaseContainer {
            sb.append(address);
         }
 
-        DSTString nickName = ace.getNick();
+        DSTString nickName = ace.getValue().getNick();
         if(nickName != null) {
            sb.append("Nick=").append(nickName.getValue()).append("|");
         }
 
-        DSTString comment = ace.getLComment();
+        DSTString comment = ace.getValue().getLComment();
         if(comment != null) {
            sb.append("LComment=").append(comment.getValue());
         }
@@ -494,7 +495,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
               if(ae == null) {
                  continue;
               }
-              DSTString postalAddress = ae.getPostalAddress();
+              DSTString postalAddress = ae.getValue().getPostalAddress();
               if(postalAddress != null) {
                  sb.append("PostalAddress")
                    .append("=").append(postalAddress.getValue()).append("|");
@@ -505,7 +506,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
               if(ae == null) {
                  continue;
               }
-              DSTString postalCode = ae.getPostalCode();
+              DSTString postalCode = ae.getValue().getPostalCode();
               if(postalCode != null) {
                  sb.append("PostalCode")
                    .append("=").append(postalCode.getValue()).append("|");
@@ -516,7 +517,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
               if(ae == null) {
                  continue;
               }
-              DSTString city = ae.getL();
+              DSTString city = ae.getValue().getL();
               if(city != null) {
                  sb.append("L")
                    .append("=").append(city.getValue()).append("|");
@@ -527,7 +528,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
               if(ae == null) {
                  continue;
               }
-              DSTString state = ae.getSt();
+              DSTString state = ae.getValue().getSt();
               if(state != null) {
                  sb.append("St")
                    .append("=").append(state.getValue()).append("|");
@@ -539,7 +540,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
               if(ae == null) {
                  continue;
               }
-              DSTString country = ae.getC();
+              DSTString country = ae.getValue().getC();
               if(country != null) {
                  sb.append("C")
                    .append("=").append(country.getValue()).append("|");
@@ -561,7 +562,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
 
          StringBuffer sb = new StringBuffer(100);
 
-         AddressElement ae = (AddressElement)ace.getAddress();
+         AddressElement ae = ace.getValue().getAddress();
          String address = modifyAddress(entry, ae);
          StringTokenizer st = new StringTokenizer(address, "|");
 
@@ -569,7 +570,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
 
             String token = st.nextToken();
             if(token.startsWith("Nick")) {
-               DSTString nick = ace.getNick();
+               DSTString nick = ace.getValue().getNick();
                if(nick != null) {
                   sb.append("Nick")
                     .append("=").append(nick.getValue()).append("|");
@@ -577,7 +578,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
                   sb.append(token).append("|");
                }
             } else if(token.startsWith("LComment")) {
-               DSTString lComment = ace.getLComment();
+               DSTString lComment = ace.getValue().getLComment();
                if(lComment != null) {
                   sb.append("LComment")
                     .append("=").append(lComment.getValue()).append("|");
@@ -585,7 +586,7 @@ public class IDPPAddressCard extends IDPPBaseContainer {
                   sb.append(token).append("|");
                }
             } else if(token.startsWith("id")) {
-               String id = ace.getId(); 
+               String id = ace.getValue().getId();
                if(id != null) {
                   sb.append("id").append("=").append(id).append("|");
                }

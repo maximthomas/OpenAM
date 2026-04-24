@@ -259,11 +259,11 @@ public class FSPreLogin {
                 if (hostedProviderRole.equals(IFSConstants.SP)) {
                     hostedConfig =
                         metaManager.getSPDescriptorConfig(
-                            realm, hostedEntityID);
+                            realm, hostedEntityID).getValue();
                 } else if (hostedProviderRole.equals(IFSConstants.IDP)) {
                     hostedConfig =
                         metaManager.getIDPDescriptorConfig(
-                            realm, hostedEntityID);
+                            realm, hostedEntityID).getValue();
                 }
             }
 

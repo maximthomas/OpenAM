@@ -87,12 +87,12 @@ public class FSAccountManager {
             BaseConfigType hostedConfig = null;
             if (role != null && role.equalsIgnoreCase(IFSConstants.IDP)) {
                 hostedConfig = 
-                    metaManager.getIDPDescriptorConfig(realm, hostedEntityID);
+                    metaManager.getIDPDescriptorConfig(realm, hostedEntityID).getValue();
             } else if (role != null &&
                 role.equalsIgnoreCase(IFSConstants.SP))
             {
                 hostedConfig = 
-                    metaManager.getSPDescriptorConfig(realm, hostedEntityID);
+                    metaManager.getSPDescriptorConfig(realm, hostedEntityID).getValue();
                 SP_PROVIDER_ID = hostedEntityID;
                 SP_FILTER = "|" + SP_PROVIDER_ID + "|";
             }

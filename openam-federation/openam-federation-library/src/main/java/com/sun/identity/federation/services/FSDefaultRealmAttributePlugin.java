@@ -91,7 +91,7 @@ public class FSDefaultRealmAttributePlugin implements FSRealmAttributePlugin {
                 IDPDescriptorConfigElement idpConfig =
                     metaManager.getIDPDescriptorConfig(realm, hostEntityId);
                 if (idpConfig != null) {
-                    Map attributes = IDFFMetaUtils.getAttributes(idpConfig);
+                    Map attributes = IDFFMetaUtils.getAttributes(idpConfig.getValue());
                     attributeMap = FSServiceUtils.parseAttributeConfig((List)
                         attributes.get(IFSConstants.IDP_ATTRIBUTE_MAP));
                 }

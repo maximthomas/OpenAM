@@ -58,13 +58,13 @@ public class InteractionUtils {
      *          name String objects.  Values in the map are parameter value
      *          String objects
      */
-    public static Map getParameters(
+    public static Map<String, String> getParameters(
             InteractionResponseElement interactionResponseElement) {
-        List parameters = interactionResponseElement.getParameter();
-        Map pm = new HashMap();
-        Iterator iter = parameters.iterator();
+        List<ParameterType> parameters = interactionResponseElement.getValue().getParameter();
+        Map<String, String> pm = new HashMap<>();
+        Iterator<ParameterType> iter = parameters.iterator();
         while (iter.hasNext()) {
-            ParameterType pt = (ParameterType) iter.next();
+            ParameterType pt = iter.next();
             pm.put(pt.getName(), pt.getValue());
         }
         return pm;
@@ -89,7 +89,7 @@ public class InteractionUtils {
         UserInteractionElement ue 
                 = InteractionManager.getUserInteractionElement(message);
         if (ue != null) {
-            languages = ue.getLanguage();
+            languages = ue.getValue().getLanguage();
         }
         if (languages == null) {
             languages = Collections.EMPTY_LIST;

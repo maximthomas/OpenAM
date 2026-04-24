@@ -222,10 +222,10 @@ public class EncryptedNameIdentifier {
         BaseConfigType providerConfig = null;
         try {
             providerConfig = FSUtils.getIDFFMetaManager().
-                getSPDescriptorConfig(realm, providerID);
+                getSPDescriptorConfig(realm, providerID).getValue();
             if (providerConfig == null) {
                 providerConfig = FSUtils.getIDFFMetaManager().
-                    getIDPDescriptorConfig(realm, providerID);
+                    getIDPDescriptorConfig(realm, providerID).getValue();
             }
         } catch (Exception ae) {
             FSUtils.debug.error("EncryptedNameIdentifier.getDecryptedName" +

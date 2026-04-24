@@ -63,22 +63,20 @@ public class IDPPEmergencyContact extends IDPPBaseContainer {
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
         IDPPUtils.debug.message("IDPPEmergencyContact:getContainerObject:Init");
-        try {
-            PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
-            EmergencyContactElement ec =
-               IDPPUtils.getIDPPFactory().createEmergencyContactElement();
-            String emergencyContact = CollectionHelper.getMapAttr(userMap,
-                   getAttributeMapper().getDSAttribute(
-                   IDPPConstants.EMERGENCY_CONTACT_ELEMENT).toLowerCase());
-            ec.setValue(emergencyContact);
-            ppType.setEmergencyContact(ec);
-            return ppType;
-        } catch (JAXBException je) {
-            IDPPUtils.debug.error(
-            "IDPPEmergencyContact:getContainerObject: JAXB failure", je); 
-            throw new IDPPException(
-            IDPPUtils.bundle.getString("jaxbFailure"));
-        }
+         PPType ppType = IDPPUtils.getIDPPFactory().createPPType();
+         EmergencyContactElement ec =
+            IDPPUtils.getIDPPFactory().createEmergencyContactElement(
+                    IDPPUtils.getIDPPFactory().createDSTString()
+            );
+         String emergencyContact = CollectionHelper.getMapAttr(userMap,
+                getAttributeMapper().getDSAttribute(
+                IDPPConstants.EMERGENCY_CONTACT_ELEMENT).toLowerCase());
+         DSTString emergencyContactDstString = IDPPUtils.getIDPPFactory().createDSTString();
+         emergencyContactDstString.setValue(emergencyContact);
+
+         ec.setValue(emergencyContactDstString);
+         ppType.setEmergencyContact(ec);
+         return ppType;
      }
 
      /**

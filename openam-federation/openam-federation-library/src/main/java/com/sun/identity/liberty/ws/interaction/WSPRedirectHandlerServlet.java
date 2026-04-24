@@ -46,7 +46,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.URL;
-import java.net.URLConnection;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.util.Enumeration;
@@ -515,12 +514,14 @@ public class WSPRedirectHandlerServlet extends HttpServlet {
             //read and save query parameters;
             InteractionResponseElement interactionResponseElement 
                     = JAXBObjectFactory.getObjectFactory()
-                    .createInteractionResponseElement();
-            List list = interactionResponseElement.getParameter();
-            Enumeration parameterNames = httpRequest.getParameterNames();
+                    .createInteractionResponseElement(
+                            JAXBObjectFactory.getObjectFactory().createInteractionResponseType()
+                    );
+            List<ParameterType> list = interactionResponseElement.getValue().getParameter();
+            Enumeration<String> parameterNames = httpRequest.getParameterNames();
             while ( parameterNames.hasMoreElements()) {
                 String parameterName 
-                        = (String)parameterNames.nextElement();
+                        = parameterNames.nextElement();
                 /*
                 ParameterType parameterType  
                         = JAXBObjectFactory.getObjectFactory()
@@ -582,13 +583,6 @@ public class WSPRedirectHandlerServlet extends HttpServlet {
                 LogUtil.access(Level.INFO,LogUtil.IS_REDIRECTED_USER_AGENT_BACK,
                                objs);
             }
-        } catch (JAXBException je) {
-            debug.error(
-                    "WSPRedirectHandlerServlet.sendInteractionResponsePage():"
-                    + "catching JAXBException =", je);
-            showErrorPage(httpRequest, httpResponse, 
-                    "Error createing JAXBObject:"
-                    + je.getMessage());
         } catch (Exception e) {
             debug.error(
                     "WSPRedirectHandlerServlet.sendInteractionResponsePage():"

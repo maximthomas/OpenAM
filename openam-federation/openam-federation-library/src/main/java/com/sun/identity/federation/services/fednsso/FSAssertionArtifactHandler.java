@@ -1904,7 +1904,7 @@ public class FSAssertionArtifactHandler {
         BaseConfigType proxySPConfig = null;
         try {
             proxySPConfig = metaManager.getSPDescriptorConfig(
-                realm, proxySPEntityId);
+                realm, proxySPEntityId).getValue();
         } catch (Exception e) {
             FSUtils.debug.error("FSAssertionArtifactHandler.sendProxyResponse:"
                 + "Couldn't obtain proxy sp meta:", e);
@@ -1920,7 +1920,7 @@ public class FSAssertionArtifactHandler {
         try {
             localIDPDesc = metaManager.getIDPDescriptor(realm, hostEntityId);
             localIDPConfig = metaManager.getIDPDescriptorConfig(
-                realm, hostEntityId);
+                realm, hostEntityId).getValue();
             localIDPMetaAlias = localIDPConfig.getMetaAlias();
         } catch (Exception e) {
             FSUtils.debug.error("FSAssertionartifactHandler.sendProxyResponse:"

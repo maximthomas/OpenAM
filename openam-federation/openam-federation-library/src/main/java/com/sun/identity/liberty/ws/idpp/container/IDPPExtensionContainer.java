@@ -68,42 +68,37 @@ public class IDPPExtensionContainer extends IDPPBaseContainer {
       */
      public Object getContainerObject(Map userMap) throws IDPPException {
         IDPPUtils.debug.message("IDPPContainers:getContainerObject:Init");
-        try {
-            PPType ppType = IDPPUtils.getIDPPFactory().createPPElement();
-            ExtensionElement ee = 
-                     IDPPUtils.getIDPPFactory().createExtensionElement();
+         PPType ppType = IDPPUtils.getIDPPFactory().createPPType();
+         ExtensionElement ee =
+                  IDPPUtils.getIDPPFactory().createExtensionElement(
+                          IDPPUtils.getIDPPFactory().createExtensionType()
+                  );
 
-            IDPPExtension extension = getExtensionContainerClass(); 
-            if(extension != null) {
-               ee.getAny().addAll(extension.getExtAttributes());
-               ppType.setExtension(ee);
-               return ppType;
-            }
-
-            Set extensionAttributes = getExtensionContainerAttributes();
-            if(extensionAttributes == null || extensionAttributes.isEmpty()) {
-               ppType.setExtension(ee);
-               return ppType;
-            }
-        
-            Iterator iter = extensionAttributes.iterator();
-            while(iter.hasNext()) {
-               String extName = (String)iter.next();
-               String extValue = CollectionHelper.getMapAttr(userMap,
-                    getAttributeMapper().getDSAttribute(extName).toLowerCase());
-               if(extValue != null) {
-                  ee.getAny().add(getISExtension(extName, extValue));
-               }
-            }
-
+         IDPPExtension extension = getExtensionContainerClass();
+         if(extension != null) {
+            ee.getValue().getAny().addAll(extension.getExtAttributes());
             ppType.setExtension(ee);
             return ppType;
-        } catch (JAXBException je) {
-            IDPPUtils.debug.error(
-            "IDPPExtensionContainer:getContainerObject: JAXB failure", je); 
-            throw new IDPPException(
-            IDPPUtils.bundle.getString("jaxbFailure"));
-        }
+         }
+
+         Set extensionAttributes = getExtensionContainerAttributes();
+         if(extensionAttributes == null || extensionAttributes.isEmpty()) {
+            ppType.setExtension(ee);
+            return ppType;
+         }
+
+         Iterator iter = extensionAttributes.iterator();
+         while(iter.hasNext()) {
+            String extName = (String)iter.next();
+            String extValue = CollectionHelper.getMapAttr(userMap,
+                 getAttributeMapper().getDSAttribute(extName).toLowerCase());
+            if(extValue != null) {
+               ee.getValue().getAny().add(getISExtension(extName, extValue));
+            }
+         }
+
+         ppType.setExtension(ee);
+         return ppType;
      }
 
      /**
@@ -236,18 +231,12 @@ public class IDPPExtensionContainer extends IDPPBaseContainer {
      private PPISExtensionElement getISExtension(
          String attrName, String attrValue) throws IDPPException {
          IDPPUtils.debug.message("IDPPExtensionContainer.getISExtension:Init");
-         try {
-             com.sun.identity.liberty.ws.idpp.plugin.jaxb.ObjectFactory fac =
-             new com.sun.identity.liberty.ws.idpp.plugin.jaxb.ObjectFactory();
-             PPISExtensionElement ext = fac.createPPISExtensionElement();
-             ext.setName(attrName);
-             ext.setValue(attrValue);
-             return ext;
-         } catch (JAXBException je) {
-             IDPPUtils.debug.error("IDPPExtensionContainer.getISExtension:" +
-             "Fails in creating PP Extension element.", je);
-             throw new IDPPException(IDPPUtils.bundle.getString("jaxbFailure"));
-         }
+         com.sun.identity.liberty.ws.idpp.plugin.jaxb.ObjectFactory fac =
+         new com.sun.identity.liberty.ws.idpp.plugin.jaxb.ObjectFactory();
+         PPISExtensionElement ext = fac.createPPISExtensionElement();
+         ext.setName(attrName);
+         ext.setValue(attrValue);
+         return ext;
      }
  
      /**

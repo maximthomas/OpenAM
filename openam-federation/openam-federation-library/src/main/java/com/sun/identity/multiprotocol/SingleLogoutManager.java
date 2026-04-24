@@ -689,7 +689,7 @@ public class SingleLogoutManager {
                         SingleLogoutManager.debug).getDocumentElement();
                     FSLogoutResponse responseLogout = new FSLogoutResponse(elem);
                     BaseConfigType hostedConfig =
-                        metaManager.getIDPDescriptorConfig(realm, idpEntityID);
+                        metaManager.getIDPDescriptorConfig(realm, idpEntityID).getValue();
                     logoutDoneURL = FSServiceUtils.getLogoutDonePageURL(request,
                         hostedConfig, null);
                     Status status = responseLogout.getStatus();

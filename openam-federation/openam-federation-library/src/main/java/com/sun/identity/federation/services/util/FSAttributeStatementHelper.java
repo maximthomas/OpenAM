@@ -80,7 +80,7 @@ public class FSAttributeStatementHelper {
         BaseConfigType hostConfig = null;
         try {
             if (metaManager != null) {
-                hostConfig = metaManager.getIDPDescriptorConfig(realm,entityID);
+                hostConfig = metaManager.getIDPDescriptorConfig(realm,entityID).getValue();
             }
         } catch (IDFFMetaException fae) {
             FSUtils.debug.error("FSAttributeStatementHelper.getAutoFed" +

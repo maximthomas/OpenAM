@@ -94,7 +94,7 @@ public class SAML2IDPProxyImpl implements SAML2IDPFinder {
                 sm.getSPSSOConfig(realm, authnRequest.getIssuer().getValue());
             Map spConfigAttrsMap = null;
             if (spEntityCfg != null) {
-                spConfigAttrsMap = SAML2MetaUtils.getAttributes(spEntityCfg);
+                spConfigAttrsMap = SAML2MetaUtils.getAttributes(spEntityCfg.getValue());
             }         
             String useIntroductionForProxying = 
                 SPSSOFederate.getParameter(spConfigAttrsMap,

@@ -42,9 +42,9 @@ public class ValidRelayStateExtractor implements ValidDomainExtractor<ValidRelay
             final SAML2MetaManager metaManager = new SAML2MetaManager();
 
             if (SAML2Constants.SP_ROLE.equalsIgnoreCase(entityInfo.role)) {
-                config = metaManager.getSPSSOConfig(entityInfo.realm, entityInfo.entityID);
+                config = metaManager.getSPSSOConfig(entityInfo.realm, entityInfo.entityID).getValue();
             } else {
-                config = metaManager.getIDPSSOConfig(entityInfo.realm, entityInfo.entityID);
+                config = metaManager.getIDPSSOConfig(entityInfo.realm, entityInfo.entityID).getValue();
             }
 
             if (config == null) {

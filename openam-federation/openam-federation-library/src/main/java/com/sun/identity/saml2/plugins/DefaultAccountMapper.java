@@ -207,9 +207,9 @@ public class DefaultAccountMapper {
 
     protected final BaseConfigType getSSOConfig(String realm, String entityID) throws SAML2MetaException {
         if (IDP.equals(role)) {
-            return metaManager.getIDPSSOConfig(realm, entityID);
+            return metaManager.getIDPSSOConfig(realm, entityID).getValue();
         } else {
-            return metaManager.getSPSSOConfig(realm, entityID);
+            return metaManager.getSPSSOConfig(realm, entityID).getValue();
         }
     }
 }

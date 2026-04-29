@@ -335,7 +335,7 @@ public class AttributeQueryUtil {
             desiredAttrs = attrQuery.getAttributes();
         }
         try {
-            desiredAttrs = verifyDesiredAttributes(aad.getAttribute(),
+            desiredAttrs = verifyDesiredAttributes(aad.getValue().getAttribute(),
                 desiredAttrs);
         } catch (SAML2Exception se) {
             return SAML2Utils.getErrorResponse(attrQuery,
@@ -507,7 +507,7 @@ public class AttributeQueryUtil {
             throw new SAML2Exception(SAML2Utils.bundle.getString(
                 "attrQueryIssuerNotFound"));
         }
-        Set<X509Certificate> signingCerts = KeyUtil.getVerificationCerts(attrqDesc, requestedEntityID,
+        Set<X509Certificate> signingCerts = KeyUtil.getVerificationCerts(attrqDesc.getValue(), requestedEntityID,
                 SAML2Constants.ATTR_QUERY_ROLE);
 
         if (!signingCerts.isEmpty()) {
@@ -607,7 +607,7 @@ public class AttributeQueryUtil {
 
             IDPSSOConfigElement config = SAML2Utils.getSAML2MetaManager().getIDPSSOConfig(
                     realm, attrAuthorityEntityID);
-            Map attrs = SAML2MetaUtils.getAttributes(config);
+            Map attrs = SAML2MetaUtils.getAttributes(config.getValue());
 
             List nimAttrs = (List)attrs.get(SAML2Constants.NAME_ID_FORMAT_MAP);
 
@@ -820,7 +820,7 @@ public class AttributeQueryUtil {
 
         AttributeQueryDescriptorElement aqd =
             metaManager.getAttributeQueryDescriptor(realm, requesterEntityID);
-        EncInfo encInfo = KeyUtil.getEncInfo(aqd, requesterEntityID,
+        EncInfo encInfo = KeyUtil.getEncInfo(aqd.getValue(), requesterEntityID,
             SAML2Constants.ATTR_QUERY_ROLE);
 
         Element el = EncManager.getEncInstance().encrypt(
@@ -873,17 +873,17 @@ public class AttributeQueryUtil {
         for(Iterator iter = jaxbAttrs.iterator(); iter.hasNext(); ) {
             AttributeElement jaxbAttr = (AttributeElement)iter.next();
             Attribute attr = AssertionFactory.getInstance().createAttribute();
-            attr.setName(jaxbAttr.getName());
-            attr.setNameFormat(jaxbAttr.getNameFormat());
-            attr.setFriendlyName(jaxbAttr.getFriendlyName());
+            attr.setName(jaxbAttr.getValue().getName());
+            attr.setNameFormat(jaxbAttr.getValue().getNameFormat());
+            attr.setFriendlyName(jaxbAttr.getValue().getFriendlyName());
 
-            List jaxbValues = jaxbAttr.getAttributeValue();
+            List jaxbValues = jaxbAttr.getValue().getAttributeValue();
             if ((jaxbValues != null) && (!jaxbValues.isEmpty())) {
                 List newValues = new ArrayList();
                 for(Iterator iterV = jaxbValues.iterator(); iterV.hasNext();) {
                     AttributeValueElement jaxbValeu =
                         (AttributeValueElement)iter.next();
-                    List content = jaxbValeu.getContent();
+                    Object content = jaxbValeu.getValue();
                     if ((content != null) && (!content.isEmpty())) {
                         newValues.add(content.get(0));
                     }

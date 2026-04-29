@@ -102,7 +102,7 @@ public class DefaultFedletAdapter extends FedletAdapter {
         try {
             if (logoutUrl == null) {
                 BaseConfigType spConfig = SAML2Utils.getSAML2MetaManager()
-                    .getSPSSOConfig("/", hostedEntityID);
+                    .getSPSSOConfig("/", hostedEntityID).getValue();
                 List appLogoutURL = (List) SAML2MetaUtils.getAttributes(
                     spConfig).get(SAML2Constants.APP_LOGOUT_URL);
                 if ((appLogoutURL != null) && !appLogoutURL.isEmpty()) {
@@ -262,7 +262,7 @@ public class DefaultFedletAdapter extends FedletAdapter {
         try {
             if (logoutUrl == null) {
                 BaseConfigType spConfig = SAML2Utils.getSAML2MetaManager()
-                    .getSPSSOConfig("/", hostedEntityID);
+                    .getSPSSOConfig("/", hostedEntityID).getValue();
                 List appLogoutURL = (List) SAML2MetaUtils.getAttributes(
                     spConfig).get(SAML2Constants.APP_LOGOUT_URL);
                 if ((appLogoutURL != null) && !appLogoutURL.isEmpty()) {

@@ -39,6 +39,7 @@ import java.util.Set;
 import java.util.logging.Level;
 import javax.xml.bind.JAXBException;
 
+import jakarta.xml.bind.JAXBElement;
 import org.forgerock.openam.utils.CollectionUtils;
 import org.forgerock.openam.utils.StringUtils;
 
@@ -374,7 +375,7 @@ public class SAML2MetaManager {
             entityId);
 
         return (eDescriptor == null ? null :
-            eDescriptor.getAffiliationDescriptor());
+            eDescriptor.getValue().getAffiliationDescriptor());
     }
 
     /**
@@ -388,7 +389,7 @@ public class SAML2MetaManager {
         EntityDescriptorElement descriptor) 
         throws SAML2MetaException {
 
-        String entityId = descriptor.getEntityID();
+        String entityId = descriptor.getValue().getEntityID();
         if (entityId == null) {
             debug.error(
                 "SAML2MetaManager.setEntityDescriptor: entity ID is null");
@@ -465,9 +466,9 @@ public class SAML2MetaManager {
         }
         String entityId = null;
         if (descriptor != null) {
-           entityId = descriptor.getEntityID();
+           entityId = descriptor.getValue().getEntityID();
         } else {
-           entityId = config.getEntityID();
+           entityId = config.getValue().getEntityID();
         }
 
         if (realm == null) {
@@ -526,10 +527,10 @@ public class SAML2MetaManager {
             }
             if (oldDescriptor != null) {
                 if (descriptor != null) {
-                    List currentRoles = oldDescriptor.
+                    List currentRoles = oldDescriptor.getValue().
                         getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
                     Set currentRolesTypes = getEntityRolesTypes(currentRoles);
-                    List newRoles = descriptor.
+                    List newRoles = descriptor.getValue().
                         getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
                     for (Iterator i = newRoles.iterator(); i.hasNext(); ) {
                         Object role = i.next();
@@ -572,10 +573,10 @@ public class SAML2MetaManager {
                         objs);
                 }
                 if (oldConfig != null) {
-                    List currentRoles = oldConfig.
+                    List currentRoles = oldConfig.getValue().
                         getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
                     Set currentRolesTypes = getEntityRolesTypes(currentRoles);
-                    List newRoles = config.
+                    List newRoles = config.getValue().
                         getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
                     for (Iterator i = newRoles.iterator(); i.hasNext(); ) {
                         Object role = i.next();
@@ -818,9 +819,9 @@ public class SAML2MetaManager {
             return null;
         }
 
-        List list =
-            eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
-        for(Iterator iter = list.iterator(); iter.hasNext();) {
+        List<JAXBElement<BaseConfigType>> list =
+            eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+        for(Iterator<JAXBElement<BaseConfigType>> iter = list.iterator(); iter.hasNext();) {
             Object obj = iter.next();
             if (obj instanceof SPSSOConfigElement) {
                 return (SPSSOConfigElement)obj;
@@ -845,10 +846,10 @@ public class SAML2MetaManager {
         EntityConfigElement eConfig = getEntityConfig(realm, entityId);
         
         if (eConfig != null) {
-            List list = 
-                eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
-            for (Iterator i = list.iterator(); i.hasNext() && (elm == null);) {
-                Object obj = i.next();
+            List<JAXBElement<BaseConfigType>> list =
+                eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+            for (Iterator<JAXBElement<BaseConfigType>> i = list.iterator(); i.hasNext() && (elm == null);) {
+                JAXBElement<BaseConfigType> obj = i.next();
                 if (obj instanceof XACMLPDPConfigElement) {
                     elm = (XACMLPDPConfigElement)obj;
                 }
@@ -872,10 +873,10 @@ public class SAML2MetaManager {
         EntityConfigElement eConfig = getEntityConfig(realm, entityId);
         
         if (eConfig != null) {
-            List list = 
-                eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
-            for (Iterator i = list.iterator(); i.hasNext() && (elm == null);) {
-                Object obj = i.next();
+            List<JAXBElement<BaseConfigType>> list = 
+                eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+            for (Iterator<JAXBElement<BaseConfigType>> i = list.iterator(); i.hasNext() && (elm == null);) {
+                JAXBElement<BaseConfigType> obj = i.next();
                 if (obj instanceof XACMLAuthzDecisionQueryConfigElement) {
                     elm = (XACMLAuthzDecisionQueryConfigElement)obj;
                 }
@@ -901,10 +902,10 @@ public class SAML2MetaManager {
             return null;
         }
 
-        List list =
-            eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
-        for(Iterator iter = list.iterator(); iter.hasNext();) {
-            Object obj = iter.next();
+        List<JAXBElement<BaseConfigType>> list =
+            eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+        for(Iterator<JAXBElement<BaseConfigType>> iter = list.iterator(); iter.hasNext();) {
+            JAXBElement<BaseConfigType> obj = iter.next();
             if (obj instanceof IDPSSOConfigElement) {
                 return (IDPSSOConfigElement)obj;
             }
@@ -931,10 +932,10 @@ public class SAML2MetaManager {
             return null;
         }
 
-        List list =
-            eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
-        for(Iterator iter = list.iterator(); iter.hasNext();) {
-            Object obj = iter.next();
+        List<JAXBElement<BaseConfigType>> list =
+            eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+        for(Iterator<JAXBElement<BaseConfigType>> iter = list.iterator(); iter.hasNext();) {
+            JAXBElement<BaseConfigType> obj = iter.next();
             if (obj instanceof AttributeAuthorityConfigElement) {
                 return (AttributeAuthorityConfigElement)obj;
             }
@@ -961,10 +962,10 @@ public class SAML2MetaManager {
             return null;
         }
 
-        List list =
-            eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
-        for(Iterator iter = list.iterator(); iter.hasNext();) {
-            Object obj = iter.next();
+        List<JAXBElement<BaseConfigType>> list =
+            eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+        for(Iterator<JAXBElement<BaseConfigType>> iter = list.iterator(); iter.hasNext();) {
+            JAXBElement<BaseConfigType> obj = iter.next();
             if (obj instanceof AttributeQueryConfigElement) {
                 return (AttributeQueryConfigElement)obj;
             }
@@ -992,7 +993,7 @@ public class SAML2MetaManager {
         }
 
         List list =
-            eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+            eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
         for(Iterator iter = list.iterator(); iter.hasNext();) {
             Object obj = iter.next();
             if (obj instanceof AuthnAuthorityConfigElement) {
@@ -1020,7 +1021,7 @@ public class SAML2MetaManager {
             return null;
         }
 
-        return (AffiliationConfigElement)eConfig.getAffiliationConfig();
+        return (AffiliationConfigElement)eConfig.getValue().getAffiliationConfig();
     }
 
     /**
@@ -1032,7 +1033,7 @@ public class SAML2MetaManager {
     public void setEntityConfig(String realm, EntityConfigElement config)
         throws SAML2MetaException {
 
-        String entityId = config.getEntityID();
+        String entityId = config.getValue().getEntityID();
         if (entityId == null) {
             debug.error("SAML2MetaManager.setEntityConfig: " +
                         "entity ID is null");
@@ -1101,15 +1102,15 @@ public class SAML2MetaManager {
     {
         try {
             if (eConfig != null) {
-                List elist = eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+                List<JAXBElement<BaseConfigType>> elist = eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
                 // Use first one to add the entity to COT, if this is present in the config
                 // Typically found in the proprietary extended metadata, not standard SAML2 entity metadata
-                BaseConfigType config = (BaseConfigType) elist.iterator().next();
-                Map attr = SAML2MetaUtils.getAttributes(config);
-                List cotList = (List) attr.get(SAML2Constants.COT_LIST);
+                BaseConfigType config = elist.iterator().next().getValue();
+                Map<String, List<String>> attr = SAML2MetaUtils.getAttributes(config);
+                List<String> cotList = attr.get(SAML2Constants.COT_LIST);
                 if (CollectionUtils.isNotEmpty(cotList)) {
-                    for (Iterator iter = cotList.iterator(); iter.hasNext();) {
-                        String cotName = ((String) iter.next()).trim();
+                    for (Iterator<String> iter = cotList.iterator(); iter.hasNext();) {
+                        String cotName = iter.next().trim();
                         if (StringUtils.isNotEmpty(cotName)) {
                             cotm.addCircleOfTrustMember(realm, cotName, COTConstants.SAML2, entityId, false);
                         }
@@ -1186,25 +1187,25 @@ public class SAML2MetaManager {
             }
 
             if (eConfig != null) {
-                List elist = null; 
+                List<JAXBElement<BaseConfigType>> elist = null;
                 if (isAffiliation) {
                     AffiliationConfigElement affiliationCfgElm =
                         getAffiliationConfig(realm, entityId);
-                    elist = new ArrayList();
+                    elist = new ArrayList<>();
                     elist.add(affiliationCfgElm);
                 } else {
-                    elist = eConfig.
+                    elist = eConfig.getValue().
                         getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
                 }
 
                 // use first one to delete the entity from COT
-                BaseConfigType config = (BaseConfigType)elist.iterator().next();
-                Map attr = SAML2MetaUtils.getAttributes(config);
-                List cotAttr = (List) attr.get(SAML2Constants.COT_LIST);
-                List cotList = new ArrayList(cotAttr);
+                BaseConfigType config = elist.iterator().next().getValue();
+                Map<String, List<String>> attr = SAML2MetaUtils.getAttributes(config);
+                List<String> cotAttr = attr.get(SAML2Constants.COT_LIST);
+                List<String> cotList = new ArrayList<>(cotAttr);
                 if ((cotList != null) && !cotList.isEmpty()) {
-                    for (Iterator iter = cotList.iterator(); iter.hasNext();) {
-                        String cotName = ((String) iter.next()).trim();
+                    for (Iterator<String> iter = cotList.iterator(); iter.hasNext();) {
+                        String cotName = iter.next().trim();
                         if ((cotName != null) && (!cotName.equals(""))) { 
                             cotm.removeCircleOfTrustMember(realm, 
                             cotName, COTConstants.SAML2, entityId, false);
@@ -1235,7 +1236,7 @@ public class SAML2MetaManager {
                     String entityId = (String)iter.next();
                     EntityConfigElement config =
                                     getEntityConfig(realm, entityId);
-                    if (config != null && config.isHosted()) {
+                    if (config != null && config.getValue().isHosted()) {
                         hostedEntityIds.add(entityId);
                     }
                 }
@@ -1406,7 +1407,7 @@ public class SAML2MetaManager {
                     String entityId = (String)iter.next();
                     EntityConfigElement config =
                                     getEntityConfig(realm, entityId);
-                    if (config == null || !config.isHosted()) {
+                    if (config == null || !config.getValue().isHosted()) {
                         remoteEntityIds.add(entityId);
                     }
                 }
@@ -1490,13 +1491,13 @@ public class SAML2MetaManager {
             for (Iterator iter = entityIds.iterator(); iter.hasNext();) {
                 String entityId = (String)iter.next();
                 EntityConfigElement config = getEntityConfig(realm, entityId);
-                if ((config == null) || !config.isHosted()) {
+                if ((config == null) || !config.getValue().isHosted()) {
                     continue;
                 }
-                List list =
-                    config.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
-                for(Iterator iter2 = list.iterator(); iter2.hasNext();) {
-                    BaseConfigType bConfig = (BaseConfigType)iter2.next();
+                List<JAXBElement<BaseConfigType>> list =
+                    config.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+                for(Iterator<JAXBElement<BaseConfigType>> iter2 = list.iterator(); iter2.hasNext();) {
+                    BaseConfigType bConfig = iter2.next().getValue();
                     String cMetaAlias = bConfig.getMetaAlias();
                     if (cMetaAlias != null && cMetaAlias.equals(metaAlias)) {
                         return entityId;
@@ -1528,12 +1529,12 @@ public class SAML2MetaManager {
             }
             for (String entityId : entityIds) {
                 EntityConfigElement config = getEntityConfig(realm, entityId);
-                if (config == null || !config.isHosted()) {
+                if (config == null || !config.getValue().isHosted()) {
                     continue;
                 }
-                List<BaseConfigType> configList = config.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
-                for (BaseConfigType bConfigType : configList) {
-                    String curMetaAlias = bConfigType.getMetaAlias();
+                List<JAXBElement<BaseConfigType>> configList = config.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+                for (JAXBElement<BaseConfigType> bConfigType : configList) {
+                    String curMetaAlias = bConfigType.getValue().getMetaAlias();
                     if (curMetaAlias != null && !curMetaAlias.isEmpty()) {
                         metaAliases.add(curMetaAlias);
                     }
@@ -1572,22 +1573,22 @@ public class SAML2MetaManager {
                 getPolicyEnforcementPointConfig(realm, entityId);
             
             if (idpConfig != null) {
-                String m = idpConfig.getMetaAlias();
+                String m = idpConfig.getValue().getMetaAlias();
                 if ((m != null) && m.equals(metaAlias)) {
                     role = SAML2Constants.IDP_ROLE;
                 }
             } else if (spConfig != null) {
-                String m = spConfig.getMetaAlias();
+                String m = spConfig.getValue().getMetaAlias();
                 if ((m != null) && m.equals(metaAlias)) {
                     role = SAML2Constants.SP_ROLE;
                 }
             } else if (pdpConfig != null) {
-                String m = pdpConfig.getMetaAlias();
+                String m = pdpConfig.getValue().getMetaAlias();
                 if ((m != null) && m.equals(metaAlias)) {
                     role = SAML2Constants.PDP_ROLE;
                 }
             } else if (pepConfig != null) {
-                String m = pepConfig.getMetaAlias();
+                String m = pepConfig.getValue().getMetaAlias();
                 if ((m != null) && m.equals(metaAlias)) {
                     role = SAML2Constants.PEP_ROLE;
                 }
@@ -1613,7 +1614,7 @@ public class SAML2MetaManager {
         for(Iterator iter = hostedEntityIds.iterator(); iter.hasNext();) {
             String entityId = (String)iter.next();
             if ((idpConfig = getIDPSSOConfig(realm, entityId)) != null) {
-                metaAliases.add(idpConfig.getMetaAlias());
+                metaAliases.add(idpConfig.getValue().getMetaAlias());
             
             }
         }
@@ -1636,7 +1637,7 @@ public class SAML2MetaManager {
         for(Iterator iter = hostedEntityIds.iterator(); iter.hasNext();) {
             String entityId = (String)iter.next();
             if ((spConfig = getSPSSOConfig(realm, entityId)) != null) {
-                metaAliases.add(spConfig.getMetaAlias());
+                metaAliases.add(spConfig.getValue().getMetaAlias());
             
             }
         }
@@ -1659,7 +1660,7 @@ public class SAML2MetaManager {
             XACMLPDPConfigElement elm = getPolicyDecisionPointConfig(
                 realm, entityId);
             if (elm != null) {
-                metaAliases.add(elm.getMetaAlias());
+                metaAliases.add(elm.getValue().getMetaAlias());
             }
         }
         return metaAliases;
@@ -1684,7 +1685,7 @@ public class SAML2MetaManager {
             XACMLAuthzDecisionQueryConfigElement elm = 
                 getPolicyEnforcementPointConfig(realm, entityId);
             if (elm != null) {
-                metaAliases.add(elm.getMetaAlias());
+                metaAliases.add(elm.getValue().getMetaAlias());
             }
         }
         return metaAliases;
@@ -1707,7 +1708,7 @@ public class SAML2MetaManager {
         SPSSOConfigElement spconfig = getSPSSOConfig(realm,
                                                      entityId);
         if (spconfig != null) {        
-            result = isSameCircleOfTrust(spconfig, realm,
+            result = isSameCircleOfTrust(spconfig.getValue(), realm,
                                          trustedEntityId); 
         }
         if (result) {
@@ -1716,7 +1717,7 @@ public class SAML2MetaManager {
         IDPSSOConfigElement idpconfig = getIDPSSOConfig(realm,
                                                         entityId);
         if (idpconfig !=null) {
-            return (isSameCircleOfTrust(idpconfig, realm,
+            return (isSameCircleOfTrust(idpconfig.getValue(), realm,
                         trustedEntityId)); 
         }
         return false;   
@@ -1747,13 +1748,13 @@ public class SAML2MetaManager {
                 XACMLPDPConfigElement pdpConfig = 
                         getPolicyDecisionPointConfig(realm,entityId);
                 if (pdpConfig != null) {
-                    result = isSameCircleOfTrust(pdpConfig,realm,
+                    result = isSameCircleOfTrust(pdpConfig.getValue(),realm,
                                                  trustedEntityId);
                 }
             } else if (role.equals(SAML2Constants.PEP_ROLE)) {
                  XACMLAuthzDecisionQueryConfigElement pepConfig = 
                                 getPolicyEnforcementPointConfig(realm,entityId);
-                 result = isSameCircleOfTrust(pepConfig,realm,trustedEntityId);
+                 result = isSameCircleOfTrust(pepConfig.getValue(),realm,trustedEntityId);
             }
         }
         return result;

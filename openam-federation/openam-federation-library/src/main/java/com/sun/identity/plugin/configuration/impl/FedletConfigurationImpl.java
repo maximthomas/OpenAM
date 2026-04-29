@@ -278,7 +278,7 @@ public class FedletConfigurationImpl implements ConfigurationInstance {
         try {
             Object obj = SAML2MetaUtils.convertStringToJAXB(metaXML);
             if (obj instanceof EntityDescriptorElement) {
-                return ((EntityDescriptorElement) obj).getEntityID();
+                return ((EntityDescriptorElement) obj).getValue().getEntityID();
             }
         } catch (JAXBException jaxbe) {
             debug.error("FedletConfigImpl.getEntityID: " + metaXML, jaxbe);

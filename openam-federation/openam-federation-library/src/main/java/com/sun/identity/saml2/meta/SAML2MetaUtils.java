@@ -298,7 +298,7 @@ public final class SAML2MetaUtils {
 
         if (eDescriptor != null) {
             List list =
-            eDescriptor.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
+            eDescriptor.getValue().getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
 
             for (Iterator i = list.iterator();
                 i.hasNext() && (descriptor == null);
@@ -329,7 +329,7 @@ public final class SAML2MetaUtils {
 
         if (eDescriptor != null) {
             List list =
-            eDescriptor.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
+            eDescriptor.getValue().getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
 
             for (Iterator i = list.iterator();
                 i.hasNext() && (descriptor == null);
@@ -359,7 +359,7 @@ public final class SAML2MetaUtils {
         }
 
         List list =
-            eDescriptor.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
+            eDescriptor.getValue().getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
         for(Iterator iter = list.iterator(); iter.hasNext();) {
             Object obj = iter.next();
             // TODO: may need to cache to avoid using instanceof
@@ -386,7 +386,7 @@ public final class SAML2MetaUtils {
         }
 
         List list =
-            eDescriptor.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
+            eDescriptor.getValue().getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
         for(Iterator iter = list.iterator(); iter.hasNext();) {
             Object obj = iter.next();
             if (obj instanceof IDPSSODescriptorElement) {
@@ -412,7 +412,7 @@ public final class SAML2MetaUtils {
         }
 
         List list =
-            eDescriptor.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
+            eDescriptor.getValue().getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
 
         for(Iterator iter = list.iterator(); iter.hasNext();) {
             Object obj = iter.next();
@@ -439,7 +439,7 @@ public final class SAML2MetaUtils {
         }
 
         List list =
-            eDescriptor.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
+            eDescriptor.getValue().getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
 
         for(Iterator iter = list.iterator(); iter.hasNext();) {
             Object obj = iter.next();
@@ -466,7 +466,7 @@ public final class SAML2MetaUtils {
         }
 
         List list =
-            eDescriptor.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
+            eDescriptor.getValue().getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
 
         for(Iterator iter = list.iterator(); iter.hasNext();) {
             Object obj = iter.next();
@@ -535,7 +535,7 @@ public final class SAML2MetaUtils {
         }
 
         List list =
-            eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+            eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
         for(Iterator iter = list.iterator(); iter.hasNext();) {
             Object obj = iter.next();
             if (obj instanceof SPSSOConfigElement) {
@@ -562,7 +562,7 @@ public final class SAML2MetaUtils {
         }
 
         List list =
-            eConfig.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+            eConfig.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
         for(Iterator iter = list.iterator(); iter.hasNext();) {
             Object obj = iter.next();
             if (obj instanceof IDPSSOConfigElement) {
@@ -689,7 +689,7 @@ public final class SAML2MetaUtils {
 
         List<String> result = new ArrayList<String>();
 
-        List descriptors = descriptor.getEntityDescriptorOrEntitiesDescriptor();
+        List descriptors = descriptor.getValue().getEntityDescriptorOrEntitiesDescriptor();
         if (descriptors != null && !descriptors.isEmpty()) {
             Iterator entities = descriptors.iterator();
             while (entities.hasNext()) {
@@ -712,7 +712,7 @@ public final class SAML2MetaUtils {
 
         String result = null;
 
-        List roles = descriptor.getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
+        List roles = descriptor.getValue().getRoleDescriptorOrIDPSSODescriptorOrSPSSODescriptor();
         Iterator it = roles.iterator();
         while (it.hasNext()) {
             RoleDescriptorType role = (RoleDescriptorType)it.next();
@@ -721,7 +721,7 @@ public final class SAML2MetaUtils {
                 if (debug.messageEnabled()) {
                     debug.message("SAML2MetaUtils.importSAML2Entity: "
                         + "Removing non-SAML2 role from entity "
-                        + descriptor.getEntityID());
+                        + descriptor.getValue().getEntityID());
                 }
                 it.remove();
             }
@@ -729,7 +729,7 @@ public final class SAML2MetaUtils {
 
         if (roles.size() > 0) {
             metaManager.createEntityDescriptor(realm, descriptor);
-            result = descriptor.getEntityID();
+            result = descriptor.getValue().getEntityID();
         }
 
         return result;

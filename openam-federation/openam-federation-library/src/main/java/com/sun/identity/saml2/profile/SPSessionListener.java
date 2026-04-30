@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.logging.Level;
+import java.util.stream.Collectors;
 
 import com.sun.identity.plugin.monitoring.FedMonAgent;
 import com.sun.identity.plugin.monitoring.FedMonSAML2Svc;
@@ -54,6 +55,7 @@ import com.sun.identity.saml2.meta.SAML2MetaException;
 import com.sun.identity.saml2.meta.SAML2MetaManager;
 import com.sun.identity.saml2.meta.SAML2MetaUtils;
 import com.sun.identity.shared.debug.Debug;
+import jakarta.xml.bind.JAXBElement;
 
 
 /**
@@ -142,7 +144,7 @@ public class SPSessionListener implements SessionListener {
                                 SAML2MetaUtils.getRealmByMetaAlias(metaAlias));
 
                     BaseConfigType spConfig =
-                                        sm.getSPSSOConfig(realm, spEntityID);
+                                        sm.getSPSSOConfig(realm, spEntityID).getValue();
                     if (spConfig != null) {
                         List spSessionSyncList =
                             (List) SAML2MetaUtils.getAttributes(spConfig).
@@ -240,7 +242,8 @@ public class SPSessionListener implements SessionListener {
             throw new SAML2Exception(SAML2Utils.bundle.getString("metaDataError"));
         }
 
-        List<EndpointType> slosList = idpsso.getSingleLogoutService();
+        List<EndpointType> slosList = idpsso.getValue().getSingleLogoutService()
+                .stream().map(JAXBElement::getValue).collect(Collectors.toList());
         String location = LogoutUtil.getSLOServiceLocation(slosList, SAML2Constants.SOAP);
 
         if (location == null) {
@@ -255,6 +258,6 @@ public class SPSessionListener implements SessionListener {
         IDPSSOConfigElement idpConfig = sm.getIDPSSOConfig(realm, nameIdInfoKey.getRemoteEntityID());
 
         LogoutUtil.doLogout(metaAlias, nameIdInfoKey.getRemoteEntityID(), slosList, null, binding, null,
-                fedSession.idpSessionIndex, fedSession.info.getNameID(), null, null, paramsMap, idpConfig);
+                fedSession.idpSessionIndex, fedSession.info.getNameID(), null, null, paramsMap, idpConfig.getValue());
     }
 }

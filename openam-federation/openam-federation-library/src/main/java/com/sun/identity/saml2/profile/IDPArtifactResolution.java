@@ -333,7 +333,7 @@ public class IDPArtifactResolution {
                 return SOAPCommunicator.getInstance().createSOAPFault(SAML2Constants.CLIENT_FAULT,
                         "ArtifactResolveNotSigned", null);
             }
-            Set<X509Certificate> verificationCerts = KeyUtil.getVerificationCerts(spSSODescriptor, spEntityID,
+            Set<X509Certificate> verificationCerts = KeyUtil.getVerificationCerts(spSSODescriptor.getValue(), spEntityID,
                     SAML2Constants.SP_ROLE);
             if (!artResolve.isSignatureValid(verificationCerts)) {
                 SAML2Utils.debug.error(classMethod +
@@ -469,7 +469,7 @@ public class IDPArtifactResolution {
         }
         
         // check if need to sign the assertion
-        boolean signAssertion = spSSODescriptor.isWantAssertionsSigned();
+        boolean signAssertion = spSSODescriptor.getValue().isWantAssertionsSigned();
         if (signAssertion) {
             if (SAML2Utils.debug.messageEnabled()) {
                 SAML2Utils.debug.message(classMethod +

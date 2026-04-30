@@ -17,7 +17,6 @@ package com.sun.identity.saml2.profile;
 
 import static com.sun.identity.saml2.common.SAML2Constants.*;
 import com.sun.identity.saml2.jaxb.metadata.SingleLogoutServiceElement;
-import com.sun.identity.saml2.jaxb.metadata.impl.SingleLogoutServiceElementImpl;
 import java.util.ArrayList;
 import java.util.List;
 import static org.assertj.core.api.Assertions.*;
@@ -32,11 +31,11 @@ public class SLOLocationTest {
         endpoints.add(endpointFor(HTTP_POST, "post"));
         endpoints.add(endpointFor(SOAP, "soap"));
         SingleLogoutServiceElement result = LogoutUtil.getMostAppropriateSLOServiceLocation(endpoints, HTTP_REDIRECT);
-        assertThat(result.getBinding()).isEqualTo(HTTP_REDIRECT);
+        assertThat(result.getValue().getBinding()).isEqualTo(HTTP_REDIRECT);
         result = LogoutUtil.getMostAppropriateSLOServiceLocation(endpoints, HTTP_POST);
-        assertThat(result.getBinding()).isEqualTo(HTTP_POST);
+        assertThat(result.getValue().getBinding()).isEqualTo(HTTP_POST);
         result = LogoutUtil.getMostAppropriateSLOServiceLocation(endpoints, SOAP);
-        assertThat(result.getBinding()).isEqualTo(SOAP);
+        assertThat(result.getValue().getBinding()).isEqualTo(SOAP);
     }
 
     public void asynchronousBindingIsPreferredOverSynchronous() {
@@ -44,10 +43,10 @@ public class SLOLocationTest {
         endpoints.add(endpointFor(HTTP_POST, "post"));
         endpoints.add(endpointFor(SOAP, "soap"));
         SingleLogoutServiceElement result = LogoutUtil.getMostAppropriateSLOServiceLocation(endpoints, HTTP_REDIRECT);
-        assertThat(result.getBinding()).isEqualTo(HTTP_POST);
+        assertThat(result.getValue().getBinding()).isEqualTo(HTTP_POST);
         endpoints.set(0, endpointFor(HTTP_REDIRECT, "redirect"));
         result = LogoutUtil.getMostAppropriateSLOServiceLocation(endpoints, HTTP_POST);
-        assertThat(result.getBinding()).isEqualTo(HTTP_REDIRECT);
+        assertThat(result.getValue().getBinding()).isEqualTo(HTTP_REDIRECT);
     }
 
     public void asynchronousBindingsAreNotReturnedWhenRequestingSynchronous() {
@@ -72,15 +71,19 @@ public class SLOLocationTest {
         List<SingleLogoutServiceElement> endpoints = new ArrayList<SingleLogoutServiceElement>();
         endpoints.add(endpointFor(SOAP, "soap"));
         SingleLogoutServiceElement result = LogoutUtil.getMostAppropriateSLOServiceLocation(endpoints, HTTP_REDIRECT);
-        assertThat(result.getBinding()).isEqualTo(SOAP);
+        assertThat(result.getValue().getBinding()).isEqualTo(SOAP);
         result = LogoutUtil.getMostAppropriateSLOServiceLocation(endpoints, HTTP_POST);
-        assertThat(result.getBinding()).isEqualTo(SOAP);
+        assertThat(result.getValue().getBinding()).isEqualTo(SOAP);
     }
 
     private SingleLogoutServiceElement endpointFor(String binding, String location) {
-        SingleLogoutServiceElement ret = new SingleLogoutServiceElementImpl();
-        ret.setBinding(binding);
-        ret.setLocation(location);
+
+        com.sun.identity.saml2.jaxb.metadata.ObjectFactory of
+                = new com.sun.identity.saml2.jaxb.metadata.ObjectFactory();
+
+        SingleLogoutServiceElement ret = of.createSingleLogoutServiceElement(of.createAttributeServiceType());
+        ret.getValue().setBinding(binding);
+        ret.getValue().setLocation(location);
         return ret;
     }
 }

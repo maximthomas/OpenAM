@@ -201,7 +201,7 @@ public class DiscoveryBootstrap {
                 IDPSSODescriptorElement idpSSODesc = SAML2Utils
                     .getSAML2MetaManager().getIDPSSODescriptor(realm,
                     providerID);
-                EncInfo encInfo = KeyUtil.getEncInfo(idpSSODesc, wscID,
+                EncInfo encInfo = KeyUtil.getEncInfo(idpSSODesc.getValue(), wscID,
                     SAML2Constants.IDP_ROLE);
 
                 NameIdentifier ni =

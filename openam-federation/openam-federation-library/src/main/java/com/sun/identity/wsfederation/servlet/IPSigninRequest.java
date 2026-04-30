@@ -280,7 +280,7 @@ public class IPSigninRequest extends WSFederationAction {
             throw new WSFederationException(se);
         }
 
-        String strWantAssertionSigned = WSFederationMetaUtils.getAttribute(spConfig,
+        String strWantAssertionSigned = WSFederationMetaUtils.getAttribute(spConfig.getValue(),
                 WSFederationConstants.WANT_ASSERTION_SIGNED);
         // By default, we want to sign assertions
         boolean wantAssertionSigned = strWantAssertionSigned != null ? Boolean.parseBoolean(strWantAssertionSigned)

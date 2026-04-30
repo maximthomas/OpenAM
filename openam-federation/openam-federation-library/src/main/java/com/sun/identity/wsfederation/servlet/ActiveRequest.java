@@ -125,7 +125,7 @@ public class ActiveRequest extends WSFederationAction {
             throw new WSFederationException(BUNDLE_NAME, "unableToFindIDPConfiguration", null);
         }
 
-        final boolean activeRequestorEnabled = Boolean.parseBoolean(WSFederationMetaUtils.getAttribute(idpConfig,
+        final boolean activeRequestorEnabled = Boolean.parseBoolean(WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
                 ACTIVE_REQUESTOR_PROFILE_ENABLED));
 
         if (!activeRequestorEnabled) {
@@ -150,7 +150,7 @@ public class ActiveRequest extends WSFederationAction {
                         StandardCharsets.UTF_8)));
             }
             parseAndValidateRequest(soapMessage, idpConfig);
-            ssoToken = authenticateEndUser(soapMessage, WSFederationMetaUtils.getAttribute(idpConfig,
+            ssoToken = authenticateEndUser(soapMessage, WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
                     AUTHENTICATOR_CLASS, "org.forgerock.openam.saml2.plugins.DefaultWsFedAuthenticator"));
             final SAML11RequestedSecurityToken requestedSecurityToken = WSFederationUtils.createSAML11Token(realm,
                     idpEntityId, address, ssoToken, address, SAMLConstants.AUTH_METHOD_PASSWORD_URI, true);
@@ -238,7 +238,7 @@ public class ActiveRequest extends WSFederationAction {
         }
 
         final String stsEndpoint = WSFederationMetaUtils.getEndpointBaseUrl(idpConfig, request)
-                + "/WSFederationServlet/sts/metaAlias" + idpConfig.getMetaAlias();
+                + "/WSFederationServlet/sts/metaAlias" + idpConfig.getValue().getMetaAlias();
         final Date expiresDate;
         try {
             expiresDate = DateUtils.stringToDate(expires);
@@ -269,7 +269,7 @@ public class ActiveRequest extends WSFederationAction {
         }
 
         address = getSingleElement(soapBody, WSA_NAMESPACE, "Address");
-        final List<String> trustedAddresses = WSFederationMetaUtils.getAttributes(idpConfig, TRUSTED_ADDRESSES);
+        final List<String> trustedAddresses = WSFederationMetaUtils.getAttributes(idpConfig.getValue(), TRUSTED_ADDRESSES);
         if (trustedAddresses == null || !trustedAddresses.contains(address)) {
             throw newReceiverException("invalidReceiver");
         }

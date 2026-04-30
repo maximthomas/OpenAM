@@ -93,7 +93,7 @@ public class MexRequest extends WSFederationAction {
             throw new WSFederationException(WSFederationConstants.BUNDLE_NAME, "unableToFindIDPConfiguration", null);
         }
 
-        final boolean activeRequestorEnabled = Boolean.parseBoolean(WSFederationMetaUtils.getAttribute(idpConfig,
+        final boolean activeRequestorEnabled = Boolean.parseBoolean(WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
                 WSFederationConstants.ACTIVE_REQUESTOR_PROFILE_ENABLED));
 
         if (!activeRequestorEnabled) {

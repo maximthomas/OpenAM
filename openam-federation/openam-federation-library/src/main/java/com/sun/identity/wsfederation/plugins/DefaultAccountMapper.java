@@ -149,12 +149,12 @@ public class DefaultAccountMapper {
             BaseConfigType config = null;
             if(role.equals(IDP)) {
                config = WSFederationUtils.getMetaManager().getIDPSSOConfig(
-                   realm, entityID);
+                   realm, entityID).getValue();
             } else {
                config = WSFederationUtils.getMetaManager().getSPSSOConfig(
-                   realm, entityID);
+                   realm, entityID).getValue();
             }
-            Map attributes  = WSFederationMetaUtils.getAttributes(config);
+            Map<String, List<String>> attributes  = WSFederationMetaUtils.getAttributes(config);
 
             if(attributes == null || attributes.isEmpty()) {
 		if(debug.messageEnabled()) {
@@ -165,9 +165,9 @@ public class DefaultAccountMapper {
                return null;
             }
 
-            List list = (List)attributes.get(attributeName);
+            List<String> list = attributes.get(attributeName);
             if(list != null && list.size() > 0) {
-		return (String)list.iterator().next();
+		return list.iterator().next();
             }
 
             if(debug.messageEnabled()) {

@@ -102,7 +102,7 @@ public class DefaultIDPAccountMapper extends DefaultAccountMapper
 
         String name2 = null;
         try {
-            String attrName = WSFederationMetaUtils.getAttribute(idpConfig, WSFederationConstants.NAMEID_ATTRIBUTE);
+            String attrName = WSFederationMetaUtils.getAttribute(idpConfig.getValue(), WSFederationConstants.NAMEID_ATTRIBUTE);
             if (StringUtils.isEmpty(attrName)) {
                 attrName = WSFederationConstants.UID;
             }
@@ -126,7 +126,7 @@ public class DefaultIDPAccountMapper extends DefaultAccountMapper
             throw new WSFederationException(dspe);
         }
 
-        String nameIdFormat = WSFederationMetaUtils.getAttribute(idpConfig,
+        String nameIdFormat = WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
             WSFederationConstants.NAMEID_FORMAT);
         if ( nameIdFormat == null || nameIdFormat.length() == 0 ) {
             nameIdFormat = WSFederationConstants.NAMED_CLAIM_TYPES[
@@ -134,7 +134,7 @@ public class DefaultIDPAccountMapper extends DefaultAccountMapper
         }
 
         String strNameIncludesDomain = 
-            WSFederationMetaUtils.getAttribute(idpConfig,
+            WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
             WSFederationConstants.NAME_INCLUDES_DOMAIN);
         boolean nameIncludesDomain = Boolean.valueOf(strNameIncludesDomain);
 
@@ -144,7 +144,7 @@ public class DefaultIDPAccountMapper extends DefaultAccountMapper
             // Need to get a domain from somewhere and append it to name2
             // Try user profile first
             String domainAttribute = 
-                WSFederationMetaUtils.getAttribute(idpConfig,
+                WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
                 WSFederationConstants.DOMAIN_ATTRIBUTE);
             String upnDomain = null;
             if ( domainAttribute != null && domainAttribute.length() > 0 )
@@ -162,7 +162,7 @@ public class DefaultIDPAccountMapper extends DefaultAccountMapper
             
             if ( upnDomain == null || upnDomain.length() == 0 ) {
                 // Nothing on the user profile - get from config
-                upnDomain = WSFederationMetaUtils.getAttribute(idpConfig,
+                upnDomain = WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
                     WSFederationConstants.UPN_DOMAIN);
             }
             

@@ -268,7 +268,7 @@ public final class WSFederationMetaUtils {
             objFactory = 
             new com.sun.identity.wsfederation.jaxb.entityconfig.ObjectFactory();
 
-        List attributeList = config.getAttribute();
+        List<AttributeElement> attributeList = config.getAttribute();
 
         attributeList.clear();
 
@@ -276,9 +276,9 @@ public final class WSFederationMetaUtils {
         for (String key : map.keySet())
         {
             AttributeElement
-                avp = objFactory.createAttributeElement();
-            avp.setName(key);
-            avp.getValue().addAll(map.get(key));
+                avp = objFactory.createAttributeElement(objFactory.createAttributeType());
+            avp.getValue().setName(key);
+            avp.getValue().getValue().addAll(map.get(key));
             
             attributeList.add(avp);
         }
@@ -296,7 +296,7 @@ public final class WSFederationMetaUtils {
 
         for (AttributeElement avp : list) {
             if (avp.getName().equals(key)) {
-                return CollectionUtils.getFirstItem(avp.getValue());
+                return CollectionUtils.getFirstItem(avp.getValue().getValue());
             }
         }
 
@@ -431,7 +431,7 @@ public final class WSFederationMetaUtils {
      * @return The Base URL of the OpenAM deployment.
      */
     public static String getEndpointBaseUrl(IDPSSOConfigElement idpConfig, HttpServletRequest request) {
-        String endpointBaseUrl = getAttribute(idpConfig, WSFederationConstants.ENDPOINT_BASE_URL);
+        String endpointBaseUrl = getAttribute(idpConfig.getValue(), WSFederationConstants.ENDPOINT_BASE_URL);
         if (StringUtils.isEmpty(endpointBaseUrl)) {
             endpointBaseUrl = request.getScheme() + "://" + request.getServerName() + ":" + request.getServerPort()
                     + request.getContextPath();

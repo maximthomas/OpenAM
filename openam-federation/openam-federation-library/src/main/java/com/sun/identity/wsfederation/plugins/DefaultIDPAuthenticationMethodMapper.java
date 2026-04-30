@@ -90,7 +90,7 @@ public class DefaultIDPAuthenticationMethodMapper
             IDPSSOConfigElement config = 
                 WSFederationUtils.getMetaManager().getIDPSSOConfig(
                     realm, idpEntityID);
-            attrs = WSFederationMetaUtils.getAttributes(config);
+            attrs = WSFederationMetaUtils.getAttributes(config.getValue());
         } catch (WSFederationMetaException sme) {
             debug.error(classMethod +
                    "get IDPSSOConfig failed:", sme);

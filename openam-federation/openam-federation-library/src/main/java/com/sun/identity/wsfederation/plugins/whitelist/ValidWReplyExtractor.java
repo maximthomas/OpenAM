@@ -45,9 +45,9 @@ public class ValidWReplyExtractor implements ValidDomainExtractor<ValidWReplyExt
 
 
             if (SAML2Constants.SP_ROLE.equalsIgnoreCase(entityInfo.role)) {
-                config = WSFederationUtils.getMetaManager().getSPSSOConfig(entityInfo.realm, entityInfo.entityID);
+                config = WSFederationUtils.getMetaManager().getSPSSOConfig(entityInfo.realm, entityInfo.entityID).getValue();
             } else {
-                config = WSFederationUtils.getMetaManager().getIDPSSOConfig(entityInfo.realm, entityInfo.entityID);
+                config = WSFederationUtils.getMetaManager().getIDPSSOConfig(entityInfo.realm, entityInfo.entityID).getValue();
             }
 
             if (config == null) {

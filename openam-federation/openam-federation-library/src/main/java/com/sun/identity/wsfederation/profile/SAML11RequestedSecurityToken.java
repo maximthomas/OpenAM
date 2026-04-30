@@ -368,7 +368,7 @@ public class SAML11RequestedSecurityToken implements RequestedSecurityToken {
         }
         
         String strWantAssertionSigned = 
-            WSFederationMetaUtils.getAttribute(spConfig, 
+            WSFederationMetaUtils.getAttribute(spConfig.getValue(),
             WSFederationConstants.WANT_ASSERTION_SIGNED);
         
         // By default, we want to sign assertions

@@ -222,7 +222,7 @@ public class WSFederationSingleLogoutHandler implements SingleLogoutHandler {
                     }
                     IDPSSOConfigElement config =
                         metaManager.getIDPSSOConfig(realm, idpId);
-                    return config.getMetaAlias();
+                    return config.getValue().getMetaAlias();
                 }
             }
         } catch (Exception e) {

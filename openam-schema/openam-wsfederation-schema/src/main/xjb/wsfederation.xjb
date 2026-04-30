@@ -26,9 +26,26 @@
 
 -->
 
-<jxb:bindings version="1.0"
-               xmlns:jxb="http://java.sun.com/xml/ns/jaxb"
-               xmlns:xs="http://www.w3.org/2001/XMLSchema">
+<jxb:bindings
+        version="3.0"
+        xmlns:jxb="https://jakarta.ee/xml/ns/jaxb"
+        xmlns:xs="http://www.w3.org/2001/XMLSchema"
+        xmlns:xjc="http://java.sun.com/xml/ns/jaxb/xjc"
+        jxb:extensionBindingPrefixes="xjc">
+
+<!-- ================================================================
+         Global options applied to every schema processed in this run.
+         ================================================================ -->
+    <jxb:globalBindings >
+        <!--<xjc:simple />-->
+        <!-- Use java.util.Calendar for xsd:dateTime — consistent with
+             the original JAXB 1.0 behaviour and the rest of OpenAM. -->
+        <jxb:javaType name="java.util.Calendar"
+                      xmlType="xs:dateTime"
+                      parseMethod="jakarta.xml.bind.DatatypeConverter.parseDateTime"
+                      printMethod="jakarta.xml.bind.DatatypeConverter.printDateTime"/>
+    </jxb:globalBindings>
+
   <jxb:bindings schemaLocation="../xsd/xmldsig-core-schema.xsd" node="/xs:schema">
     <jxb:schemaBindings>
       <jxb:package name="com.sun.identity.wsfederation.jaxb.xmlsig">
@@ -40,6 +57,9 @@
           <jxb:elementName suffix="Element"/>
       </jxb:nameXmlTransform>
     </jxb:schemaBindings>
+    <jxb:bindings node="//xs:element[@name='X509Certificate']">
+      <jxb:class name="X509Certificate"/>
+    </jxb:bindings>
   </jxb:bindings>
 
   <jxb:bindings schemaLocation="../xsd/oasis-200401-wss-wssecurity-utility-1.0.xsd" node="/xs:schema">
@@ -118,6 +138,21 @@
           <jxb:elementName suffix="Element"/>
       </jxb:nameXmlTransform>
     </jxb:schemaBindings>
+    <jxb:bindings node="//xs:element[@name='Federation']">
+      <jxb:class name="FederationElement"/>
+    </jxb:bindings>
+    <jxb:bindings node="//xs:element[@name='TokenIssuerEndpoint']">
+      <jxb:class name="TokenIssuerEndpointElement"/>
+    </jxb:bindings>
+    <jxb:bindings node="//xs:element[@name='TokenIssuerName']">
+      <jxb:class name="TokenIssuerNameElement"/>
+    </jxb:bindings>
+    <jxb:bindings node="//xs:element[@name='TokenSigningKeyInfo']">
+      <jxb:class name="TokenSigningKeyInfoElement"/>
+    </jxb:bindings>
+    <jxb:bindings node="//xs:element[@name='UriNamedClaimTypesOffered']">
+      <jxb:class name="UriNamedClaimTypesOfferedElement"/>
+    </jxb:bindings>
   </jxb:bindings>
 
   <jxb:bindings schemaLocation="../xsd/entity-config-schema.xsd" node="/xs:schema">
@@ -131,5 +166,21 @@
           <jxb:elementName suffix="Element"/>
       </jxb:nameXmlTransform>
     </jxb:schemaBindings>
+    <jxb:bindings node="//xs:element[@name='IDPSSOConfig']">
+      <jxb:class name="IDPSSOConfigElement"/>
+    </jxb:bindings>
+    <jxb:bindings node="//xs:element[@name='SPSSOConfig']">
+      <jxb:class name="SPSSOConfigElement"/>
+    </jxb:bindings>
+    <jxb:bindings node="//xs:element[@name='FederationConfig']">
+      <jxb:class name="FederationConfigElement"/>
+    </jxb:bindings>
+    <jxb:bindings node="//xs:element[@name='Attribute']">
+      <jxb:class name="AttributeElement"/>
+    </jxb:bindings>
+
+
+
   </jxb:bindings>
+
 </jxb:bindings>

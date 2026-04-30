@@ -95,10 +95,10 @@ public class DefaultAttributeMapper {
             BaseConfigType config = null;
             if(role.equals(SP)) {
                config = WSFederationUtils.getMetaManager().getSPSSOConfig(
-                   realm, hostEntityID);
+                   realm, hostEntityID).getValue();
             } else {
                config = WSFederationUtils.getMetaManager().getIDPSSOConfig(
-                   realm, hostEntityID);
+                   realm, hostEntityID).getValue();
             }
 
             if(config == null) {

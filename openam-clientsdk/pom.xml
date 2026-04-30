@@ -143,9 +143,8 @@
                             <include>joda-time:joda-time</include>
                             <include>org.slf4j:slf4j-api</include>
                             <include>external:jdmkrt</include>
-                            <include>javax.xml.bind:jaxb-api</include>
-                            <include>com.sun.xml.bind:jaxb-core</include>
-                            <include>com.sun.xml.bind:jaxb-impl</include>
+                            <include>jakarta.xml.bind:jaxb-api</include>
+                            <include>org.glassfish.jaxb:jaxb-runtime</include>
                         </includes>
                     </artifactSet>
                     <filters>

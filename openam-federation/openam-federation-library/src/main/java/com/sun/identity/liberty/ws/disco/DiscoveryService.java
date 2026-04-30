@@ -37,7 +37,7 @@ import java.util.Set;
 import java.util.Collection;
 import java.util.logging.Level;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import org.w3c.dom.*;
 
 import com.sun.identity.shared.xml.XMLUtils;

@@ -29,7 +29,7 @@
 package com.sun.identity.liberty.ws.idpp.container;
 
 import com.sun.identity.shared.datastruct.CollectionHelper;
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Iterator;

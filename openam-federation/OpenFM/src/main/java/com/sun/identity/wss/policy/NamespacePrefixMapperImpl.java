@@ -32,7 +32,7 @@ package com.sun.identity.wss.policy;
 
 import java.util.Map;
 import java.util.HashMap;
-import com.sun.xml.bind.marshaller.NamespacePrefixMapper;
+import org.glassfish.jaxb.runtime.marshaller.NamespacePrefixMapper;
 
 
 /**

@@ -27,7 +27,7 @@ import jakarta.xml.bind.JAXBElement;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 
 public class KeyUtilTest {
 

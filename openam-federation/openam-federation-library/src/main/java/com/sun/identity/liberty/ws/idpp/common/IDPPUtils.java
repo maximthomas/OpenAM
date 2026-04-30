@@ -59,11 +59,11 @@ import com.sun.identity.plugin.datastore.DataStoreProviderException;
 import com.sun.identity.plugin.datastore.DataStoreProviderManager;
 import com.sun.identity.saml.common.SAMLUtils;
 import com.sun.identity.shared.xml.XMLUtils;
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import javax.xml.parsers.DocumentBuilder;
-import javax.xml.bind.Marshaller;
-import javax.xml.bind.Unmarshaller;
-import javax.xml.bind.JAXBContext;
+import jakarta.xml.bind.Marshaller;
+import jakarta.xml.bind.Unmarshaller;
+import jakarta.xml.bind.JAXBContext;
 import javax.xml.parsers.ParserConfigurationException;
 
 /**

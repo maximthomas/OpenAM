@@ -36,7 +36,6 @@
             <plugin>
                 <groupId>org.jvnet.jaxb</groupId>
                 <artifactId>jaxb-maven-plugin</artifactId>
-                <version>3.0.2</version>
                 <executions>
                     <execution>
                         <goals>
@@ -137,10 +136,6 @@
             <groupId>com.sun.msv.datatype.xsd</groupId>
             <artifactId>xsdlib</artifactId>
         </dependency>
-        <dependency>
-			<groupId>com.sun.xml.bind</groupId>
-			<artifactId>jaxb1-impl</artifactId>
-		</dependency>
     </dependencies>
 </project>
 

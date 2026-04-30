@@ -29,7 +29,7 @@
 
 package com.sun.identity.wsfederation.meta;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import java.util.Iterator;
 import java.util.List;
 import com.sun.identity.shared.debug.Debug;

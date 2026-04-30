@@ -43,6 +43,7 @@ import java.util.Set;
 
 import com.sun.identity.saml2.common.SAML2Utils;
 import com.sun.identity.saml2.jaxb.metadata.KeyDescriptorElement;
+import com.sun.identity.saml2.jaxb.metadata.KeyTypes;
 import org.apache.xml.security.encryption.XMLCipher;
 
 import com.sun.identity.common.SystemConfigurationUtil;
@@ -360,10 +361,10 @@ public class KeyUtil {
         List<KeyDescriptorElement> keyDescriptorsWithoutUsage = new ArrayList<>(keyDescriptors.size());
 
         for (KeyDescriptorElement keyDescriptor : keyDescriptors) {
-            String use = keyDescriptor.getValue().getUse().value();
-            if (StringUtils.isBlank(use)) {
+            KeyTypes use = keyDescriptor.getValue().getUse();
+            if (use == null || StringUtils.isBlank(use.value())) {
                 keyDescriptorsWithoutUsage.add(keyDescriptor);
-            } else if (use.trim().toLowerCase().equals(usage)) {
+            } else if (use.value().trim().toLowerCase().equals(usage)) {
                 matches.add(keyDescriptor);
             }
         }

@@ -56,7 +56,7 @@ import com.sun.identity.liberty.ws.meta.jaxb.ProviderDescriptorType;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 
 /**
  * The <code>IDFFMetaSecurityUtils</code> class provides metadata security 

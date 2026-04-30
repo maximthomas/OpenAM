@@ -43,7 +43,7 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.xml.transform.stream.StreamSource;
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 
 import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.liberty.ws.disco.common.DiscoConstants;

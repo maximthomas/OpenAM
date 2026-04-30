@@ -29,7 +29,7 @@
 
 package com.sun.identity.saml2.meta;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import java.util.Iterator;
 import java.util.List;
 

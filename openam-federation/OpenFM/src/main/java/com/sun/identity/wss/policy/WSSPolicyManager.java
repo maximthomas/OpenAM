@@ -27,7 +27,7 @@
  */
 package com.sun.identity.wss.policy;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 import javax.xml.namespace.QName;
 import java.util.List;
 import java.util.Iterator;

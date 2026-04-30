@@ -39,7 +39,8 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import javax.xml.bind.JAXBException;
+import com.sun.identity.saml2.jaxb.metadata.KeyTypes;
+import jakarta.xml.bind.JAXBException;
 
 import com.sun.identity.saml.xmlsig.AMSignatureProvider;
 import com.sun.identity.saml2.jaxb.metadata.KeyDescriptorType;
@@ -521,7 +522,8 @@ public final class SAML2MetaSecurityUtils {
     }
 
     private static void updateKeyDescriptor(RoleDescriptorType desp, Set<KeyDescriptorType> keyDescriptors) {
-        String use = keyDescriptors.iterator().next().getUse().value();
+        KeyTypes keyTypes = keyDescriptors.iterator().next().getUse();
+        String use = keyTypes != null ? keyTypes.value() : null;
         List<KeyDescriptorElement> keys = desp.getKeyDescriptor();
 
         Iterator<KeyDescriptorElement> iterator = keys.iterator();
@@ -547,7 +549,7 @@ public final class SAML2MetaSecurityUtils {
             if (isSigningUse) {
                 keyUse = "signing";
             }
-            if ((key.getValue().getUse() != null) &&
+            if (key.getValue() != null && (key.getValue().getUse() != null) &&
                 key.getValue().getUse().value().equalsIgnoreCase(keyUse)) {
                 iter.remove();
             }

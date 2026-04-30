@@ -37,7 +37,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-import javax.xml.bind.JAXBException;
+import jakarta.xml.bind.JAXBException;
 
 import com.sun.identity.saml.xmlsig.AMSignatureProvider;
 import com.sun.identity.wsfederation.jaxb.entityconfig.AttributeElement;

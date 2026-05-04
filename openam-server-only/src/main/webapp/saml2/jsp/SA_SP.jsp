@@ -163,7 +163,7 @@ org.owasp.esapi.ESAPI"
         // get attr list from configuration
         SPSSOConfigElement spConfig = mm.getSPSSOConfig(realm, spEntityId);
         if (spConfig != null) {
-            Map attrs = SAML2MetaUtils.getAttributes(spConfig);
+            Map attrs = SAML2MetaUtils.getAttributes(spConfig.getValue());
             if (attrs != null) {
                 List value = (List) attrs.get(SAML2Constants.ATTRIBUTE_MAP);
                 if (value != null && !value.isEmpty()) {

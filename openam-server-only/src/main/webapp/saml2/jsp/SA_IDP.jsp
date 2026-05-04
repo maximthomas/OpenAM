@@ -77,11 +77,11 @@ org.owasp.esapi.ESAPI"
                     SPSSODescriptorElement spDesc =
                         mm.getSPSSODescriptor(realm, tempspId);
                     Iterator acsIter = 
-                        spDesc.getAssertionConsumerService().iterator();
+                        spDesc.getValue().getAssertionConsumerService().iterator();
                     while (acsIter.hasNext()) {
                         AssertionConsumerServiceElement acs =
                             (AssertionConsumerServiceElement) acsIter.next();
-                        if (acs.getLocation().indexOf(targetHost) != -1) {
+                        if (acs.getValue().getLocation().indexOf(targetHost) != -1) {
                             return tempspId;
                         }
                     }

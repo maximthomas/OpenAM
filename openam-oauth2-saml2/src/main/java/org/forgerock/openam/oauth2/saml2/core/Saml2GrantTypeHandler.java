@@ -179,7 +179,7 @@ public class Saml2GrantTypeHandler extends GrantTypeHandler {
         final Set<X509Certificate> verificationCerts;
         SAML2MetaManager metaManager = new SAML2MetaManager();
         final IDPSSODescriptorElement idpSsoDescriptor = metaManager.getIDPSSODescriptor(realm, idpEntityID);
-        verificationCerts = KeyUtil.getVerificationCerts(idpSsoDescriptor, idpEntityID, SAML2Constants.IDP_ROLE);
+        verificationCerts = KeyUtil.getVerificationCerts(idpSsoDescriptor.getValue(), idpEntityID, SAML2Constants.IDP_ROLE);
 
 
         // The Assertion MUST be digitally signed or have a Message Authentication Code (MAC) applied by the issuer.

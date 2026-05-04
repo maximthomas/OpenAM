@@ -37,6 +37,7 @@ import com.sun.identity.liberty.ws.disco.jaxb.AuthorizeRequesterElement;
 import com.sun.identity.liberty.ws.disco.jaxb.DescriptionType;
 import com.sun.identity.liberty.ws.disco.jaxb.DirectiveType;
 import com.sun.identity.liberty.ws.disco.jaxb.EncryptResourceIDElement;
+import com.sun.identity.liberty.ws.disco.jaxb.InsertEntryType;
 import com.sun.identity.liberty.ws.disco.jaxb.OptionsType;
 import com.sun.identity.liberty.ws.disco.jaxb.ResourceIDType;
 import com.sun.identity.liberty.ws.disco.jaxb.ResourceOfferingType;
@@ -136,8 +137,8 @@ public class SMDiscoEntryData implements Serializable {
                 res.setOptions(createOptionsEntry());
             }
 
-            DiscoEntryElement de = entryFac.createDiscoEntryElement();
-            de.setResourceOffering(res);
+            DiscoEntryElement de = entryFac.createDiscoEntryElement(new InsertEntryType());
+            de.getValue().setResourceOffering(res);
             createDirectivesEntry(de, descriptionTypeList);
 
             String str = convertDiscoEntryToXmlStr(de);
@@ -208,33 +209,33 @@ public class SMDiscoEntryData implements Serializable {
 
                 if (dName.equals(DiscoConstants.AUTHN_DIRECTIVE)) {
                     AuthenticateRequesterElement authenticateRequester =
-                        discoFac.createAuthenticateRequesterElement();
-                    createDirectiveEntry(de, authenticateRequester, idRefs,
+                        discoFac.createAuthenticateRequesterElement(discoFac.createDirectiveType());
+                    createDirectiveEntry(de, authenticateRequester.getValue(), idRefs,
                         descriptionTypeList);
                 } else if (dName.equals(DiscoConstants.ENCRYPT_DIRECTIVE)) {
                     EncryptResourceIDElement encryptResourceId =
-                        discoFac.createEncryptResourceIDElement();
-                    createDirectiveEntry(de, encryptResourceId, idRefs,
+                        discoFac.createEncryptResourceIDElement(discoFac.createDirectiveType());
+                    createDirectiveEntry(de, encryptResourceId.getValue(), idRefs,
                         descriptionTypeList);
                 } else if (dName.equals(DiscoConstants.SESSION_DIRECTIVE)) {
                     AuthenticateSessionContextElement authSessionCntx =
-                        discoFac.createAuthenticateSessionContextElement();
-                    createDirectiveEntry(de, authSessionCntx, idRefs,
+                        discoFac.createAuthenticateSessionContextElement(discoFac.createDirectiveType());
+                    createDirectiveEntry(de, authSessionCntx.getValue(), idRefs,
                         descriptionTypeList);
                 } else if (dName.equals(DiscoConstants.AUTHZ_DIRECTIVE)) {
                     AuthorizeRequesterElement authorizeRequester =
-                        discoFac.createAuthorizeRequesterElement();
-                    createDirectiveEntry(de, authorizeRequester, idRefs,
+                        discoFac.createAuthorizeRequesterElement(discoFac.createDirectiveType());
+                    createDirectiveEntry(de, authorizeRequester.getValue(), idRefs,
                         descriptionTypeList);
                 } else if (dName.equals(DiscoConstants.BEARER_DIRECTIVE)) {
                     GenerateBearerTokenElement bearer =
-                        disco11Fac.createGenerateBearerTokenElement();
-                    createDirectiveEntry(de, bearer, idRefs,
+                        disco11Fac.createGenerateBearerTokenElement(discoFac.createDirectiveType());
+                    createDirectiveEntry(de, bearer.getValue(), idRefs,
                         descriptionTypeList);
                 } else if (dName.equals(DiscoConstants.LOGOUT_DIRECTIVE)) {
                     SendSingleLogOutElement logout =
-                        disco11Fac.createSendSingleLogOutElement();
-                    createDirectiveEntry(de, logout, idRefs,
+                        disco11Fac.createSendSingleLogOutElement(discoFac.createDirectiveType());
+                    createDirectiveEntry(de, logout.getValue(), idRefs,
                         descriptionTypeList);
                 }
 	    }
@@ -261,7 +262,7 @@ public class SMDiscoEntryData implements Serializable {
             }
         }
 
-        de.getAny().add(dType);
+        de.getValue().getAny().add(dType);
     }
 
     private DescriptionType getDescriptionType(String id, List list) {

@@ -329,7 +329,7 @@ public class SMDiscoveryServiceData implements Serializable
         DiscoEntryElement entry,
         SMDiscoEntryData smDisco)
     {
-        ResourceOfferingType resOff = entry.getResourceOffering();
+        ResourceOfferingType resOff = entry.getValue().getResourceOffering();
         ResourceIDType resourceIdType = resOff.getResourceID();
         ServiceInstanceType serviceInstance = resOff.getServiceInstance();
         String providerID = serviceInstance.getProviderID();
@@ -401,7 +401,7 @@ public class SMDiscoveryServiceData implements Serializable
      */
     public static  Map getDirectiveEntry(DiscoEntryElement entry) {
         Map map = Collections.EMPTY_MAP;
-        List directiveList = entry.getAny();
+        List directiveList = entry.getValue().getAny();
 
         if ((directiveList != null) && !directiveList.isEmpty()) {
             map = new HashMap(directiveList.size() *2);
@@ -412,32 +412,32 @@ public class SMDiscoveryServiceData implements Serializable
                 if (obj instanceof AuthenticateRequesterElement) {
                      AuthenticateRequesterElement dType =
                          (AuthenticateRequesterElement)obj;
-                     setDirectiveData(dType, map,
+                     setDirectiveData(dType.getValue(), map,
                          DiscoConstants.AUTHN_DIRECTIVE);
                  } else if (obj instanceof EncryptResourceIDElement) {
                      EncryptResourceIDElement dType =
                          (EncryptResourceIDElement)obj;
-                     setDirectiveData(dType, map,
+                     setDirectiveData(dType.getValue(), map,
                          DiscoConstants.ENCRYPT_DIRECTIVE);
                  } else if (obj instanceof AuthenticateSessionContextElement) {
                      AuthenticateSessionContextElement dType =
                          (AuthenticateSessionContextElement)obj;
-                     setDirectiveData(dType, map,
+                     setDirectiveData(dType.getValue(), map,
                          DiscoConstants.SESSION_DIRECTIVE);
                  } else if (obj instanceof AuthorizeRequesterElement) {
                      AuthorizeRequesterElement dType =
                          (AuthorizeRequesterElement)obj;
-                     setDirectiveData(dType, map,
+                     setDirectiveData(dType.getValue(), map,
                          DiscoConstants.AUTHZ_DIRECTIVE);
                  } else if (obj instanceof GenerateBearerTokenElement) {
                      GenerateBearerTokenElement dType =
                          (GenerateBearerTokenElement)obj;
-                     setDirectiveData(dType, map,
+                     setDirectiveData(dType.getValue(), map,
                          DiscoConstants.BEARER_DIRECTIVE);
                  } else if (obj instanceof SendSingleLogOutElement) {
                      SendSingleLogOutElement dType =
                          (SendSingleLogOutElement)obj;
-                     setDirectiveData(dType, map,
+                     setDirectiveData(dType.getValue(), map,
                          DiscoConstants.LOGOUT_DIRECTIVE);
                  } else {
                      debug.error("unsupported directive type");

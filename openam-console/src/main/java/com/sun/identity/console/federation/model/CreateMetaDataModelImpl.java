@@ -173,7 +173,7 @@ public class CreateMetaDataModelImpl extends AMModelBase
         
             FederationElement elt = (FederationElement) 
                 WSFederationMetaUtils.convertStringToJAXB(metadata);
-            String federationID = elt.getFederationID();
+            String federationID = elt.getValue().getFederationID();
             if (federationID == null) {
                 federationID = WSFederationConstants.DEFAULT_FEDERATION_ID;
             }

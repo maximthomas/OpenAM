@@ -160,6 +160,9 @@
     <jxb:bindings node=".//xs:element[@name='GenerateBearerToken']">
         <jxb:class name="GenerateBearerTokenElement"/>
     </jxb:bindings>
+    <jxb:bindings node=".//xs:element[@name='SendSingleLogOut']">
+        <jxb:class name="SendSingleLogOutElement"/>
+    </jxb:bindings>
   </jxb:bindings>
 
 

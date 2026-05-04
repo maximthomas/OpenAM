@@ -244,6 +244,9 @@
     <jxb:bindings node="//xs:element[@name='TokenTypesOffered']">
       <jxb:class name="TokenTypesOfferedElement"/>
     </jxb:bindings>
+    <jxb:bindings node="//xs:element[@name='FederationMetadata']">
+      <jxb:class name="FederationMetadataElement"/>
+    </jxb:bindings>
   </jxb:bindings>
 
   <jxb:bindings schemaLocation="../xsd/entity-config-schema.xsd" node="/xs:schema">

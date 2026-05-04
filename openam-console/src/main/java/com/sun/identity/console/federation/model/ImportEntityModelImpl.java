@@ -138,9 +138,9 @@ public class ImportEntityModelImpl extends AMModelBase
             if (extendedMetaData != null) {
                 configElt = getEntityConfigElement();
 
-                if (configElt != null && configElt.isHosted()) {
+                if (configElt != null && configElt.getValue().isHosted()) {
                     List config = 
-                       configElt.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+                       configElt.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
                     if (!config.isEmpty()) {
                         BaseConfigType bConfig = (BaseConfigType)
                             config.iterator().next();
@@ -189,7 +189,7 @@ public class ImportEntityModelImpl extends AMModelBase
             Object obj = WSFederationMetaUtils.convertStringToJAXB(standardMetaData);
        
             if (obj instanceof com.sun.identity.wsfederation.jaxb.wsfederation.FederationMetadataElement) {
-                obj = ((com.sun.identity.wsfederation.jaxb.wsfederation.FederationMetadataElement)obj).getAny().get(0);
+                obj = ((com.sun.identity.wsfederation.jaxb.wsfederation.FederationMetadataElement)obj).getValue().getAny().get(0);
             }
 
             if (obj instanceof com.sun.identity.wsfederation.jaxb.wsfederation.FederationElement) {
@@ -236,18 +236,18 @@ public class ImportEntityModelImpl extends AMModelBase
             if (extendedMetaData != null) {
                 configElt = getIDFFEntityConfigElement();
                 
-                if ((configElt != null) && configElt.isHosted()) {
+                if ((configElt != null) && configElt.getValue().isHosted()) {
                     IDPDescriptorConfigElement idpConfig = 
                         IDFFMetaUtils.getIDPDescriptorConfig(configElt);
                     if (idpConfig != null) {
                         SAML2MetaUtils.getRealmByMetaAlias(
-                            idpConfig.getMetaAlias());
+                            idpConfig.getValue().getMetaAlias());
                     } else {
                         SPDescriptorConfigElement spConfig =
                             IDFFMetaUtils.getSPDescriptorConfig(configElt);
                         if (spConfig != null) {
                             SAML2MetaUtils.getRealmByMetaAlias(
-                                spConfig.getMetaAlias());
+                                spConfig.getValue().getMetaAlias());
                         }
                     }
                 }
@@ -310,8 +310,8 @@ public class ImportEntityModelImpl extends AMModelBase
                  * see note at the end of this class for how we decide
                  * the realm value
                  */
-                if (configElt != null && configElt.isHosted()) {
-                    List config = configElt.getIDPSSOConfigOrSPSSOConfig();
+                if (configElt != null && configElt.getValue().isHosted()) {
+                    List config = configElt.getValue().getIDPSSOConfigOrSPSSOConfig();
                     if (!config.isEmpty()) {
                         com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType bConfig = 
                             (com.sun.identity.wsfederation.jaxb.entityconfig.BaseConfigType)

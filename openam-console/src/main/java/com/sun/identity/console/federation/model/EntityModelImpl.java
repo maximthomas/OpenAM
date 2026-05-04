@@ -397,7 +397,7 @@ public class EntityModelImpl extends AMModelBase implements EntityModel {
                 FederationElement fedElem =
                     metaManager.getEntityDescriptor(realm, entity);
                 if (fedElem != null) {
-                    for (Iterator iter = fedElem.getAny().iterator(); 
+                    for (Iterator iter = fedElem.getValue().getAny().iterator();
                         iter.hasNext(); ) 
                     {
                         Object o = iter.next();

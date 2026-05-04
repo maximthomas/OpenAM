@@ -571,7 +571,7 @@ public final class SAML2MetaSecurityUtils {
             AttributeType atype = factory.createAttributeType();
             atype.setName(attrName);
             atype.getValue().addAll(attrVal);
-            config.getAttribute().add(atype);
+            config.getAttribute().add(factory.createAttributeElement(atype));
         }
     }
 

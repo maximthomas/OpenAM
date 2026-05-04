@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.ResourceBundle;
 import java.util.Set;
 
+import com.sun.identity.saml2.jaxb.entityconfig.AttributeElement;
 import jakarta.xml.bind.JAXBContext;
 import jakarta.xml.bind.JAXBException;
 import jakarta.xml.bind.Marshaller;
@@ -236,9 +237,9 @@ public final class SAML2MetaUtils {
      */
     public static Map<String, List<String>> getAttributes(BaseConfigType config) {
         Map<String, List<String>> attrMap = new HashMap<>();
-        List<AttributeType> list = config.getAttribute();
-        for (AttributeType avp : list) {
-            attrMap.put(avp.getName(), avp.getValue());
+        List<AttributeElement> list = config.getAttribute();
+        for (AttributeElement avp : list) {
+            attrMap.put(avp.getValue().getName(), avp.getValue().getValue());
         }
 
         return attrMap;

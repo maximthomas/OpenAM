@@ -101,20 +101,20 @@ public class IDFFCOTUtils {
             // It could have one sp and one idp.
             if (IDFFMetaUtils.getSPDescriptor(entityDesc) != null) {
                 IDFFCOTUtils = new BaseConfigType() {};
-                IDFFCOTUtils.getAttribute().add(atype);
+                IDFFCOTUtils.getAttribute().add(objFactory.createAttributeElement(atype));
                 entityConfig.getValue().getSPDescriptorConfig().add(
                         objFactory.createSPDescriptorConfigElement(IDFFCOTUtils));
             }
             if (IDFFMetaUtils.getIDPDescriptor(entityDesc) != null) {
                 IDFFCOTUtils = new BaseConfigType() {};
-                IDFFCOTUtils.getAttribute().add(atype);
+                IDFFCOTUtils.getAttribute().add(objFactory.createAttributeElement(atype));
                 entityConfig.getValue().getIDPDescriptorConfig().add(
                         objFactory.createIDPDescriptorConfigElement(IDFFCOTUtils));
             }
             if (entityDesc.getValue().getAffiliationDescriptor() != null) {
                 IDFFCOTUtils =
                         new BaseConfigType() {};;
-                IDFFCOTUtils.getAttribute().add(atype);
+                IDFFCOTUtils.getAttribute().add(objFactory.createAttributeElement(atype));
                 entityConfig.getValue().setAffiliationDescriptorConfig(
                         objFactory.createAffiliationDescriptorConfigElement(IDFFCOTUtils));
             }

@@ -1362,7 +1362,7 @@ public class WSFederationMetaManager {
             if ( o instanceof TokenSigningKeyInfoElement )
             {
                 SecurityTokenReferenceType str =
-                    ((TokenSigningKeyInfoElement)o).getValue().getSecurityTokenReference();
+                    ((TokenSigningKeyInfoElement)o).getValue().getSecurityTokenReference().getValue();
                 for ( Object o1: str.getAny() )
                 {
                     if ( o1 instanceof X509DataType )

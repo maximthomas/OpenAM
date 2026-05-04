@@ -42,6 +42,7 @@ import java.security.cert.X509Certificate;
 import java.util.Set;
 
 import com.sun.identity.saml2.common.SAML2Utils;
+import com.sun.identity.saml2.jaxb.metadata.EncryptionMethodElement;
 import com.sun.identity.saml2.jaxb.metadata.KeyDescriptorElement;
 import com.sun.identity.saml2.jaxb.metadata.KeyTypes;
 import org.apache.xml.security.encryption.XMLCipher;
@@ -309,12 +310,12 @@ public class KeyUtil {
             );
             return null;
         }
-        List<EncryptionMethodType> emList = kd.getValue().getEncryptionMethod();
+        List<EncryptionMethodElement> emList = kd.getValue().getEncryptionMethod();
         EncryptionMethodType em = null;
         String algorithm = null;
         int keySize = 0;
         if (emList != null && !emList.isEmpty()) {            
-            em = emList.get(0);
+            em = emList.get(0).getValue();
             if (em != null) {
                 algorithm = em.getAlgorithm();
                 List cList = em.getContent();
@@ -547,12 +548,12 @@ public class KeyUtil {
             );
             return null;
         }
-        List<EncryptionMethodType> emList = kd.getValue().getEncryptionMethod();
+        List<EncryptionMethodElement> emList = kd.getValue().getEncryptionMethod();
         EncryptionMethodType em = null;
         String algorithm = null;
         int keySize = 0;
         if (emList != null && !emList.isEmpty()) {            
-            em = emList.get(0);
+            em = emList.get(0).getValue();
             if (em != null) {
                 algorithm = em.getAlgorithm();
                 List cList = em.getContent();

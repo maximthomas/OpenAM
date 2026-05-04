@@ -130,7 +130,7 @@ public class SAML2COTUtils {
             if (isAffiliation) {
                 // handle affiliation case
                 bctype = new BaseConfigType() {};
-                bctype.getAttribute().add(atype);
+                bctype.getAttribute().add(objFactory.createAttributeElement(atype));
                 ele.getValue().setAffiliationConfig(objFactory.createAffiliationConfigElement(bctype));
             } else {
                 List<JAXBElement<BaseConfigType>> ll =
@@ -143,34 +143,34 @@ public class SAML2COTUtils {
                     Object obj = iter.next();
                     if (obj instanceof SPSSODescriptorElement) {
                         bctype = new BaseConfigType() {};
-                        bctype.getAttribute().add(atype);
+                        bctype.getAttribute().add(objFactory.createAttributeElement(atype));
                         ll.add(objFactory.createSPSSOConfigElement(bctype));
                     } else if (obj instanceof IDPSSODescriptorElement) {
                         bctype = new BaseConfigType() {};
-                        bctype.getAttribute().add(atype);
+                        bctype.getAttribute().add(objFactory.createAttributeElement(atype));
                         ll.add(objFactory.createIDPSSOConfigElement(bctype));
                     } else if (obj instanceof XACMLPDPDescriptorElement) {
                         bctype = new BaseConfigType() {};
-                        bctype.getAttribute().add(atype);
+                        bctype.getAttribute().add(objFactory.createAttributeElement(atype));
                         ll.add(objFactory.createXACMLPDPConfigElement(bctype));
                     } else if (obj instanceof 
                         XACMLAuthzDecisionQueryDescriptorElement) 
                     {
                         bctype = new BaseConfigType() {};
 
-                        bctype.getAttribute().add(atype);
+                        bctype.getAttribute().add(objFactory.createAttributeElement(atype));
                         ll.add(objFactory.createXACMLAuthzDecisionQueryConfigElement(bctype));
                     } else if (obj instanceof AttributeAuthorityDescriptorElement) {
                         bctype = new BaseConfigType() {};
-                        bctype.getAttribute().add(atype);
+                        bctype.getAttribute().add(objFactory.createAttributeElement(atype));
                         ll.add(objFactory.createAttributeAuthorityConfigElement(bctype));
                     } else if (obj instanceof  AttributeQueryDescriptorElement){
                         bctype = new BaseConfigType() {};
-                        bctype.getAttribute().add(atype);
+                        bctype.getAttribute().add(objFactory.createAttributeElement(atype));
                         ll.add(objFactory.createAttributeQueryConfigElement(bctype));
                     } else if (obj instanceof AuthnAuthorityDescriptorElement) {
                         bctype = new BaseConfigType() {};
-                        bctype.getAttribute().add(atype);
+                        bctype.getAttribute().add(objFactory.createAttributeElement(atype));
                         ll.add(objFactory.createAuthnAuthorityConfigElement(bctype));
                     }
                 }

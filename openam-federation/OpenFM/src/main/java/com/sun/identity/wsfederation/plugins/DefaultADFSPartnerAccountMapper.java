@@ -84,16 +84,16 @@ public class DefaultADFSPartnerAccountMapper
             throw new WSFederationException(wsfme);
         }
         
-        String nameIdAttribute = WSFederationMetaUtils.getAttribute(idpConfig,
+        String nameIdAttribute = WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
                 WSFederationConstants.NAMEID_ATTRIBUTE);
         // Search on uid by default
         if ( nameIdAttribute == null || nameIdAttribute.length() == 0) {
             nameIdAttribute = WSFederationConstants.UID;
         }
-        String domainAttribute = WSFederationMetaUtils.getAttribute(idpConfig,
+        String domainAttribute = WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
                 WSFederationConstants.DOMAIN_ATTRIBUTE);
         String strNameIncludesDomain = 
-            WSFederationMetaUtils.getAttribute(idpConfig,
+            WSFederationMetaUtils.getAttribute(idpConfig.getValue(),
             WSFederationConstants.NAME_INCLUDES_DOMAIN);
         boolean nameIncludesDomain = Boolean.valueOf(strNameIncludesDomain);
 

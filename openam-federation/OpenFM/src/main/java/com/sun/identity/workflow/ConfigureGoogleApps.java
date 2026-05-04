@@ -90,20 +90,20 @@ public class ConfigureGoogleApps
                     samlManager.getEntityConfig(realm, entityId);
             IDPSSOConfigElement idpssoConfig =
                     samlManager.getIDPSSOConfig(realm, entityId);
-            List attrList = idpssoConfig.getAttribute();
+            List attrList = idpssoConfig.getValue().getAttribute();
             if (idpssoConfig != null) {
                 for (Iterator it = attrList.iterator(); it.hasNext();) {
                     AttributeElement avpnew = (AttributeElement) it.next();
-                    String name = avpnew.getName();
+                    String name = avpnew.getValue().getName();
                     if (name.equals("nameIDFormatMap")) {
-                        for (Iterator itt = avpnew.getValue().listIterator();
+                        for (Iterator itt = avpnew.getValue().getValue().listIterator();
                                 itt.hasNext();) {
                             String temp = (String) itt.next();
                             if (temp.contains("unspecified")) {
                                 itt.remove();
                             }
                         }
-                        avpnew.getValue().add(0, nameidMapping);
+                        avpnew.getValue().getValue().add(0, nameidMapping);
                     }
                 }
             }
@@ -132,7 +132,7 @@ public class ConfigureGoogleApps
         try {
             EntityDescriptorElement e =
                 SAML2MetaUtils.getEntityDescriptorElement(metadata);
-            String eId = e.getEntityID();
+            String eId = e.getValue().getEntityID();
             String metaAlias = generateMetaAliasForSP(realm);
             Map map = new HashMap();
             map.put(MetaTemplateParameters.P_SP, metaAlias);

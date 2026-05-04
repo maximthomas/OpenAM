@@ -297,7 +297,7 @@ public class FSDefaultSPAdapter implements FederationSPAdapter {
                                 metaManager.getSPDescriptorConfig(
                                     realm, hostedEntityID);
                             if (spConfig != null) {
-                                metaAlias = spConfig.getMetaAlias();
+                                metaAlias = spConfig.getValue().getMetaAlias();
                             }
                         }
                     } catch (IDFFMetaException ie) {

@@ -122,7 +122,7 @@ public class CreateHostedSP
                     realm, entityId);
                 SPSSOConfigElement ssoConfig = manager.getSPSSOConfig(
                     realm, entityId);
-                Map attribConfig = SAML2MetaUtils.getAttributes(ssoConfig);
+                Map attribConfig = SAML2MetaUtils.getAttributes(ssoConfig.getValue());
                 List mappedAttributes = (List) attribConfig.get(
                     SAML2Constants.ATTRIBUTE_MAP);
                 mappedAttributes.addAll(attrMapping);

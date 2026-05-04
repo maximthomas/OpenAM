@@ -99,7 +99,7 @@ public class GetIDPSPPairingInCOT
             for (Iterator i = hostedIDP.iterator(); i.hasNext();) {
                 String e = (String) i.next();
                 IDPSSOConfigElement cfg = mgr.getIDPSSOConfig(realm, e);
-                list.add(e + "(" + cfg.getMetaAlias() + ")");
+                list.add(e + "(" + cfg.getValue().getMetaAlias() + ")");
             }
             return list;
         } catch (SAML2MetaException ex) {
@@ -115,7 +115,7 @@ public class GetIDPSPPairingInCOT
             for (Iterator i = hostedSP.iterator(); i.hasNext();) {
                 String e = (String) i.next();
                 SPSSOConfigElement cfg = mgr.getSPSSOConfig(realm, e);
-                list.add(e + "(" + cfg.getMetaAlias() + ")");
+                list.add(e + "(" + cfg.getValue().getMetaAlias() + ")");
             }
             return list;
         } catch (SAML2MetaException ex) {
@@ -182,7 +182,7 @@ public class GetIDPSPPairingInCOT
             for (Iterator i = entities.iterator(); i.hasNext();) {
                 String entityId = (String) i.next();
                 EntityConfigElement elm = mgr.getEntityConfig(realm, entityId);
-                if (elm.isHosted() == hosted) {
+                if (elm.getValue().isHosted() == hosted) {
                     EntityDescriptorElement desc = mgr.getEntityDescriptor(
                         realm, entityId);
                     

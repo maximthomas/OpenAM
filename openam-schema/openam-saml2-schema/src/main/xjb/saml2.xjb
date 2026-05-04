@@ -168,13 +168,9 @@
     <jxb:bindings node="//xs:element[@name='XACMLAuthzService']">
         <jxb:class name="XACMLAuthzServiceElement"/>
     </jxb:bindings>
-
-
-
-
-
-
-
+    <jxb:bindings node="//xs:element[@name='EncryptionMethod']">
+        <jxb:class name="EncryptionMethodElement"/>
+    </jxb:bindings>
 
   </jxb:bindings>
 
@@ -245,7 +241,9 @@
     <jxb:bindings node="//xs:element[@name='SPSSOConfig']">
         <jxb:class name="SPSSOConfigElement"/>
     </jxb:bindings>
-
+    <jxb:bindings node="//xs:element[@name='Attribute']">
+        <jxb:class name="AttributeElement"/>
+    </jxb:bindings>
   </jxb:bindings>
 
   <jxb:bindings schemaLocation="../xsd/sstc-metadata-attr.xsd" node="/xs:schema">

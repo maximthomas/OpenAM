@@ -111,9 +111,9 @@ public class GetCircleOfTrusts
             EntityConfigElement configElt =
                 (obj instanceof EntityConfigElement) ?
                 (EntityConfigElement)obj : null;
-            if (configElt != null && configElt.isHosted()) {
+            if (configElt != null && configElt.getValue().isHosted()) {
                 List config =
-                configElt.getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
+                configElt.getValue().getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
                 if (!config.isEmpty()) {
                     BaseConfigType bConfig = (BaseConfigType)
                         config.iterator().next();

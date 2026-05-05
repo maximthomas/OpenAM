@@ -1,0 +1,7 @@
+dn: ds-cfg-attribute=memberof,cn=Index,ds-cfg-backend-id=@DB_NAME@,cn=Backends,cn=config
+objectClass: top
+objectClass: ds-cfg-backend-index
+ds-cfg-attribute: memberof
+ds-cfg-index-type: equality
+ds-cfg-index-type: presence
+

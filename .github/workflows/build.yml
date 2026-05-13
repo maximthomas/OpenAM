@@ -18,23 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set env
-        run: |
-          export git_version_last="$(curl -i -o - --silent https://api.github.com/repos/OpenIdentityPlatform/OpenAM/releases/latest | grep -m1 "\"name\"" | cut -d\" -f4)" ; echo "last release: $git_version_last"
-          echo "release_version=$git_version_last" >> $GITHUB_ENV
-          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: myimage
-          path: ${{ runner.temp }}
-          
-      - name: Load Docker image
-        run: |
-          docker load --input ${{ runner.temp }}/openam-image.tar
-          docker image ls -a
-
       - name: Set Integration Test Environment
         run: |
           echo "127.0.0.1 idp.acme.org sp.mycompany.org" | sudo tee -a /etc/hosts

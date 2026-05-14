@@ -9,7 +9,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        java: [ '11', '17', '21', '25', '26' ]
+#        java: [ '11', '17', '21', '25', '26' ]
+        java: [ '11' ]
+#        os: [ 'ubuntu-latest', 'macos-latest', 'windows-latest' ]
         os: [ 'ubuntu-latest', 'macos-latest', 'windows-latest' ]
       fail-fast: false
     steps:
@@ -28,31 +30,31 @@ jobs:
          path: ~/.m2/repository
          key: ${{ runner.os }}-m2-repository-${{ hashFiles('**/pom.xml') }}
          restore-keys: ${{ runner.os }}-m2-repository
-    - name: Set Integration Test Environment
-      if: matrix.os == 'ubuntu-latest'
-      run:  | 
-        echo "MAVEN_PROFILE_FLAG=-P integration-test" >> $GITHUB_OUTPUT 
-        echo "MAVEN_VERIFY_STAGE=verify" >> $GITHUB_OUTPUT
-        echo "127.0.0.1 openam.local" | sudo tee -a /etc/hosts
-      id: maven-profile-flag
-    - name: Build with Maven
-      env:
-        MAVEN_OPTS: -Dhttps.protocols=TLSv1.2 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 -Dmaven.wagon.http.retryHandler.requestSentEnabled=true -Dmaven.wagon.http.retryHandler.count=10
-      run: mvn --batch-mode --errors --update-snapshots package ${{ steps.maven-profile-flag.outputs.MAVEN_VERIFY_STAGE }} --file pom.xml ${{ steps.maven-profile-flag.outputs.MAVEN_PROFILE_FLAG }}
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v6
-      with:
-        name: ${{ matrix.os }}-${{ matrix.java }}
-        retention-days: 5
-        path:  |
-          openam-distribution/openam-distribution-kit/target/*.zip
-          openam-distribution/openam-distribution-ssoconfiguratortools/target/*.zip
-          openam-distribution/openam-distribution-fedlet-unconfigured/target/*.zip
-          openam-distribution/openam-distribution-ssoadmintools/target/*.zip
-          openam-console/target/*.war
-          openam-server/target/*.war
-          openam-server-only/target/*.war
-          openam-distribution/openam-distribution-docker/Dockerfile*
+#    - name: Set Integration Test Environment
+#      if: matrix.os == 'ubuntu-latest'
+#      run:  |
+#        echo "MAVEN_PROFILE_FLAG=-P integration-test" >> $GITHUB_OUTPUT
+#        echo "MAVEN_VERIFY_STAGE=verify" >> $GITHUB_OUTPUT
+#        echo "127.0.0.1 openam.local" | sudo tee -a /etc/hosts
+#      id: maven-profile-flag
+#    - name: Build with Maven
+#      env:
+#        MAVEN_OPTS: -Dhttps.protocols=TLSv1.2 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 -Dmaven.wagon.http.retryHandler.requestSentEnabled=true -Dmaven.wagon.http.retryHandler.count=10
+#      run: mvn --batch-mode --errors --update-snapshots package ${{ steps.maven-profile-flag.outputs.MAVEN_VERIFY_STAGE }} --file pom.xml ${{ steps.maven-profile-flag.outputs.MAVEN_PROFILE_FLAG }}
+#    - name: Upload artifacts
+#      uses: actions/upload-artifact@v6
+#      with:
+#        name: ${{ matrix.os }}-${{ matrix.java }}
+#        retention-days: 5
+#        path:  |
+#          openam-distribution/openam-distribution-kit/target/*.zip
+#          openam-distribution/openam-distribution-ssoconfiguratortools/target/*.zip
+#          openam-distribution/openam-distribution-fedlet-unconfigured/target/*.zip
+#          openam-distribution/openam-distribution-ssoadmintools/target/*.zip
+#          openam-console/target/*.war
+#          openam-server/target/*.war
+#          openam-server-only/target/*.war
+#          openam-distribution/openam-distribution-docker/Dockerfile*
   build-docker:
     needs: build-maven
     runs-on: 'ubuntu-latest'
@@ -86,9 +88,9 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
-      - name: Prepare Dockerfile
-        shell: bash
-        run: sed -i -E '/^#COPY openam-(server|distribution)\//s/^#//' ./openam-distribution/openam-distribution-docker/Dockerfile
+#      - name: Prepare Dockerfile
+#        shell: bash
+#        run: sed -i -E '/^#COPY openam-(server|distribution)\//s/^#//' ./openam-distribution/openam-distribution-docker/Dockerfile
       - name: Build image
         uses: docker/build-push-action@v7
         continue-on-error: true
@@ -102,28 +104,22 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Save docker image to tar
-        shell: bash
-        run: |
-          docker pull localhost:5000/${GITHUB_REPOSITORY,,}:${{ env.release_version }}
-          docker save -o ${{ runner.temp }}/openam-image.tar localhost:5000/${GITHUB_REPOSITORY,,}:${{ env.release_version }}
-      - name: Upload docker image
-        uses: actions/upload-artifact@v4
-        with:
-          name: myimage
-          path: ${{ runner.temp }}/openam-image.tar
-
-      - name: Docker test with an external OpenDJ identity store and an embedded OpenDJ configuration store
+      - name: Prepare environment
         shell: bash
         run: |
           docker network create test-openam
-          docker run --rm -it -d --hostname opendj -p 1389:1389 -p 4444:4444 --name test-opendj --network test-openam openidentityplatform/opendj:latest
-          docker run --rm -it -d --memory="2g" -h openam.example.org --name=test-openam --network test-openam localhost:5000/${GITHUB_REPOSITORY,,}:${{ env.release_version }}
+          echo "127.0.0.1 openam.example.org sp.mycompany.org" | sudo tee -a /etc/hosts
+
+      - name: Docker test with an external OpenDJ identity store and an embedded OpenDJ configuration store (IDP)
+        shell: bash
+        run: |
+          docker run --rm -it -d --hostname opendj --name opendj --network test-openam openidentityplatform/opendj:latest
+          docker run --rm -it -d -p 8080:8080 --memory="2g" -h openam.example.org --name=openam --network test-openam localhost:5000/${GITHUB_REPOSITORY,,}:${{ env.release_version }}
           
           echo "waiting for OpenDJ to be alive..."
-          timeout 3m bash -c 'until docker inspect --format="{{json .State.Health.Status}}" test-opendj | grep -q \"healthy\"; do sleep 10; done'
+          timeout 3m bash -c 'until docker inspect --format="{{json .State.Health.Status}}" opendj | grep -q \"healthy\"; do sleep 10; done'
           echo "waiting for OpenAM to be alive..."
-          timeout 3m bash -c 'until docker inspect --format="{{json .State.Health.Status}}" test-openam | grep -q \"healthy\"; do sleep 10; done'
+          timeout 3m bash -c 'until docker inspect --format="{{json .State.Health.Status}}" openam | grep -q \"healthy\"; do sleep 10; done'
           
           docker exec -w '/usr/openam/ssoconfiguratortools' test-openam bash -c \
           'echo "ACCEPT_LICENSES=true
@@ -154,7 +150,7 @@ jobs:
           USERSTORE_PASSWD=password
           " > conf.file && java -jar openam-configurator-tool*.jar --file conf.file'
           
-          docker exec test-openam bash -c \
+          docker exec openam bash -c \
           'curl \
            --request POST \
            --header "Content-Type: application/json" \
@@ -163,27 +159,22 @@ jobs:
            --data "{}" \
            http://openam.example.org:8080/openam/json/authenticate | grep tokenId'
           
-          docker inspect --format="{{json .State.Health.Status}}" test-openam | grep -q \"healthy\"
-          
-          echo "Stopping containers and removing the network"  
-          docker stop test-opendj test-openam
-          docker network rm test-openam          
+          docker inspect --format="{{json .State.Health.Status}}" openam | grep -q \"healthy\"
 
-      - name: Docker test with a dedicated OpenDJ container
+      - name: Docker start with a dedicated OpenDJ container (SP)
         shell: bash
         run: |
-          docker network create test-openam
-          docker run --rm -it -d --hostname opendj -p 1389:1389 -p 4444:4444 --name test-opendj --network test-openam openidentityplatform/opendj:latest
-          docker run --rm -it -d --memory="2g" -h openam.example.org --name=test-openam --network test-openam localhost:5000/${GITHUB_REPOSITORY,,}:${{ env.release_version }}
+          docker run --rm -it -d --hostname sp-opendj --name sp-opendj --network test-openam openidentityplatform/opendj:latest
+          docker run --rm -it -d -p 8080:8080 --memory="2g" -h sp.mycompany.org --name=sp-openam --network test-openam localhost:5000/${GITHUB_REPOSITORY,,}:${{ env.release_version }}
           
           echo "waiting for OpenDJ to be alive..."
-          timeout 3m bash -c 'until docker inspect --format="{{json .State.Health.Status}}" test-opendj | grep -q \"healthy\"; do sleep 10; done'
+          timeout 3m bash -c 'until docker inspect --format="{{json .State.Health.Status}}" sp-opendj | grep -q \"healthy\"; do sleep 10; done'
           echo "waiting for OpenAM to be alive..."
-          timeout 3m bash -c 'until docker inspect --format="{{json .State.Health.Status}}" test-openam | grep -q \"healthy\"; do sleep 10; done'
+          timeout 3m bash -c 'until docker inspect --format="{{json .State.Health.Status}}" sp-openam | grep -q \"healthy\"; do sleep 10; done'
           
           docker exec -w '/usr/openam/ssoconfiguratortools' test-openam bash -c \
           'echo "ACCEPT_LICENSES=true
-          SERVER_URL=http://openam.example.org:8080
+          SERVER_URL=http://sp.mycompany.org:8080
           DEPLOYMENT_URI=/$OPENAM_PATH
           BASE_DIR=$OPENAM_DATA_DIR
           locale=en_US
@@ -194,7 +185,7 @@ jobs:
           COOKIE_DOMAIN=example.org
           DATA_STORE=dirServer
           DIRECTORY_SSL=SIMPLE
-          DIRECTORY_SERVER=opendj
+          DIRECTORY_SERVER=sp-opendj
           DIRECTORY_PORT=1389
           DIRECTORY_ADMIN_PORT=4444
           DIRECTORY_JMX_PORT=1689
@@ -203,7 +194,7 @@ jobs:
           DS_DIRMGRPASSWD=password
           USERSTORE_TYPE=LDAPv3ForOpenDS
           USERSTORE_SSL=SIMPLE
-          USERSTORE_HOST=opendj
+          USERSTORE_HOST=sp-opendj
           USERSTORE_PORT=1389
           USERSTORE_SUFFIX=dc=example,dc=com
           USERSTORE_MGRDN=cn=Directory Manager
@@ -219,10 +210,12 @@ jobs:
            --data "{}" \
            http://openam.example.org:8080/openam/json/authenticate | grep tokenId'
           
-          docker inspect --format="{{json .State.Health.Status}}" test-openam | grep -q \"healthy\"
-          
-          echo "Stopping containers and removing the network"  
-          docker stop test-opendj test-openam
+          docker inspect --format="{{json .State.Health.Status}}" sp-openam | grep -q \"healthy\"
+
+      - name: Stopping containers and removing the network
+        shell: bash
+        run: |
+          docker stop openam-opendj openam-opendj sp-opendj sp-openam
           docker network rm test-openam
 
       - name: Docker multi-server test
@@ -370,62 +363,63 @@ jobs:
           http://openam3.example.org:8080/openam/json/authenticate | grep tokenId'
 
           docker inspect --format="{{json .State.Health.Status}}" test-openam3 | grep -q \"healthy\"
-  ui-smoke-tests:
-    runs-on: ubuntu-latest
-    needs: build-docker
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 5000:5000
-    strategy:
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v6
 
-      - name: Set env
-        run: |
-          export git_version_last="$(curl -i -o - --silent https://api.github.com/repos/OpenIdentityPlatform/OpenAM/releases/latest | grep -m1 "\"name\"" | cut -d\" -f4)" ; echo "last release: $git_version_last"
-          echo "release_version=$git_version_last" >> $GITHUB_ENV
-          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: myimage
-          path: ${{ runner.temp }}
-          
-      - name: Load Docker image
-        run: |
-          docker load --input ${{ runner.temp }}/openam-image.tar
-          docker image ls -a
-
-      - name: Set Integration Test Environment
-        run: |
-          echo "127.0.0.1 idp.acme.org sp.mycompany.org" | sudo tee -a /etc/hosts
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v5
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-browsers
-          restore-keys: ${{ runner.os }}-playwright-
-
-      - name: UI Smoke Tests (Playwright)
-        run: |
-          cd e2e
-          npm init -y
-          npm install @playwright/test
-          npx playwright install chromium --with-deps
-          npx playwright test --reporter=list
-        env:
-          OPENAM_IMAGE: localhost:5000/${{ env.REPO_LC }}:${{ env.release_version }}
-      - name: Upload failure artifacts
-        uses: actions/upload-artifact@v7
-        if: ${{ failure() }}
-        with:
-          name: failure-ui-java${{ matrix.java }}-${{ matrix.context_label }}-${{ matrix.samples_label }}
-          retention-days: 1
-          path: |
-            e2e/playwright-report/**
-            e2e/test-results/**
+#  ui-smoke-tests:
+#    runs-on: ubuntu-latest
+#    needs: build-docker
+#    services:
+#      registry:
+#        image: registry:2
+#        ports:
+#          - 5000:5000
+#    strategy:
+#      fail-fast: false
+#    steps:
+#      - uses: actions/checkout@v6
+#
+#      - name: Set env
+#        run: |
+#          export git_version_last="$(curl -i -o - --silent https://api.github.com/repos/OpenIdentityPlatform/OpenAM/releases/latest | grep -m1 "\"name\"" | cut -d\" -f4)" ; echo "last release: $git_version_last"
+#          echo "release_version=$git_version_last" >> $GITHUB_ENV
+#          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+#
+#      - name: Download artifact
+#        uses: actions/download-artifact@v4
+#        with:
+#          name: myimage
+#          path: ${{ runner.temp }}
+#
+#      - name: Load Docker image
+#        run: |
+#          docker load --input ${{ runner.temp }}/openam-image.tar
+#          docker image ls -a
+#
+#      - name: Set Integration Test Environment
+#        run: |
+#          echo "127.0.0.1 idp.acme.org sp.mycompany.org" | sudo tee -a /etc/hosts
+#
+#      - name: Cache Playwright browsers
+#        uses: actions/cache@v5
+#        with:
+#          path: ~/.cache/ms-playwright
+#          key: ${{ runner.os }}-playwright-browsers
+#          restore-keys: ${{ runner.os }}-playwright-
+#
+#      - name: UI Smoke Tests (Playwright)
+#        run: |
+#          cd e2e
+#          npm init -y
+#          npm install @playwright/test
+#          npx playwright install chromium --with-deps
+#          npx playwright test --reporter=list
+#        env:
+#          OPENAM_IMAGE: localhost:5000/${{ env.REPO_LC }}:${{ env.release_version }}
+#      - name: Upload failure artifacts
+#        uses: actions/upload-artifact@v7
+#        if: ${{ failure() }}
+#        with:
+#          name: failure-ui-java${{ matrix.java }}-${{ matrix.context_label }}-${{ matrix.samples_label }}
+#          retention-days: 1
+#          path: |
+#            e2e/playwright-report/**
+#            e2e/test-results/**

@@ -103,7 +103,7 @@ jobs:
           file: ./openam-distribution/openam-distribution-docker/Dockerfile
           build-args: |
             VERSION=${{ env.release_version }}
-          platforms: linux/amd64, linux/arm64, linux/ppc64le, linux/s390x
+          platforms: linux/amd64, linux/arm64 #, linux/ppc64le, linux/s390x
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -136,9 +136,9 @@ jobs:
           ADMIN_PWD=ampassword
           AMLDAPUSERPASSWD=password
           COOKIE_DOMAIN=example.org
-          DATA_STORE=embedded
+          DATA_STORE=dirServer
           DIRECTORY_SSL=SIMPLE
-          DIRECTORY_SERVER=localhost
+          DIRECTORY_SERVER=opendj
           DIRECTORY_PORT=1389
           DIRECTORY_ADMIN_PORT=5444
           DIRECTORY_JMX_PORT=1689
@@ -219,7 +219,7 @@ jobs:
       - name: Stopping containers and removing the network
         shell: bash
         run: |
-          docker stop openam-opendj openam-opendj sp-opendj sp-openam
+          docker stop openam opendj sp-opendj sp-openam
           docker network rm test-openam
 
       - name: Docker multi-server test

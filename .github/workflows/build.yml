@@ -300,7 +300,7 @@ jobs:
       - name: Stopping containers and removing the network
         shell: bash
         run: |
-          docker stop openam-idp opendj-idp sp-opendj sp-openam
+          docker stop openam-idp opendj-idp opendj-sp openam-sp
           docker network rm test-openam
 
       - name: Stopping containers and removing the network

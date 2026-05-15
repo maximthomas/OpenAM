@@ -9,10 +9,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-#        java: [ '11', '17', '21', '25', '26' ]
-        java: [ '11' ]
-#        os: [ 'ubuntu-latest', 'macos-latest', 'windows-latest' ]
-        os: [ 'ubuntu-latest' ]
+        java: [ '11', '17', '21', '25', '26' ]
+        os: [ 'ubuntu-latest', 'macos-latest', 'windows-latest' ]
       fail-fast: false
     steps:
     - uses: actions/checkout@v6
@@ -32,16 +30,15 @@ jobs:
          restore-keys: ${{ runner.os }}-m2-repository
     - name: Set Integration Test Environment
       if: matrix.os == 'ubuntu-latest'
-      run:  |
-        echo "MAVEN_PROFILE_FLAG=-P integration-test" >> $GITHUB_OUTPUT
+      run:  | 
+        echo "MAVEN_PROFILE_FLAG=-P integration-test" >> $GITHUB_OUTPUT 
         echo "MAVEN_VERIFY_STAGE=verify" >> $GITHUB_OUTPUT
         echo "127.0.0.1 openam.local" | sudo tee -a /etc/hosts
       id: maven-profile-flag
     - name: Build with Maven
       env:
         MAVEN_OPTS: -Dhttps.protocols=TLSv1.2 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 -Dmaven.wagon.http.retryHandler.requestSentEnabled=true -Dmaven.wagon.http.retryHandler.count=10
-      #run: mvn --batch-mode --errors --update-snapshots package ${{ steps.maven-profile-flag.outputs.MAVEN_VERIFY_STAGE }} --file pom.xml ${{ steps.maven-profile-flag.outputs.MAVEN_PROFILE_FLAG }}
-      run: mvn --batch-mode --errors --update-snapshots package ${{ steps.maven-profile-flag.outputs.MAVEN_VERIFY_STAGE }} --file pom.xml -DskipTests=true -Dcargo.maven.skip=true
+      run: mvn --batch-mode --errors --update-snapshots package ${{ steps.maven-profile-flag.outputs.MAVEN_VERIFY_STAGE }} --file pom.xml ${{ steps.maven-profile-flag.outputs.MAVEN_PROFILE_FLAG }}
     - name: Upload artifacts
       uses: actions/upload-artifact@v6
       with:
@@ -100,7 +97,7 @@ jobs:
           file: ./openam-distribution/openam-distribution-docker/Dockerfile
           build-args: |
             VERSION=${{ env.release_version }}
-          platforms: linux/amd64, linux/arm64 #, linux/ppc64le, linux/s390x
+          platforms: linux/amd64, linux/arm64, linux/ppc64le, linux/s390x
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

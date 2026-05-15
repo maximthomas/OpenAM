@@ -303,12 +303,6 @@ jobs:
           docker stop openam-idp opendj-idp opendj-sp openam-sp
           docker network rm test-openam
 
-      - name: Stopping containers and removing the network
-        shell: bash
-        run: |
-          docker stop openam-idp opendj-idp opendj-sp openam-sp
-          docker network rm test-openam
-
       - name: Docker multi-server test
         shell: bash
         run: |

@@ -275,6 +275,10 @@ jobs:
           key: ${{ runner.os }}-playwright-browsers
           restore-keys: ${{ runner.os }}-playwright-
 
+      - uses: actions/checkout@v6
+        with:
+        sparse-checkout: e2e
+        
       - name: UI Smoke Tests (Playwright)
         run: |
           cd e2e

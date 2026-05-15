@@ -111,7 +111,7 @@ jobs:
       - name: Prepare environment
         shell: bash
         run: |
-          export OPENAM_IMAGE=localhost:5000/${GITHUB_REPOSITORY,,}:${{ env.release_version }}
+          echo "OPENAM_IMAGE=localhost:5000/${GITHUB_REPOSITORY,,}:${{ env.release_version }}" >> $GITHUB_ENV
           docker network create test-openam
           echo "127.0.0.1 openam.example.org sp.mycompany.org" | sudo tee -a /etc/hosts
 

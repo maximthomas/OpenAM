@@ -79,7 +79,7 @@ public abstract class ProviderConfig {
     public static final String WSS_PROVIDER_CONFIG_PLUGIN =
          "com.sun.identity.wss.provider.config.plugin";
  
-     protected List secMech = null;
+     protected List<String> secMech = null;
      protected String serviceURI = null;
      protected String providerName = null; 
      protected String wspEndpoint = null;
@@ -134,7 +134,7 @@ public abstract class ProviderConfig {
      *
      * @return list of security mechanisms.
      */
-    public List getSecurityMechanisms() {
+    public List<String> getSecurityMechanisms() {
          return secMech;
     }
 

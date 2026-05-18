@@ -56,7 +56,7 @@
     </complexType>
     <element name="IDPSSOConfig" type="fm:BaseConfigType"/>
     <element name="SPSSOConfig" type="fm:BaseConfigType"/>
-    <complexType name="BaseConfigType" abstract="true">
+    <complexType name="BaseConfigType" abstract="false">
         <sequence>
             <element ref="fm:Attribute" minOccurs="0" maxOccurs="unbounded"/>
         </sequence>

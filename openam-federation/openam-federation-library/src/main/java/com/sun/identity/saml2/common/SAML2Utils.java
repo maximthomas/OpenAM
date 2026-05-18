@@ -139,6 +139,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.soap.MimeHeader;
 import jakarta.xml.soap.MimeHeaders;
 import org.forgerock.openam.federation.saml2.SAML2TokenRepositoryException;
@@ -568,7 +569,7 @@ public class SAML2Utils extends SAML2SDKUtils {
             } else {
                 allAssertionsSigned = false;
             }
-            List authnStmts = assertion.getAuthnStatements();
+            List<AuthnStatement> authnStmts = assertion.getAuthnStatements();
             if (authnStmts != null && !authnStmts.isEmpty()) {
                 Subject subject = assertion.getSubject();
                 if (subject == null) {
@@ -4085,7 +4086,7 @@ public class SAML2Utils extends SAML2SDKUtils {
         try {
             SPSSODescriptorElement spDescriptor =
                     saml2MetaManager.getSPSSODescriptor(realm, spEntityID);
-            List services = null;
+            List<? extends JAXBElement<? extends EndpointType>> services = null;
             if (SAML2Constants.ACS_SERVICE.equals(profile)) {
                 services = spDescriptor.getValue().getAssertionConsumerService();
             } else if (SAML2Constants.SLO_SERVICE.equals(profile)) {
@@ -4094,9 +4095,9 @@ public class SAML2Utils extends SAML2SDKUtils {
                 services = spDescriptor.getValue().getManageNameIDService();
             }
             if ((services != null) && (!services.isEmpty())) {
-                Iterator iter = services.iterator();
+                Iterator<? extends JAXBElement<? extends EndpointType>> iter = services.iterator();
                 while (iter.hasNext()) {
-                    EndpointType endpoint = (EndpointType) iter.next();
+                    EndpointType endpoint = iter.next().getValue();
                     if (binding.equals(endpoint.getBinding())) {
                         return true;
                     }
@@ -4128,7 +4129,7 @@ public class SAML2Utils extends SAML2SDKUtils {
         try {
             IDPSSODescriptorElement idpDescriptor =
                     saml2MetaManager.getIDPSSODescriptor(realm, idpEntityID);
-            List services = null;
+            List<? extends JAXBElement<? extends EndpointType>> services = null;
             if (SAML2Constants.SSO_SERVICE.equals(profile)) {
                 services = idpDescriptor.getValue().getSingleSignOnService();
             } else if (SAML2Constants.NAMEID_MAPPING_SERVICE.equals(profile)) {
@@ -4149,9 +4150,9 @@ public class SAML2Utils extends SAML2SDKUtils {
                 services = idpDescriptor.getValue().getManageNameIDService();
             }
             if ((services != null) && (!services.isEmpty())) {
-                Iterator iter = services.iterator();
+                Iterator<? extends JAXBElement<? extends EndpointType>> iter = services.iterator();
                 while (iter.hasNext()) {
-                    EndpointType endpoint = (EndpointType) iter.next();
+                    EndpointType endpoint = iter.next().getValue();
                     if (binding.equals(endpoint.getBinding())) {
                         return true;
                     }

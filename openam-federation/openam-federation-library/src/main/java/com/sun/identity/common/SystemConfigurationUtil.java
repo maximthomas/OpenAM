@@ -116,7 +116,7 @@ public final class SystemConfigurationUtil implements ConfigurationListener {
      * @return list of server names. 
      * @throws SystemConfigurationException if unable to get the server list.
      */ 
-    public static List getServerList() throws SystemConfigurationException {
+    public static List<String> getServerList() throws SystemConfigurationException {
         if (!platformNamingInitialized) {
             initPlatformNaming();
         }

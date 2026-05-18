@@ -29,6 +29,7 @@
 
 package com.sun.identity.saml2.meta;
 
+import com.sun.identity.saml2.jaxb.entityconfig.AttributeElement;
 import jakarta.xml.bind.JAXBException;
 import java.util.Iterator;
 import java.util.List;
@@ -178,26 +179,26 @@ public class SAML2COTUtils {
             metaManager.setEntityConfig(realm,ele);
         } else {
             boolean needToSave = true;
-            List elist = null; 
+            List<JAXBElement<BaseConfigType>> elist = null;
             if (isAffiliation) {
                 AffiliationConfigElement affiliationCfgElm =
                     metaManager.getAffiliationConfig(realm, entityId);
-                elist = new ArrayList();
+                elist = new ArrayList<>();
                 elist.add(affiliationCfgElm);
             } else {
                 elist = eConfig.getValue().
                     getIDPSSOConfigOrSPSSOConfigOrAuthnAuthorityConfig();
             }
-            for (Iterator iter = elist.iterator(); iter.hasNext();) {
+            for (Iterator<JAXBElement<BaseConfigType>> iter = elist.iterator(); iter.hasNext();) {
                 boolean foundCOT = false;
-                BaseConfigType bConfig = (BaseConfigType)iter.next();
-                List list = bConfig.getAttribute();
-                for (Iterator iter2 = list.iterator(); iter2.hasNext();) {
-                    AttributeType avp = (AttributeType)iter2.next();
+                BaseConfigType bConfig = iter.next().getValue();
+                List<AttributeElement> list = bConfig.getAttribute();
+                for (Iterator<AttributeElement> iter2 = list.iterator(); iter2.hasNext();) {
+                    AttributeType avp = iter2.next().getValue();
                     if (avp.getName().trim().equalsIgnoreCase(
                             SAML2Constants.COT_LIST)) {
                         foundCOT = true;
-                        List avpl = avp.getValue();
+                        List<String> avpl = avp.getValue();
                         if (avpl.isEmpty() ||!containsValue(avpl,name)) {
                             avpl.add(name);
                             needToSave = true;
@@ -210,7 +211,7 @@ public class SAML2COTUtils {
                     AttributeType atype = objFactory.createAttributeType();
                     atype.setName(SAML2Constants.COT_LIST);
                     atype.getValue().add(name);
-                    list.add(atype);
+                    list.add(objFactory.createAttributeElement(atype));
                     needToSave = true;
                 }
             }
@@ -220,9 +221,9 @@ public class SAML2COTUtils {
         }
     }
     
-    private boolean containsValue(List list, String name) {
-        for (Iterator iter = list.iterator(); iter.hasNext();) {
-            if (((String) iter.next()).trim().equalsIgnoreCase(name)) {
+    private boolean containsValue(List<String> list, String name) {
+        for (Iterator<String> iter = list.iterator(); iter.hasNext();) {
+            if (iter.next().trim().equalsIgnoreCase(name)) {
                 return true;
             }
         }
@@ -271,11 +272,11 @@ public class SAML2COTUtils {
         }
 
         if (eConfig != null) {
-            List elist = null; 
+            List<JAXBElement<BaseConfigType>> elist = null;
             if (isAffiliation) {
                 AffiliationConfigElement affiliationCfgElm =
                     metaManager.getAffiliationConfig(realm, entityId);
-                elist = new ArrayList();
+                elist = new ArrayList<>();
                 elist.add(affiliationCfgElm);
             } else {
                elist = eConfig.getValue().
@@ -283,14 +284,14 @@ public class SAML2COTUtils {
             }
 
             boolean needToSave = false;
-            for (Iterator iter = elist.iterator(); iter.hasNext();) {
-                BaseConfigType bConfig = (BaseConfigType)iter.next();
-                List list = bConfig.getAttribute();
-                for (Iterator iter2 = list.iterator(); iter2.hasNext();) {
-                    AttributeType avp = (AttributeType)iter2.next();
+            for (Iterator<JAXBElement<BaseConfigType>> iter = elist.iterator(); iter.hasNext();) {
+                BaseConfigType bConfig = iter.next().getValue();
+                List<AttributeElement> list = bConfig.getAttribute();
+                for (Iterator<AttributeElement> iter2 = list.iterator(); iter2.hasNext();) {
+                    AttributeType avp = iter2.next().getValue();
                     if (avp.getName().trim().equalsIgnoreCase(
                             SAML2Constants.COT_LIST)) {
-                        List avpl = avp.getValue();
+                        List<String> avpl = avp.getValue();
                         if (avpl != null && !avpl.isEmpty() &&
                                 containsValue(avpl,name)) {
                             avpl.remove(name);

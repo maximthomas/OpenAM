@@ -531,11 +531,11 @@ public class AgentProvider extends ProviderConfig {
            config.put(SERVICE_TYPE, serviceType);
         }
 
-        Set secMechSet = new HashSet();
+        Set<String> secMechSet = new HashSet<>();
         if(secMech != null) {
-           Iterator iter = secMech.iterator();
+           Iterator<String> iter = secMech.iterator();
            while(iter.hasNext()) {
-               secMechSet.add((String)iter.next());
+               secMechSet.add(iter.next());
            }
         }
 

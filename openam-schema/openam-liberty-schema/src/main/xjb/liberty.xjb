@@ -39,6 +39,8 @@
                       xmlType="xs:dateTime"
                       parseMethod="jakarta.xml.bind.DatatypeConverter.parseDateTime"
                       printMethod="jakarta.xml.bind.DatatypeConverter.printDateTime"/>
+        <xjc:javaType name="java.lang.String" xmlType="xs:anyURI"
+                      adapter="jakarta.xml.bind.annotation.adapters.CollapsedStringAdapter" />
     </jxb:globalBindings>
 
 

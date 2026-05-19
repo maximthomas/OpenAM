@@ -25,6 +25,7 @@
  * $Id: SAML2MetaUtils.java,v 1.9 2009/09/21 17:28:12 exu Exp $
  *
  * Portions Copyrighted 2010-2015 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package com.sun.identity.saml2.meta;
 

@@ -24,7 +24,7 @@
  *
  * $Id: LibertyManager.java,v 1.7 2008/06/25 05:48:17 qcheng Exp $
  *
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 
 

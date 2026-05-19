@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: DiscoSDKUtils.java,v 1.3 2008/08/06 17:28:08 exu Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC.
  *
  */
 

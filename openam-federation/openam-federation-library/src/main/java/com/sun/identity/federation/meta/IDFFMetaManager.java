@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: IDFFMetaManager.java,v 1.9 2009/10/28 23:58:57 exu Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC
  *
  */
 

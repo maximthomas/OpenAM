@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: DiscoUtils.java,v 1.5 2008/06/25 05:47:12 qcheng Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC.
  *
  */
 

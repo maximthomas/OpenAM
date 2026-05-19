@@ -24,7 +24,7 @@
  *
  * $Id: FSDefaultSPAdapter.java,v 1.6 2008/06/25 05:49:54 qcheng Exp $
  *
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 
 package com.sun.identity.federation.plugins;

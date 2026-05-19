@@ -24,7 +24,7 @@
  *
  * $Id: IDFFModelImpl.java,v 1.9 2009/11/10 01:19:49 exu Exp $
  *
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  *
  */
 package com.sun.identity.console.federation.model;

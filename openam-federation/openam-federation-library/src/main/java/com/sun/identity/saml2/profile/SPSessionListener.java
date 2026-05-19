@@ -25,6 +25,7 @@
  * $Id: SPSessionListener.java,v 1.6 2009/09/23 22:28:32 bigfatrat Exp $
  *
  * Portions Copyrighted 2014-2015 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package com.sun.identity.saml2.profile;
 

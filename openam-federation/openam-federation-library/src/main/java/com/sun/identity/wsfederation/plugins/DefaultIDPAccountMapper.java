@@ -25,6 +25,7 @@
  * $Id: DefaultIDPAccountMapper.java,v 1.7 2009/10/28 23:58:59 exu Exp $
  *
  * Portions Copyrighted 2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package com.sun.identity.wsfederation.plugins;
 

@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: FSDiscoveryBootStrap.java,v 1.4 2008/12/05 00:18:00 exu Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC
  *
  */
 

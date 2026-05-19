@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: IDFFCOTUtils.java,v 1.6 2009/10/28 23:58:57 exu Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC
  *
  */
 package com.sun.identity.federation.meta;

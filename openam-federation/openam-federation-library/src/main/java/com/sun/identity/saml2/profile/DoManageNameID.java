@@ -25,7 +25,7 @@
  * $Id: DoManageNameID.java,v 1.26 2009/11/24 21:53:27 madan_ranganath Exp $
  *
  * Portions copyright 2013-2016 ForgeRock AS.
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 package com.sun.identity.saml2.profile;
 

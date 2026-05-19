@@ -28,6 +28,7 @@
 
 /**
  * Portions Copyrighted 2013 ForgeRock AS
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package com.sun.identity.federation.cli;
 

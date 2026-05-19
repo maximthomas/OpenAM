@@ -14,7 +14,7 @@
  * Copyright 2014 Nomura Research Institute, Ltd.
  *
  * Portions Copyrighted 2014-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 
 package com.sun.identity.entitlement.xacml3;

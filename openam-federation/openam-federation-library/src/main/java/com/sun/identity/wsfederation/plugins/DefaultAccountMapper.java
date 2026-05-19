@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: DefaultAccountMapper.java,v 1.5 2009/10/28 23:58:59 exu Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC.
  *
  */
 

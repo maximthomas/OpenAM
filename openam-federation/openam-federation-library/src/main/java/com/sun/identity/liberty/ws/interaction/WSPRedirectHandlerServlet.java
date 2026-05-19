@@ -27,7 +27,7 @@
  */
 /**
  * Portions Copyrighted 2012-2014 ForgeRock AS
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 package com.sun.identity.liberty.ws.interaction;
 

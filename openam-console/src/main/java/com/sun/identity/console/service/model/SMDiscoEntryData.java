@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: SMDiscoEntryData.java,v 1.2 2008/06/25 05:49:46 qcheng Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC.
  *
  */
 

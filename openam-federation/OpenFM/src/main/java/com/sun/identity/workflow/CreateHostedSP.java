@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: CreateHostedSP.java,v 1.9 2010/01/04 19:10:50 veiming Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC
  *
  */
 

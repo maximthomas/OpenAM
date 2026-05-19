@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: ExportSAML2MetaData.java,v 1.4 2009/09/21 17:27:04 exu Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC
  *
  */
 

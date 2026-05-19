@@ -25,6 +25,7 @@
  * $Id: IDPSingleLogout.java,v 1.28 2009/11/25 01:20:47 madan_ranganath Exp $
  *
  * Portions Copyrighted 2010-2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package com.sun.identity.saml2.profile;
 

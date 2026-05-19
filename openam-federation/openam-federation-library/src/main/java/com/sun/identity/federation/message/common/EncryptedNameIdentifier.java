@@ -24,6 +24,7 @@
  *
  * $Id: EncryptedNameIdentifier.java,v 1.4 2008/06/25 05:46:46 qcheng Exp $
  * Portions Copyrighted 2014 ForgeRock AS
+ * Portions Copyrighted 2026 3A Systems LLC
  */
 
 package com.sun.identity.federation.message.common;

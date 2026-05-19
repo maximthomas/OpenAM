@@ -25,6 +25,7 @@
  * $Id: KeyUtil.java,v 1.5 2009/06/08 23:41:03 madan_ranganath Exp $
  *
  * Portions Copyrighted 2013-2016 ForgeRock AS
+ * Portions Copyrighted 2026 3A Systems LLC
  */
 
 package com.sun.identity.federation.key;

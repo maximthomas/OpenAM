@@ -25,6 +25,7 @@
  * $Id: IDFFMetaSecurityUtils.java,v 1.5 2009/06/08 23:40:42 madan_ranganath Exp $
  *
  * Portions Copyrighted 2011-2014 ForgeRock AS
+ * Portions Copyrighted 2026 3A Systems LLC
  */
 
 package com.sun.identity.federation.meta;

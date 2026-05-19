@@ -24,6 +24,8 @@
  *
  * $Id: DefaultADFSPartnerAccountMapper.java,v 1.5 2009/10/29 00:03:49 exu Exp $
  *
+ * Portions Copyrighted 2026 3A Systems LLC
+ * 
  */
 
 package com.sun.identity.wsfederation.plugins;

@@ -24,7 +24,7 @@
  *
  * $Id: RPSigninResponse.java,v 1.8 2009/12/14 23:42:48 mallas Exp $
  *
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 
 package com.sun.identity.wsfederation.servlet;

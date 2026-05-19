@@ -13,7 +13,7 @@
  *
  * Copyright 2015-2016 ForgeRock AS.
  * Portions copyright 2019 Open Source Solution Technology Corporation
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 package org.forgerock.openam.authentication.modules.saml2;
 

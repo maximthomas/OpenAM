@@ -25,7 +25,7 @@
  * $Id: AuthnQueryUtil.java,v 1.8 2008/12/03 00:32:31 hengming Exp $
  *
  * Portions Copyrighted 2010-2016 ForgeRock AS.
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 package com.sun.identity.saml2.profile;
 

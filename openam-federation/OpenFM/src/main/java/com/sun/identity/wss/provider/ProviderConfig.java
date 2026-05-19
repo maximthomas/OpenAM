@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: ProviderConfig.java,v 1.31 2009/11/16 21:52:58 mallas Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC
  *
  */
 package com.sun.identity.wss.provider; 

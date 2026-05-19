@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: CreateHostedIDP.java,v 1.9 2008/06/25 05:50:01 qcheng Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC
  *
  */
 

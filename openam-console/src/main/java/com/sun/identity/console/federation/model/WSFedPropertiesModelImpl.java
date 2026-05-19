@@ -25,7 +25,7 @@
  * $Id: WSFedPropertiesModelImpl.java,v 1.14 2009/11/10 01:19:50 exu Exp $
  *
  * Portions copyright 2012-2016 ForgeRock AS.
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 
 

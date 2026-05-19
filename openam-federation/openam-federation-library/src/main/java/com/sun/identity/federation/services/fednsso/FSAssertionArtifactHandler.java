@@ -25,7 +25,7 @@
  * $Id: FSAssertionArtifactHandler.java,v 1.14 2009/11/03 00:49:49 madan_ranganath Exp $
  *
  * Portions Copyrighted 2015-2016 ForgeRock AS.
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 
 package com.sun.identity.federation.services.fednsso;

@@ -25,6 +25,7 @@
  * $Id: SAML11RequestedSecurityToken.java,v 1.7 2009/12/14 23:42:48 mallas Exp $
  *
  * Portions Copyrighted 2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC
  */
 
 package com.sun.identity.wsfederation.profile;

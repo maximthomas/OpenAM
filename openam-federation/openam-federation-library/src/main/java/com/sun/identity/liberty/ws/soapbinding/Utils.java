@@ -25,7 +25,7 @@
  * $Id: Utils.java,v 1.9 2008/11/10 22:56:59 veiming Exp $
  *
  * Portions Copyright 2013-2016 ForgeRock AS.
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 
 package com.sun.identity.liberty.ws.soapbinding; 

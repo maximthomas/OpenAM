@@ -25,6 +25,7 @@
  * $Id: ValidateSAML2.java,v 1.4 2009/11/20 22:45:57 ggennaro Exp $
  *
  * Portions Copyrighted 2014-2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC
  */
 
 package com.sun.identity.workflow;

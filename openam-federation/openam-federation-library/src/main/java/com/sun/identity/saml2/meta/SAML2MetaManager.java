@@ -25,6 +25,7 @@
  * $Id: SAML2MetaManager.java,v 1.18 2009/10/28 23:58:58 exu Exp $
  *
  * Portions Copyrighted 2010-2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 
 package com.sun.identity.saml2.meta;

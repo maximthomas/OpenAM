@@ -25,6 +25,7 @@
  * $Id: ConfigFedMonitoring.java,v 1.2 2009/10/29 00:03:51 exu Exp $
  *
  * Portions Copyrighted 2011-2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 
 package com.sun.identity.configuration;

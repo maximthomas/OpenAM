@@ -23,7 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: SAMLv2SPServicesViewBean.java,v 1.5 2008/12/11 18:51:51 babysunil Exp $
- *
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 
 package com.sun.identity.console.federation;

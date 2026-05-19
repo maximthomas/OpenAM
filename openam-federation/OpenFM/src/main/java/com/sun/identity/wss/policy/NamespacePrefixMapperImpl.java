@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: NamespacePrefixMapperImpl.java,v 1.1 2009/09/17 05:49:29 mallas Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC
  *
  */
 

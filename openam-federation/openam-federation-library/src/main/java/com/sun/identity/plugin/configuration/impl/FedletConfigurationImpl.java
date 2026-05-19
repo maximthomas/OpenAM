@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: FedletConfigurationImpl.java,v 1.5 2010/01/26 21:31:59 madan_ranganath Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC.
  *
  */
 

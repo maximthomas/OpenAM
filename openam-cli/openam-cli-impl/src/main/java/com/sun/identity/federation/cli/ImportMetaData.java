@@ -25,6 +25,7 @@
  * $Id: ImportMetaData.java,v 1.15 2009/10/29 00:03:50 exu Exp $
  *
  * Portions Copyrighted 2012-2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package com.sun.identity.federation.cli;
 

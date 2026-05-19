@@ -24,7 +24,7 @@
  *
  * $Id: EntityModelImpl.java,v 1.20 2009/12/25 09:13:22 babysunil Exp $
  *
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  *
  */
 

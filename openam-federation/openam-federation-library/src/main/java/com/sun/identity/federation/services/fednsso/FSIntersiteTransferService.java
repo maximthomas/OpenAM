@@ -24,7 +24,7 @@
  *
  * $Id: FSIntersiteTransferService.java,v 1.6 2008/08/29 04:57:16 exu Exp $
  *
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 
 package com.sun.identity.federation.services.fednsso;

@@ -25,6 +25,7 @@
  * $Id: KeyUtil.java,v 1.10 2009/08/28 23:42:14 exu Exp $
  *
  * Portions Copyrighted 2013-2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package com.sun.identity.saml2.key;
 

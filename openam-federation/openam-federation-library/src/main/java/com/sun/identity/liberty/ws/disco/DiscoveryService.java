@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: DiscoveryService.java,v 1.5 2008/12/05 00:18:30 exu Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC.
  *
  */
 

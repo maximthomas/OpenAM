@@ -25,6 +25,7 @@
  * $Id: FSAssertionManager.java,v 1.12 2009/08/03 18:18:36 bigfatrat Exp $
  *
  * Portions Copyrighted 2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC
  */
 
 package com.sun.identity.federation.services;

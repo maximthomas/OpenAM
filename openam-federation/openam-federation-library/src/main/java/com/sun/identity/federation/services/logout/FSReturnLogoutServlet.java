@@ -24,7 +24,7 @@
  *
  * $Id: FSReturnLogoutServlet.java,v 1.6 2008/12/19 06:50:47 exu Exp $
  *
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 
 package com.sun.identity.federation.services.logout;

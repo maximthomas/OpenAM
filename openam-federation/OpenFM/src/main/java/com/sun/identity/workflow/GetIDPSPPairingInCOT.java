@@ -23,6 +23,8 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  *
  * $Id: GetIDPSPPairingInCOT.java,v 1.3 2009/01/09 17:42:55 veiming Exp $
+ * 
+ * Portions Copyrighted 2026 3A Systems LLC
  *
  */
 

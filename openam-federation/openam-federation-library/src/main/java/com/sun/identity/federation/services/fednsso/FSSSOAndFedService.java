@@ -24,7 +24,7 @@
  *
  * $Id: FSSSOAndFedService.java,v 1.8 2009/06/19 02:45:50 bigfatrat Exp $
  *
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 
 package com.sun.identity.federation.services.fednsso;

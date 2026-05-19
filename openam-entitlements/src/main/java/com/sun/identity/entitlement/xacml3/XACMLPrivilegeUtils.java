@@ -26,6 +26,7 @@
  *
  * Portions Copyrighted 2011-2016 ForgeRock AS.
  * Portions Copyrighted 2014 Nomura Research Institute, Ltd
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package com.sun.identity.entitlement.xacml3;
 

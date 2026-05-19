@@ -25,7 +25,7 @@
  * $Id: NameIDMapping.java,v 1.6 2009/11/20 21:41:16 exu Exp $
  *
  * Portions Copyrighted 2013-2016 ForgeRock AS.
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 package com.sun.identity.saml2.profile;
 

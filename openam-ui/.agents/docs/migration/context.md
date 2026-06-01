@@ -61,6 +61,7 @@ framework-agnostic logic into pure TypeScript (completed in task 2-2):
 | `services/constants.ts` | `Constants` + OpenAM extension | All event names, patterns, header params, self-service paths |
 | `services/api.ts` | `AbstractDelegate` + `ServiceInvoker` | `RestClient` class, `getDifferences()`, `patchDifferences()` |
 | `services/i18n.ts` | `i18nManager` | `t()`, `setLocale()`, `getCurrentLocale()`, `mapTranslate()` |
+| `i18n/index.ts` | `i18nManager.init()` | `configureI18n(basePath, ns, pageData)` — fetches translations via HTTP, loads into vue-i18n |
 | `services/theme.ts` | `ThemeManager` | `getTheme(config, realm?, isAdmin?)` with vanilla DOM |
 | `services/themeConfiguration.ts` | `ThemeConfiguration` | Typed theme config data |
 | `services/events.ts` | `EventManager` | Synchronous `on/off/emit/once` emitter |
@@ -78,7 +79,13 @@ openam-ui-js-sdk (React), and future modules. Key design decisions:
 During transition, both build systems run:
 - **Grunt** builds `src/main/js/` (Backbone AMD) → `target/compiled/`
 - **Vite** builds `src/main/vue/` (Vue 3) → `target/compiled-vite/`
+  - **Library mode (UMD)**: `device-main.ts` → `main-device.js` (loaded by RequireJS `data-main`)
+  - **SPA mode** (dev): `index.html` → assets with content hashes
 - **Maven** assembles both into the final ZIP artifact
+
+Vite detects `NODE_ENV=production` to switch between library and SPA modes. The UMD
+output includes an AMD factory (`typeof define=="function"&&define.amd`) so RequireJS
+loads it seamlessly. No server-side FTL changes needed.
 
 Once all entry points are migrated, Grunt is removed.
 
@@ -118,16 +125,27 @@ openam-ui-ria/
 │   │   │   ├── index.html
 │   │   │   ├── main.ts
 │   │   │   ├── App.vue
+│   │   │   ├── device-main.ts            # main-device UMD entry (Vite library mode)
 │   │   │   ├── router/
 │   │   │   ├── composables/
 │   │   │   ├── services/             # Pure TS commons extraction
+│   │   │   ├── types/
+│   │   │   │   └── device.d.ts           # DevicePageData + Window.pageData
 │   │   │   ├── views/
-│   │   │   │   ├── device/           # main-device entry point
+│   │   │   │   ├── device/           # main-device entry point (complete)
+│   │   │   │   │   ├── DeviceApp.vue
+│   │   │   │   │   ├── DeviceForm.vue
+│   │   │   │   │   ├── DeviceDone.vue
+│   │   │   │   │   └── DeviceError.vue
 │   │   │   │   ├── authorize/        # main-authorize entry point
 │   │   │   │   ├── user/             # User-facing views
 │   │   │   │   └── admin/            # Admin console views
 │   │   │   ├── components/
+│   │   │   │   └── common/               # Shared components
+│   │   │   │       ├── LoginHeader.vue
+│   │   │   │       └── LoginFooter.vue
 │   │   │   ├── i18n/
+│   │   │   │   └── index.ts              # vue-i18n instance + configureI18n()
 │   │   │   └── assets/
 │   │   └── resources/                # SHARED: CSS, images, locales
 │   │       ├── css/
@@ -137,6 +155,12 @@ openam-ui-ria/
 │   └── test/
 │       ├── js/                       # OLD: Karma tests
 │       └── vue/                      # NEW: Vitest tests
+│           ├── helpers/
+│           │   └── device.ts             # createDeviceTestWrapper, default pageData
+│           ├── device/
+│           │   └── components.test.ts    # 12 tests: form/done/error/app rendering
+│           ├── services/                 # Pure TS service tests (48 tests)
+│           └── smoke.test.ts
 ```
 
 ## File Counts
@@ -172,7 +196,8 @@ openam-ui-ria/
     "@vue/test-utils": "^2.4",
     "vue-tsc": "^2.0",
     "typescript": "~5.8",
-    "less": "^4.0"
+    "less": "^4.0",
+    "i18next-http-backend": "^3.0"
   }
 }
 ```

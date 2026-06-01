@@ -1,4 +1,5 @@
 import { createI18n } from 'vue-i18n';
+import type { DevicePageData } from '@/types/device';
 
 const i18n = createI18n({
   legacy: false,
@@ -8,3 +9,24 @@ const i18n = createI18n({
 });
 
 export default i18n;
+
+export async function configureI18n(
+  basePath: string,
+  namespace: string,
+  pageData: DevicePageData,
+): Promise<void> {
+  const locale = pageData.locale ?? 'en';
+
+  try {
+    const response = await fetch(
+      `${basePath}/locales/${locale}/${namespace}.json`,
+    );
+    if (response.ok) {
+      const messages = await response.json();
+      i18n.global.setLocaleMessage(locale, messages);
+      i18n.global.locale.value = locale;
+    }
+  } catch {
+    // Silently degrade — translations will be empty
+  }
+}

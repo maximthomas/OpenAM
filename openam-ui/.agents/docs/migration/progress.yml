@@ -32,9 +32,20 @@
 - id: 2-3
   description: migrate main-device entry point
   details: |
-    Port the 88-line main-device.js to Vue 3 SFC. Create DeviceApp.vue,
-    DeviceForm.vue, DeviceDone.vue. Proves Vite build + Maven integration.
-  status: pending
+    Ported main-device.js (88 lines) to Vue 3 SFC with UMD library output.
+    Created 7 Vue components: DeviceApp.vue (root, conditional state switching),
+    DeviceForm.vue (raw POST form with Bootstrap 3 classes, ARIA attrs), DeviceDone.vue
+    (jumbotron thank-you), DeviceError.vue (alert warning), LoginHeader.vue (logo from
+    reactive config), LoginFooter.vue (mailto + copyright). Created device-main.ts
+    bootstrap (reads window.pageData, configures i18n via configureI18n(), applies theme,
+    mounts at #wrapper, restores body display). Added configureI18n() to i18n/index.ts
+    (fetches translations via HTTP, loads into vue-i18n). Created types/device.d.ts
+    (DevicePageData interface + Window.pageData). Updated vite.config.ts for library mode
+    UMD output (build.lib) with SPA dev server fallback. Added i18next-http-backend dep.
+    Created test helper (helpers/device.ts) + 12 Vitest component tests. Verification:
+    tsc clean (0 new errors), vite build produces main-device.js 246KB (86KB gzipped)
+    with UMD wrapper confirmed, 60/60 tests pass (48 existing + 12 new).
+  status: complete
 
 - id: 2-4
   description: migrate main-authorize entry point

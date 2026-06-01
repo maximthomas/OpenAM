@@ -1,0 +1,102 @@
+- id: 1-1
+  description: migration analysis
+  details: |
+    Analyzed the current tech stack (Backbone.js 1.1.2, RequireJS AMD, jQuery 3.7.1,
+    Handlebars 4.7.7, Bootstrap 3.3.5, LESS, Grunt, Karma/Mocha) and defined a
+    migration plan targeting Vue 3 with Vite. All architectural decisions resolved
+    through iterative interview process.
+  status: complete
+
+- id: 2-1
+  description: scaffolding - Vite + Vue 3 project setup
+  details: |
+    Initialize Vite project in openam-ui-ria with Vue 3, TypeScript, Vue Router 4,
+    vue-i18n, Vitest. Create src/main/vue/ directory alongside src/main/js/.
+    Configure vite.config.ts, tsconfig.json, vitest.config.ts. Add npm scripts
+    for dev/build/test. Update pom.xml with Vite build execution.
+  status: pending
+
+- id: 2-2
+  description: extract pure TS commons services
+  details: |
+    Create src/main/vue/services/ with pure TypeScript replacements for ForgeRock
+    commons modules: config.ts, constants.ts, api.ts, i18n.ts, theme.ts.
+    Zero Backbone/jQuery dependencies. ~200 lines total.
+  status: pending
+
+- id: 2-3
+  description: migrate main-device entry point
+  details: |
+    Port the 88-line main-device.js to Vue 3 SFC. Create DeviceApp.vue,
+    DeviceForm.vue, DeviceDone.vue. Proves Vite build + Maven integration.
+  status: pending
+
+- id: 2-4
+  description: migrate main-authorize entry point
+  details: |
+    Port the 162-line main-authorize.js to Vue 3 SFC. Create AuthorizeApp.vue,
+    ScopeList.vue. Extract OAuth2ConsentPageHelper into oauth2Service.ts.
+  status: pending
+
+- id: 3-1
+  description: main SPA - router + layout
+  details: |
+    Set up Vue Router 4 with hash mode. Port ~35 routes from AMRoutesConfig.js,
+    RealmsRoutes.js, GlobalRoutes.js. Add role-based guards. Create App.vue
+    with AppHeader, AppSidebar, AlertContainer.
+  status: pending
+
+- id: 3-2
+  description: main SPA - common components
+  details: |
+    Migrate shared components: JSON Schema form system, BootstrapDialog integration,
+    Messages/toast, TreeNavigation, InlineEditTable, SelectComponent, Footer.
+  status: pending
+
+- id: 3-3
+  description: main SPA - user views
+  details: |
+    Migrate 59 user-facing files: login flow (8 files), dashboard (12 files),
+    UMA (22 files), anonymous processes (4 files), OAuth2 tokens, user profile.
+  status: pending
+
+- id: 3-4
+  description: main SPA - admin views
+  details: |
+    Migrate 124 admin files: realm management, authorization (32 files),
+    authentication chains/modules, services, scripts (CodeMirror), deployment
+    servers/sites, dashboard admin.
+  status: pending
+
+- id: 3-5
+  description: template codemod + manual fixes
+  details: |
+    Write Node.js codemod script for 187 Handlebars templates. Automate:
+    {{t}} -> {{ $t() }}, {{#if}} -> v-if, {{#each}} -> v-for, data-field -> v-model,
+    data-click -> @click. Manual fixes for: partials -> components, routeTo -> router,
+    {{#equals}} -> computed.
+  status: pending
+
+- id: 3-6
+  description: styling migration
+  details: |
+    Keep global LESS entry points (structure.less, theme.less, styles-admin.css)
+    as Vite entry points. Move component-specific styles into <style scoped> in
+    each Vue SFC. Bootstrap 3 classes used as-is.
+  status: pending
+
+- id: 4-1
+  description: testing migration
+  details: |
+    Port 18 existing tests to Vitest. Pure function tests (store, utils) port
+    trivially (Mocha-compatible API). Squire.js-mocked tests rewritten with vi.mock().
+    Add new component tests with @vue/test-utils.
+  status: pending
+
+- id: 4-2
+  description: cleanup
+  details: |
+    Remove Grunt, Gruntfile.js, AMD dependencies, Backbone.js, jQuery, RequireJS,
+    Babel, React 15, react-bootstrap. Update pom.xml to remove obsolete Maven deps.
+    Update AGENTS.md with new build/test instructions.
+  status: pending

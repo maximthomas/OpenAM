@@ -21,10 +21,13 @@
 - id: 2-2
   description: extract pure TS commons services
   details: |
-    Create src/main/vue/services/ with pure TypeScript replacements for ForgeRock
-    commons modules: config.ts, constants.ts, api.ts, i18n.ts, theme.ts.
-    Zero Backbone/jQuery dependencies. ~200 lines total.
-  status: pending
+    Created src/main/vue/services/ with 7 pure TypeScript modules (569 lines total):
+    constants.ts (merged commons + OpenAM constants), events.ts (synchronous emitter),
+    config.ts (reactive standalone), api.ts (Axios RestClient + getDifferences + errorsHandlers),
+    i18n.ts (thin vue-i18n wrapper), theme.ts (parameter-based getTheme with vanilla DOM),
+    themeConfiguration.ts (ported ThemeConfig). Zero Backbone/jQuery/AMD dependencies.
+    48 Vitest tests passing. vue-tsc clean.
+  status: complete
 
 - id: 2-3
   description: migrate main-device entry point

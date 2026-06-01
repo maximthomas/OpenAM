@@ -53,18 +53,25 @@ main SPA. This proves the toolchain before tackling the 200+ file main app.
 
 The existing `org.openidentityplatform.commons.ui.libs` Maven JAR provides AMD modules
 (443 references in openam-ui-ria). Instead of rewriting all commons modules, extract
-framework-agnostic logic into pure TypeScript:
+framework-agnostic logic into pure TypeScript (completed in task 2-2):
 
 | New Module | Replaces | Exports |
 |-----------|----------|---------|
-| `services/config.ts` | `Configuration` | `config.realm`, `config.loggedUser`, `config.globalData` |
-| `services/constants.ts` | `Constants` | `HOST`, `CONTEXT`, `DEFAULT_LANGUAGE`, event names |
-| `services/api.ts` | `AbstractDelegate` | `serviceCall(options)` — Axios wrapper |
-| `services/i18n.ts` | `i18nManager` | `initI18n(options)` |
-| `services/theme.ts` | `ThemeManager` | `getTheme(realm, chain)` |
+| `services/config.ts` | `Configuration` | `config.host`, `config.globalData` (reactive) |
+| `services/constants.ts` | `Constants` + OpenAM extension | All event names, patterns, header params, self-service paths |
+| `services/api.ts` | `AbstractDelegate` + `ServiceInvoker` | `RestClient` class, `getDifferences()`, `patchDifferences()` |
+| `services/i18n.ts` | `i18nManager` | `t()`, `setLocale()`, `getCurrentLocale()`, `mapTranslate()` |
+| `services/theme.ts` | `ThemeManager` | `getTheme(config, realm?, isAdmin?)` with vanilla DOM |
+| `services/themeConfiguration.ts` | `ThemeConfiguration` | Typed theme config data |
+| `services/events.ts` | `EventManager` | Synchronous `on/off/emit/once` emitter |
 
 These become the new shared commons library, consumable by openam-ui-ria (Vue),
-openam-ui-js-sdk (React), and future modules.
+openam-ui-js-sdk (React), and future modules. Key design decisions:
+- `ThemeConfig` passed as parameter to `theme.ts` (not imported directly)
+- `i18n.ts` is thin vue-i18n wrapper (no cookie detection, no Handlebars helpers)
+- `events.ts` uses synchronous dispatch (no setTimeout/Deferred)
+- `config.passwords` and `HEADER_PARAM_REAUTH` dropped (dead code in OpenAM)
+- `errorsHandlers` suppression map preserved in `api.ts` (~8 call sites depend on it)
 
 ### Build Integration: Vite + Grunt Coexistence
 

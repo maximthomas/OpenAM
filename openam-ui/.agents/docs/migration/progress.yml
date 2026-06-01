@@ -10,11 +10,13 @@
 - id: 2-1
   description: scaffolding - Vite + Vue 3 project setup
   details: |
-    Initialize Vite project in openam-ui-ria with Vue 3, TypeScript, Vue Router 4,
-    vue-i18n, Vitest. Create src/main/vue/ directory alongside src/main/js/.
-    Configure vite.config.ts, tsconfig.json, vitest.config.ts. Add npm scripts
-    for dev/build/test. Update pom.xml with Vite build execution.
-  status: pending
+    Initialized Vite 8 project in openam-ui-ria with Vue 3.5, TypeScript 5.8 (strict),
+    Vue Router 4.5, vue-i18n 11, Vitest 3. Created src/main/vue/ directory alongside
+    src/main/js/. Configured vite.config.ts, tsconfig.json, vitest.config.ts (happy-dom).
+    Added npm scripts (dev:vite, build:vite, test:unit). Updated pom.xml with vite-build
+    execution at compile phase. Updated zip.xml with second fileSet for target/compiled-vite/.
+    Smoke test passes, Vite build produces assets in ~320ms.
+  status: complete
 
 - id: 2-2
   description: extract pure TS commons services

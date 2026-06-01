@@ -36,5 +36,9 @@
             <directory>target/compiled</directory>
             <outputDirectory>/</outputDirectory>
         </fileSet>
+        <fileSet>
+            <directory>target/compiled-vite</directory>
+            <outputDirectory>/</outputDirectory>
+        </fileSet>
     </fileSets>
 </assembly>

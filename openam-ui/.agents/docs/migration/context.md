@@ -33,7 +33,7 @@ templates, and 21 LESS stylesheets.
 | i18n | vue-i18n | Native Vue integration, same translation JSON keys |
 | UI Library | Bootstrap 3 CSS (no component lib) | 722 class matches, works as-is in Vue templates |
 | Routing | Vue Router 4 (hash mode) | Matches current behavior, no server config needed |
-| Build | Vite 7 | Fast, native LESS/TS, per-entry-point builds |
+| Build | Vite 8 | Fast, native LESS/TS, per-entry-point builds |
 | Testing | Vitest + @vue/test-utils | Vite-native, zero config, Vue component testing |
 | Commons | Pure TS services | Framework-agnostic, reusable across modules |
 
@@ -155,18 +155,17 @@ openam-ui-ria/
     "vue-router": "^4.5",
     "i18next": "^24.0",
     "vue-i18n": "^11.0",
-    "axios": "^1.8",
-    "lodash": "^4.18"
+    "axios": "^1.8"
   },
   "devDependencies": {
-    "vite": "^7.0",
-    "@vitejs/plugin-vue": "^5.0",
+    "vite": "^8.0",
+    "@vitejs/plugin-vue": "^6.0",
     "vitest": "^3.0",
+    "happy-dom": "^17.0",
     "@vue/test-utils": "^2.4",
+    "vue-tsc": "^2.0",
     "typescript": "~5.8",
-    "less": "^4.0",
-    "eslint": "^9.0",
-    "eslint-plugin-vue": "^10.0"
+    "less": "^4.0"
   }
 }
 ```

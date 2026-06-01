@@ -6,6 +6,7 @@ const i18n = createI18n({
   locale: 'en',
   fallbackLocale: 'en',
   messages: {},
+  messageCompiler: (message) => () => message,
 });
 
 export default i18n;

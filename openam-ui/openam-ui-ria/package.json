@@ -13,6 +13,9 @@
     "build:vite": "vue-tsc --noEmit && vite build",
     "test": "grunt karma:build",
     "test:unit": "vitest run",
+    "mock:server": "node mock-server/server.js",
+    "mock:dev": "npm run build:vite && npm run mock:server",
+    "mock:test": "node mock-server/tests/smoke.js",
     "predeps": "npm run clean:deps -s",
     "deps": "ncu -u && mvn clean install",
     "postdeps": "npm shrinkwrap --dev"

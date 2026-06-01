@@ -61,7 +61,7 @@ framework-agnostic logic into pure TypeScript (completed in task 2-2):
 | `services/constants.ts` | `Constants` + OpenAM extension | All event names, patterns, header params, self-service paths |
 | `services/api.ts` | `AbstractDelegate` + `ServiceInvoker` | `RestClient` class, `getDifferences()`, `patchDifferences()` |
 | `services/i18n.ts` | `i18nManager` | `t()`, `setLocale()`, `getCurrentLocale()`, `mapTranslate()` |
-| `i18n/index.ts` | `i18nManager.init()` | `configureI18n(basePath, ns, pageData)` — fetches translations via HTTP, loads into vue-i18n |
+| `i18n/index.ts` | `i18nManager.init()` | `configureI18n(basePath, ns, pageData)` — fetches translations via HTTP, loads into vue-i18n. Custom `messageCompiler: (message) => () => message` bypasses vue-i18n template parser that crashes on HTML in translations (e.g., `<a href>` in copyright string). |
 | `services/theme.ts` | `ThemeManager` | `getTheme(config, realm?, isAdmin?)` with vanilla DOM |
 | `services/themeConfiguration.ts` | `ThemeConfiguration` | Typed theme config data |
 | `services/events.ts` | `EventManager` | Synchronous `on/off/emit/once` emitter |
@@ -87,7 +87,25 @@ Vite detects `NODE_ENV=production` to switch between library and SPA modes. The 
 output includes an AMD factory (`typeof define=="function"&&define.amd`) so RequireJS
 loads it seamlessly. No server-side FTL changes needed.
 
+`vite.config.ts` includes `define: { 'process.env.NODE_ENV': ... }` to expose
+`NODE_ENV` in client code (required by vue-i18n and other libraries).
+
 Once all entry points are migrated, Grunt is removed.
+
+### Mock Server for Browser Testing
+
+A Vite dev server wrapper (`mock-server/`) enables testing Vue pages in the browser with
+real assets, source maps, and mock data — without a running OpenAM instance.
+
+**Key design decisions:**
+- **Vite `createServer()` programmatically** — source maps + HMR in browser
+- **`configureServer` plugin hook** — mock middleware runs before Vite's internal middleware
+- **`configFile: false`** — bypasses `vite.config.ts` proxy (`/openam` → localhost:8080) that would intercept mock routes
+- **Middleware ordering** — static asset handlers (CSS, images, favicon) must come BEFORE page route handlers, because `/device/error/css/...` resolves relative to `/device/error/`, not `/device/`
+- **Custom `messageCompiler`** in `i18n/index.ts` — vue-i18n's default compiler crashes on HTML in translation strings (e.g., `<a href="mailto:...">` in copyright); `(message) => () => message` returns raw string
+- **`app.use(i18n)`** required in entry points — `useI18n()` in child components needs the plugin registered on the app instance
+- Real CSS/images from `target/compiled/` (Grunt build), stubs as fallback
+- Zero new npm dependencies — uses Node built-in `http`, `fs`, `path`, `url`
 
 ### Template Migration: Codemod + Manual
 
@@ -113,6 +131,12 @@ openam-ui-ria/
 ├── Gruntfile.js                      # UNCHANGED during transition
 ├── package.json                      # Updated with new deps
 ├── pom.xml                           # Updated with Vite build execution
+├── mock-server/                      # Vite dev server wrapper for browser testing
+│   ├── server.js                     # createViteServer() — mock data plugin, static assets
+│   ├── checks.js                     # Diagnostic check functions (device pages, locale, CSS)
+│   ├── stub-assets/                  # Fallback assets (favicon, login-logo, CSS stubs)
+│   └── tests/
+│       └── smoke.js                  # CLI test runner (8 scenarios, 34 checks)
 ├── src/
 │   ├── main/
 │   │   ├── js/                       # OLD: Backbone AMD (Grunt builds)
@@ -145,7 +169,7 @@ openam-ui-ria/
 │   │   │   │       ├── LoginHeader.vue
 │   │   │   │       └── LoginFooter.vue
 │   │   │   ├── i18n/
-│   │   │   │   └── index.ts              # vue-i18n instance + configureI18n()
+│   │   │   │   └── index.ts              # vue-i18n instance + configureI18n() + custom messageCompiler
 │   │   │   └── assets/
 │   │   └── resources/                # SHARED: CSS, images, locales
 │   │       ├── css/
@@ -172,7 +196,8 @@ openam-ui-ria/
 | JSX `.jsx` files | 15 | Rewrite to `.vue` |
 | Handlebars templates | 187 | Codemod + manual → `<template>` |
 | LESS stylesheets | 21 | Keep as Vite entry points |
-| Test files | 18 | Rewrite in Vitest |
+| Test files | 9 | Vitest (60 unit tests) |
+| Mock server files | 4 | Browser testing (8 scenarios, 34 checks) |
 | Entry points | 3 | Migrate independently |
 
 ## Key Dependencies
@@ -228,3 +253,4 @@ openam-ui-ria/
 | Maven WAR packaging breaks | High | Low | Vite outputs to same `target/` structure |
 | Bootstrap 3 CSS breaks in Vue | Low | Low | CSS classes work as-is, no runtime dependency |
 | Theme switching stops working | Medium | Low | Keep global LESS entry points, test early |
+| Mock server middleware ordering | Medium | Medium | Static assets (CSS/images) must be checked before page routes; `/device/error/css/...` resolves relative to `/device/error/`, not `/device/` |

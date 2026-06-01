@@ -43,6 +43,7 @@ export default defineConfig({
         },
         cssCodeSplit: false,
         sourcemap: false,
+        minify: true,
       }
     : {
         outDir: resolve(__dirname, 'target/compiled-vite'),

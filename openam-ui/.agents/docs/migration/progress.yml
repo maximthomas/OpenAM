@@ -76,10 +76,35 @@
 - id: 3-1
   description: main SPA - router + layout
   details: |
-    Set up Vue Router 4 with hash mode. Port ~35 routes from AMRoutesConfig.js,
-    RealmsRoutes.js, GlobalRoutes.js. Add role-based guards. Create App.vue
-    with AppHeader, AppSidebar, AlertContainer.
-  status: pending
+    Set up Vue Router 4 with hash mode (createWebHashHistory). Created 90 named routes
+    covering all Backbone route configs: AMRoutesConfig (8), RealmsRoutes (30 realm-scoped
+    child routes), GlobalRoutes (14 + 8 server edit + 8 server defaults), UMARoutes (12),
+    CommonRoutesConfig (login/logout/404), UserRoutesConfig (profile/forgot/pw-reset/register).
+    Created types/router.d.ts (RouteMeta: roles, navGroup, view). Created composables:
+    useAuth.ts (reactive loggedUser, hasRole/hasAnyRole, isAuthenticated), useRealm.ts
+    (decodes %2F-encoded realmPath from URL param), useAlert.ts (message queue with
+    auto-dismiss). Created services/logout.ts (REST POST /auth/logout + cookie cleanup +
+    full page reload to Backbone login). Created router/guards.ts (authGuard checks
+    isAuthenticated + role requirements, defaultRouteGuard redirects based on admin/user
+    role). Created App.vue (root layout: AppHeader + AlertContainer + router-view + AppFooter).
+    Created AppHeader.vue (Bootstrap 3 navbar: logo, admin/user nav links filtered by
+    route.meta.navGroup + hasRole, user dropdown with logout, help link). Created
+    AppFooter.vue (mailto, copyright, version for realm admins). Created AlertContainer.vue
+    (fixed-position alert divs from useAlert composable, dismissable). Created 4 layout
+    wrappers: RealmLayout.vue (sidebar with dashboard/authentication/services/sessions/
+    authorization/scripts nav items, realm-scoped routes), ServerLayout.vue (8-item
+    sidebar for server edit), ServerDefaultsLayout.vue (7-item sidebar for server defaults),
+    LabelTreeLayout.vue (UMA: my resources/shared/starred/labels). Created NotFoundView.vue
+    and ForbiddenView.vue (404/403 error pages). Created 64 placeholder view components
+    (stubs showing route name + Backbone view path). Updated main.ts with bootstrap
+    sequence: fetch /json/serverinfo/* for cookieName → read session cookie → validate
+    session via POST /json/sessions?_action=getSessionInfo → fetch user profile via
+    POST /json/users?_action=read → set auth state → configure i18n → apply theme → mount.
+    Updated config.ts with version field in GlobalData. Updated smoke.test.ts to install
+    router + i18n plugins and stub new child components. Verification: 72/72 tests pass,
+    Vite dev server starts on port 3000. vue-tsc blocked by pre-existing minimatch@3.x
+    override conflict (not caused by this task).
+  status: complete
 
 - id: 3-2
   description: main SPA - common components

@@ -6,6 +6,7 @@ export interface GlobalData {
   themeName: string;
   isAdminTheme: boolean;
   realm: string;
+  version: string;
 }
 
 export interface Config {
@@ -20,5 +21,6 @@ export const config = reactive<Config>({
     themeName: '',
     isAdminTheme: false,
     realm: '/',
+    version: '',
   },
 });

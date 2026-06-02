@@ -47,7 +47,7 @@ main SPA. This proves the toolchain before tackling the 200+ file main app.
 **Entry points:**
 1. `main-device.js` (88 lines) → device auth pages (complete)
 2. `main-authorize.js` (162 lines) → OAuth2 consent pages (complete)
-3. `main.js` (~200 lines bootstrap + 268 files) → main SPA (migrated last)
+3. `main.js` (~200 lines bootstrap + 268 files) → main SPA (router + layout complete, views pending)
 
 ### Commons Layer: Pure JS/TS Services
 
@@ -153,15 +153,38 @@ openam-ui-ria/
 │   │   │   └── store/
 │   │   ├── vue/                      # NEW: Vue 3 (Vite builds)
 │   │   │   ├── index.html
-│   │   │   ├── main.ts
-│   │   │   ├── App.vue
-│   │   │   ├── device-main.ts            # main-device UMD entry (Vite library mode)
+│   │   │   ├── main.ts               # SPA bootstrap (serverinfo → session check → i18n → theme → mount)
+│   │   │   ├── App.vue               # Root layout (AppHeader + AlertContainer + router-view + AppFooter)
+│   │   │   ├── authorize-main.ts     # main-authorize UMD entry (Vite library mode)
+│   │   │   ├── device-main.ts        # main-device UMD entry (Vite library mode)
 │   │   │   ├── router/
+│   │   │   │   ├── index.ts          # 90 named routes (hash mode, auth guards)
+│   │   │   │   └── guards.ts         # authGuard + defaultRouteGuard
 │   │   │   ├── composables/
+│   │   │   │   ├── useAuth.ts        # Reactive auth state (loggedUser, roles, isAuthenticated)
+│   │   │   │   ├── useRealm.ts       # Realm from URL param (decoded %2F)
+│   │   │   │   └── useAlert.ts       # Alert message queue with auto-dismiss
 │   │   │   ├── services/             # Pure TS commons extraction
+│   │   │   │   ├── api.ts
+│   │   │   │   ├── config.ts         # + version field in GlobalData
+│   │   │   │   ├── constants.ts
+│   │   │   │   ├── events.ts
+│   │   │   │   ├── i18n.ts
+│   │   │   │   ├── logout.ts         # REST logout + cookie cleanup + page reload
+│   │   │   │   ├── oauth2.ts
+│   │   │   │   ├── theme.ts
+│   │   │   │   └── themeConfiguration.ts
 │   │   │   ├── types/
-│   │   │   │   ├── device.d.ts           # DevicePageData + Window.pageData
-│   │   │   │   └── authorize.d.ts        # AuthorizePageData + Window.pageData
+│   │   │   │   ├── device.d.ts
+│   │   │   │   ├── authorize.d.ts
+│   │   │   │   └── router.d.ts       # RouteMeta augmentation (roles, navGroup, view)
+│   │   │   ├── components/
+│   │   │   │   ├── AppHeader.vue     # Bootstrap 3 navbar (logo, nav links, user dropdown)
+│   │   │   │   ├── AppFooter.vue     # Mailto, copyright, version (admin-only)
+│   │   │   │   ├── AlertContainer.vue # Fixed-position alert toast container
+│   │   │   │   └── common/
+│   │   │   │       ├── LoginHeader.vue
+│   │   │   │       └── LoginFooter.vue
 │   │   │   ├── views/
 │   │   │   │   ├── device/           # main-device entry point (complete)
 │   │   │   │   │   ├── DeviceApp.vue
@@ -173,12 +196,39 @@ openam-ui-ria/
 │   │   │   │   │   ├── AuthorizeForm.vue
 │   │   │   │   │   ├── ScopeList.vue
 │   │   │   │   │   └── ErrorDisplay.vue
-│   │   │   │   ├── user/             # User-facing views
-│   │   │   │   └── admin/            # Admin console views
-│   │   │   ├── components/
-│   │   │   │   └── common/               # Shared components
-│   │   │   │       ├── LoginHeader.vue
-│   │   │   │       └── LoginFooter.vue
+│   │   │   │   ├── errors/
+│   │   │   │   │   ├── NotFoundView.vue   # 404 page
+│   │   │   │   │   └── ForbiddenView.vue  # 403 page
+│   │   │   │   ├── realm/
+│   │   │   │   │   └── RealmLayout.vue    # Sidebar: dashboard/auth/services/sessions/authorization/scripts
+│   │   │   │   ├── server/
+│   │   │   │   │   ├── ServerLayout.vue         # Sidebar: 8 server edit sections
+│   │   │   │   │   └── ServerDefaultsLayout.vue # Sidebar: 7 server defaults sections
+│   │   │   │   ├── uma/
+│   │   │   │   │   ├── LabelTreeLayout.vue  # Sidebar: my resources/shared/starred/labels
+│   │   │   │   │   ├── resources/           # Placeholder stubs (5 views)
+│   │   │   │   │   ├── history/             # Placeholder stubs (1 view)
+│   │   │   │   │   ├── requests/            # Placeholder stubs (2 views)
+│   │   │   │   │   └── share/               # Placeholder stubs (1 view)
+│   │   │   │   ├── common/
+│   │   │   │   │   ├── DefaultView.vue
+│   │   │   │   │   └── EnableCookiesView.vue
+│   │   │   │   ├── user/             # Placeholder stubs (12 views)
+│   │   │   │   │   ├── ProfileView.vue
+│   │   │   │   │   ├── dashboard/DashboardView.vue
+│   │   │   │   │   ├── oauth2/TokensView.vue
+│   │   │   │   │   └── ... (9 more)
+│   │   │   │   └── admin/            # Placeholder stubs (36 views across 12 subdirs)
+│   │   │   │       ├── realms/
+│   │   │   │       ├── authentication/
+│   │   │   │       ├── services/
+│   │   │   │       ├── sessions/
+│   │   │   │       ├── authorization/
+│   │   │   │       ├── scripts/
+│   │   │   │       ├── applications/
+│   │   │   │       ├── api/
+│   │   │   │       ├── configuration/
+│   │   │   │       └── deployment/
 │   │   │   ├── i18n/
 │   │   │   │   └── index.ts              # vue-i18n instance + configureI18n() + custom messageCompiler
 │   │   │   └── assets/
@@ -191,28 +241,30 @@ openam-ui-ria/
 │       ├── js/                       # OLD: Karma tests
 │       └── vue/                      # NEW: Vitest tests
 │           ├── helpers/
-│           │   ├── device.ts             # createDeviceTestWrapper, default pageData
-│           │   └── authorize.ts          # createAuthorizeTestWrapper, default pageData
+│           │   ├── device.ts
+│           │   └── authorize.ts
 │           ├── device/
-│           │   └── components.test.ts    # 12 tests: form/done/error/app rendering
+│           │   └── components.test.ts
 │           ├── authorize/
-│           │   └── components.test.ts    # 12 tests: error/scopeList/form/app rendering
-│           ├── services/                 # Pure TS service tests (48 tests)
-│           └── smoke.test.ts
+│           │   └── components.test.ts
+│           ├── services/             # Pure TS service tests (48 tests)
+│           └── smoke.test.ts         # Updated: stubs AppHeader/AppFooter/AlertContainer
 ```
 
 ## File Counts
 
-| Category | Current | Migration Effort |
-|----------|---------|-----------------|
-| AMD `.js` files | 209 | Rewrite to Vue SFCs |
-| ES6 `.jsm` files | 31 | Rewrite to `.ts` |
-| JSX `.jsx` files | 15 | Rewrite to `.vue` |
-| Handlebars templates | 187 | Codemod + manual → `<template>` |
-| LESS stylesheets | 21 | Keep as Vite entry points |
-| Test files | 9 | Vitest (72 unit tests) |
-| Mock server files | 4 | Browser testing (12 scenarios, 42 checks) |
-| Entry points | 3 | Migrate independently |
+| Category | Current | Migrated | Remaining |
+|----------|---------|----------|-----------|
+| AMD `.js` files | 209 | 0 | 209 (rewrite to Vue SFCs) |
+| ES6 `.jsm` files | 31 | 0 | 31 (rewrite to `.ts`) |
+| JSX `.jsx` files | 15 | 0 | 15 (rewrite to `.vue`) |
+| Handlebars templates | 187 | 0 | 187 (codemod + manual) |
+| LESS stylesheets | 21 | 0 | 21 (keep as Vite entry points) |
+| Vue components | 8 | 84 (incl. 64 placeholders) | Real views pending |
+| Vue composables | 0 | 3 | — |
+| Vue services | 7 | 8 (+logout.ts) | — |
+| Vue router routes | 0 | 90 named | — |
+| Test files | 9 | 10 (72 tests) | New tests for composables/guards/layouts |
 
 ## Key Dependencies
 

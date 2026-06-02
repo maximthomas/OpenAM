@@ -17,7 +17,7 @@
         </div>
         <div
           :id="`${idPrefix}${index}`"
-          class="panel-collapse collapse"
+          class="panel-collapse"
           role="tabpanel"
           :aria-expanded="!!openPanels[index]"
           v-if="openPanels[index]"

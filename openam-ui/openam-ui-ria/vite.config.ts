@@ -4,6 +4,18 @@ import { resolve } from 'path';
 
 const isProd = process.env.NODE_ENV === 'production';
 
+const UMD_ENTRIES: Record<string, string> = {
+  'main-device': resolve(__dirname, 'src/main/vue/device-main.ts'),
+  'main-authorize': resolve(__dirname, 'src/main/vue/authorize-main.ts'),
+};
+
+const UMD_GLOBALS: Record<string, string> = {
+  'main-device': 'OpenAMDevice',
+  'main-authorize': 'OpenAMAuthorize',
+};
+
+const umdEntry = process.env.VITE_UMD_ENTRY || 'main-device';
+
 export default defineConfig({
   root: resolve(__dirname, 'src/main/vue'),
   plugins: [vue()],
@@ -29,10 +41,10 @@ export default defineConfig({
   build: isProd
     ? {
         lib: {
-          entry: resolve(__dirname, 'src/main/vue/device-main.ts'),
+          entry: UMD_ENTRIES[umdEntry],
           formats: ['umd'],
-          name: 'OpenAMDevice',
-          fileName: () => 'main-device.js',
+          name: UMD_GLOBALS[umdEntry] || umdEntry,
+          fileName: () => `${umdEntry}.js`,
         },
         outDir: resolve(__dirname, 'target/compiled-vite'),
         emptyOutDir: true,

@@ -1,5 +1,4 @@
 import { createI18n } from 'vue-i18n';
-import type { DevicePageData } from '@/types/device';
 
 const i18n = createI18n({
   legacy: false,
@@ -14,7 +13,7 @@ export default i18n;
 export async function configureI18n(
   basePath: string,
   namespace: string,
-  pageData: DevicePageData,
+  pageData: { locale?: string },
 ): Promise<void> {
   const locale = pageData.locale ?? 'en';
 

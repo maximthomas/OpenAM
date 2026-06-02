@@ -45,8 +45,8 @@ Migrate the two smallest entry points first (`main-device`, `main-authorize`), t
 main SPA. This proves the toolchain before tackling the 200+ file main app.
 
 **Entry points:**
-1. `main-device.js` (88 lines) → device auth pages
-2. `main-authorize.js` (162 lines) → OAuth2 consent pages
+1. `main-device.js` (88 lines) → device auth pages (complete)
+2. `main-authorize.js` (162 lines) → OAuth2 consent pages (complete)
 3. `main.js` (~200 lines bootstrap + 268 files) → main SPA (migrated last)
 
 ### Commons Layer: Pure JS/TS Services
@@ -65,6 +65,7 @@ framework-agnostic logic into pure TypeScript (completed in task 2-2):
 | `services/theme.ts` | `ThemeManager` | `getTheme(config, realm?, isAdmin?)` with vanilla DOM |
 | `services/themeConfiguration.ts` | `ThemeConfiguration` | Typed theme config data |
 | `services/events.ts` | `EventManager` | Synchronous `on/off/emit/once` emitter |
+| `services/oauth2.ts` | `OAuth2ConsentPageHelper` | `getUserSessionId()` — CSRF token fetch |
 
 These become the new shared commons library, consumable by openam-ui-ria (Vue),
 openam-ui-js-sdk (React), and future modules. Key design decisions:
@@ -79,13 +80,17 @@ openam-ui-js-sdk (React), and future modules. Key design decisions:
 During transition, both build systems run:
 - **Grunt** builds `src/main/js/` (Backbone AMD) → `target/compiled/`
 - **Vite** builds `src/main/vue/` (Vue 3) → `target/compiled-vite/`
-  - **Library mode (UMD)**: `device-main.ts` → `main-device.js` (loaded by RequireJS `data-main`)
+  - **Library mode (UMD)**: `device-main.ts` → `main-device.js`, `authorize-main.ts` → `main-authorize.js` (loaded by RequireJS `data-main`). Uses `VITE_UMD_ENTRY` env variable to select entry (Vite 8 UMD single-entry constraint).
   - **SPA mode** (dev): `index.html` → assets with content hashes
 - **Maven** assembles both into the final ZIP artifact
 
 Vite detects `NODE_ENV=production` to switch between library and SPA modes. The UMD
 output includes an AMD factory (`typeof define=="function"&&define.amd`) so RequireJS
 loads it seamlessly. No server-side FTL changes needed.
+
+Multiple entry points use `VITE_UMD_ENTRY` env variable (e.g., `VITE_UMD_ENTRY=main-authorize`).
+Grunt runs `vite build` twice — once per entry. `emptyOutDir: true` means each build
+clears the output; the Grunt task must copy device output before building authorize.
 
 `vite.config.ts` includes `define: { 'process.env.NODE_ENV': ... }` to expose
 `NODE_ENV` in client code (required by vue-i18n and other libraries).
@@ -105,6 +110,7 @@ real assets, source maps, and mock data — without a running OpenAM instance.
 - **Custom `messageCompiler`** in `i18n/index.ts` — vue-i18n's default compiler crashes on HTML in translation strings (e.g., `<a href="mailto:...">` in copyright); `(message) => () => message` returns raw string
 - **`app.use(i18n)`** required in entry points — `useI18n()` in child components needs the plugin registered on the app instance
 - Real CSS/images from `target/compiled/` (Grunt build), stubs as fallback
+- **Authorize flow**: 4 scenarios — `/authorize/consent` (scopes + claims), `/authorize/consent-no-details` (empty), `/authorize/error`, `/authorize/error-with-uri`
 - Zero new npm dependencies — uses Node built-in `http`, `fs`, `path`, `url`
 
 ### Template Migration: Codemod + Manual
@@ -154,14 +160,19 @@ openam-ui-ria/
 │   │   │   ├── composables/
 │   │   │   ├── services/             # Pure TS commons extraction
 │   │   │   ├── types/
-│   │   │   │   └── device.d.ts           # DevicePageData + Window.pageData
+│   │   │   │   ├── device.d.ts           # DevicePageData + Window.pageData
+│   │   │   │   └── authorize.d.ts        # AuthorizePageData + Window.pageData
 │   │   │   ├── views/
 │   │   │   │   ├── device/           # main-device entry point (complete)
 │   │   │   │   │   ├── DeviceApp.vue
 │   │   │   │   │   ├── DeviceForm.vue
 │   │   │   │   │   ├── DeviceDone.vue
 │   │   │   │   │   └── DeviceError.vue
-│   │   │   │   ├── authorize/        # main-authorize entry point
+│   │   │   │   ├── authorize/        # main-authorize entry point (complete)
+│   │   │   │   │   ├── AuthorizeApp.vue
+│   │   │   │   │   ├── AuthorizeForm.vue
+│   │   │   │   │   ├── ScopeList.vue
+│   │   │   │   │   └── ErrorDisplay.vue
 │   │   │   │   ├── user/             # User-facing views
 │   │   │   │   └── admin/            # Admin console views
 │   │   │   ├── components/
@@ -180,9 +191,12 @@ openam-ui-ria/
 │       ├── js/                       # OLD: Karma tests
 │       └── vue/                      # NEW: Vitest tests
 │           ├── helpers/
-│           │   └── device.ts             # createDeviceTestWrapper, default pageData
+│           │   ├── device.ts             # createDeviceTestWrapper, default pageData
+│           │   └── authorize.ts          # createAuthorizeTestWrapper, default pageData
 │           ├── device/
 │           │   └── components.test.ts    # 12 tests: form/done/error/app rendering
+│           ├── authorize/
+│           │   └── components.test.ts    # 12 tests: error/scopeList/form/app rendering
 │           ├── services/                 # Pure TS service tests (48 tests)
 │           └── smoke.test.ts
 ```
@@ -196,8 +210,8 @@ openam-ui-ria/
 | JSX `.jsx` files | 15 | Rewrite to `.vue` |
 | Handlebars templates | 187 | Codemod + manual → `<template>` |
 | LESS stylesheets | 21 | Keep as Vite entry points |
-| Test files | 9 | Vitest (60 unit tests) |
-| Mock server files | 4 | Browser testing (8 scenarios, 34 checks) |
+| Test files | 9 | Vitest (72 unit tests) |
+| Mock server files | 4 | Browser testing (12 scenarios, 42 checks) |
 | Entry points | 3 | Migrate independently |
 
 ## Key Dependencies
@@ -254,3 +268,4 @@ openam-ui-ria/
 | Bootstrap 3 CSS breaks in Vue | Low | Low | CSS classes work as-is, no runtime dependency |
 | Theme switching stops working | Medium | Low | Keep global LESS entry points, test early |
 | Mock server middleware ordering | Medium | Medium | Static assets (CSS/images) must be checked before page routes; `/device/error/css/...` resolves relative to `/device/error/`, not `/device/` |
+| Vite 8 UMD single-entry constraint | Low | High | UMD format doesn't support multiple entry points; solved with `VITE_UMD_ENTRY` env variable, Grunt runs `vite build` twice |

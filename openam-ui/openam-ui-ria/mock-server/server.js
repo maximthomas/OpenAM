@@ -19,6 +19,78 @@ function getDevicePageData(pathname) {
   return null;
 }
 
+function getAuthorizePageData(pathname) {
+  const parts = pathname.split('/').filter(Boolean);
+  const scenario = parts[1];
+  if (scenario === 'consent') {
+    return {
+      realm: '/',
+      locale: 'en',
+      baseUrl: '/openam/XUI',
+      oauth2Data: {
+        displayName: 'Test Application',
+        displayDescription: 'This app wants to access your profile',
+        displayScopes: [
+          { name: 'read your profile', values: { email: 'user@example.com', name: 'John Doe' } },
+          { name: 'read your emails', values: 'Access to all emails' },
+          { name: 'no details scope' },
+        ],
+        displayClaims: [
+          { name: 'email claim', values: 'user@example.com' },
+          { name: 'empty claim' },
+        ],
+        formTarget: '/authorize/consent',
+        userName: 'john.doe',
+        responseType: 'code',
+        clientId: 'test-client',
+        csrf: 'mock-csrf-token',
+        isSaveConsentEnabled: true,
+      },
+    };
+  }
+  if (scenario === 'consent-no-details') {
+    return {
+      realm: '/',
+      locale: 'en',
+      baseUrl: '/openam/XUI',
+      oauth2Data: {
+        displayName: 'Simple App',
+        displayScopes: [],
+        displayClaims: [],
+        formTarget: '/authorize/consent-no-details',
+        responseType: 'code',
+        clientId: 'simple-client',
+        csrf: 'mock-csrf-token',
+      },
+      noScopes: true,
+    };
+  }
+  if (scenario === 'error') {
+    return {
+      realm: '/',
+      locale: 'en',
+      baseUrl: '/openam/XUI',
+      error: {
+        message: 'Access denied',
+        description: 'The resource owner denied the request.',
+      },
+    };
+  }
+  if (scenario === 'error-with-uri') {
+    return {
+      realm: '/',
+      locale: 'en',
+      baseUrl: '/openam/XUI',
+      error: {
+        uri: 'https://example.com/help',
+        message: 'Something went wrong',
+        description: 'Please contact your administrator.',
+      },
+    };
+  }
+  return null;
+}
+
 function buildDeviceHtml(pageData) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -33,6 +105,24 @@ function buildDeviceHtml(pageData) {
     window.pageData = ${JSON.stringify(pageData)};
   </script>
   <script type="module" src="/device-main.ts"></script>
+</body>
+</html>`;
+}
+
+function buildAuthorizeHtml(pageData) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenAM — Authorize</title>
+</head>
+<body style="display:none">
+  <div id="wrapper"></div>
+  <script type="module">
+    window.pageData = ${JSON.stringify(pageData)};
+  </script>
+  <script type="module" src="/authorize-main.ts"></script>
 </body>
 </html>`;
 }
@@ -65,6 +155,14 @@ function buildLandingHtml() {
     <li><a href="/device/done">/device/done</a> — Success / completion page</li>
     <li><a href="/device/error">/device/error</a> — Error: not_found</li>
     <li><a href="/device/error/expired">/device/error/expired</a> — Error: expired</li>
+  </ul>
+
+  <h2>Authorize Flow Scenarios</h2>
+  <ul>
+    <li><a href="/authorize/consent">/authorize/consent</a> — Consent page with scopes and claims</li>
+    <li><a href="/authorize/consent-no-details">/authorize/consent-no-details</a> — Consent page (no scopes/claims)</li>
+    <li><a href="/authorize/error">/authorize/error</a> — Error: access denied</li>
+    <li><a href="/authorize/error-with-uri">/authorize/error-with-uri</a> — Error with help link</li>
   </ul>
 
   <h2>Diagnostics</h2>
@@ -204,6 +302,20 @@ function mockDataPlugin() {
           return;
         }
 
+        // Authorize flow pages
+        if (/^\/authorize\/(consent|error)/.test(pathname) && method === 'GET') {
+          const pageData = getAuthorizePageData(pathname);
+          if (!pageData) {
+            res.writeHead(404);
+            res.end('Unknown scenario');
+            return;
+          }
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.end(buildAuthorizeHtml(pageData));
+          logReq(method, pathname, 200, Date.now() - start);
+          return;
+        }
+
         // Test endpoint
         if (pathname === '/test' && method === 'GET') {
           const { runChecks } = require('./checks');
@@ -263,6 +375,8 @@ async function createViteServer(port) {
   console.log(`  http://localhost:${listenPort}/device/form`);
   console.log(`  http://localhost:${listenPort}/device/done`);
   console.log(`  http://localhost:${listenPort}/device/error`);
+  console.log(`  http://localhost:${listenPort}/authorize/consent`);
+  console.log(`  http://localhost:${listenPort}/authorize/error`);
   console.log(`  http://localhost:${listenPort}/test`);
   console.log('');
   console.log('  Source maps active — DevTools shows original .vue/.ts files');

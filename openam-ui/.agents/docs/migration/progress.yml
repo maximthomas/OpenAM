@@ -50,9 +50,28 @@
 - id: 2-4
   description: migrate main-authorize entry point
   details: |
-    Port the 162-line main-authorize.js to Vue 3 SFC. Create AuthorizeApp.vue,
-    ScopeList.vue. Extract OAuth2ConsentPageHelper into oauth2Service.ts.
-  status: pending
+    Ported main-authorize.js (162 lines) + OAuth2ConsentPageHelper.js (46 lines)
+    to Vue 3 SFC with UMD library output. Created types/authorize.d.ts with
+    AuthorizePageData interface (oauth2Data, error, noScopes, realm, locale, baseUrl).
+    Created services/oauth2.ts extracting getUserSessionId() — computes base URL
+    from Constants.context, fetches /serverinfo/*, reads CSRF cookie. Created
+    authorize-main.ts bootstrap (cleanValues removes empty scope/claims values,
+    precomputes noScopes flag, fetches csrf before mount). Created 4 Vue components:
+    AuthorizeApp.vue (root: #login-base > logo + container > footer, v-if/v-else for
+    error vs form), ErrorDisplay.vue (alert-warning with optional URI link, v-html for
+    server-sanitized content), AuthorizeForm.vue (consent form: displayName,
+    displayDescription, ScopeList for scopes+claims, signed-in-as, 8 hidden fields,
+    deny/allow buttons, save-consent checkbox), ScopeList.vue (reusable collapsible
+    panel list with reactive Record<number,boolean> toggle, keyboard accessible).
+    Widened configureI18n param type to { locale?: string } in i18n/index.ts. Updated
+    vite.config.ts with VITE_UMD_ENTRY env variable (Vite 8 UMD single-entry
+    constraint). Updated mock-server/server.js with 4 authorize scenarios (consent,
+    consent-no-details, error, error-with-uri) + landing page section. Added
+    checkAuthorizePage() to mock-server/checks.js. Created test helper + 12 Vitest
+    component tests. Verification: 72/72 tests pass (48 services + 12 device +
+    12 authorize), both UMD bundles build (main-device.js 246KB, main-authorize.js
+    293KB).
+  status: complete
 
 - id: 3-1
   description: main SPA - router + layout

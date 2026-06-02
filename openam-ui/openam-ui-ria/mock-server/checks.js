@@ -57,6 +57,94 @@ async function checkDevicePage(baseUrl, scenario, expectedPageData) {
     details.push(`✗ Status expected 200, got ${res.status}`);
     return { name: scenario, status: 'fail', details };
   }
+  details.push('✓ Status is 200');
+
+  if (!res.body.includes('id="wrapper"')) {
+    details.push('✗ Missing <div id="wrapper">');
+    return { name: scenario, status: 'fail', details };
+  }
+  details.push('✓ Has #wrapper element');
+
+  const pageDataMatch = res.body.match(/window\.pageData\s*=\s*(\{.*?\})\s*;/s);
+  if (!pageDataMatch) {
+    details.push('✗ Missing window.pageData injection');
+    return { name: scenario, status: 'fail', details };
+  }
+  details.push('✓ Has window.pageData injection');
+
+  let actual;
+  try {
+    actual = JSON.parse(pageDataMatch[1]);
+  } catch {
+    details.push(`✗ pageData is not valid JSON: ${pageDataMatch[1]}`);
+    return { name: scenario, status: 'fail', details };
+  }
+
+  for (const [key, expected] of Object.entries(expectedPageData)) {
+    if (actual[key] !== expected) {
+      details.push(`✗ pageData.${key} expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual[key])}`);
+      return { name: scenario, status: 'fail', details };
+    }
+    details.push(`✓ pageData.${key} = ${JSON.stringify(expected)}`);
+  }
+
+  if (!res.body.includes('main-device.js') && !res.body.includes('device-main.ts')) {
+    details.push('✗ Missing script tag for main-device.js / device-main.ts');
+    return { name: scenario, status: 'fail', details };
+  }
+  details.push('✓ Loads device entry point');
+
+  return { name: scenario, status: 'pass', details };
+}
+
+async function checkAuthorizePage(baseUrl, scenario, expectedPageData) {
+  const url = `${baseUrl}${scenario}`;
+  const res = await fetch(url);
+  const details = [];
+
+  if (res.status !== 200) {
+    details.push(`✗ Status expected 200, got ${res.status}`);
+    return { name: scenario, status: 'fail', details };
+  }
+  details.push('✓ Status is 200');
+
+  if (!res.body.includes('id="wrapper"')) {
+    details.push('✗ Missing <div id="wrapper">');
+    return { name: scenario, status: 'fail', details };
+  }
+  details.push('✓ Has #wrapper element');
+
+  const pageDataMatch = res.body.match(/window\.pageData\s*=\s*(\{.*?\})\s*;/s);
+  if (!pageDataMatch) {
+    details.push('✗ Missing window.pageData injection');
+    return { name: scenario, status: 'fail', details };
+  }
+  details.push('✓ Has window.pageData injection');
+
+  let actual;
+  try {
+    actual = JSON.parse(pageDataMatch[1]);
+  } catch {
+    details.push(`✗ pageData is not valid JSON: ${pageDataMatch[1]}`);
+    return { name: scenario, status: 'fail', details };
+  }
+
+  for (const [key, expected] of Object.entries(expectedPageData)) {
+    if (actual[key] !== expected) {
+      details.push(`✗ pageData.${key} expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual[key])}`);
+      return { name: scenario, status: 'fail', details };
+    }
+    details.push(`✓ pageData.${key} = ${JSON.stringify(expected)}`);
+  }
+
+  if (!res.body.includes('main-authorize.js') && !res.body.includes('authorize-main.ts')) {
+    details.push('✗ Missing script tag for main-authorize.js / authorize-main.ts');
+    return { name: scenario, status: 'fail', details };
+  }
+  details.push('✓ Loads authorize entry point');
+
+  return { name: scenario, status: 'pass', details };
+}
   details.push(`✓ Status is 200`);
 
   if (!res.body.includes('id="wrapper"')) {
@@ -207,6 +295,8 @@ async function runChecks(baseUrl) {
     checkDevicePage(baseUrl, '/device/done', { done: true }),
     checkDevicePage(baseUrl, '/device/error', { errorCode: 'not_found' }),
     checkDevicePage(baseUrl, '/device/error/expired', { errorCode: 'expired' }),
+    checkAuthorizePage(baseUrl, '/authorize/consent', {}),
+    checkAuthorizePage(baseUrl, '/authorize/error', {}),
     checkLocale(baseUrl, 'device'),
     checkLocale(baseUrl, 'authorize'),
     checkCompiledJS(baseUrl),

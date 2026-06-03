@@ -130,11 +130,97 @@
   status: complete
 
 - id: 3-3
-  description: main SPA - user views
+  description: main SPA - user views (parent)
   details: |
-    Migrate 59 user-facing files: login flow (8 files), dashboard (12 files),
-    UMA (22 files), anonymous processes (4 files), OAuth2 tokens, user profile.
+    Migrate 59 user-facing files across 6 functional areas. Broken into 6 sequential
+    sub-tasks. Key architectural decisions resolved via interview:
+    - Login callbacks: single LoginCallback.vue with v-if chain (10 callback types)
+    - DataTable: @tanstack/vue-table wrapper with emit pattern (parent owns fetch)
+    - UMA ResourcePage: decompose into ResourceInfo/ResourcePermissions/ResourceLabels
+    - Share dialog: extract ShareForm.vue for both standalone and modal usage
+    - i18n: keep single translation.json namespace
+    - Error handling: remove errorsHandlers suppression, use useAlert().danger()
+    - Forms: reactive form objects with v-model (replace form2js)
+    - Anonymous processes: thin wrappers around useAnonymousProcess + ProcessStage dispatcher
+    - Login session: useLogin() state machine + separate LoginDialog component
+    - Dashboard: independent sections with simple Bootstrap 3 tables
+    - Testing: test DataTable in isolation, mock in UMA views (~280 test cases)
+    - New dependency: @tanstack/vue-table ^8.21 (15KB gzipped)
   status: pending
+  subtasks:
+    - id: 3-3a
+      description: services & types layer
+      details: |
+        Create all REST service wrappers and TypeScript interfaces (pure TS, no UI).
+        Files: types/user.d.ts, types/uma.d.ts, services/user.ts, services/authN.ts,
+        services/session.ts, services/token.ts, services/dashboard.ts, services/uma.ts,
+        services/selfService.ts, services/kba.ts. All use RestClient from api.ts.
+        Tests: ~80 cases (mock RestClient, verify endpoints/headers/bodies).
+      status: complete
+
+    - id: 3-3b
+      description: login flow
+      details: |
+        Migrate 8 login-related files. Created composables/useLogin.ts (session detection,
+        zero-page login, auto-login, gotoURL resolution). Created components/auth/LoginCallback.vue
+        (single component with v-if chain for 10 callback types: Password, TextInput,
+        TextOutput, ScriptTextOutput, Confirmation, Choice, HiddenValue, Redirect,
+        PollingWait, Default). Stage-specific templates (WebAuthn, ReCaptcha, QRnull)
+        remain as separate components. Created views/user/LoginView.vue (phase-based
+        rendering via useLogin state machine: initializing/form/polling/redirecting/error).
+        Created views/user/LoginDialog.vue (ConfirmDialog wrapper with own useLogin instance).
+        Replaced stubs: LoggedOutView, SessionExpiredView, ConfirmLoginView, LoginFailureView.
+        Form data uses reactive objects with v-model (replaces form2js). Tests: ~40 cases.
+      status: pending
+
+    - id: 3-3c
+      description: user profile
+      details: |
+        Migrate profile view with two-tab form. Created composables/useProfile.ts
+        (fetchProfile, updateUser, changePassword with MVCC etag tracking). Replaced
+        ProfileView.vue stub with Bootstrap 3 tabs (Basic Info + Password). Created
+        components/user/PasswordChangeForm.vue. HTML5 validation + custom validators.
+        Tests: ~20 cases.
+      status: pending
+
+    - id: 3-3d
+      description: dashboard
+      details: |
+        Migrate 12 dashboard files. DashboardView.vue is layout shell composing 3 sections.
+        TrustedDevicesSection.vue (list + delete), OAuthTokensSection.vue (list + revoke),
+        MyApplicationsSection.vue (read-only list). Each section fetches own data on mount
+        with independent loading/error states. Simple Bootstrap 3 tables (small datasets).
+        DeviceDetailsDialog.vue and DevicesSettingsDialog.vue use useDialog() composable.
+        Tests: ~25 cases.
+      status: pending
+
+    - id: 3-3e
+      description: anonymous processes
+      details: |
+        Migrate 4 anonymous process views. Created composables/useAnonymousProcess.ts
+        (begin, submit, state management — replaces prototype chain inheritance). Created
+        components/auth/ProcessStage.vue (dispatcher mapping stage names to components:
+        UserQueryStage, ResetStage, UserDetailsStage, KBAStage, ConfirmationStage). Created
+        components/auth/KBAForm.vue (security questions). Replaced stubs: PasswordResetView,
+        ForgotUsernameView, SelfRegistrationView, ContinuePasswordResetView, ContinueSelfRegisterView.
+        Auto-login after registration handled in composable. Token-based continuation from
+        email links. Tests: ~30 cases.
+      status: pending
+
+    - id: 3-3f
+      description: UMA & OAuth2 tokens
+      details: |
+        Migrate 22 UMA files + 1 OAuth2 tokens view. Created components/common/DataTable.vue
+        (@tanstack/vue-table wrapper: sorting, pagination, expandable rows, Bootstrap 3 styling).
+        Created composables/useUmaLabels.ts (shared between sidebar and ResourcePage). Created
+        components/uma/LabelTree.vue + LabelTreeTreeNode.vue (dynamic label tree with nested
+        hierarchy). Replaced stubs: MyResourcesPage, SharedWithMePage, StarredPage, MyLabelsPage,
+        ResourcePage (orchestrator with ResourceInfo/ResourcePermissions/ResourceLabels children),
+        ListRequest, EditRequest, ListHistory. Created ShareForm.vue (user + permission select
+        via SelectInput), BaseShare.vue (standalone wrapper), ShareDialog.vue (modal wrapper).
+        Extended SelectInput.vue with multiple + allowCreate props for label management.
+        TokensView.vue uses DataTable with expandable rows. Tests: ~50 cases.
+      status: pending
 
 - id: 3-4
   description: main SPA - admin views

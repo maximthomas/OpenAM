@@ -330,7 +330,8 @@ openam-ui-ria/
     "vue-router": "^4.5",
     "i18next": "^24.0",
     "vue-i18n": "^11.0",
-    "axios": "^1.8"
+    "axios": "^1.8",
+    "@tanstack/vue-table": "^8.21"
   },
   "devDependencies": {
     "vite": "^8.0",

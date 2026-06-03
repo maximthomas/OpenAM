@@ -17,7 +17,7 @@ function buildBaseUrl(): string {
 export const authNApi = {
   /**
    * Begin a new authentication process.
-   * @param realm - The realm path to authenticate against
+   * @param realm - The realm path (e.g., 'root', 'b2c/clients')
    * @param params - Additional URL parameters (authIndexType, authIndexValue, etc.)
    */
   begin(
@@ -25,13 +25,12 @@ export const authNApi = {
     params?: Record<string, string>,
   ): Promise<AuthRequirements> {
     const client = new RestClient(buildBaseUrl());
-    const realmSegment = realm ? realm.replace(/^\//, '') : '';
-    const realmParam = realmSegment ? `/${realmSegment}` : '';
+    const realmSegment = realm ? `/${realm}` : '';
     const queryString = params
       ? '?' + new URLSearchParams(params).toString()
       : '';
     return client.post<AuthRequirements>(
-      `/authenticate${realmParam}${queryString}`,
+      `${realmSegment}/authenticate${queryString}`,
       '',
       { headers: { 'Accept-API-Version': API_VERSION } },
     );
@@ -40,7 +39,7 @@ export const authNApi = {
   /**
    * Submit callback requirements and receive next stage.
    * @param requirements - The current requirements (including authId)
-   * @param realm - The realm path
+   * @param realm - The realm path (e.g., 'root', 'b2c/clients')
    * @param params - Additional URL parameters
    */
   submitRequirements(
@@ -49,13 +48,12 @@ export const authNApi = {
     params?: Record<string, string>,
   ): Promise<AuthRequirements> {
     const client = new RestClient(buildBaseUrl());
-    const realmSegment = realm ? realm.replace(/^\//, '') : '';
-    const realmParam = realmSegment ? `/${realmSegment}` : '';
+    const realmSegment = realm ? `/${realm}` : '';
     const queryString = params
       ? '?' + new URLSearchParams(params).toString()
       : '';
     return client.post<AuthRequirements>(
-      `/authenticate${realmParam}${queryString}`,
+      `${realmSegment}/authenticate${queryString}`,
       requirements,
       { headers: { 'Accept-API-Version': API_VERSION } },
     );

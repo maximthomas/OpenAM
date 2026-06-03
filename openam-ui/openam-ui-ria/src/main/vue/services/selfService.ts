@@ -16,7 +16,7 @@ export const selfServiceApi = {
   /**
    * Begin a self-service process (password reset, forgot username, registration).
    * @param endpoint - The self-service endpoint path (e.g., 'selfservice/forgottenPassword')
-   * @param realm - The realm path
+   * @param realm - The realm path (e.g., 'root', 'b2c/clients')
    * @param token - Optional token for continuing a process (from email link)
    */
   begin(
@@ -25,14 +25,13 @@ export const selfServiceApi = {
     token?: string,
   ): Promise<SelfServiceProcessState> {
     const client = new RestClient(buildBaseUrl());
-    const realmSegment = realm ? realm.replace(/^\//, '') : '';
-    const realmParam = realmSegment ? `/${realmSegment}` : '';
+    const realmSegment = realm ? `/${realm}` : '';
     const body: Record<string, unknown> = {};
     if (token) {
       body.token = token;
     }
     return client.post<SelfServiceProcessState>(
-      `/${endpoint}${realmParam}`,
+      `${realmSegment}/${endpoint}`,
       body,
       { headers: { 'Accept-API-Version': 'protocol=1.0,resource=1.0' } },
     );
@@ -41,7 +40,7 @@ export const selfServiceApi = {
   /**
    * Submit requirements for a self-service process.
    * @param endpoint - The self-service endpoint path
-   * @param realm - The realm path
+   * @param realm - The realm path (e.g., 'root', 'b2c/clients')
    * @param requirements - The current requirements to submit
    */
   submitRequirements(
@@ -50,10 +49,9 @@ export const selfServiceApi = {
     requirements: AuthRequirements,
   ): Promise<SelfServiceProcessState> {
     const client = new RestClient(buildBaseUrl());
-    const realmSegment = realm ? realm.replace(/^\//, '') : '';
-    const realmParam = realmSegment ? `/${realmSegment}` : '';
+    const realmSegment = realm ? `/${realm}` : '';
     return client.post<SelfServiceProcessState>(
-      `/${endpoint}${realmParam}`,
+      `${realmSegment}/${endpoint}`,
       requirements,
       { headers: { 'Accept-API-Version': 'protocol=1.0,resource=1.0' } },
     );
@@ -62,16 +60,17 @@ export const selfServiceApi = {
   /**
    * Get the initial requirements for a self-service process.
    * This is the first step in the process flow.
+   * @param endpoint - The self-service endpoint path
+   * @param realm - The realm path (e.g., 'root', 'b2c/clients')
    */
   getRequirements(
     endpoint: string,
     realm: string,
   ): Promise<AuthRequirements> {
     const client = new RestClient(buildBaseUrl());
-    const realmSegment = realm ? realm.replace(/^\//, '') : '';
-    const realmParam = realmSegment ? `/${realmSegment}` : '';
+    const realmSegment = realm ? `/${realm}` : '';
     return client.post<AuthRequirements>(
-      `/${endpoint}${realmParam}`,
+      `${realmSegment}/${endpoint}`,
       {},
       { headers: { 'Accept-API-Version': 'protocol=1.0,resource=1.0' } },
     );

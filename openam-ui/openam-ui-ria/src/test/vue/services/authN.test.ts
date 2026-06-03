@@ -23,14 +23,14 @@ describe('authN service', () => {
   });
 
   describe('begin', () => {
-    it('starts authentication with POST to /authenticate', async () => {
+    it('starts authentication with POST to /json/realm/authenticate', async () => {
       const mockRequirements = { authId: 'auth-123', callbacks: [] };
       mockPost.mockResolvedValue(mockRequirements);
 
-      const result = await authNApi.begin('/realms/root');
+      const result = await authNApi.begin('root');
 
       expect(mockPost).toHaveBeenCalledWith(
-        '/authenticate/realms/root',
+        '/root/authenticate',
         '',
         expect.objectContaining({
           headers: expect.objectContaining({
@@ -44,13 +44,25 @@ describe('authN service', () => {
     it('appends query params to URL', async () => {
       mockPost.mockResolvedValue({});
 
-      await authNApi.begin('/realms/root', {
+      await authNApi.begin('root', {
         authIndexType: 'service',
         authIndexValue: 'ldap',
       });
 
       expect(mockPost).toHaveBeenCalledWith(
         expect.stringContaining('authIndexType=service'),
+        '',
+        expect.any(Object),
+      );
+    });
+
+    it('handles nested realm', async () => {
+      mockPost.mockResolvedValue({});
+
+      await authNApi.begin('b2c/clients');
+
+      expect(mockPost).toHaveBeenCalledWith(
+        '/b2c/clients/authenticate',
         '',
         expect.any(Object),
       );
@@ -77,10 +89,10 @@ describe('authN service', () => {
       };
       mockPost.mockResolvedValue({ tokenId: 'session-123' });
 
-      const result = await authNApi.submitRequirements(requirements, '/realms/root');
+      const result = await authNApi.submitRequirements(requirements, 'root');
 
       expect(mockPost).toHaveBeenCalledWith(
-        '/authenticate/realms/root',
+        '/root/authenticate',
         requirements,
         expect.objectContaining({
           headers: expect.objectContaining({
@@ -96,7 +108,7 @@ describe('authN service', () => {
 
       await authNApi.submitRequirements(
         { authId: 'auth-123' },
-        '/realms/root',
+        'root',
         { authIndexType: 'service' },
       );
 

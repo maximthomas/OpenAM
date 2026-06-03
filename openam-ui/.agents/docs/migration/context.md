@@ -72,13 +72,29 @@ framework-agnostic logic into pure TypeScript (completed in task 2-2):
 | `services/jsonSchema/JSONEditorTheme.ts` | `admin/utils/JSONEditorTheme` | Bootstrap theme for JSONEditor (jQuery eliminated) |
 | `composables/useDialog.ts` | `BootstrapDialog.show()` | Promise-based confirm/cancel dialog API |
 
+**User services (task 3-3a):**
+
+| New Module | Replaces | Exports |
+|-----------|----------|---------|
+| `services/user.ts` | `UserModel` | `read()`, `update()`, `changePassword()`, `validateGoto()` |
+| `services/authN.ts` | `AuthNService` | `begin()`, `submitRequirements()`, `validateGoto()`, `getServerInfo()` |
+| `services/session.ts` | Session REST calls | `getSessionInfo()`, `destroySession()`, `getSessionProperties()` |
+| `services/token.ts` | `TokenService` | `getAllTokens()`, `deleteToken()`, `getTokenById()` |
+| `services/dashboard.ts` | Device/Token/App services | `getTrustedDevices()`, `deleteTrustedDevice()`, `getOathDevices()`, `getMyApplications()` |
+| `services/uma.ts` | `UMAService` | `getResourceSets()`, `createResourceSet()`, `getLabels()`, `approveRequest()`, `getHistory()` |
+| `services/selfService.ts` | `AnonymousProcessDelegate` | `begin()`, `submitRequirements()`, `getRequirements()` |
+| `services/kba.ts` | `KBADelegate` | `getPredefinedQuestions()`, `submitKbaAnswers()`, `validateKbaAnswers()` |
+
+**Realm URL convention:** All realm-scoped endpoints use `/json/{realm}/endpoint` format (e.g., `/json/root/authenticate`, `/json/b2c/clients/selfservice/forgottenPassword`). Realm is passed as `root` or `b2c/clients` (no leading slash, no `/realms/` prefix).
+
 These become the new shared commons library, consumable by openam-ui-ria (Vue),
 openam-ui-js-sdk (React), and future modules. Key design decisions:
 - `ThemeConfig` passed as parameter to `theme.ts` (not imported directly)
 - `i18n.ts` is thin vue-i18n wrapper (no cookie detection, no Handlebars helpers)
 - `events.ts` uses synchronous dispatch (no setTimeout/Deferred)
 - `config.passwords` and `HEADER_PARAM_REAUTH` dropped (dead code in OpenAM)
-- `errorsHandlers` suppression map preserved in `api.ts` (~8 call sites depend on it)
+- `errorsHandlers` suppression map preserved in `api.ts` for legacy callers
+- New user services (3-3a) do NOT use `errorsHandlers` — all errors propagate to `useAlert().danger()`
 
 ### Build Integration: Vite + Grunt Coexistence
 
@@ -197,14 +213,22 @@ openam-ui-ria/
 │   │   │   │   └── useDialog.ts      # Promise-based confirm/cancel dialog API
 │   │   │   ├── services/             # Pure TS commons extraction
 │   │   │   │   ├── api.ts
+│   │   │   │   ├── authN.ts          # Authentication (begin, submitRequirements)
 │   │   │   │   ├── config.ts         # + version field in GlobalData
 │   │   │   │   ├── constants.ts
+│   │   │   │   ├── dashboard.ts      # Trusted devices, OATH, applications
 │   │   │   │   ├── events.ts
 │   │   │   │   ├── i18n.ts
+│   │   │   │   ├── kba.ts            # KBA questions and answers
 │   │   │   │   ├── logout.ts         # REST logout + cookie cleanup + page reload
 │   │   │   │   ├── oauth2.ts
+│   │   │   │   ├── selfService.ts    # Password reset, forgot username, registration
+│   │   │   │   ├── session.ts        # Session info, destroy, properties
 │   │   │   │   ├── theme.ts
 │   │   │   │   ├── themeConfiguration.ts
+│   │   │   │   ├── token.ts          # OAuth2 token CRUD
+│   │   │   │   ├── uma.ts            # UMA resources, labels, requests, history
+│   │   │   │   ├── user.ts           # User profile CRUD, changePassword
 │   │   │   │   └── jsonSchema/
 │   │   │   │       ├── index.ts              # Re-exports + iteratees (lodash 3→4 compatible)
 │   │   │   │       ├── JSONSchema.ts         # JSON Schema model (ported from AMD)
@@ -214,9 +238,11 @@ openam-ui-ria/
 │   │   │   ├── vendor/
 │   │   │   │   └── jsoneditor-0.7.23-custom.js  # Vendored JSONEditor library
 │   │   │   ├── types/
-│   │   │   │   ├── device.d.ts
 │   │   │   │   ├── authorize.d.ts
-│   │   │   │   └── router.d.ts       # RouteMeta augmentation (roles, navGroup, view)
+│   │   │   │   ├── device.d.ts
+│   │   │   │   ├── router.d.ts       # RouteMeta augmentation (roles, navGroup, view)
+│   │   │   │   ├── uma.d.ts          # UMA resource sets, labels, requests, pagination
+│   │   │   │   └── user.d.ts         # User profile, auth callbacks, KBA, dashboard
 │   │   │   ├── components/
 │   │   │   │   ├── AppHeader.vue     # Bootstrap 3 navbar (logo, nav links, user dropdown)
 │   │   │   │   ├── AppFooter.vue     # Mailto, copyright, version (admin-only)
@@ -298,6 +324,14 @@ openam-ui-ria/
 │           ├── composables/
 │           │   └── useAlert.test.ts          # useAlert expanded API tests (14 tests)
 │           ├── services/
+│           │   ├── authN.test.ts             # Authentication service tests (8 tests)
+│           │   ├── dashboard.test.ts         # Dashboard service tests (10 tests)
+│           │   ├── kba.test.ts               # KBA service tests (5 tests)
+│           │   ├── selfService.test.ts       # Self-service tests (5 tests)
+│           │   ├── session.test.ts           # Session service tests (4 tests)
+│           │   ├── token.test.ts             # Token service tests (4 tests)
+│           │   ├── uma.test.ts               # UMA service tests (11 tests)
+│           │   ├── user.test.ts              # User service tests (6 tests)
 │           │   └── jsonSchema/
 │           │       ├── JSONSchema.test.ts    # JSON Schema model tests (14 tests, ported)
 │           │       └── JSONValues.test.ts    # JSON Values model tests (19 tests, ported)
@@ -315,9 +349,10 @@ openam-ui-ria/
 | LESS stylesheets | 21 | 0 | 21 (keep as Vite entry points) |
 | Vue components | 8 | 94 (incl. 64 placeholders) | Real views pending |
 | Vue composables | 0 | 4 (+useDialog.ts) | — |
-| Vue services | 7 | 12 (+jsonSchema/*, +logout.ts) | — |
+| Vue services | 7 | 20 (+authN, dashboard, kba, selfService, session, token, uma, user) | — |
+| Vue types | 3 | 5 (+uma.d.ts, user.d.ts) | — |
 | Vue router routes | 0 | 90 named | — |
-| Test files | 9 | 13 (119 tests) | New tests for composables/guards/layouts |
+| Test files | 9 | 21 (177 tests) | New tests for composables/guards/layouts |
 
 ## Key Dependencies
 

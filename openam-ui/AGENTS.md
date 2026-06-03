@@ -125,11 +125,14 @@ Open `http://localhost:9876/debug.html` in a browser and check DevTools console 
 
 | Layer | Tool | Command |
 |---|---|---|
-| openam-ui-ria unit | Karma + QUnit | `npx grunt karma:unit` (watch) or `mvn test -pl openam-ui/openam-ui-ria` |
+| openam-ui-ria (Vue) | Vitest | `cd openam-ui-ria && npx vitest run` |
+| openam-ui-ria (Vue, watch) | Vitest | `cd openam-ui-ria && npx vitest` |
+| openam-ui-ria (Backbone) | Karma + QUnit | `npx grunt karma:unit` (watch) or `mvn test -pl openam-ui/openam-ui-ria` |
 | openam-ui-ria full build + test | Grunt `karma:build` | Triggered automatically by `mvn package` |
 | openam-ui-api | npm test (see sub-module scripts) | `cd openam-ui/openam-ui-api && npm test` |
+| Type checking | vue-tsc | `cd openam-ui-ria && npx vue-tsc --noEmit` |
 
-Tests live under `openam-ui-ria/src/test/`. Failures are reported in the Karma console; for debugging open `http://localhost:9876/debug.html`.
+Tests live under `openam-ui-ria/src/test/vue/` (Vitest) and `src/test/` (Karma/QUnit). Failures are reported in the Vitest/Karma console.
 
 ---
 

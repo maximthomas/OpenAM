@@ -18,14 +18,13 @@ function buildBaseUrl(): string {
 export const kbaApi = {
   /**
    * Get available predefined KBA questions for a realm.
-   * @param realm - The realm path
+   * @param realm - The realm path (e.g., 'root', 'b2c/clients')
    */
   getPredefinedQuestions(realm: string): Promise<string[]> {
     const client = new RestClient(buildBaseUrl());
-    const realmSegment = realm ? realm.replace(/^\//, '') : '';
-    const realmParam = realmSegment ? `/${realmSegment}` : '';
+    const realmSegment = realm ? `/${realm}` : '';
     return client.get<{ predefinedQuestions: string[] }>(
-      `/selfservice/kbaOptions${realmParam}`,
+      `${realmSegment}/selfservice/kbaOptions`,
       { headers: { 'Accept-API-Version': API_VERSION } },
     ).then((response) => response.predefinedQuestions);
   },
@@ -33,7 +32,7 @@ export const kbaApi = {
   /**
    * Submit KBA questions and answers as part of a self-service process.
    * @param endpoint - The self-service endpoint (e.g., 'selfservice/forgottenPassword')
-   * @param realm - The realm path
+   * @param realm - The realm path (e.g., 'root', 'b2c/clients')
    * @param token - The process token
    * @param kbaInfo - Array of KBA questions and answers
    */
@@ -44,10 +43,9 @@ export const kbaApi = {
     kbaInfo: KBAInfo,
   ): Promise<unknown> {
     const client = new RestClient(buildBaseUrl());
-    const realmSegment = realm ? realm.replace(/^\//, '') : '';
-    const realmParam = realmSegment ? `/${realmSegment}` : '';
+    const realmSegment = realm ? `/${realm}` : '';
     return client.post(
-      `/${endpoint}${realmParam}`,
+      `${realmSegment}/${endpoint}`,
       { token, kbaInfo },
       { headers: { 'Accept-API-Version': API_VERSION } },
     );

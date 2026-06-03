@@ -30,11 +30,11 @@ describe('selfService service', () => {
 
       const result = await selfServiceApi.begin(
         'selfservice/forgottenPassword',
-        '/realms/root',
+        'root',
       );
 
       expect(mockPost).toHaveBeenCalledWith(
-        '/selfservice/forgottenPassword/realms/root',
+        '/root/selfservice/forgottenPassword',
         {},
         expect.objectContaining({
           headers: expect.objectContaining({
@@ -50,13 +50,25 @@ describe('selfService service', () => {
 
       await selfServiceApi.begin(
         'selfservice/forgottenPassword',
-        '/realms/root',
+        'root',
         'token-from-email',
       );
 
       expect(mockPost).toHaveBeenCalledWith(
         expect.any(String),
         { token: 'token-from-email' },
+        expect.any(Object),
+      );
+    });
+
+    it('handles nested realm', async () => {
+      mockPost.mockResolvedValue({});
+
+      await selfServiceApi.begin('selfservice/userRegistration', 'b2c/clients');
+
+      expect(mockPost).toHaveBeenCalledWith(
+        '/b2c/clients/selfservice/userRegistration',
+        {},
         expect.any(Object),
       );
     });
@@ -81,12 +93,12 @@ describe('selfService service', () => {
 
       await selfServiceApi.submitRequirements(
         'selfservice/forgottenPassword',
-        '/realms/root',
+        'root',
         requirements,
       );
 
       expect(mockPost).toHaveBeenCalledWith(
-        '/selfservice/forgottenPassword/realms/root',
+        '/root/selfservice/forgottenPassword',
         requirements,
         expect.any(Object),
       );
@@ -100,11 +112,11 @@ describe('selfService service', () => {
 
       const result = await selfServiceApi.getRequirements(
         'selfservice/userRegistration',
-        '/realms/root',
+        'root',
       );
 
       expect(mockPost).toHaveBeenCalledWith(
-        '/selfservice/userRegistration/realms/root',
+        '/root/selfservice/userRegistration',
         {},
         expect.any(Object),
       );

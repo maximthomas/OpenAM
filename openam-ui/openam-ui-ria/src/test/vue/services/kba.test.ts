@@ -32,10 +32,10 @@ describe('kba service', () => {
       };
       mockGet.mockResolvedValue(mockQuestions);
 
-      const result = await kbaApi.getPredefinedQuestions('/realms/root');
+      const result = await kbaApi.getPredefinedQuestions('root');
 
       expect(mockGet).toHaveBeenCalledWith(
-        '/selfservice/kbaOptions/realms/root',
+        '/root/selfservice/kbaOptions',
         expect.objectContaining({
           headers: expect.objectContaining({
             'Accept-API-Version': expect.stringContaining('resource=1.0'),
@@ -43,6 +43,17 @@ describe('kba service', () => {
         }),
       );
       expect(result).toEqual(mockQuestions.predefinedQuestions);
+    });
+
+    it('handles nested realm', async () => {
+      mockGet.mockResolvedValue({ predefinedQuestions: [] });
+
+      await kbaApi.getPredefinedQuestions('b2c/clients');
+
+      expect(mockGet).toHaveBeenCalledWith(
+        '/b2c/clients/selfservice/kbaOptions',
+        expect.any(Object),
+      );
     });
 
     it('handles empty realm', async () => {
@@ -68,13 +79,13 @@ describe('kba service', () => {
 
       await kbaApi.submitKbaAnswers(
         'selfservice/forgottenPassword',
-        '/realms/root',
+        'root',
         'token-123',
         kbaInfo,
       );
 
       expect(mockPost).toHaveBeenCalledWith(
-        '/selfservice/forgottenPassword/realms/root',
+        '/root/selfservice/forgottenPassword',
         { token: 'token-123', kbaInfo },
         expect.any(Object),
       );

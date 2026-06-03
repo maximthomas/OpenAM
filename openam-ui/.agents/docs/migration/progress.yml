@@ -151,11 +151,14 @@
     - id: 3-3a
       description: services & types layer
       details: |
-        Create all REST service wrappers and TypeScript interfaces (pure TS, no UI).
+        Created all REST service wrappers and TypeScript interfaces (pure TS, no UI).
         Files: types/user.d.ts, types/uma.d.ts, services/user.ts, services/authN.ts,
         services/session.ts, services/token.ts, services/dashboard.ts, services/uma.ts,
         services/selfService.ts, services/kba.ts. All use RestClient from api.ts.
-        Tests: ~80 cases (mock RestClient, verify endpoints/headers/bodies).
+        Realm URL convention: /json/{realm}/authenticate (realm is 'root' or 'b2c/clients',
+        NOT prefixed with /realms/). No error suppression — errors propagate to callers.
+        Tests: 55 cases across 8 test files (mock RestClient, verify endpoints/headers/bodies).
+        vue-tsc clean (0 errors).
       status: complete
 
     - id: 3-3b

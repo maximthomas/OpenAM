@@ -9,7 +9,8 @@
       <button type="button" class="close" @click="dismiss(message)">
         <span>&times;</span>
       </button>
-      {{ t(message.key) }}
+      <span v-if="message.escape !== false">{{ displayText(message) }}</span>
+      <span v-else v-html="sanitizedHtml(message)"></span>
     </div>
   </div>
 </template>
@@ -21,6 +22,23 @@ import type { AlertMessage } from '@/composables/useAlert';
 
 const { t } = useI18n();
 const { messages, dismiss } = useAlert();
+
+function displayText(message: AlertMessage): string {
+  if (message.key) {
+    return t(message.key);
+  }
+  return message.message || '';
+}
+
+function sanitizedHtml(message: AlertMessage): string {
+  const raw = message.message || '';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const win = window as any;
+  if (win.DOMPurify) {
+    return win.DOMPurify.sanitize(raw);
+  }
+  return raw.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 </script>
 
 <style scoped>

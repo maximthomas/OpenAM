@@ -47,7 +47,7 @@ main SPA. This proves the toolchain before tackling the 200+ file main app.
 **Entry points:**
 1. `main-device.js` (88 lines) → device auth pages (complete)
 2. `main-authorize.js` (162 lines) → OAuth2 consent pages (complete)
-3. `main.js` (~200 lines bootstrap + 268 files) → main SPA (router + layout complete, views pending)
+3. `main.js` (~200 lines bootstrap + 268 files) → main SPA (router + layout + common components complete, views pending)
 
 ### Commons Layer: Pure JS/TS Services
 
@@ -66,6 +66,11 @@ framework-agnostic logic into pure TypeScript (completed in task 2-2):
 | `services/themeConfiguration.ts` | `ThemeConfiguration` | Typed theme config data |
 | `services/events.ts` | `EventManager` | Synchronous `on/off/emit/once` emitter |
 | `services/oauth2.ts` | `OAuth2ConsentPageHelper` | `getUserSessionId()` — CSRF token fetch |
+| `services/jsonSchema/JSONSchema.ts` | `common/models/JSONSchema` | JSON Schema model class with lodash 3→4 compatible API |
+| `services/jsonSchema/JSONValues.ts` | `common/models/JSONValues` | JSON Values model class with lodash 3→4 compatible API |
+| `services/jsonSchema/schemaTransforms.ts` | 3 `schemaTransforms/*` files | Merged boolean/enum/password transforms |
+| `services/jsonSchema/JSONEditorTheme.ts` | `admin/utils/JSONEditorTheme` | Bootstrap theme for JSONEditor (jQuery eliminated) |
+| `composables/useDialog.ts` | `BootstrapDialog.show()` | Promise-based confirm/cancel dialog API |
 
 These become the new shared commons library, consumable by openam-ui-ria (Vue),
 openam-ui-js-sdk (React), and future modules. Key design decisions:
@@ -127,6 +132,31 @@ Manual fixes (20%):
 - `{{routeTo 'name' arg}}` → `router.resolve({ name: '...' })`
 - `{{#equals a b}}` → computed property or custom directive
 
+### Common Components Migration (Task 3-2)
+
+Migrated shared Backbone components to Vue 3. Key decisions:
+
+- **JSON Schema Form System**: Kept vendored JSONEditor 0.7.23 (global IIFE, copied to `vendor/`).
+  Ported `JSONSchema`/`JSONValues` models to pure TypeScript. Created `JSONEditorTheme.ts`
+  eliminating jQuery calls (`$(input).prop("type")` → `input.type`,
+  `$(element).addClass/removeClass` → `element.classList.add/remove`). Registered theme via
+  `JSONEditor.defaults.themes.openam` in Vue component `onMounted()`. Parent interaction via
+  `defineExpose({ isValid, getData, setData })` — matches legacy Backbone API.
+- **Lodash 3→4 Migration**: `_.pick(obj, predicate)` removed in lodash 4; replaced with
+  `_.pickBy()`. `_.omit(obj, predicate)` was recursive in lodash 3 but not in lodash 4;
+  implemented `recursiveOmitBy()` helper for `removeUnrequiredProperties()`.
+- **BootstrapDialog → ConfirmDialog.vue**: Created `useDialog()` composable with Promise-based
+  `confirm()` API. Covers "simple confirm" and "dynamic content" patterns. "View redirection"
+  pattern (`self.element = dialog.message`) deferred to task 3-3/3-4 view migration.
+- **Messages/Toast → useAlert expansion**: Added `response` parameter (extracts
+  `responseJSON.message`), type constants (`TYPE_DANGER`/`TYPE_INFO`/etc.), deduplication,
+  legacy dismiss formula (`2500ms + length * 20ms`). `AlertContainer.vue` updated with
+  `v-html` + DOMPurify sanitization for raw HTML messages.
+- **TreeNavigation**: Skipped — existing `RealmLayout.vue`, `ServerLayout.vue`, etc. already
+  implement sidebar navigation via Vue Router.
+- **Footer**: Skipped — `AppFooter.vue` and `LoginFooter.vue` already migrated.
+- **PanelComponent/TabComponent**: Deferred to tasks 3-3/3-4 (view-specific helpers).
+
 ## Directory Structure
 
 ```
@@ -163,7 +193,8 @@ openam-ui-ria/
 │   │   │   ├── composables/
 │   │   │   │   ├── useAuth.ts        # Reactive auth state (loggedUser, roles, isAuthenticated)
 │   │   │   │   ├── useRealm.ts       # Realm from URL param (decoded %2F)
-│   │   │   │   └── useAlert.ts       # Alert message queue with auto-dismiss
+│   │   │   │   ├── useAlert.ts       # Alert queue: response parsing, dedup, dismiss formula
+│   │   │   │   └── useDialog.ts      # Promise-based confirm/cancel dialog API
 │   │   │   ├── services/             # Pure TS commons extraction
 │   │   │   │   ├── api.ts
 │   │   │   │   ├── config.ts         # + version field in GlobalData
@@ -173,7 +204,15 @@ openam-ui-ria/
 │   │   │   │   ├── logout.ts         # REST logout + cookie cleanup + page reload
 │   │   │   │   ├── oauth2.ts
 │   │   │   │   ├── theme.ts
-│   │   │   │   └── themeConfiguration.ts
+│   │   │   │   ├── themeConfiguration.ts
+│   │   │   │   └── jsonSchema/
+│   │   │   │       ├── index.ts              # Re-exports + iteratees (lodash 3→4 compatible)
+│   │   │   │       ├── JSONSchema.ts         # JSON Schema model (ported from AMD)
+│   │   │   │       ├── JSONValues.ts         # JSON Values model (ported from AMD)
+│   │   │   │       ├── schemaTransforms.ts   # Boolean/enum/password transforms
+│   │   │   │       └── JSONEditorTheme.ts    # Bootstrap theme (jQuery eliminated)
+│   │   │   ├── vendor/
+│   │   │   │   └── jsoneditor-0.7.23-custom.js  # Vendored JSONEditor library
 │   │   │   ├── types/
 │   │   │   │   ├── device.d.ts
 │   │   │   │   ├── authorize.d.ts
@@ -181,10 +220,19 @@ openam-ui-ria/
 │   │   │   ├── components/
 │   │   │   │   ├── AppHeader.vue     # Bootstrap 3 navbar (logo, nav links, user dropdown)
 │   │   │   │   ├── AppFooter.vue     # Mailto, copyright, version (admin-only)
-│   │   │   │   ├── AlertContainer.vue # Fixed-position alert toast container
+│   │   │   │   ├── AlertContainer.vue # Fixed-position alert toast (v-html + DOMPurify)
 │   │   │   │   └── common/
 │   │   │   │       ├── LoginHeader.vue
-│   │   │   │       └── LoginFooter.vue
+│   │   │   │       ├── LoginFooter.vue
+│   │   │   │       ├── ConfirmDialog.vue       # Bootstrap 3 modal (teleport to body)
+│   │   │   │       ├── JSONSchemaForm.vue      # JSONEditor wrapper (defineExpose)
+│   │   │   │       ├── TogglableJSONSchemaForm.vue  # Enable/disable toggle
+│   │   │   │       ├── FlatJSONSchemaForm.vue  # Non-collection schemas
+│   │   │   │       ├── GroupedJSONSchemaForm.vue  # Collection schemas
+│   │   │   │       ├── JSONSchemaFormFooter.vue # Save/revert buttons
+│   │   │   │       ├── InlineEditTable.vue     # Editable table (one row at a time)
+│   │   │   │       ├── InlineEditRow.vue       # Row: readonly/edit/new modes
+│   │   │   │       └── SelectInput.vue         # Custom combobox with search
 │   │   │   ├── views/
 │   │   │   │   ├── device/           # main-device entry point (complete)
 │   │   │   │   │   ├── DeviceApp.vue
@@ -247,7 +295,12 @@ openam-ui-ria/
 │           │   └── components.test.ts
 │           ├── authorize/
 │           │   └── components.test.ts
-│           ├── services/             # Pure TS service tests (48 tests)
+│           ├── composables/
+│           │   └── useAlert.test.ts          # useAlert expanded API tests (14 tests)
+│           ├── services/
+│           │   └── jsonSchema/
+│           │       ├── JSONSchema.test.ts    # JSON Schema model tests (14 tests, ported)
+│           │       └── JSONValues.test.ts    # JSON Values model tests (19 tests, ported)
 │           └── smoke.test.ts         # Updated: stubs AppHeader/AppFooter/AlertContainer
 ```
 
@@ -260,11 +313,11 @@ openam-ui-ria/
 | JSX `.jsx` files | 15 | 0 | 15 (rewrite to `.vue`) |
 | Handlebars templates | 187 | 0 | 187 (codemod + manual) |
 | LESS stylesheets | 21 | 0 | 21 (keep as Vite entry points) |
-| Vue components | 8 | 84 (incl. 64 placeholders) | Real views pending |
-| Vue composables | 0 | 3 | — |
-| Vue services | 7 | 8 (+logout.ts) | — |
+| Vue components | 8 | 94 (incl. 64 placeholders) | Real views pending |
+| Vue composables | 0 | 4 (+useDialog.ts) | — |
+| Vue services | 7 | 12 (+jsonSchema/*, +logout.ts) | — |
 | Vue router routes | 0 | 90 named | — |
-| Test files | 9 | 10 (72 tests) | New tests for composables/guards/layouts |
+| Test files | 9 | 13 (119 tests) | New tests for composables/guards/layouts |
 
 ## Key Dependencies
 
@@ -288,7 +341,8 @@ openam-ui-ria/
     "vue-tsc": "^2.0",
     "typescript": "~5.8",
     "less": "^4.0",
-    "i18next-http-backend": "^3.0"
+    "i18next-http-backend": "^3.0",
+    "@types/lodash": "^4.17"
   }
 }
 ```
@@ -321,3 +375,4 @@ openam-ui-ria/
 | Theme switching stops working | Medium | Low | Keep global LESS entry points, test early |
 | Mock server middleware ordering | Medium | Medium | Static assets (CSS/images) must be checked before page routes; `/device/error/css/...` resolves relative to `/device/error/`, not `/device/` |
 | Vite 8 UMD single-entry constraint | Low | High | UMD format doesn't support multiple entry points; solved with `VITE_UMD_ENTRY` env variable, Grunt runs `vite build` twice |
+| Lodash 3→4 breaking changes | Medium | High | `_.pick`/`_.omit` with predicates no longer recursive in lodash 4; `_.pickBy`/`_.omitBy` used instead, `recursiveOmitBy()` helper for nested omit |

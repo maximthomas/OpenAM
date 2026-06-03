@@ -109,9 +109,25 @@
 - id: 3-2
   description: main SPA - common components
   details: |
-    Migrate shared components: JSON Schema form system, BootstrapDialog integration,
-    Messages/toast, TreeNavigation, InlineEditTable, SelectComponent, Footer.
-  status: pending
+    Migrated shared components to Vue 3. Created pure TypeScript models
+    (JSONSchema.ts, JSONValues.ts, schemaTransforms.ts) ported from AMD ES6 classes,
+    fixing lodash 3→4 migration issues (_.pick→_.pickBy, recursive omit). Copied vendored
+    JSONEditor 0.7.23 to vendor/, created JSONEditorTheme.ts (eliminated jQuery, converted
+    AMD→ES module). Created 5 Vue JSON Schema form components: JSONSchemaForm.vue (mounts
+    JSONEditor via onMounted + defineExpose for isValid/getData/setData),
+    TogglableJSONSchemaForm.vue (enable/disable toggle), FlatJSONSchemaForm.vue (non-collection
+    schemas), GroupedJSONSchemaForm.vue (collection schemas with iteratee pipeline),
+    JSONSchemaFormFooter.vue (save/revert buttons). Expanded useAlert.ts with response
+    parameter support (extracts responseJSON.message), type constants (TYPE_SUCCESS/INFO/
+    WARNING/DANGER), deduplication, and legacy dismiss formula (2500ms + length*20ms).
+    Updated AlertContainer.vue with v-html + DOMPurify sanitization for raw HTML messages.
+    Created ConfirmDialog.vue (Bootstrap 3 modal with teleport) + useDialog.ts composable
+    (Promise-based confirm API). Created InlineEditTable.vue + InlineEditRow.vue (three
+    modes: readonly/edit/new, one row editable at a time, select support for enum fields).
+    Created SelectInput.vue (custom combobox with search, keyboard nav, scoped slots).
+    47 new Vitest tests (33 JSON Schema model + 14 useAlert). 119/119 tests pass,
+    vue-tsc clean (0 errors).
+  status: complete
 
 - id: 3-3
   description: main SPA - user views

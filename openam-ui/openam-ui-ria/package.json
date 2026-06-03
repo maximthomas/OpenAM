@@ -57,7 +57,7 @@
     "less": "^4.0",
     "less-plugin-clean-css": "1.5.1",
     "lodash": "4.18.1",
-    "minimatch": "^3.1.5",
+    "minimatch": "^9.0.3",
     "mocha": "7.2.0",
     "playwright": "^1.60.0",
     "requirejs": "2.3.7",
@@ -66,19 +66,20 @@
     "sinon-chai": "2.8.0",
     "typescript": "~5.8",
     "vite": "^8.0",
-    "vitest": "^3.0",
+    "vitest": "^4.0",
     "vue": "^3.5",
     "vue-i18n": "^11.0",
     "vue-router": "^4.5",
     "vue-tsc": "^2.0"
   },
   "overrides": {
-    "minimatch": "^3.1.5",
     "mocha": {
+      "minimatch": "^3.1.5",
       "flat": "5.0.2",
       "js-yaml": "$js-yaml"
     },
     "eslint": {
+      "minimatch": "^3.1.5",
       "shelljs": "^0.8.5",
       "ajv": "$ajv",
       "js-yaml": "$js-yaml"

@@ -210,7 +210,8 @@ openam-ui-ria/
 │   │   │   │   ├── useAuth.ts        # Reactive auth state (loggedUser, roles, isAuthenticated)
 │   │   │   │   ├── useRealm.ts       # Realm from URL param (decoded %2F)
 │   │   │   │   ├── useAlert.ts       # Alert queue: response parsing, dedup, dismiss formula
-│   │   │   │   └── useDialog.ts      # Promise-based confirm/cancel dialog API
+│   │   │   │   ├── useDialog.ts      # Promise-based confirm/cancel dialog API
+│   │   │   │   └── useLogin.ts       # Login state machine (phase-based: initializing/form/submitting/polling/redirecting/error/success)
 │   │   │   ├── services/             # Pure TS commons extraction
 │   │   │   │   ├── api.ts
 │   │   │   │   ├── authN.ts          # Authentication (begin, submitRequirements)
@@ -247,6 +248,12 @@ openam-ui-ria/
 │   │   │   │   ├── AppHeader.vue     # Bootstrap 3 navbar (logo, nav links, user dropdown)
 │   │   │   │   ├── AppFooter.vue     # Mailto, copyright, version (admin-only)
 │   │   │   │   ├── AlertContainer.vue # Fixed-position alert toast (v-html + DOMPurify)
+│   │   │   │   ├── auth/
+│   │   │   │   │   ├── LoginCallback.vue        # v-if chain for 10 auth callback types
+│   │   │   │   │   ├── ReturnToLoginBase.vue     # Shared layout for session lifecycle views
+│   │   │   │   │   ├── WebAuthnStage.vue         # WebAuthn registration/auth with script loading
+│   │   │   │   │   ├── QRStage.vue               # QR code display + polling
+│   │   │   │   │   └── ReCaptchaStage.vue        # Google reCAPTCHA integration
 │   │   │   │   └── common/
 │   │   │   │       ├── LoginHeader.vue
 │   │   │   │       ├── LoginFooter.vue
@@ -261,37 +268,35 @@ openam-ui-ria/
 │   │   │   │       └── SelectInput.vue         # Custom combobox with search
 │   │   │   ├── views/
 │   │   │   │   ├── device/           # main-device entry point (complete)
-│   │   │   │   │   ├── DeviceApp.vue
-│   │   │   │   │   ├── DeviceForm.vue
-│   │   │   │   │   ├── DeviceDone.vue
-│   │   │   │   │   └── DeviceError.vue
 │   │   │   │   ├── authorize/        # main-authorize entry point (complete)
-│   │   │   │   │   ├── AuthorizeApp.vue
-│   │   │   │   │   ├── AuthorizeForm.vue
-│   │   │   │   │   ├── ScopeList.vue
-│   │   │   │   │   └── ErrorDisplay.vue
 │   │   │   │   ├── errors/
 │   │   │   │   │   ├── NotFoundView.vue   # 404 page
 │   │   │   │   │   └── ForbiddenView.vue  # 403 page
 │   │   │   │   ├── realm/
 │   │   │   │   │   └── RealmLayout.vue    # Sidebar: dashboard/auth/services/sessions/authorization/scripts
 │   │   │   │   ├── server/
-│   │   │   │   │   ├── ServerLayout.vue         # Sidebar: 8 server edit sections
-│   │   │   │   │   └── ServerDefaultsLayout.vue # Sidebar: 7 server defaults sections
+│   │   │   │   │   ├── ServerLayout.vue
+│   │   │   │   │   └── ServerDefaultsLayout.vue
 │   │   │   │   ├── uma/
-│   │   │   │   │   ├── LabelTreeLayout.vue  # Sidebar: my resources/shared/starred/labels
-│   │   │   │   │   ├── resources/           # Placeholder stubs (5 views)
-│   │   │   │   │   ├── history/             # Placeholder stubs (1 view)
-│   │   │   │   │   ├── requests/            # Placeholder stubs (2 views)
-│   │   │   │   │   └── share/               # Placeholder stubs (1 view)
+│   │   │   │   │   ├── LabelTreeLayout.vue
+│   │   │   │   │   ├── resources/
+│   │   │   │   │   ├── history/
+│   │   │   │   │   ├── requests/
+│   │   │   │   │   └── share/
 │   │   │   │   ├── common/
 │   │   │   │   │   ├── DefaultView.vue
 │   │   │   │   │   └── EnableCookiesView.vue
-│   │   │   │   ├── user/             # Placeholder stubs (12 views)
+│   │   │   │   ├── user/
+│   │   │   │   │   ├── LoginView.vue           # Login form (phase-based rendering via useLogin)
+│   │   │   │   │   ├── LoginDialog.vue         # Background re-auth modal (ConfirmDialog + LoginView)
+│   │   │   │   │   ├── LoggedOutView.vue       # "Return to login" page
+│   │   │   │   │   ├── SessionExpiredView.vue  # Session expired + cleanup
+│   │   │   │   │   ├── LoginFailureView.vue    # Login failure + cookie cleanup
+│   │   │   │   │   ├── ConfirmLoginView.vue    # Realm-switch login confirmation
 │   │   │   │   │   ├── ProfileView.vue
 │   │   │   │   │   ├── dashboard/DashboardView.vue
 │   │   │   │   │   ├── oauth2/TokensView.vue
-│   │   │   │   │   └── ... (9 more)
+│   │   │   │   │   └── ... (9 more placeholder stubs)
 │   │   │   │   └── admin/            # Placeholder stubs (36 views across 12 subdirs)
 │   │   │   │       ├── realms/
 │   │   │   │       ├── authentication/
@@ -323,6 +328,10 @@ openam-ui-ria/
 │           │   └── components.test.ts
 │           ├── composables/
 │           │   └── useAlert.test.ts          # useAlert expanded API tests (14 tests)
+│           ├── login/
+│           │   ├── useLogin.test.ts          # useLogin composable tests (22 tests)
+│           │   ├── LoginCallback.test.ts     # LoginCallback component tests (15 tests)
+│           │   └── LoginView.test.ts         # LoginView integration tests (9 tests)
 │           ├── services/
 │           │   ├── authN.test.ts             # Authentication service tests (8 tests)
 │           │   ├── dashboard.test.ts         # Dashboard service tests (10 tests)
@@ -347,12 +356,12 @@ openam-ui-ria/
 | JSX `.jsx` files | 15 | 0 | 15 (rewrite to `.vue`) |
 | Handlebars templates | 187 | 0 | 187 (codemod + manual) |
 | LESS stylesheets | 21 | 0 | 21 (keep as Vite entry points) |
-| Vue components | 8 | 94 (incl. 64 placeholders) | Real views pending |
-| Vue composables | 0 | 4 (+useDialog.ts) | — |
+| Vue components | 8 | 104 (incl. 64 placeholders + 5 auth components) | Real views pending |
+| Vue composables | 0 | 5 (+useDialog, useLogin) | — |
 | Vue services | 7 | 20 (+authN, dashboard, kba, selfService, session, token, uma, user) | — |
 | Vue types | 3 | 5 (+uma.d.ts, user.d.ts) | — |
 | Vue router routes | 0 | 90 named | — |
-| Test files | 9 | 21 (177 tests) | New tests for composables/guards/layouts |
+| Test files | 9 | 24 (223 tests) | New tests for composables/guards/layouts |
 
 ## Key Dependencies
 

@@ -23,6 +23,7 @@ const PasswordResetView = () => import('@/views/user/PasswordResetView.vue');
 const SelfRegistrationView = () => import('@/views/user/SelfRegistrationView.vue');
 const ContinuePasswordResetView = () => import('@/views/user/ContinuePasswordResetView.vue');
 const ContinueSelfRegisterView = () => import('@/views/user/ContinueSelfRegisterView.vue');
+const LoginView = () => import('@/views/user/LoginView.vue');
 const ConfirmLoginView = () => import('@/views/user/ConfirmLoginView.vue');
 const LoggedOutView = () => import('@/views/user/LoggedOutView.vue');
 const LoginFailureView = () => import('@/views/user/LoginFailureView.vue');
@@ -126,14 +127,11 @@ const routes: RouteRecordRaw[] = [
     component: DefaultView,
   },
 
-  // ── Login redirect (Backbone handles login) ───────────────────
+  // ── Login ─────────────────────────────────────────────────────
   {
-    path: '/login/:realm?/:additionalParams?',
+    path: '/login',
     name: 'login',
-    beforeEnter() {
-      window.location.href = '/';
-    },
-    component: DefaultView,
+    component: LoginView,
   },
 
   // ── Logout (standalone service handles it) ────────────────────
@@ -200,7 +198,6 @@ const routes: RouteRecordRaw[] = [
     path: '/confirmLogin',
     name: 'confirmLogin',
     component: ConfirmLoginView,
-    meta: { roles: ['ui-user'] },
   },
   {
     path: '/loggedOut/:realm?/:additionalParams?',

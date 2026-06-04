@@ -1,20 +1,27 @@
 <template>
-  <div class="placeholder-view">
-    <h2>{{ title }}</h2>
-    <div class="alert alert-info">
-      <i class="fa fa-info-circle"></i>
-      Not yet migrated to Vue.
-      <template v-if="view">
-        <br />
-        <small>Backbone view: <code>{{ view }}</code></small>
-      </template>
-    </div>
-  </div>
+  <ReturnToLoginBase :title="title" :params="params" />
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
+import ReturnToLoginBase from '@/components/auth/ReturnToLoginBase.vue';
+import { useLogin } from '@/composables/useLogin';
 
-const title = 'Login Failure';
-const view = 'openam/ui/user/login/LoginFailureView';
+const { t } = useI18n();
+const route = useRoute();
+const login = useLogin();
+
+const title = ref(t('openam.authentication.unavailable') || 'Login Unavailable');
+const params = ref('');
+
+onMounted(() => {
+  login.removeAuthIdCookie();
+  const paramsObj = route.query;
+  const paramStr = Object.entries(paramsObj)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+  params.value = paramStr ? `&${paramStr}` : '';
+});
 </script>

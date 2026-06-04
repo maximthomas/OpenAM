@@ -3,6 +3,14 @@
 > Guidance for AI agents and contributors working in the `openam-ui` module of
 > [OpenIdentityPlatform/OpenAM](https://github.com/OpenIdentityPlatform/OpenAM/tree/master/openam-ui).
 
+
+---
+
+## Work Rules
+- Work on one feature at a time
+- Only start the next feature after the current one passes end-to-end verification
+- Don't "also refactor" feature B while implementing feature A
+
 ---
 
 ## Module Overview
@@ -88,3 +96,4 @@ Load the relevant file for your task:
 - [RequireJS optimiser (r.js)](https://requirejs.org/docs/optimization.html)
 - [Karma test runner](https://karma-runner.github.io)
 - License: [CDDL-1.0](https://github.com/OpenIdentityPlatform/OpenAM/blob/master/LICENSE.md)
+

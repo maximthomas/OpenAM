@@ -37,13 +37,8 @@ export function createDefaultRouteGuard() {
   ) => {
     const { isAuthenticated, hasRole, initialized } = useAuth();
 
-    if (!initialized.value) {
-      window.location.href = '/';
-      return;
-    }
-
-    if (!isAuthenticated.value) {
-      window.location.href = '/';
+    if (!initialized.value || !isAuthenticated.value) {
+      next({ name: 'login' });
       return;
     }
 

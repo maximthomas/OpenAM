@@ -165,6 +165,14 @@ function buildLandingHtml() {
     <li><a href="/authorize/error-with-uri">/authorize/error-with-uri</a> — Error with help link</li>
   </ul>
 
+  <h2>Login Flow Scenarios</h2>
+  <ul>
+    <li><a href="/#/login">/#/login</a> — Login form (mock DataStore1 stage)</li>
+    <li><a href="/#/loggedOut">/#/loggedOut</a> — Logged out page</li>
+    <li><a href="/#/failedLogin">/#/failedLogin</a> — Login failure page</li>
+    <li><a href="/#/sessionExpired">/#/sessionExpired</a> — Session expired page</li>
+  </ul>
+
   <h2>Diagnostics</h2>
   <ul>
     <li><a href="/test">/test</a> — Run test suite (JSON report)</li>
@@ -221,6 +229,109 @@ const MOCK_API_RESPONSES = {
     callbacks: [],
   },
 };
+
+const MOCK_AUTH_STATE = {
+  authId: null,
+  stage: 0,
+};
+
+function buildMockAuthenticateResponse(body) {
+  const authId = MOCK_AUTH_STATE.authId;
+
+  if (authId && body && body.authId === authId) {
+    MOCK_AUTH_STATE.authId = null;
+    MOCK_AUTH_STATE.stage = 0;
+    return {
+      tokenId: 'mock-session-token-' + Date.now(),
+      realm: '/',
+      successUrl: '/openam/console',
+    };
+  }
+
+  if (!authId) {
+    MOCK_AUTH_STATE.authId = 'mock-auth-id-' + Date.now();
+    MOCK_AUTH_STATE.stage = 1;
+    return {
+      authId: MOCK_AUTH_STATE.authId,
+      realm: '/',
+      stage: 'DataStore1',
+      callbacks: [
+        {
+          type: 'TextInputCallback',
+          output: [{ name: 'prompt', value: 'User Name' }],
+          input: [{ name: 'input', value: '' }],
+        },
+        {
+          type: 'PasswordCallback',
+          output: [{ name: 'prompt', value: 'Password' }],
+          input: [{ name: 'password', value: '' }],
+        },
+        {
+          type: 'ConfirmationCallback',
+          output: [
+            { name: 'prompt', value: '' },
+            { name: 'options', value: ['Login'] },
+            { name: 'optionType', value: 0 },
+            { name: 'defaultOption', value: 0 },
+            { name: 'value', value: false },
+          ],
+          input: [{ name: 'loginButton', value: 0 }],
+        },
+      ],
+    };
+  }
+
+  return {
+    authId: MOCK_AUTH_STATE.authId,
+    realm: '/',
+    stage: 'DataStore1',
+    callbacks: [
+      {
+        type: 'TextInputCallback',
+        output: [{ name: 'prompt', value: 'User Name' }],
+        input: [{ name: 'input', value: '' }],
+      },
+      {
+        type: 'PasswordCallback',
+        output: [{ name: 'prompt', value: 'Password' }],
+        input: [{ name: 'password', value: '' }],
+      },
+      {
+        type: 'ConfirmationCallback',
+        output: [
+          { name: 'prompt', value: '' },
+          { name: 'options', value: ['Login'] },
+          { name: 'optionType', value: 0 },
+          { name: 'defaultOption', value: 0 },
+          { name: 'value', value: false },
+        ],
+        input: [{ name: 'loginButton', value: 0 }],
+      },
+    ],
+  };
+}
+
+function buildMockServerInfoResponse() {
+  return {
+    cookieName: 'iPlanetDirectoryPro',
+    cookieDomains: ['localhost'],
+    cookieSameSite: 'none',
+    secureCookie: false,
+    zeroPageLogin: { enabled: false, allowedWithoutReferer: false, refererWhitelist: [] },
+    forgotPassword: 'true',
+    forgotUsername: 'true',
+    selfRegistration: 'true',
+    socialImplementations: [],
+  };
+}
+
+function buildMockSessionInfoResponse() {
+  return {
+    username: 'demo',
+    realm: '/',
+    sessionHandle: 'mock-handle',
+  };
+}
 
 // Vite plugin that injects mock middleware BEFORE Vite's internal middleware
 function mockDataPlugin() {
@@ -329,8 +440,59 @@ function mockDataPlugin() {
         }
 
         // Mock REST API
-        if (pathname.startsWith('/openam/json/') && method === 'GET') {
-          const mockData = MOCK_API_RESPONSES[pathname] || {};
+        if (pathname.startsWith('/openam/json/') && (method === 'GET' || method === 'POST')) {
+          let mockData = MOCK_API_RESPONSES[pathname] || {};
+
+          if (pathname === '/openam/json/authenticate' && method === 'POST') {
+            let body = '';
+            req.on('data', (chunk) => { body += chunk; });
+            req.on('end', () => {
+              try {
+                const parsed = body ? JSON.parse(body) : {};
+                mockData = buildMockAuthenticateResponse(parsed);
+              } catch {
+                mockData = buildMockAuthenticateResponse(null);
+              }
+              const responseBody = JSON.stringify(mockData);
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              res.end(responseBody);
+              logReq(method, pathname, 200, Date.now() - start);
+            });
+            return;
+          }
+
+          if (pathname === '/openam/json/serverinfo/*' && method === 'GET') {
+            mockData = buildMockServerInfoResponse();
+            const responseBody = JSON.stringify(mockData);
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(responseBody);
+            logReq(method, pathname, 200, Date.now() - start);
+            return;
+          }
+
+          if (pathname === '/openam/json/sessions' && method === 'POST') {
+            mockData = buildMockSessionInfoResponse();
+            const responseBody = JSON.stringify(mockData);
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(responseBody);
+            logReq(method, pathname, 200, Date.now() - start);
+            return;
+          }
+
+          if (pathname.startsWith('/openam/json/users') && method === 'POST') {
+            mockData = {
+              username: 'demo',
+              realm: '/',
+              roles: ['ui-user'],
+              uiroles: ['ui-user'],
+            };
+            const responseBody = JSON.stringify(mockData);
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(responseBody);
+            logReq(method, pathname, 200, Date.now() - start);
+            return;
+          }
+
           const body = JSON.stringify(mockData);
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.end(body);
@@ -377,6 +539,7 @@ async function createViteServer(port) {
   console.log(`  http://localhost:${listenPort}/device/error`);
   console.log(`  http://localhost:${listenPort}/authorize/consent`);
   console.log(`  http://localhost:${listenPort}/authorize/error`);
+  console.log(`  http://localhost:${listenPort}/#/login`);
   console.log(`  http://localhost:${listenPort}/test`);
   console.log('');
   console.log('  Source maps active — DevTools shows original .vue/.ts files');

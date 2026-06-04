@@ -164,17 +164,25 @@
     - id: 3-3b
       description: login flow
       details: |
-        Migrate 8 login-related files. Created composables/useLogin.ts (session detection,
-        zero-page login, auto-login, gotoURL resolution). Created components/auth/LoginCallback.vue
-        (single component with v-if chain for 10 callback types: Password, TextInput,
-        TextOutput, ScriptTextOutput, Confirmation, Choice, HiddenValue, Redirect,
-        PollingWait, Default). Stage-specific templates (WebAuthn, ReCaptcha, QRnull)
-        remain as separate components. Created views/user/LoginView.vue (phase-based
-        rendering via useLogin state machine: initializing/form/polling/redirecting/error).
-        Created views/user/LoginDialog.vue (ConfirmDialog wrapper with own useLogin instance).
+        Migrated 8 login-related files. Created composables/useLogin.ts (state machine
+        with phase-based rendering: initializing/form/submitting/polling/redirecting/error/success,
+        session detection via authId cookie, zero-page login, gotoURL resolution,
+        auto-login, synthetic ConfirmationCallback injection, cookie management).
+        Created components/auth/LoginCallback.vue (v-if chain for 10 callback types:
+        Password, TextInput, TextOutput, ScriptTextOutput, Confirmation, Choice,
+        HiddenValue, Redirect, PollingWait, Default). Created stage-specific components:
+        WebAuthnStage.vue, QRStage.vue, ReCaptchaStage.vue. Created
+        components/auth/ReturnToLoginBase.vue (shared layout for session lifecycle views).
+        Created views/user/LoginView.vue (phase-based rendering via useLogin state machine,
+        LoginHeader/Footer, self-service links, social auth, remember login cookie,
+        form data via reactive objects with v-model). Created views/user/LoginDialog.vue
+        (ConfirmDialog wrapper with own useLogin instance for background re-auth).
         Replaced stubs: LoggedOutView, SessionExpiredView, ConfirmLoginView, LoginFailureView.
-        Form data uses reactive objects with v-model (replaces form2js). Tests: ~40 cases.
-      status: pending
+        Updated router/index.ts with LoginView and query param format (#/login?service=LDAP&goto=/home).
+        Expanded config.ts with AuthConfig interface. Updated guards.ts for login redirect.
+        Expanded mock server with login scenarios (begin, submit, session, serverinfo, user profile).
+        Tests: 46 cases across 3 files (useLogin.test.ts: 22, LoginCallback.test.ts: 15, LoginView.test.ts: 9).
+      status: complete
 
     - id: 3-3c
       description: user profile

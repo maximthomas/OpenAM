@@ -4,7 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Active migration (read before architectural work)
 
-This module is being migrated off RequireJS/Backbone/Grunt onto a modern React/Vite/TypeScript stack via an **incremental strangler-fig** (new app at `/EUI`, legacy at `/XUI`, side by side). **Before making architectural changes or starting new feature work, read [`docs/migration/context.md`](docs/migration/context.md)**, then `docs/migration/tasks.yml` (status), `docs/migration/route-ownership.yml` (what's migrated), and the ADRs in `docs/migration/decisions/`. The full plan is in [`MIGRATION.md`](MIGRATION.md). Net direction: new code is React 19 + Vite + TS (strict) + react-router 7 + TanStack Query + react-bootstrap/Sass + Vitest; **no new Backbone/RequireJS/jQuery/Redux**. (The sibling `openam-ui-js-sdk` module is an independent example — not a template; do not copy or depend on it.)
+This module is being migrated off RequireJS/Backbone/Grunt onto a modern React/Vite/TypeScript stack via an **incremental strangler-fig** (new app at `/EUI`, legacy at `/XUI`, side by side). Net direction: new code is React 19 + Vite + TS (strict) + react-router 7 + TanStack Query + react-bootstrap/Sass + Vitest; **no new Backbone/RequireJS/jQuery/Redux**. (The sibling `openam-ui-js-sdk` module is an independent example — not a template; do not copy or depend on it.)
+
+**Before architectural changes or new feature work, load docs on demand — do not bulk-read everything:**
+
+- **Always read first (usually all you need):** [`docs/migration/context.md`](docs/migration/context.md) — the digest; it already summarizes the locked decisions.
+- **Then load only the one doc your task needs:**
+  - Changing/deep-diving a specific decision → consult [`docs/migration/decisions/README.md`](docs/migration/decisions/README.md) (one line per ADR) to pick, then read **only that ADR file**.
+  - Scoping a slice / checking what's already migrated → `docs/migration/route-ownership.yml`.
+  - Current status / picking the next task → `docs/migration/tasks.yml`.
+  - The full roadmap & phasing → [`MIGRATION.md`](MIGRATION.md) (rarely; context.md + the relevant ADR normally suffice).
+- **Do not** bulk-read `tasks.yml`, `MIGRATION.md`, or all ADRs "just in case" — they are large and mostly redundant with `context.md`.
 
 **Migration skills** (in `openam-ui/.claude/skills/`): use **`migrate-slice`** to port a route/feature from legacy XUI to the new EUI app (full strangler loop), and **`scaffold-eui`** when writing any new EUI/commons-ui-next code (enforces the stack conventions). The new app is its own Maven module `openam-ui/openam-ui-eui` (ADR-0009).
 

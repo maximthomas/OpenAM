@@ -2,6 +2,8 @@
 
 Each ADR captures one locked decision, its context, and trade-offs. To change a decision, add a new ADR that **supersedes** the old one (mark the old `Superseded by ADR-NNNN`) — don't silently diverge.
 
+Use the table below to load **only** the ADR you need; don't read all ten (`context.md` already summarizes the gist).
+
 | ADR | Decision | Status |
 |-----|----------|--------|
 | [0001](0001-incremental-strangler-fig.md) | Incremental strangler-fig migration | Accepted |

@@ -12,7 +12,8 @@ Living source of truth for migrating `openam-ui-ria` (XUI) from RequireJS/Backbo
 | [`glossary.md`](glossary.md) | Domain/stack terms (XUI, Commons UI, realm, rjsf, strangler-fig, …) |
 
 ## How to use this across sessions
-1. Read `context.md` and `tasks.yml` first.
-2. Check `route-ownership.yml` to see what's already migrated.
-3. Consult the relevant ADR before changing an architectural choice — if you change one, supersede the ADR, don't silently diverge.
+Load on demand — don't bulk-read everything:
+1. Read `context.md` first; it's the digest and usually all you need.
+2. Then load **only** the doc your task calls for: `route-ownership.yml` to scope a slice / see what's migrated; `tasks.yml` for status or picking the next task; a **single** ADR (pick via [`decisions/README.md`](decisions/README.md)) before changing an architectural choice; `../../MIGRATION.md` only for the full roadmap.
+3. If you change an architectural choice, supersede the ADR — don't silently diverge.
 4. Update `tasks.yml` status and `route-ownership.yml` as slices land.

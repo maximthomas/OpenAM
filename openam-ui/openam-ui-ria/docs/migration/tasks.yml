@@ -1,0 +1,194 @@
+# XUI migration task tracker.
+# status: todo | in_progress | blocked | done
+# Update this file as work lands. Keep route-ownership.yml in sync.
+meta:
+  project: openam-ui-ria (XUI) modernization
+  approach: incremental strangler-fig
+  new_mount: /EUI
+  legacy_mount: /XUI
+  decisions: docs/migration/decisions
+
+phases:
+  - id: phase-0
+    name: Foundation (the rails)
+    status: todo
+    tasks:
+      - id: P0-0
+        title: Create openam-ui-eui Maven module + npm workspace at openam-ui/
+        detail: >-
+          New module openam-ui/openam-ui-eui (sibling to openam-ui-ria), added to the openam-ui reactor.
+          New openam-ui/package.json workspace root with members openam-ui-eui + commons-ui-next (ADR-0009).
+        status: todo
+      - id: P0-1
+        title: Scaffold the eui app (Vite 7 + React 19 + TS strict + react-router 7 + Vitest + ESLint 9)
+        detail: >-
+          App name "eui" inside openam-ui-eui. Scaffold fresh from the standard Vite React-TS template;
+          do not copy another module. PATH-RELOCATABLE: Vite base relative/injected (not hardcoded /EUI);
+          react-router basename from runtime config; no absolute /EUI URLs. Same build serves /EUI then /XUI (ADR-0004).
+        depends_on: [P0-0]
+        status: todo
+      - id: P0-2
+        title: Create commons-ui-next workspace package skeleton
+        detail: name @openidentityplatform/commons-ui-next; workspace member; empty session/http/i18n/shell/routing modules
+        depends_on: [P0-0]
+        status: todo
+      - id: P0-3
+        title: Wire openam-ui-eui pom.xml — frontend-maven-plugin (vite build) + assembly into the packaged webapp at /EUI
+        detail: Keep the legacy openam-ui-ria Grunt build running in parallel
+        depends_on: [P0-0]
+        status: todo
+      - id: P0-4
+        title: Establish route-ownership map + CrossLink helper
+        depends_on: [P0-1]
+        status: todo
+      - id: P0-5
+        title: CI — eslint + vitest for the new app
+        depends_on: [P0-1]
+        status: todo
+      - id: P0-6
+        title: Audit who references /XUI URLs (AM config, OAuth2 redirect URIs, docs, integrations)
+        detail: Sizes the must-preserve vs best-effort set for the URL-compat map (ADR-0008)
+        status: todo
+      - id: P0-7
+        title: Shared mock AM-REST handlers (MSW) — single source of truth
+        detail: >-
+          ADR-0010. Model /json/authenticate callback flow, /json/serverinfo/*, /json/sessions to start;
+          grow per slice. Reused by Vitest, the EUI browser worker, and the standalone mock server.
+        depends_on: [P0-0]
+        status: todo
+      - id: P0-8
+        title: EUI browser mock mode — setupWorker + VITE_MOCK flag (npm run dev:mock)
+        detail: Run the new UI at /EUI in a browser with no OpenAM, against the P0-7 handlers (ADR-0010)
+        depends_on: [P0-1, P0-7]
+        status: todo
+      - id: P0-9
+        title: Standalone mock server + legacy XUI no-AM harness
+        detail: >-
+          @mswjs/http-middleware + tiny Node/Express server over the P0-7 handlers. Serve compiled XUI as
+          static assets and proxy AM calls to the mock — run the OLD UI in a browser with no OPENAM_HOME/Tomcat (ADR-0010).
+        depends_on: [P0-7]
+        status: todo
+
+  - id: phase-1
+    name: Login / auth slice (proves the pattern end-to-end)
+    status: todo
+    depends_on: [phase-0]
+    tasks:
+      - id: P1-1
+        title: SessionService — /json/authenticate callback flow, /json/sessions
+        status: todo
+      - id: P1-2
+        title: http client — realm path, CSRF/auth headers, error normalization
+        status: todo
+      - id: P1-3
+        title: i18n setup (i18next latest + react-i18next), migrate login locales
+        status: todo
+      - id: P1-4
+        title: Shell skeleton — header/footer/nav
+        status: todo
+      - id: P1-5
+        title: Migrate login — RESTLoginView + login dialog
+        depends_on: [P1-1, P1-2, P1-4]
+        status: todo
+      - id: P1-6
+        title: Migrate anonymousProcess — password reset, self-register, forgot username
+        depends_on: [P1-1, P1-2]
+        status: todo
+      - id: P1-7
+        title: Deploy /EUI side by side; legacy /XUI login redirects to /EUI/login
+        depends_on: [P1-5]
+        status: todo
+      - id: P1-8
+        title: Lock testing patterns (Vitest + Testing Library + MSW for AM REST)
+        status: todo
+      - id: P1-9
+        title: Route-compat/redirect map — start with auth URLs (legacy hash routes -> new routes)
+        detail: >-
+          ADR-0008. Map legacy /XUI hash routes (#login, password-reset/register/logout regexes)
+          to new routes; each later slice appends its mappings. Preserve query/fragment params.
+        depends_on: [P1-5]
+        status: todo
+
+  - id: phase-2
+    name: User self-service (~5.3k LOC)
+    status: todo
+    depends_on: [phase-1]
+    tasks:
+      - id: P2-1
+        title: Dashboard
+        status: todo
+      - id: P2-2
+        title: OAuth2 token views
+        status: todo
+      - id: P2-3
+        title: UMA sharing
+        status: todo
+      - id: P2-4
+        title: Profile / KBA (services/KBADelegate)
+        status: todo
+      - id: P2-5
+        title: "RISK GATE — rjsf vs jsoneditor gap analysis (do BEFORE phase-3)"
+        detail: Custom widgets, conditional schemas, inline validation. Build custom-widget set in commons-ui-next.
+        status: todo
+
+  - id: phase-3
+    name: Admin (~13.4k LOC — the bulk; split into shippable sub-slices)
+    status: todo
+    depends_on: [phase-2]
+    tasks:
+      - id: P3-1
+        title: Realms — list, create, overview
+        status: todo
+      - id: P3-2
+        title: Authentication — chains/modules/trees, services
+        status: todo
+      - id: P3-3
+        title: Applications / Agents (reuse existing .jsx), Data Stores
+        status: todo
+      - id: P3-4
+        title: Sessions (already React), Scripting (already React), API/OAuth2 views
+        status: todo
+      - id: P3-5
+        title: Global configuration + deployment
+        status: todo
+
+  - id: phase-4
+    name: Cutover & cleanup
+    status: todo
+    depends_on: [phase-3]
+    tasks:
+      - id: P4-1
+        title: Cutover — deploy new app build output to canonical /XUI; retire /EUI (or alias -> /XUI)
+        detail: One swap at the end. New build serves from /XUI unchanged (path-relocatable, P0-1).
+        status: todo
+      - id: P4-1b
+        title: Finalize URL-compat map — full legacy /XUI deep-link coverage verified
+        detail: ADR-0008. All must-preserve URLs from the P0-6 audit redirect correctly.
+        depends_on: [P4-1]
+        status: todo
+      - id: P4-2
+        title: Relocate migration docs (docs/migration) out of openam-ui-ria before deleting it
+        detail: Move into openam-ui-eui (or archive); they currently live in the legacy module
+        status: todo
+      - id: P4-3
+        title: Remove the legacy openam-ui-ria module — delete it from the openam-ui reactor and the repo
+        detail: >-
+          Per ADR-0009 teardown = delete the whole module (Backbone/Handlebars/RequireJS src, Grunt/r.js/Karma/Babel,
+          and the org.openidentityplatform.commons.ui:user dependency + target/ compose pipeline go with it).
+        depends_on: [P4-1, P4-2]
+        status: todo
+
+  - id: phase-5
+    name: Extract commons-ui-next upstream
+    status: todo
+    depends_on: [phase-4]
+    tasks:
+      - id: P5-1
+        title: Move commons-ui-next into the Open Identity Platform commons repo
+        status: todo
+      - id: P5-2
+        title: Publish it (npm package + optional Maven www zip)
+        status: todo
+      - id: P5-3
+        title: Flip the eui app import from workspace:* to the published version
+        status: todo

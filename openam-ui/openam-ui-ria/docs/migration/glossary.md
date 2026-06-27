@@ -1,0 +1,23 @@
+# Glossary — XUI migration
+
+- **XUI** — the OpenAM single-page UI in `openam-ui-ria`; legacy stack is RequireJS/Backbone/Grunt. Deployed under `/XUI`. Also the **final, canonical path** the new UI takes over at cutover.
+- **/EUI** — the **temporary** coexistence mount for the new app while legacy still owns `/XUI`. Retired at cutover (new app deployed to `/XUI`). Never hardcoded — the build is path-relocatable (ADR-0004).
+- **Path-relocatable build** — the new app's single build serves from `/EUI` then `/XUI` with no rebuild (Vite `base` relative/injected, react-router `basename` from runtime config).
+- **URL-compat / route-compat map** — translates legacy hash-routed `/XUI` deep links (`#login`, `#dashboard/`, password-reset/register regexes) to the new app's history routes so existing bookmarks/AM config/OAuth2 redirect URIs keep working (ADR-0008).
+- **Commons UI / forgerock-ui** — shared base UI from the Maven artifact `org.openidentityplatform.commons.ui:user`, unpacked at build time. Provides Router, EventManager, SessionManager, ProcessConfiguration, Constants, base views (`org/forgerock/commons/...`). XUI references 45 distinct modules from it.
+- **eui / openam-ui-eui** — the new app. Its own Maven module `openam-ui/openam-ui-eui` (sibling to `openam-ui-ria`), npm app name `eui`; replaces the old placeholder name `app-next` (ADR-0009).
+- **commons-ui-next** — the new modern replacement core (TypeScript) built in this migration as a workspace package (`@openidentityplatform/commons-ui-next`), consumed by `eui` via an npm workspace at `openam-ui/`; extracted to the commons repo later (ADR-0002).
+- **openam-ui-js-sdk** — sibling front-end module that happens to use a similar modern stack. Treated as an **independent example only** — not a template, reference, or dependency for this migration (ADR-0007).
+- **Strangler-fig** — incremental migration pattern: new app grows around the old one feature-by-feature until the old one can be deleted (ADR-0001).
+- **Route-ownership map** — `route-ownership.yml`; records which URLs are served by `/EUI` (new) vs `/XUI` (legacy).
+- **Realm** — AM tenant/partition; most admin URLs are realm-scoped (`realms/<realm>/...`) and REST calls carry realm context.
+- **iPlanetDirectoryPro** — AM's SSO session cookie; makes cross-app full-page handoff safe (ADR-0004).
+- **rjsf** — react-jsonschema-form; renders forms from JSON Schema. Replaces legacy `jsoneditor` (ADR-0006).
+- **jsoneditor** — legacy JSON-Schema form/editor library driving most admin config screens.
+- **backgrid** — legacy Backbone data-grid library; replaced by TanStack Table.
+- **TanStack Query** — server-state/data-fetching library for the new app (ADR-0005).
+- **MSW** — Mock Service Worker; intercepts fetch/XHR with handlers that model the AM REST contract. One handler set is the single source of truth across tests + both UIs' browser dev (ADR-0010).
+- **Mock AM server** — standalone Node/Express server (`@mswjs/http-middleware`) exposing the MSW handlers over real HTTP; the legacy XUI proxies to it to run in-browser with no OpenAM (ADR-0010).
+- **`dev:mock`** — npm script that runs the new EUI in a browser against the in-page MSW worker — no OpenAM backend (ADR-0010).
+- **AMD** — Asynchronous Module Definition (RequireJS); legacy module format being replaced by ES modules.
+- **`.jsm`** — ES-module-authored source in the legacy tree, transpiled to AMD by the Grunt/Babel build.

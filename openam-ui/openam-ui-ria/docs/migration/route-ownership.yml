@@ -1,0 +1,83 @@
+# Strangler route-ownership map — the live source of truth for which app serves which URL.
+# Update on EVERY slice. Links crossing owner boundaries are full-page navigations
+# (the AM iPlanetDirectoryPro cookie keeps the session alive across the reload).
+#
+# owner: eui     -> new React/Vite app, served at TEMPORARY /EUI during coexistence
+# owner: xui     -> legacy RequireJS/Backbone app, served at /XUI
+# status: planned | in_progress | migrated
+#
+# NOTE: /EUI is temporary. At cutover the new app is deployed to the canonical /XUI and
+# legacy is deleted (ADR-0004). Legacy /XUI deep-link URLs are preserved via a route-compat
+# map (ADR-0008). The new build is path-relocatable, so the same build serves /EUI then /XUI.
+
+mounts:
+  eui: /EUI        # temporary (coexistence only)
+  xui: /XUI        # legacy now; new app's final home after cutover
+  final: /XUI      # canonical end-state path for the new UI
+
+routes:
+  # ---- Phase 1: login / auth ----
+  - path: login
+    owner: xui
+    status: planned
+    slice: phase-1
+  - path: passwordReset
+    owner: xui
+    status: planned
+    slice: phase-1
+  - path: register            # self-registration
+    owner: xui
+    status: planned
+    slice: phase-1
+  - path: forgotUsername
+    owner: xui
+    status: planned
+    slice: phase-1
+
+  # ---- Phase 2: user self-service ----
+  - path: dashboard
+    owner: xui
+    status: planned
+    slice: phase-2
+  - path: uma
+    owner: xui
+    status: planned
+    slice: phase-2
+  - path: profile
+    owner: xui
+    status: planned
+    slice: phase-2
+  - path: oauth2/tokens
+    owner: xui
+    status: planned
+    slice: phase-2
+
+  # ---- Phase 3: admin (sub-slices) ----
+  - path: realms
+    owner: xui
+    status: planned
+    slice: phase-3
+  - path: realms/*/authentication
+    owner: xui
+    status: planned
+    slice: phase-3
+  - path: realms/*/applications
+    owner: xui
+    status: planned
+    slice: phase-3
+  - path: realms/*/sessions
+    owner: xui
+    status: planned
+    slice: phase-3
+  - path: realms/*/scripts
+    owner: xui
+    status: planned
+    slice: phase-3
+  - path: configuration        # global configuration
+    owner: xui
+    status: planned
+    slice: phase-3
+  - path: deployment
+    owner: xui
+    status: planned
+    slice: phase-3

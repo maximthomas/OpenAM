@@ -31,7 +31,7 @@ phases:
         title: Create commons-ui-next workspace package skeleton
         detail: name @openidentityplatform/commons-ui-next; workspace member; empty session/http/i18n/shell/routing modules
         depends_on: [P0-0]
-        status: todo
+        status: done
       - id: P0-3
         title: Wire openam-ui-eui pom.xml — frontend-maven-plugin (vite build) + assembly into the packaged webapp at /EUI
         detail: Keep the legacy openam-ui-ria Grunt build running in parallel

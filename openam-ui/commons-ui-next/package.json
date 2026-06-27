@@ -1,5 +1,30 @@
 {
   "name": "@openidentityplatform/commons-ui-next",
+  "version": "0.0.0",
   "private": true,
-  "version": "0.0.0"
+  "type": "module",
+  "description": "Reusable, app-agnostic UI primitives for the OpenAM EUI (session, http, i18n, shell, routing). No app-specific imports — extracted to the commons repo later (ADR-0002).",
+  "exports": {
+    "./session": "./src/session/index.ts",
+    "./http": "./src/http/index.ts",
+    "./i18n": "./src/i18n/index.ts",
+    "./shell": "./src/shell/index.ts",
+    "./routing": "./src/routing/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint ."
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/react": "^19.1.13",
+    "eslint": "^9.36.0",
+    "globals": "^16.4.0",
+    "react": "^19.2.0",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.44.0"
+  }
 }

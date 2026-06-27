@@ -1,0 +1,11 @@
+# Build / tooling output (this module is built by Vite + frontend-maven-plugin)
+node/
+node_modules/
+target/
+dist/
+
+# Local env overrides
+*.local
+
+# Logs
+npm-debug.log*

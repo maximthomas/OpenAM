@@ -26,7 +26,7 @@ phases:
           do not copy another module. PATH-RELOCATABLE: Vite base relative/injected (not hardcoded /EUI);
           react-router basename from runtime config; no absolute /EUI URLs. Same build serves /EUI then /XUI (ADR-0004).
         depends_on: [P0-0]
-        status: todo
+        status: done
       - id: P0-2
         title: Create commons-ui-next workspace package skeleton
         detail: name @openidentityplatform/commons-ui-next; workspace member; empty session/http/i18n/shell/routing modules

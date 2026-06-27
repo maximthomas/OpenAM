@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Canonical mount signal (ADR-0004). The host (OpenAM webapp) rewrites this href at deploy
+      time to the real mount — "/EUI/" now and "/XUI/" after cutover. It anchors BOTH the
+      relative asset URLs (Vite base './') and the react-router basename (src/config/runtime.ts),
+      so even a deep hard-load like /EUI/realms/edit resolves its assets against /EUI/. The
+      default "/" works for the dev server and mock mode. Must precede any relative URL below.
+    -->
+    <base href="/" />
+    <title>OpenAM EUI</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

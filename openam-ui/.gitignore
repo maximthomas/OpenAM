@@ -4,5 +4,4 @@ dist/
 
 npm-debug.log
 
-# npm workspace root (openam-ui-eui + commons-ui-next) — lockfile policy deferred to P0-1
-/package-lock.json
+# Root workspace lockfile (package-lock.json) IS committed for reproducible CI builds (P0-1).

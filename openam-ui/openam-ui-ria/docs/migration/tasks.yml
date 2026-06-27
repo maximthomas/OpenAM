@@ -45,10 +45,24 @@ phases:
         status: done
       - id: P0-4
         title: Establish route-ownership map + CrossLink helper
+        detail: >-
+          App-agnostic mechanism in commons-ui-next/routing (createCrossLinkResolver +
+          <CrossLink>/<CrossLinkProvider>, ADR-0002): same-app routes navigate in-app (react-router
+          Link, root-relative vs the runtime basename), other-owner routes are full-page <a> handoffs
+          to that app's mount (ADR-0004). App data (route-ownership map mirroring route-ownership.yml
+          + mounts) lives in openam-ui-eui/src/config/routeOwnership.ts, wired via the provider in
+          main.tsx. A Vitest sync test parses route-ownership.yml and fails on drift. All routes still
+          owner: xui (nothing migrated yet); slices flip entries. Precise legacy hash-URL formatting
+          deferred to the route-compat map (ADR-0008, P1-10).
         depends_on: [P0-1]
-        status: todo
+        status: done
       - id: P0-5
         title: CI — eslint + vitest for the new app
+        detail: >-
+          openam-ui-eui/pom.xml currently runs only the vite build (npm run build) — no test/lint
+          execution — so the P0-4 route-ownership drift guard and the other Vitest suites do NOT run in
+          the Maven/CI build. Add a frontend-maven-plugin npm execution bound to the test phase
+          (npm run test:run, plus npm run lint) so drift and regressions fail the build, not just local runs.
         depends_on: [P0-1]
         status: todo
       - id: P0-6

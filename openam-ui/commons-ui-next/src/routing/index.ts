@@ -15,8 +15,17 @@
  */
 
 /**
- * Routing primitives — path-relocatable helpers on top of react-router 7: runtime
- * basename resolution and the CrossLink helper for linking between the new (/EUI) and
- * legacy (/XUI) mounts without hardcoded prefixes (ADR-0004/0008). Implemented in P0-4.
+ * Routing primitives — path-relocatable helpers on top of react-router 7: the CrossLink helper for
+ * linking between the new (/EUI) and legacy (/XUI) mounts without hardcoded prefixes (ADR-0004/0008).
+ * App-agnostic: the consuming app supplies the route-ownership map and mount paths (ADR-0002).
  */
-export {}
+export type {
+  RouteOwnership,
+  MountMap,
+  CrossLinkConfig,
+  CrossLinkResolution,
+  CrossLinkResolver,
+} from './types'
+export { createCrossLinkResolver } from './resolver'
+export { CrossLink, CrossLinkProvider, useCrossLink } from './CrossLink'
+export type { CrossLinkProps } from './CrossLink'

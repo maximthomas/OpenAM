@@ -17,8 +17,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
+import { CrossLinkProvider, createCrossLinkResolver } from '@openidentityplatform/commons-ui-next/routing'
 import App from './App.tsx'
 import { getBasename } from './config/runtime.ts'
+import { mounts, routeOwnership } from './config/routeOwnership.ts'
 import './index.css'
 
 const rootElement = document.getElementById('root')
@@ -26,11 +28,21 @@ if (!rootElement) {
   throw new Error('EUI bootstrap failed: #root element not found')
 }
 
+// Resolves cross-app links against the route-ownership map: routes still owned by the legacy /XUI
+// app become full-page handoffs, migrated routes stay in-app (ADR-0004/0008).
+const crossLinkResolver = createCrossLinkResolver({
+  routes: routeOwnership,
+  mounts,
+  currentOwner: 'eui',
+})
+
 // basename is resolved at runtime so the same build is relocatable across /EUI and /XUI.
 createRoot(rootElement).render(
   <StrictMode>
     <BrowserRouter basename={getBasename()}>
-      <App />
+      <CrossLinkProvider resolver={crossLinkResolver}>
+        <App />
+      </CrossLinkProvider>
     </BrowserRouter>
   </StrictMode>,
 )

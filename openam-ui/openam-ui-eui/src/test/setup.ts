@@ -16,3 +16,13 @@
 
 // Extends Vitest's `expect` with @testing-library/jest-dom matchers (toBeInTheDocument, …).
 import '@testing-library/jest-dom/vitest'
+
+// Unmount React trees and reset the jsdom DOM after every test. Vitest is not configured with
+// `globals: true`, so Testing Library's auto-cleanup is not registered — wire it explicitly here,
+// otherwise renders from earlier tests accumulate and queries match duplicate elements.
+import { afterEach } from 'vitest'
+import { cleanup } from '@testing-library/react'
+
+afterEach(() => {
+  cleanup()
+})

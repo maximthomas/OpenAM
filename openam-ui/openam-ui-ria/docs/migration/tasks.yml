@@ -33,10 +33,16 @@ phases:
         depends_on: [P0-0]
         status: done
       - id: P0-3
-        title: Wire openam-ui-eui pom.xml — frontend-maven-plugin (vite build) + assembly into the packaged webapp at /EUI
-        detail: Keep the legacy openam-ui-ria Grunt build running in parallel
-        depends_on: [P0-0]
-        status: todo
+        title: Wire openam-ui-eui pom.xml — frontend-maven-plugin (vite build) + maven-assembly-plugin (zip dist as the attached artifact)
+        detail: >-
+          PRODUCER side only. Mirrors the openam-ui-ria producer pattern: frontend-maven-plugin runs
+          the vite build, then maven-assembly-plugin zips the dist and attaches it as the openam-ui-eui
+          module artifact. Does NOT touch any war/webapp. Keep the legacy openam-ui-ria Grunt build
+          running in parallel. The CONSUMER side (unpacking that artifact into the packaged war at /EUI)
+          lives in openam-server-only — a separate module, not in the openam-ui reactor — and is split
+          out to P1-7, deferred to phase-1.
+        depends_on: [P0-1]
+        status: done
       - id: P0-4
         title: Establish route-ownership map + CrossLink helper
         depends_on: [P0-1]
@@ -95,13 +101,26 @@ phases:
         depends_on: [P1-1, P1-2]
         status: todo
       - id: P1-7
-        title: Deploy /EUI side by side; legacy /XUI login redirects to /EUI/login
-        depends_on: [P1-5]
+        title: Wire openam-server-only — consume the openam-ui-eui artifact into the packaged war at /EUI
+        detail: >-
+          CONSUMER/war side, split from P0-3 (the producer). Lives in openam-server-only/pom.xml (a
+          separate module, NOT in the openam-ui reactor). Add the openam-ui-eui dependency,
+          maven-dependency-plugin:unpack into ${project.build.directory}/EUI, and a maven-war-plugin
+          <webResource> mapping target/EUI -> targetPath EUI. Mirrors the existing openam-ui-ria -> /XUI
+          wiring exactly; leaves /XUI untouched (true side-by-side). GATE (per the "migration works with
+          mock server" decision): do NOT make this production-war edit until the login slice (P1-5) is
+          validated against the mock server (P0-7 handlers + P0-8 dev:mock). Until then the eui artifact
+          is produced (P0-3) but not deployed into the server war.
+        depends_on: [P0-3, P1-5]
         status: todo
       - id: P1-8
-        title: Lock testing patterns (Vitest + Testing Library + MSW for AM REST)
+        title: Deploy /EUI side by side; legacy /XUI login redirects to /EUI/login
+        depends_on: [P1-7, P1-5]
         status: todo
       - id: P1-9
+        title: Lock testing patterns (Vitest + Testing Library + MSW for AM REST)
+        status: todo
+      - id: P1-10
         title: Route-compat/redirect map — start with auth URLs (legacy hash routes -> new routes)
         detail: >-
           ADR-0008. Map legacy /XUI hash routes (#login, password-reset/register/logout regexes)
@@ -161,21 +180,21 @@ phases:
         title: Cutover — deploy new app build output to canonical /XUI; retire /EUI (or alias -> /XUI)
         detail: One swap at the end. New build serves from /XUI unchanged (path-relocatable, P0-1).
         status: todo
-      - id: P4-1b
+      - id: P4-2
         title: Finalize URL-compat map — full legacy /XUI deep-link coverage verified
         detail: ADR-0008. All must-preserve URLs from the P0-6 audit redirect correctly.
         depends_on: [P4-1]
         status: todo
-      - id: P4-2
+      - id: P4-3
         title: Relocate migration docs (docs/migration) out of openam-ui-ria before deleting it
         detail: Move into openam-ui-eui (or archive); they currently live in the legacy module
         status: todo
-      - id: P4-3
+      - id: P4-4
         title: Remove the legacy openam-ui-ria module — delete it from the openam-ui reactor and the repo
         detail: >-
           Per ADR-0009 teardown = delete the whole module (Backbone/Handlebars/RequireJS src, Grunt/r.js/Karma/Babel,
           and the org.openidentityplatform.commons.ui:user dependency + target/ compose pipeline go with it).
-        depends_on: [P4-1, P4-2]
+        depends_on: [P4-1, P4-3]
         status: todo
 
   - id: phase-5

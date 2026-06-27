@@ -3,7 +3,7 @@
 Status: Accepted · Date: 2026-06-27
 
 ## Context
-Developing and testing either UI normally requires a running OpenAM (Java/Tomcat) backend — slow to start, heavy, and stateful. We want to run **both** the legacy XUI (`/XUI`) and the new EUI (`/EUI`) **in a browser with no OpenAM**, for fast inner-loop dev, deterministic UI tests, and demos. MSW (Mock Service Worker) is already the mock layer for the new app's Vitest tests (ADR-0005 testing, tasks P1-8), so the AM REST contract can be modeled once and reused everywhere.
+Developing and testing either UI normally requires a running OpenAM (Java/Tomcat) backend — slow to start, heavy, and stateful. We want to run **both** the legacy XUI (`/XUI`) and the new EUI (`/EUI`) **in a browser with no OpenAM**, for fast inner-loop dev, deterministic UI tests, and demos. MSW (Mock Service Worker) is already the mock layer for the new app's Vitest tests (ADR-0005 testing, tasks P1-9), so the AM REST contract can be modeled once and reused everywhere.
 
 ## Decision
 Model the AM REST surface **once** as a set of **MSW request handlers** (the single source of truth): the authenticate callback flow (`/json/authenticate`), `/json/serverinfo/*`, `/json/sessions`, realm-scoped config CRUD, and the endpoints each migrated slice touches. Run those same handlers in **three modes**:

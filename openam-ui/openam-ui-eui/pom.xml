@@ -27,11 +27,71 @@
     <packaging>pom</packaging>
 
     <!--
-      P0-0 (XUI->EUI migration): module shell only. This is the new React/Vite/TS app
-      (app name "eui"), sibling to openam-ui-ria, per ADR-0009. The Vite scaffold (P0-1),
-      commons-ui-next package (P0-2) and the frontend-maven-plugin (vite build) + assembly
-      into the packaged webapp at /EUI (P0-3) are added by later phase-0 tasks. Kept as a
-      valid no-op pom so the reactor build stays green.
+      The new React/Vite/TS app (app name "eui"), sibling to openam-ui-ria, per ADR-0009.
+
+      P0-3 (XUI->EUI migration) — PRODUCER build only. Two stages, mirroring the openam-ui-ria
+      producer pattern:
+        1. frontend-maven-plugin runs `npm install` then `npm run build` (Vite) -> target/app.
+        2. maven-assembly-plugin zips target/app into the attached artifact
+           openam-ui-eui-${project.version}-www.zip (classifier "www", type "zip").
+      The CONSUMER side — unpacking that zip into the packaged war at /EUI, mirroring how
+      openam-server-only consumes openam-ui-ria's www zip into /XUI — is task P1-7, intentionally
+      NOT here: this build never touches the server war, so /EUI is added strictly side by side
+      (ADR-0009) and the legacy openam-ui-ria Grunt build keeps running in parallel, untouched.
+
+      NPM WORKSPACE NOTE: eui is a member of the npm workspace rooted at openam-ui/ — its
+      @openidentityplatform/commons-ui-next dependency resolves to the sibling workspace member
+      (ADR-0002/0009). So node and `npm install` must run at the WORKSPACE ROOT (${project.basedir}/..
+      = openam-ui/), NOT in this module dir; otherwise npm would treat eui as a standalone project
+      and fail to resolve the unpublished commons-ui-next. The Vite build is then invoked with
+      `-w eui`, which runs with this module dir as cwd so Vite's outDir (target/app) lands here.
     -->
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.github.eirslett</groupId>
+                <artifactId>frontend-maven-plugin</artifactId>
+                <!-- Install node and run npm at the workspace root so the whole workspace
+                     (eui + commons-ui-next) installs and links as one. -->
+                <configuration>
+                    <installDirectory>${project.basedir}/..</installDirectory>
+                    <workingDirectory>${project.basedir}/..</workingDirectory>
+                </configuration>
+                <executions>
+                    <!-- install-node-and-npm (phase initialize) and npm-install (`npm install`,
+                         phase initialize) are inherited from the openam-ui parent pluginManagement;
+                         the workspace-root config above applies to them too. -->
+                    <execution>
+                        <id>npm-build</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>compile</phase>
+                        <configuration>
+                            <arguments>run build -w eui</arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>build-www-zip</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/main/assembly/zip.xml</descriptor>
+                            </descriptors>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>

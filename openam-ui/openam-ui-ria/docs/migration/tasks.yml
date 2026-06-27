@@ -11,14 +11,14 @@ meta:
 phases:
   - id: phase-0
     name: Foundation (the rails)
-    status: todo
+    status: in_progress
     tasks:
       - id: P0-0
         title: Create openam-ui-eui Maven module + npm workspace at openam-ui/
         detail: >-
           New module openam-ui/openam-ui-eui (sibling to openam-ui-ria), added to the openam-ui reactor.
           New openam-ui/package.json workspace root with members openam-ui-eui + commons-ui-next (ADR-0009).
-        status: todo
+        status: done
       - id: P0-1
         title: Scaffold the eui app (Vite 7 + React 19 + TS strict + react-router 7 + Vitest + ESLint 9)
         detail: >-

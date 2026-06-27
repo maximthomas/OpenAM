@@ -1,0 +1,8 @@
+{
+  "name": "openam-ui-workspace",
+  "private": true,
+  "workspaces": [
+    "openam-ui-eui",
+    "commons-ui-next"
+  ]
+}

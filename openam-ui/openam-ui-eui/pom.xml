@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ * The contents of this file are subject to the terms of the Common Development and
+ * Distribution License (the License). You may not use this file except in compliance with the
+ * License.
+ *
+ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+ * specific language governing permission and limitations under the License.
+ *
+ * When distributing Covered Software, include this CDDL Header Notice in each file and include
+ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+ * Header, with the fields enclosed by brackets [] replaced by your own identifying
+ * information: "Portions copyright [year] [name of copyright owner]".
+ *
+ * Portions copyright 2026 3A Systems LLC.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.openidentityplatform.openam</groupId>
+        <artifactId>openam-ui</artifactId>
+        <version>16.1.2-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>openam-ui-eui</artifactId>
+    <name>OpenAM UI EUI</name>
+    <packaging>pom</packaging>
+
+    <!--
+      P0-0 (XUI->EUI migration): module shell only. This is the new React/Vite/TS app
+      (app name "eui"), sibling to openam-ui-ria, per ADR-0009. The Vite scaffold (P0-1),
+      commons-ui-next package (P0-2) and the frontend-maven-plugin (vite build) + assembly
+      into the packaged webapp at /EUI (P0-3) are added by later phase-0 tasks. Kept as a
+      valid no-op pom so the reactor build stays green.
+    -->
+
+</project>

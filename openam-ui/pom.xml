@@ -35,6 +35,7 @@
         <module>openam-ui-ria</module>
         <module>openam-ui-api</module>
 		<module>openam-ui-js-sdk</module>
+		<module>openam-ui-eui</module>
     </modules>
     <build>
     		<plugins>

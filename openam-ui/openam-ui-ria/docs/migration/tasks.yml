@@ -98,7 +98,7 @@ phases:
     tasks:
       - id: P1-1
         title: SessionService — /json/authenticate callback flow, /json/sessions
-        status: todo
+        status: done
       - id: P1-2
         title: http client — realm path, CSRF/auth headers, error normalization
         status: todo

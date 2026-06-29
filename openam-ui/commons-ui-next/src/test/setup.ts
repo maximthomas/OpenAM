@@ -14,14 +14,22 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-export type { AmSessionInfo, AmLogoutResult } from './types.ts'
+import { afterAll, afterEach, beforeAll } from 'vitest'
+import { setupServer } from 'msw/node'
+import { handlers } from '../mock/index.ts'
+import { clearToken } from '../session/token.ts'
 
-export { getSessionInfo, isSessionValid, getTimeLeft, logout } from './sessions.ts'
+export const server = setupServer(...handlers)
 
-export { getToken, setToken, clearToken } from './token.ts'
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: 'warn' })
+})
 
-export { createSessionService } from './service.ts'
-export type { SessionService } from './service.ts'
+afterEach(() => {
+  server.resetHandlers()
+  clearToken()
+})
 
-export { createFetchTransport } from '../transport.ts'
-export type { Transport } from '../transport.ts'
+afterAll(() => {
+  server.close()
+})

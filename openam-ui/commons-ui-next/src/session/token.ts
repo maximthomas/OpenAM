@@ -14,14 +14,20 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-export type { AmSessionInfo, AmLogoutResult } from './types.ts'
+// Minimal in-memory session token holder. AM sets iPlanetDirectoryPro as an HttpOnly cookie
+// for cross-request persistence; we also keep it in memory so the new app can include
+// tokenId in /json/sessions query params. Full cookie/HttpOnly parity is deferred to P1-5.
 
-export { getSessionInfo, isSessionValid, getTimeLeft, logout } from './sessions.ts'
+let _token: string | undefined
 
-export { getToken, setToken, clearToken } from './token.ts'
+export function getToken(): string | undefined {
+  return _token
+}
 
-export { createSessionService } from './service.ts'
-export type { SessionService } from './service.ts'
+export function setToken(token: string): void {
+  _token = token
+}
 
-export { createFetchTransport } from '../transport.ts'
-export type { Transport } from '../transport.ts'
+export function clearToken(): void {
+  _token = undefined
+}

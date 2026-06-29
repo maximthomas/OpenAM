@@ -14,8 +14,6 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-// Auth/session types re-exported here so handlers and fixtures that import from this module
-// continue to work unchanged.
 export type {
   AmCallback,
   AmCallbackInput,
@@ -23,24 +21,17 @@ export type {
   AmAuthChallenge,
   AmAuthSuccess,
   AmAuthError,
-} from '../auth/types.ts'
+  AuthStep,
+} from './types.ts'
 
-export type { AmSessionInfo, AmLogoutResult } from '../session/types.ts'
+export {
+  startAuthentication,
+  submitCallbacks,
+  fillCallbacks,
+  setCallbackValue,
+  isAuthSuccess,
+  isAuthFailure,
+} from './authenticate.ts'
 
-export type AmServerInfo = {
-  domains: string[]
-  protectedUserAttributes: string[]
-  cookieName: string
-  secureCookie: boolean
-  forgotPassword: string
-  selfRegistration: string
-  lang: string
-  successfulUserRegistrationDestination: string
-  socialImplementations: string[]
-  referralsEnabled: string
-  zeroPageLoginAllowed: boolean
-  realm: string
-  xuiUserSessionValidationEnabled: boolean
-  FQDN: string
-  inplaceUpgrade: boolean
-}
+export { createFetchTransport } from '../transport.ts'
+export type { Transport } from '../transport.ts'

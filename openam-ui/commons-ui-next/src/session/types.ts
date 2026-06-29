@@ -14,33 +14,18 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-// Auth/session types re-exported here so handlers and fixtures that import from this module
-// continue to work unchanged.
-export type {
-  AmCallback,
-  AmCallbackInput,
-  AmCallbackOutput,
-  AmAuthChallenge,
-  AmAuthSuccess,
-  AmAuthError,
-} from '../auth/types.ts'
+// AM /json/sessions contract types.
 
-export type { AmSessionInfo, AmLogoutResult } from '../session/types.ts'
-
-export type AmServerInfo = {
-  domains: string[]
-  protectedUserAttributes: string[]
-  cookieName: string
-  secureCookie: boolean
-  forgotPassword: string
-  selfRegistration: string
-  lang: string
-  successfulUserRegistrationDestination: string
-  socialImplementations: string[]
-  referralsEnabled: string
-  zeroPageLoginAllowed: boolean
+export type AmSessionInfo = {
+  username: string
+  universalId: string
   realm: string
-  xuiUserSessionValidationEnabled: boolean
-  FQDN: string
-  inplaceUpgrade: boolean
+  latestAccessTime: string
+  maxSessionExpirationTime: string
+  maxIdleExpirationTime: string
+  properties: Record<string, string>
+}
+
+export type AmLogoutResult = {
+  result: boolean
 }

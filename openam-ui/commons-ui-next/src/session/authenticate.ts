@@ -14,14 +14,4 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-export type { AmSessionInfo, AmLogoutResult } from './types.ts'
-
-export { getSessionInfo, isSessionValid, getTimeLeft, logout } from './sessions.ts'
-
-export { getToken, setToken, clearToken } from './token.ts'
-
-export { createSessionService } from './service.ts'
-export type { SessionService } from './service.ts'
-
-export { createFetchTransport } from '../transport.ts'
-export type { Transport } from '../transport.ts'
+// Moved to src/auth/authenticate.ts.

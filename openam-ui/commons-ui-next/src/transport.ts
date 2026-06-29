@@ -14,14 +14,13 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-export type { AmSessionInfo, AmLogoutResult } from './types.ts'
+// Minimal transport seam shared by ./auth and ./session.
+// P1-2 replaces createFetchTransport with the real http client (realm path, CSRF headers,
+// error normalization) without touching auth/session logic.
 
-export { getSessionInfo, isSessionValid, getTimeLeft, logout } from './sessions.ts'
+export type Transport = (path: string, init?: RequestInit) => Promise<Response>
 
-export { getToken, setToken, clearToken } from './token.ts'
-
-export { createSessionService } from './service.ts'
-export type { SessionService } from './service.ts'
-
-export { createFetchTransport } from '../transport.ts'
-export type { Transport } from '../transport.ts'
+export function createFetchTransport(opts: { baseUrl: string }): Transport {
+  const base = opts.baseUrl.replace(/\/$/, '')
+  return (path, init) => fetch(`${base}/json${path}`, init)
+}

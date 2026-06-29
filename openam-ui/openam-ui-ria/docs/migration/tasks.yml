@@ -101,7 +101,7 @@ phases:
         status: done
       - id: P1-2
         title: http client — realm path, CSRF/auth headers, error normalization
-        status: todo
+        status: done
       - id: P1-3
         title: i18n setup (i18next latest + react-i18next), migrate login locales
         status: todo

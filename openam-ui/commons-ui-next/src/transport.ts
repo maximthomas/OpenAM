@@ -14,13 +14,13 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-// Minimal transport seam shared by ./auth and ./session.
-// P1-2 replaces createFetchTransport with the real http client (realm path, CSRF headers,
-// error normalization) without touching auth/session logic.
+// Transport seam shared by ./auth and ./session.
+// Real implementation lives in ./http/index.ts (P1-2).
+
+import { createAmTransport } from './http/index.ts'
 
 export type Transport = (path: string, init?: RequestInit) => Promise<Response>
 
 export function createFetchTransport(opts: { baseUrl: string }): Transport {
-  const base = opts.baseUrl.replace(/\/$/, '')
-  return (path, init) => fetch(`${base}/json${path}`, init)
+  return createAmTransport({ baseUrl: opts.baseUrl, realm: '/' })
 }

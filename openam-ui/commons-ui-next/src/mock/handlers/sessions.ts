@@ -24,33 +24,36 @@ function isValidToken(request: Request): boolean {
   return tokenId === DEMO_TOKEN_ID
 }
 
-export const sessionsHandlers: RequestHandler[] = [
-  http.get('*/json/sessions', ({ request }) => {
-    if (!isValidToken(request)) {
-      return HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'Invalid session' }, { status: 401 })
+function handleGet(request: Request): Response {
+  if (!isValidToken(request)) {
+    return HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'Invalid session' }, { status: 401 })
+  }
+  return HttpResponse.json(DEMO_SESSION)
+}
+
+function handleHead(request: Request): Response {
+  return isValidToken(request) ? new HttpResponse(null, { status: 200 }) : new HttpResponse(null, { status: 401 })
+}
+
+function handlePost(request: Request): Response {
+  const action = new URL(request.url).searchParams.get('_action')
+  if (action === 'getSessionInfo') {
+    const tokenId = new URL(request.url).searchParams.get('tokenId')
+    if (tokenId !== DEMO_TOKEN_ID) {
+      return HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'No valid session' }, { status: 401 })
     }
     return HttpResponse.json(DEMO_SESSION)
-  }),
+  }
+  return HttpResponse.json(LOGOUT_RESULT)
+}
 
-  http.head('*/json/sessions', ({ request }) => {
-    if (!isValidToken(request)) {
-      return new HttpResponse(null, { status: 401 })
-    }
-    return new HttpResponse(null, { status: 200 })
-  }),
+export const sessionsHandlers: RequestHandler[] = [
+  http.get('*/json/sessions', ({ request }) => handleGet(request)),
+  http.get('*/json/realms/root/sessions', ({ request }) => handleGet(request)),
 
-  http.post('*/json/sessions', ({ request }) => {
-    const action = new URL(request.url).searchParams.get('_action')
-    // getSessionInfo: used by the legacy XUI on bootstrap to check for an existing session.
-    // No valid token → 401 so the XUI falls through to the login screen.
-    if (action === 'getSessionInfo') {
-      const tokenId = new URL(request.url).searchParams.get('tokenId')
-      if (tokenId !== DEMO_TOKEN_ID) {
-        return HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'No valid session' }, { status: 401 })
-      }
-      return HttpResponse.json(DEMO_SESSION)
-    }
-    // Default: logout
-    return HttpResponse.json(LOGOUT_RESULT)
-  }),
+  http.head('*/json/sessions', ({ request }) => handleHead(request)),
+  http.head('*/json/realms/root/sessions', ({ request }) => handleHead(request)),
+
+  http.post('*/json/sessions', ({ request }) => handlePost(request)),
+  http.post('*/json/realms/root/sessions', ({ request }) => handlePost(request)),
 ]

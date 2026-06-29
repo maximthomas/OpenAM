@@ -14,9 +14,79 @@
  * Copyright 2026 3A Systems LLC.
  */
 
+import type { Transport } from '../transport.ts'
+
+export type { Transport }
+
 /**
- * HTTP client primitives — the single AM REST fetch client (realm path resolution,
- * CSRF / auth headers, error normalization) shared by every feature's TanStack Query
- * hooks (ADR-0005). Replaces the legacy Commons `ServiceInvoker`. Implemented in P1-2.
+ * Resolve the /json path segment for a given realm.
+ *
+ * realm: false  → ""                                (no realm prefix)
+ * realm: "/"    → "/realms/root"                    (root realm)
+ * realm: "/sub" → "/realms/root/realms/sub"         (absolute sub-realm)
+ * realm: "alias"→ "/realms/alias"                   (realm alias, no leading slash)
+ *
+ * Algorithm matches the legacy fetchUrl.jsm:
+ *   "/" is a special case → "/root"; all other absolute realms get "/root" prepended.
+ *   Then every "/" in that intermediate string is replaced with "/realms/".
  */
-export {}
+export function resolveRealmPath(realm: string | false, path: string): string {
+  if (realm === false) return path
+
+  let realmSegment: string
+  if (realm.startsWith('/')) {
+    const withRoot = realm === '/' ? '/root' : '/root' + realm
+    realmSegment = withRoot.replace(/\//g, '/realms/')
+  } else {
+    realmSegment = '/realms/' + realm
+  }
+
+  return realmSegment + path
+}
+
+export class AmApiError extends Error {
+  readonly status: number
+  readonly code: number
+  readonly reason: string
+
+  constructor(status: number, code: number, reason: string, message: string) {
+    super(message)
+    this.name = 'AmApiError'
+    this.status = status
+    this.code = code
+    this.reason = reason
+  }
+}
+
+/** Parse AM's { code, reason, message } error body into an AmApiError. */
+export async function parseAmError(res: Response): Promise<AmApiError> {
+  let body: { code?: number; reason?: string; message?: string } = {}
+  try {
+    body = (await res.json()) as typeof body
+  } catch {
+    // non-JSON body — fall through to defaults
+  }
+  return new AmApiError(
+    res.status,
+    body.code ?? res.status,
+    body.reason ?? res.statusText,
+    body.message ?? `AM request failed: ${res.status} ${res.statusText}`,
+  )
+}
+
+/**
+ * Real AM REST transport factory.
+ *
+ * Produces URLs: ${baseUrl}/json${resolvedRealm}${path}
+ * Always sends credentials (iPlanetDirectoryPro cookie).
+ * Returns the raw Response — callers own error handling.
+ */
+export function createAmTransport(opts: { baseUrl: string; realm?: string | false }): Transport {
+  const base = opts.baseUrl.replace(/\/$/, '')
+  const realm = opts.realm === undefined ? '/' : opts.realm
+
+  return (path, init) => {
+    const url = base + '/json' + resolveRealmPath(realm, path)
+    return fetch(url, { credentials: 'include', ...init })
+  }
+}

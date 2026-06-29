@@ -64,7 +64,7 @@ phases:
           the Maven/CI build. Add a frontend-maven-plugin npm execution bound to the test phase
           (npm run test:run, plus npm run lint) so drift and regressions fail the build, not just local runs.
         depends_on: [P0-1]
-        status: todo
+        status: done
       - id: P0-6
         title: Audit who references /XUI URLs (AM config, OAuth2 redirect URIs, docs, integrations)
         detail: Sizes the must-preserve vs best-effort set for the URL-compat map (ADR-0008)

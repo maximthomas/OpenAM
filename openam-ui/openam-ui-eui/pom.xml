@@ -72,6 +72,26 @@
                             <arguments>run build -w eui</arguments>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>npm-lint</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>test</phase>
+                        <configuration>
+                            <arguments>run lint -w eui</arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>npm-test</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>test</phase>
+                        <configuration>
+                            <arguments>run test:run -w eui</arguments>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>

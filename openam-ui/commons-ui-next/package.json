@@ -9,7 +9,8 @@
     "./http": "./src/http/index.ts",
     "./i18n": "./src/i18n/index.ts",
     "./shell": "./src/shell/index.ts",
-    "./routing": "./src/routing/index.ts"
+    "./routing": "./src/routing/index.ts",
+    "./mock": "./src/mock/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -24,6 +25,7 @@
     "@types/react": "^19.1.13",
     "eslint": "^9.36.0",
     "globals": "^16.4.0",
+    "msw": "^2.4.9",
     "react": "^19.2.0",
     "react-router": "^7.15.1",
     "typescript": "~5.8.3",

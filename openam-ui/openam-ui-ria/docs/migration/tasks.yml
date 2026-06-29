@@ -77,7 +77,7 @@ phases:
           ADR-0010. Model /json/authenticate callback flow, /json/serverinfo/*, /json/sessions to start;
           grow per slice. Reused by Vitest, the EUI browser worker, and the standalone mock server.
         depends_on: [P0-0]
-        status: todo
+        status: done
       - id: P0-8
         title: EUI browser mock mode — setupWorker + VITE_MOCK flag (npm run dev:mock)
         detail: Run the new UI at /EUI in a browser with no OpenAM, against the P0-7 handlers (ADR-0010)

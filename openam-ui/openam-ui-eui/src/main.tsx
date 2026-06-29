@@ -18,10 +18,13 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
 import { CrossLinkProvider, createCrossLinkResolver } from '@openidentityplatform/commons-ui-next/routing'
+import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commons-ui-next/i18n'
 import App from './App.tsx'
 import { getBasename } from './config/runtime.ts'
 import { mounts, routeOwnership } from './config/routeOwnership.ts'
 import './index.css'
+
+const i18n = createI18nInstance()
 
 const rootElement = document.getElementById('root')
 if (!rootElement) {
@@ -58,12 +61,14 @@ async function enableMocking(): Promise<void> {
 // basename is resolved at runtime so the same build is relocatable across /EUI and /XUI.
 void enableMocking().then(() => {
   createRoot(rootElement).render(
-    <StrictMode>
-      <BrowserRouter basename={getBasename()}>
-        <CrossLinkProvider resolver={crossLinkResolver}>
-          <App />
-        </CrossLinkProvider>
-      </BrowserRouter>
-    </StrictMode>,
+    <I18nextProvider i18n={i18n}>
+      <StrictMode>
+        <BrowserRouter basename={getBasename()}>
+          <CrossLinkProvider resolver={crossLinkResolver}>
+            <App />
+          </CrossLinkProvider>
+        </BrowserRouter>
+      </StrictMode>
+    </I18nextProvider>,
   )
 })

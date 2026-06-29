@@ -1,0 +1,66 @@
+{
+    "templates": {
+        "user": {
+            "LoginTemplate": {
+                "loginRemember": "Remember my username",
+                "noAccountQuestion": "Don't have an account?",
+                "registerAccount": "Register your account",
+                "problemLoggingQuestion": "Having trouble logging in?",
+                "socialAuthentication": "Or login with:",
+                "resetPassword": "Forgot Password?",
+                "forgotUsername": "Forgot Username?",
+                "waitingForResponse": "Waiting for response...",
+                "useRecoveryCode": "Use recovery code"
+            },
+            "SessionExpiredTemplate": {
+                "sessionExpired": "Your session expired."
+            },
+            "RestLogoutTemplate": {
+                "loggedOut": "You have been logged out."
+            }
+        }
+    },
+    "common": {
+        "user": {
+            "login": "Log in",
+            "loggedOutOfPreviousSite": "We have logged you out of the previous site.",
+            "logInToNewSite": "Log in to new site",
+            "username": "Username",
+            "password": "Password",
+            "forgotPassword": "Forgot password?"
+        },
+        "form": {
+            "submit": "Submit",
+            "cancel": "Cancel",
+            "ok": "OK",
+            "update": "Update",
+            "sessionExpired": "Session Expired"
+        }
+    },
+    "config": {
+        "messages": {
+            "CommonMessages": {
+                "authenticationFailed": "User name/password combination is invalid.",
+                "serviceUnavailable": "Service unavailable",
+                "unknown": "Unknown error. Please contact your Administrator",
+                "loggedIn": "You have been successfully logged in.",
+                "loggedOut": "You have been logged out.",
+                "loginTimeout": "Login processed timed out. Restarting...",
+                "unauthorized": "Unauthorized access",
+                "internalError": "Internal server error",
+                "forbiddenError": "Forbidden request error.",
+                "notFoundError": "Not found error.",
+                "badRequestError": "Bad request error."
+            }
+        }
+    },
+    "openam": {
+        "authentication": {
+            "input": {
+                "name": "Username",
+                "password": "Password"
+            },
+            "unavailable": "Unable to login to OpenAM"
+        }
+    }
+}

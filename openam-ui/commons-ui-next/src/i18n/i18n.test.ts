@@ -14,25 +14,19 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-export { useTranslation } from 'react-i18next'
-export { I18nextProvider } from 'react-i18next'
+import { describe, expect, it } from 'vitest'
+import { createI18nInstance } from './index.ts'
 
-import i18next from 'i18next'
-import { initReactI18next } from 'react-i18next'
-import translationEn from './locales/en/translation.json'
-
-const resources = {
-  en: { translation: translationEn },
-} as const
-
-export function createI18nInstance() {
-  const instance = i18next.createInstance()
-  void instance.use(initReactI18next).init({
-    resources,
-    lng: 'en',
-    fallbackLng: 'en',
-    defaultNS: 'translation',
-    interpolation: { escapeValue: false },
+describe('createI18nInstance', () => {
+  it('returns an initialized i18next instance', () => {
+    const i18n = createI18nInstance()
+    expect(i18n.isInitialized).toBe(true)
   })
-  return instance
-}
+
+  it('resolves login locale keys', () => {
+    const i18n = createI18nInstance()
+    expect(i18n.t('common.user.login')).toBe('Log in')
+    expect(i18n.t('templates.user.LoginTemplate.forgotUsername')).toBe('Forgot Username?')
+    expect(i18n.t('openam.authentication.unavailable')).toBe('Unable to login to OpenAM')
+  })
+})

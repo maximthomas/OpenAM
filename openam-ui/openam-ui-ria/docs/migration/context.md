@@ -32,7 +32,7 @@ Migrating `openam-ui-ria` (the OpenAM **XUI** SPA) off RequireJS/Backbone/Grunt 
 - Preserve the CDDL license header on files.
 
 ## Status
-See [`tasks.yml`](tasks.yml). At time of writing: **planning complete, no code scaffolded yet** — next concrete step is Phase 0 (create the `openam-ui-eui` module + `openam-ui/` npm workspace, scaffold the `eui` app + `commons-ui-next` from a fresh Vite + React + TS template).
+See [`tasks.yml`](tasks.yml). **Phase 0 is in progress**: P0-0 through P0-5 are done — the `openam-ui/openam-ui-eui` Maven module, the `openam-ui/` npm workspace, the `eui` app scaffold, the `commons-ui-next` package, the Maven build wiring, the route-ownership map + `<CrossLink>` helper, and CI lint/test are all in place. Remaining: P0-6 (URL audit), P0-7 (shared MSW handlers), P0-8 (EUI browser mock mode), P0-9 (standalone mock server + legacy XUI no-AM harness).
 
 ## Watch out for
 - **Final path is `/XUI`, not `/EUI`** — `/EUI` is only the coexistence mount. Never hardcode `/EUI` in the new app (Vite `base` relative/injected, react-router `basename` from runtime config). Legacy `/XUI` deep links (hash-routed: `#login`, `#dashboard/`, password-reset/register regexes) must keep resolving — build a route-compat/redirect map (ADR-0008).

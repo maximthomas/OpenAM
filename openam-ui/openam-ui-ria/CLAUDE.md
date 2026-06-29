@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This module is being migrated off RequireJS/Backbone/Grunt onto a modern React/Vite/TypeScript stack via an **incremental strangler-fig** (new app at `/EUI`, legacy at `/XUI`, side by side). Net direction: new code is React 19 + Vite + TS (strict) + react-router 7 + TanStack Query + react-bootstrap/Sass + Vitest; **no new Backbone/RequireJS/jQuery/Redux**. (The sibling `openam-ui-js-sdk` module is an independent example — not a template; do not copy or depend on it.)
 
+**Phase 0 is in progress (P0-0 through P0-5 done; P0-6 through P0-9 todo).** The following now exist: the `openam-ui/openam-ui-eui` Maven module + npm workspace at `openam-ui/` (P0-0), the `eui` app scaffold (P0-1), the `commons-ui-next` workspace package (P0-2), the Maven build wiring for `openam-ui-eui` (P0-3), the route-ownership map + `<CrossLink>` helper (P0-4), and CI lint/test for the new app (P0-5). Note: `docs/migration/context.md` still says "no code scaffolded yet" — that is **stale**; refer to `docs/migration/tasks.yml` for current status.
+
 **Before architectural changes or new feature work, load docs on demand — do not bulk-read everything:**
 
 - **Always read first (usually all you need):** [`docs/migration/context.md`](docs/migration/context.md) — the digest; it already summarizes the locked decisions.
@@ -14,7 +16,8 @@ This module is being migrated off RequireJS/Backbone/Grunt onto a modern React/V
   - Scoping a slice / checking what's already migrated → `docs/migration/route-ownership.yml`.
   - Current status / picking the next task → `docs/migration/tasks.yml`.
   - The full roadmap & phasing → [`MIGRATION.md`](MIGRATION.md) (rarely; context.md + the relevant ADR normally suffice).
-- **Do not** bulk-read `tasks.yml`, `MIGRATION.md`, or all ADRs "just in case" — they are large and mostly redundant with `context.md`.
+  - Building the route-compat/redirect map (P1-10) or verifying final URL coverage (P4-2) → `docs/migration/xui-url-audit.md`.
+- **Do not** bulk-read `tasks.yml`, `MIGRATION.md`, all ADRs, or `xui-url-audit.md` "just in case" — they are large and mostly redundant with `context.md`.
 
 **Migration skills** (in `openam-ui/.claude/skills/`): use **`migrate-slice`** to port a route/feature from legacy XUI to the new EUI app (full strangler loop), and **`scaffold-eui`** when writing any new EUI/commons-ui-next code (enforces the stack conventions). The new app is its own Maven module `openam-ui/openam-ui-eui` (ADR-0009).
 
@@ -25,6 +28,21 @@ This module is being migrated off RequireJS/Backbone/Grunt onto a modern React/V
 The app is layered on top of the shared **ForgeRock Commons UI** (`org.openidentityplatform.commons.ui:user`, a.k.a. `forgerock-ui-user` / `forgerock-ui-commons`), which is downloaded and unpacked at build time. Many core modules (`Router`, `EventManager`, `SessionManager`, `Constants`, base views) live in `org/forgerock/commons/...` and come from that dependency, not this repo. This repo's own code lives under `org/forgerock/openam/...`.
 
 ## Commands
+
+### New EUI app (`openam-ui/openam-ui-eui`)
+
+All commands run from `openam-ui/openam-ui-eui` (or use `-w eui` from the workspace root `openam-ui/`):
+
+- **Dev server:** `npm run dev`
+- **Production build:** `npm run build` (tsc + vite; output in `target/app/`)
+- **Lint:** `npm run lint`
+- **Type-check:** `npm run typecheck`
+- **Tests (watch):** `npm test`
+- **Tests (single run / CI):** `npm run test:run`
+
+The `commons-ui-next` package has no test runner — only `typecheck` and `lint` (run from `openam-ui/commons-ui-next`).
+
+### Legacy XUI (`openam-ui/openam-ui-ria`)
 
 All commands run from this directory (`openam-ui/openam-ui-ria`).
 

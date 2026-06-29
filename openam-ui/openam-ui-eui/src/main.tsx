@@ -36,13 +36,34 @@ const crossLinkResolver = createCrossLinkResolver({
   currentOwner: 'eui',
 })
 
+// Start the in-browser MSW worker before rendering when running under `npm run dev:mock`
+// (VITE_MOCK), so AM REST calls are intercepted from the first request (ADR-0010, P0-8). The
+// dynamic import keeps msw/browser + the mock handlers out of the production bundle: VITE_MOCK is
+// statically undefined in real builds, so this branch (and the import) are dead-code-eliminated.
+async function enableMocking(): Promise<void> {
+  if (!import.meta.env.VITE_MOCK) {
+    return
+  }
+  const { worker } = await import('./mocks/browser.ts')
+  await worker.start({
+    onUnhandledRequest(request, print) {
+      // Surface only un-mocked AM REST calls; let app assets / HMR / etc. pass through silently.
+      if (new URL(request.url).pathname.includes('/json/')) {
+        print.warning()
+      }
+    },
+  })
+}
+
 // basename is resolved at runtime so the same build is relocatable across /EUI and /XUI.
-createRoot(rootElement).render(
-  <StrictMode>
-    <BrowserRouter basename={getBasename()}>
-      <CrossLinkProvider resolver={crossLinkResolver}>
-        <App />
-      </CrossLinkProvider>
-    </BrowserRouter>
-  </StrictMode>,
-)
+void enableMocking().then(() => {
+  createRoot(rootElement).render(
+    <StrictMode>
+      <BrowserRouter basename={getBasename()}>
+        <CrossLinkProvider resolver={crossLinkResolver}>
+          <App />
+        </CrossLinkProvider>
+      </BrowserRouter>
+    </StrictMode>,
+  )
+})

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This module is being migrated off RequireJS/Backbone/Grunt onto a modern React/Vite/TypeScript stack via an **incremental strangler-fig** (new app at `/EUI`, legacy at `/XUI`, side by side). Net direction: new code is React 19 + Vite + TS (strict) + react-router 7 + TanStack Query + react-bootstrap/Sass + Vitest; **no new Backbone/RequireJS/jQuery/Redux**. (The sibling `openam-ui-js-sdk` module is an independent example — not a template; do not copy or depend on it.)
 
-**Phase 0 is in progress (P0-0 through P0-5 done; P0-6 through P0-9 todo).** The following now exist: the `openam-ui/openam-ui-eui` Maven module + npm workspace at `openam-ui/` (P0-0), the `eui` app scaffold (P0-1), the `commons-ui-next` workspace package (P0-2), the Maven build wiring for `openam-ui-eui` (P0-3), the route-ownership map + `<CrossLink>` helper (P0-4), and CI lint/test for the new app (P0-5). Note: `docs/migration/context.md` still says "no code scaffolded yet" — that is **stale**; refer to `docs/migration/tasks.yml` for current status.
+**Phase 0 is in progress (P0-0 through P0-8 done; P0-9 todo).** The following now exist: the `openam-ui/openam-ui-eui` Maven module + npm workspace at `openam-ui/` (P0-0), the `eui` app scaffold (P0-1), the `commons-ui-next` workspace package (P0-2), the Maven build wiring for `openam-ui-eui` (P0-3), the route-ownership map + `<CrossLink>` helper (P0-4), CI lint/test for the new app (P0-5), the `/XUI` URL audit (P0-6), the shared MSW AM-REST handlers in `commons-ui-next/src/mock` (P0-7), and the EUI browser mock mode `npm run dev:mock` (P0-8). Refer to `docs/migration/tasks.yml` for current status.
 
 **Before architectural changes or new feature work, load docs on demand — do not bulk-read everything:**
 
@@ -34,6 +34,7 @@ The app is layered on top of the shared **ForgeRock Commons UI** (`org.openident
 All commands run from `openam-ui/openam-ui-eui` (or use `-w eui` from the workspace root `openam-ui/`):
 
 - **Dev server:** `npm run dev`
+- **Dev server (no OpenAM, mock AM backend):** `npm run dev:mock` — runs the app against the shared MSW handlers via an in-browser service worker (ADR-0010, P0-8). `--mode mock` sets `VITE_MOCK`, which starts `src/mocks/browser.ts`. Mock code is gated behind a dynamic import, so it never reaches the production build.
 - **Production build:** `npm run build` (tsc + vite; output in `target/app/`)
 - **Lint:** `npm run lint`
 - **Type-check:** `npm run typecheck`

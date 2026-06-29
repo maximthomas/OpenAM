@@ -82,7 +82,7 @@ phases:
         title: EUI browser mock mode — setupWorker + VITE_MOCK flag (npm run dev:mock)
         detail: Run the new UI at /EUI in a browser with no OpenAM, against the P0-7 handlers (ADR-0010)
         depends_on: [P0-1, P0-7]
-        status: todo
+        status: done
       - id: P0-9
         title: Standalone mock server + legacy XUI no-AM harness
         detail: >-

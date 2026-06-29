@@ -32,7 +32,7 @@ Migrating `openam-ui-ria` (the OpenAM **XUI** SPA) off RequireJS/Backbone/Grunt 
 - Preserve the CDDL license header on files.
 
 ## Status
-See [`tasks.yml`](tasks.yml). **Phase 0 is in progress**: P0-0 through P0-8 are done — the `openam-ui/openam-ui-eui` Maven module, the `openam-ui/` npm workspace, the `eui` app scaffold, the `commons-ui-next` package, the Maven build wiring, the route-ownership map + `<CrossLink>` helper, CI lint/test, the `/XUI` URL audit, the shared MSW AM-REST handlers (`commons-ui-next/src/mock`), and the EUI browser mock mode (`npm run dev:mock`) are all in place. Remaining: P0-9 (standalone mock server + legacy XUI no-AM harness).
+See [`tasks.yml`](tasks.yml). **Phase 0 is complete** (P0-0 through P0-9 done): the `openam-ui/openam-ui-eui` Maven module, the `openam-ui/` npm workspace, the `eui` app scaffold, the `commons-ui-next` package, the Maven build wiring, the route-ownership map + `<CrossLink>` helper, CI lint/test, the `/XUI` URL audit, the shared MSW AM-REST handlers (`commons-ui-next/src/mock`), the EUI browser mock mode (`npm run dev:mock`), and the standalone mock server + legacy XUI no-AM harness (`npm run mock` / `npm run dev:xui`) are all in place. Next: Phase 1 (login slice).
 
 ## Watch out for
 - **Final path is `/XUI`, not `/EUI`** — `/EUI` is only the coexistence mount. Never hardcode `/EUI` in the new app (Vite `base` relative/injected, react-router `basename` from runtime config). Legacy `/XUI` deep links (hash-routed: `#login`, `#dashboard/`, password-reset/register regexes) must keep resolving — build a route-compat/redirect map (ADR-0008).

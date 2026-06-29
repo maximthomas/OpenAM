@@ -39,5 +39,18 @@ export const sessionsHandlers: RequestHandler[] = [
     return new HttpResponse(null, { status: 200 })
   }),
 
-  http.post('*/json/sessions', () => HttpResponse.json(LOGOUT_RESULT)),
+  http.post('*/json/sessions', ({ request }) => {
+    const action = new URL(request.url).searchParams.get('_action')
+    // getSessionInfo: used by the legacy XUI on bootstrap to check for an existing session.
+    // No valid token → 401 so the XUI falls through to the login screen.
+    if (action === 'getSessionInfo') {
+      const tokenId = new URL(request.url).searchParams.get('tokenId')
+      if (tokenId !== DEMO_TOKEN_ID) {
+        return HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'No valid session' }, { status: 401 })
+      }
+      return HttpResponse.json(DEMO_SESSION)
+    }
+    // Default: logout
+    return HttpResponse.json(LOGOUT_RESULT)
+  }),
 ]

@@ -11,7 +11,7 @@ meta:
 phases:
   - id: phase-0
     name: Foundation (the rails)
-    status: in_progress
+    status: done
     tasks:
       - id: P0-0
         title: Create openam-ui-eui Maven module + npm workspace at openam-ui/
@@ -89,7 +89,7 @@ phases:
           @mswjs/http-middleware + tiny Node/Express server over the P0-7 handlers. Serve compiled XUI as
           static assets and proxy AM calls to the mock — run the OLD UI in a browser with no OPENAM_HOME/Tomcat (ADR-0010).
         depends_on: [P0-7]
-        status: todo
+        status: done
 
   - id: phase-1
     name: Login / auth slice (proves the pattern end-to-end)

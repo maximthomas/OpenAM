@@ -110,7 +110,27 @@ phases:
         status: done
       - id: P1-5
         title: Migrate login — RESTLoginView + login dialog
+        detail: >-
+          Split into a minimal first slice (this task) + P1-5b. This slice: single-stage
+          username/password login only, driven by the real /json/authenticate protocol via
+          commons-ui-next/auth, mounted at /EUI/login, validated against the MSW mock. Introduces
+          TanStack Query. Success redirects to app home "/" only (goto/realm/fragment params
+          deferred). route-ownership login flipped to owner: eui, status: in_progress (NOT
+          migrated — parity incomplete until P1-5b lands). See
+          docs/migration/reference/legacy-login.md for the full legacy feature map.
         depends_on: [P1-1, P1-2, P1-4]
+        status: in_progress
+      - id: P1-5b
+        title: Login parity — multi-stage callbacks, redirects, session dialog, goto handling
+        detail: >-
+          Deferred from P1-5 (minimal slice). Multi-stage loop + generic callback renderer
+          (Choice, Confirmation, TextOutput/Script, TextInput, HiddenValue, Default/NameCallback);
+          RedirectCallback (SAML/OAuth) + PollingWaitCallback (push); session-timeout login dialog
+          (RESTLoginDialog); zero-page/auto-login; existing-session/realm-change (confirmLogin);
+          LoginFailure/SessionExpired/logout views; remember-me; goto/realm/fragment params +
+          validateGoto (may share work with P1-10). See docs/migration/reference/legacy-login.md.
+          Flip route-ownership login -> status: migrated only once this reaches parity.
+        depends_on: [P1-5]
         status: todo
       - id: P1-6
         title: Migrate anonymousProcess — password reset, self-register, forgot username

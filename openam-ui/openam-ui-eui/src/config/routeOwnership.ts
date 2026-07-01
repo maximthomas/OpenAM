@@ -31,7 +31,7 @@ export const mounts: MountMap = {
 // Everything is owned by the legacy XUI today; nothing has migrated yet. The current app is "eui".
 export const routeOwnership: RouteOwnership[] = [
   // ---- Phase 1: login / auth ----
-  { path: 'login', owner: 'xui' },
+  { path: 'login', owner: 'eui' },
   { path: 'passwordReset', owner: 'xui' },
   { path: 'register', owner: 'xui' },
   { path: 'forgotUsername', owner: 'xui' },

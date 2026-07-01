@@ -18,8 +18,8 @@ mounts:
 routes:
   # ---- Phase 1: login / auth ----
   - path: login
-    owner: xui
-    status: planned
+    owner: eui
+    status: in_progress
     slice: phase-1
   - path: passwordReset
     owner: xui

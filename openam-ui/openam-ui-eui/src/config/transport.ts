@@ -14,23 +14,8 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { Routes, Route } from 'react-router'
-import { AppShell } from '@openidentityplatform/commons-ui-next/shell'
-import Home from './routes/Home.tsx'
-import LoginPage from './features/auth/LoginPage.tsx'
-import Brand from './shell/Brand.tsx'
+import { createFetchTransport } from '@openidentityplatform/commons-ui-next/auth'
 
-export default function App() {
-  return (
-    <Routes>
-      {/* Full-chrome layout. Nav items are added as slices migrate. */}
-      <Route element={<AppShell brand={<Brand />} />}>
-        <Route path="/" element={<Home />} />
-      </Route>
-      {/* Minimal pre-auth shell (no nav/end) for the login route (P1-5). */}
-      <Route element={<AppShell variant="auth" brand={<Brand />} />}>
-        <Route path="/login" element={<LoginPage />} />
-      </Route>
-    </Routes>
-  )
-}
+// Relative/same-origin so MSW intercepts requests in dev:mock and tests. Pointing this at a real
+// AM base URL is a deployment concern for P1-7/P1-8.
+export const amTransport = createFetchTransport({ baseUrl: '' })

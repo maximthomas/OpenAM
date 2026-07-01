@@ -9,6 +9,7 @@ Living source of truth for migrating `openam-ui-ria` (XUI) from RequireJS/Backbo
 | [`tasks.yml`](tasks.yml) | Structured, phased task tracker with status + dependencies |
 | [`route-ownership.yml`](route-ownership.yml) | **Strangler route map** — which URLs are served by `/EUI` (new) vs `/XUI` (legacy). Update on every slice |
 | [`decisions/`](decisions/) | ADRs — one per locked architectural decision |
+| [`reference/`](reference/) | Reference inventories — `eui-foundation.md` (new-app API surface), `legacy-login.md` (legacy login feature map, feeds P1-5b) |
 | [`glossary.md`](glossary.md) | Domain/stack terms (XUI, Commons UI, realm, rjsf, strangler-fig, …) |
 
 ## How to use this across sessions

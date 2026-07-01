@@ -14,23 +14,8 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { Routes, Route } from 'react-router'
-import { AppShell } from '@openidentityplatform/commons-ui-next/shell'
-import Home from './routes/Home.tsx'
-import LoginPage from './features/auth/LoginPage.tsx'
-import Brand from './shell/Brand.tsx'
+import { QueryClient } from '@tanstack/react-query'
 
-export default function App() {
-  return (
-    <Routes>
-      {/* Full-chrome layout. Nav items are added as slices migrate. */}
-      <Route element={<AppShell brand={<Brand />} />}>
-        <Route path="/" element={<Home />} />
-      </Route>
-      {/* Minimal pre-auth shell (no nav/end) for the login route (P1-5). */}
-      <Route element={<AppShell variant="auth" brand={<Brand />} />}>
-        <Route path="/login" element={<LoginPage />} />
-      </Route>
-    </Routes>
-  )
-}
+export const queryClient = new QueryClient({
+  defaultOptions: { mutations: { retry: false } },
+})

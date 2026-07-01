@@ -17,10 +17,12 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { CrossLinkProvider, createCrossLinkResolver } from '@openidentityplatform/commons-ui-next/routing'
 import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commons-ui-next/i18n'
 import App from './App.tsx'
 import { getBasename } from './config/runtime.ts'
+import { queryClient } from './config/queryClient.ts'
 import { mounts, routeOwnership } from './config/routeOwnership.ts'
 import './styles/main.scss'
 
@@ -63,11 +65,13 @@ void enableMocking().then(() => {
   createRoot(rootElement).render(
     <I18nextProvider i18n={i18n}>
       <StrictMode>
-        <BrowserRouter basename={getBasename()}>
-          <CrossLinkProvider resolver={crossLinkResolver}>
-            <App />
-          </CrossLinkProvider>
-        </BrowserRouter>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter basename={getBasename()}>
+            <CrossLinkProvider resolver={crossLinkResolver}>
+              <App />
+            </CrossLinkProvider>
+          </BrowserRouter>
+        </QueryClientProvider>
       </StrictMode>
     </I18nextProvider>,
   )

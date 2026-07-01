@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@openidentityplatform/commons-ui-next": "*",
+    "@tanstack/react-query": "^5.101.2",
     "bootstrap": "^5.3.8",
     "i18next": "^25.0.0",
     "react": "^19.2.0",

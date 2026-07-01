@@ -17,6 +17,8 @@ This module is being migrated off RequireJS/Backbone/Grunt onto a modern React/V
   - Current status / picking the next task → `docs/migration/tasks.yml`.
   - The full roadmap & phasing → [`MIGRATION.md`](MIGRATION.md) (rarely; context.md + the relevant ADR normally suffice).
   - Building the route-compat/redirect map (P1-10) or verifying final URL coverage (P4-2) → `docs/migration/xui-url-audit.md`.
+  - Building a slice / need the new-app API surface (commons-ui-next exports, eui wiring, test pattern) → `docs/migration/reference/eui-foundation.md`.
+  - Porting login internals (P1-5b parity work) → `docs/migration/reference/legacy-login.md`.
 - **Do not** bulk-read `tasks.yml`, `MIGRATION.md`, all ADRs, or `xui-url-audit.md` "just in case" — they are large and mostly redundant with `context.md`.
 
 **Migration skills** (in `openam-ui/.claude/skills/`): use **`migrate-slice`** to port a route/feature from legacy XUI to the new EUI app (full strangler loop), and **`scaffold-eui`** when writing any new EUI/commons-ui-next code (enforces the stack conventions). The new app is its own Maven module `openam-ui/openam-ui-eui` (ADR-0009).

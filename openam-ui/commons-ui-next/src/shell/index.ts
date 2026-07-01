@@ -17,6 +17,17 @@
 /**
  * App shell primitives — the chrome around routed content (header, footer, nav layout)
  * built on react-bootstrap 5 + Sass (ADR-0006). Replaces the legacy Commons base views
- * / template shell. Implemented in P1-4.
+ * / template shell. App-agnostic: branding, nav items, and version come from the app.
  */
-export {}
+export { AppShell } from './AppShell'
+export { Header } from './Header'
+export { Footer } from './Footer'
+export { Nav } from './Nav'
+export type {
+  AppShellProps,
+  HeaderProps,
+  FooterProps,
+  NavItem,
+  NavProps,
+  ShellVariant,
+} from './types'

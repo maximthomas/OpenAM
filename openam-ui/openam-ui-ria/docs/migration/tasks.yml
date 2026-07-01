@@ -107,7 +107,7 @@ phases:
         status: done
       - id: P1-4
         title: Shell skeleton — header/footer/nav
-        status: todo
+        status: done
       - id: P1-5
         title: Migrate login — RESTLoginView + login dialog
         depends_on: [P1-1, P1-2, P1-4]

@@ -14,19 +14,8 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { Routes, Route } from 'react-router'
-import { AppShell } from '@openidentityplatform/commons-ui-next/shell'
-import Home from './routes/Home.tsx'
-import Brand from './shell/Brand.tsx'
-
-export default function App() {
-  return (
-    <Routes>
-      {/* Full-chrome layout. Nav items are added as slices migrate; login (P1-5) mounts its
-          routes under <AppShell variant="auth" brand={<Brand />} /> for the minimal pre-auth shell. */}
-      <Route element={<AppShell brand={<Brand />} />}>
-        <Route path="/" element={<Home />} />
-      </Route>
-    </Routes>
-  )
+// App-owned product branding fed into the shell Header. Kept in the app (not commons) so the
+// reusable shell stays product-agnostic; swap in a logo image here later without touching commons.
+export default function Brand() {
+  return <span className="fw-semibold">OpenAM</span>
 }

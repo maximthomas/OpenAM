@@ -17,14 +17,17 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
+import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commons-ui-next/i18n'
 import App from './App'
 
 describe('App', () => {
-  it('renders the home route heading', () => {
+  it('renders the home route heading inside the app shell', () => {
     render(
-      <MemoryRouter>
-        <App />
-      </MemoryRouter>,
+      <I18nextProvider i18n={createI18nInstance()}>
+        <MemoryRouter>
+          <App />
+        </MemoryRouter>
+      </I18nextProvider>,
     )
     expect(screen.getByRole('heading', { name: /openam eui/i })).toBeInTheDocument()
   })

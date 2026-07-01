@@ -14,19 +14,21 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { Routes, Route } from 'react-router'
-import { AppShell } from '@openidentityplatform/commons-ui-next/shell'
-import Home from './routes/Home.tsx'
-import Brand from './shell/Brand.tsx'
+import { Nav as BsNav } from 'react-bootstrap'
+import { CrossLink } from '../routing'
+import type { NavProps } from './types'
 
-export default function App() {
+// Generic, data-driven primary navigation. Each item links through <CrossLink>, so entries pointing
+// at not-yet-migrated routes become full-page /XUI handoffs and migrated ones stay in-app — the app
+// just supplies the items. Flat for now; nested/dropdown menus arrive with the admin slices (P3).
+export function Nav({ items, ariaLabel, className }: NavProps) {
   return (
-    <Routes>
-      {/* Full-chrome layout. Nav items are added as slices migrate; login (P1-5) mounts its
-          routes under <AppShell variant="auth" brand={<Brand />} /> for the minimal pre-auth shell. */}
-      <Route element={<AppShell brand={<Brand />} />}>
-        <Route path="/" element={<Home />} />
-      </Route>
-    </Routes>
+    <BsNav as="nav" aria-label={ariaLabel} className={className}>
+      {items.map((item) => (
+        <CrossLink key={item.id} to={item.to} className="nav-link">
+          {item.label}
+        </CrossLink>
+      ))}
+    </BsNav>
   )
 }

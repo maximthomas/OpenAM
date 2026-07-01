@@ -1,0 +1,18 @@
+// Shell layout only (component-scoped). Global Bootstrap Sass is imported by the consuming app,
+// not here — these components assume Bootstrap CSS is loaded by their host.
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main {
+  flex: 1 0 auto;
+}
+
+.footer {
+  flex-shrink: 0;
+  padding: 1rem 0;
+  border-top: 1px solid var(--bs-border-color, #dee2e6);
+}

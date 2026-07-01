@@ -14,19 +14,10 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { Routes, Route } from 'react-router'
-import { AppShell } from '@openidentityplatform/commons-ui-next/shell'
-import Home from './routes/Home.tsx'
-import Brand from './shell/Brand.tsx'
-
-export default function App() {
-  return (
-    <Routes>
-      {/* Full-chrome layout. Nav items are added as slices migrate; login (P1-5) mounts its
-          routes under <AppShell variant="auth" brand={<Brand />} /> for the minimal pre-auth shell. */}
-      <Route element={<AppShell brand={<Brand />} />}>
-        <Route path="/" element={<Home />} />
-      </Route>
-    </Routes>
-  )
+// This package is typechecked standalone (its tsconfig has no vite/client types), so declare the
+// CSS-module import shape used by the shell components. The bundler (Vite/Vitest) supplies the real
+// class-name map at build/test time.
+declare module '*.module.scss' {
+  const classes: Record<string, string>
+  export default classes
 }

@@ -34,7 +34,9 @@
             "cancel": "Cancel",
             "ok": "OK",
             "update": "Update",
-            "sessionExpired": "Session Expired"
+            "sessionExpired": "Session Expired",
+            "copyright": "Join <community>OpenAM</community> Community",
+            "build": "Build"
         }
     },
     "config": {

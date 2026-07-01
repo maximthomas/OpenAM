@@ -22,7 +22,7 @@ import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commo
 import App from './App.tsx'
 import { getBasename } from './config/runtime.ts'
 import { mounts, routeOwnership } from './config/routeOwnership.ts'
-import './index.css'
+import './styles/main.scss'
 
 const i18n = createI18nInstance()
 

@@ -1,0 +1,4 @@
+// Global stylesheet for the EUI app. The app owns the theme: it loads Bootstrap 5 (Sass) once here
+// so react-bootstrap components across the app + commons-ui-next shell are styled. Bootstrap's
+// Reboot supplies the base resets (font, box-sizing, body margin) — no separate reset needed.
+@use 'bootstrap/scss/bootstrap';

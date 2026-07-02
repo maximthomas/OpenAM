@@ -14,9 +14,13 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import {
+  getTrackingCookie,
+  getWaitTime,
+  isPollingWaitCallback,
+  isRedirectCallback,
   startAuthentication,
   submitCallbacks,
   type AmAuthChallenge,
@@ -29,7 +33,7 @@ export type AuthFlowHook = {
   step: AuthStep | null
   /** True while startAuthentication is running (initial or restart). */
   isStarting: boolean
-  /** True while a submitCallbacks mutation is in flight. */
+  /** True while a submitCallbacks mutation is in flight or a poll is scheduled. */
   isSubmitting: boolean
   /** Submit a filled challenge to advance the flow. */
   submit: (filledChallenge: AmAuthChallenge) => void
@@ -38,12 +42,17 @@ export type AuthFlowHook = {
 }
 
 /**
- * Multi-stage AM authentication flow hook (P1-5b).
+ * Multi-stage AM authentication flow hook (P1-5b/P1-5c).
  * Starts authentication on mount; loops until success or failure via submit().
+ * Handles PollingWaitCallback auto-submit, RedirectCallback tracking-cookie detection,
+ * and 408 timeout restart.
  */
 export function useAuthenticationFlow(): AuthFlowHook {
   const [step, setStep] = useState<AuthStep | null>(null)
   const [isStarting, setIsStarting] = useState(false)
+  // Set to true when a redirect challenge with a trackingCookie is seen — suppresses 408 restart.
+  const hasTrackingCookieRef = useRef(false)
+  const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const startAuth = useCallback(() => {
     setStep(null)
@@ -62,6 +71,49 @@ export function useAuthenticationFlow(): AuthFlowHook {
     onSuccess: setStep,
     retry: false,
   })
+
+  // Watch each step for special handling.
+  useEffect(() => {
+    if (!step) return
+
+    // Detect a redirect with a tracking cookie — suppress 408 restart after federation.
+    if (step.kind === 'requirements') {
+      const redirectCb = step.challenge.callbacks.find(isRedirectCallback)
+      if (redirectCb && getTrackingCookie(redirectCb)) {
+        hasTrackingCookieRef.current = true
+      }
+    }
+
+    // 408 timeout: restart the flow unless a redirect tracking cookie is in play.
+    if (step.kind === 'failure' && step.error.code === 408) {
+      if (!hasTrackingCookieRef.current) {
+        startAuth()
+      }
+      return
+    }
+
+    // PollingWaitCallback: schedule an auto-submit after waitTime ms.
+    if (pollingTimerRef.current !== null) {
+      clearTimeout(pollingTimerRef.current)
+      pollingTimerRef.current = null
+    }
+    if (step.kind === 'requirements') {
+      const pollingCb = step.challenge.callbacks.find(isPollingWaitCallback)
+      if (pollingCb) {
+        const challenge = step.challenge
+        pollingTimerRef.current = setTimeout(() => {
+          submitMutation.mutate(challenge)
+        }, getWaitTime(pollingCb))
+      }
+    }
+
+    return () => {
+      if (pollingTimerRef.current !== null) {
+        clearTimeout(pollingTimerRef.current)
+        pollingTimerRef.current = null
+      }
+    }
+  }, [step, startAuth, submitMutation])
 
   return {
     step,

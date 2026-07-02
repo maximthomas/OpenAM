@@ -54,3 +54,40 @@ export const isHiddenValueCallback = (cb: AmCallback): boolean => cb.type === 'H
 export const isChoiceCallback = (cb: AmCallback): boolean => cb.type === 'ChoiceCallback'
 export const isConfirmationCallback = (cb: AmCallback): boolean => cb.type === 'ConfirmationCallback'
 export const isTextOutputCallback = (cb: AmCallback): boolean => cb.type === 'TextOutputCallback'
+export const isRedirectCallback = (cb: AmCallback): boolean => cb.type === 'RedirectCallback'
+export const isPollingWaitCallback = (cb: AmCallback): boolean => cb.type === 'PollingWaitCallback'
+
+// RedirectCallback accessors.
+export function getRedirectUrl(cb: AmCallback): string {
+  return String(getOutput(cb, 'redirectUrl')?.value ?? '')
+}
+
+export function getRedirectMethod(cb: AmCallback): string {
+  return String(getOutput(cb, 'redirectMethod')?.value ?? 'GET').toUpperCase()
+}
+
+/** Returns the POST hidden-field map for a RedirectCallback with redirectMethod=POST. */
+export function getRedirectData(cb: AmCallback): Record<string, string> {
+  const val = getOutput(cb, 'redirectData')?.value
+  if (val && typeof val === 'object' && !Array.isArray(val)) {
+    return val as Record<string, string>
+  }
+  return {}
+}
+
+/** Returns the tracking-cookie value, used to suppress 408 retry after a federated redirect. */
+export function getTrackingCookie(cb: AmCallback): string {
+  return String(getOutput(cb, 'trackingCookie')?.value ?? '')
+}
+
+// PollingWaitCallback accessors.
+/** Returns the polling wait time in milliseconds. */
+export function getWaitTime(cb: AmCallback): number {
+  const val = getOutput(cb, 'waitTime')?.value
+  return typeof val === 'number' ? val : parseInt(String(val ?? '0'), 10) || 0
+}
+
+/** Returns the optional status message from a PollingWaitCallback. */
+export function getPollingMessage(cb: AmCallback): string {
+  return String(getOutput(cb, 'message')?.value ?? '')
+}

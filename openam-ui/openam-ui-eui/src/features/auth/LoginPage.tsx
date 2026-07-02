@@ -14,11 +14,17 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Spinner } from 'react-bootstrap'
 import { useNavigate } from 'react-router'
 import { useTranslation } from '@openidentityplatform/commons-ui-next/i18n'
-import { CallbackForm } from '@openidentityplatform/commons-ui-next/auth'
+import {
+  CallbackForm,
+  getRedirectData,
+  getRedirectMethod,
+  getRedirectUrl,
+  isRedirectCallback,
+} from '@openidentityplatform/commons-ui-next/auth'
 import { setToken } from '@openidentityplatform/commons-ui-next/session'
 import { useAuthenticationFlow } from './useLogin.ts'
 
@@ -27,15 +33,44 @@ export default function LoginPage() {
   const navigate = useNavigate()
   const { step, isStarting, isSubmitting, submit, restart } = useAuthenticationFlow()
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const isRedirectingRef = useRef(false)
 
+  // Handle success, failure, and redirect side-effects.
   useEffect(() => {
     if (step?.kind === 'success') {
       setToken(step.success.tokenId)
       void navigate('/')
+      return
     }
-    if (step?.kind === 'failure') {
+    if (step?.kind === 'failure' && step.error.code !== 408) {
+      // 408 is handled inside useAuthenticationFlow (auto-restart); show error for other failures.
       setErrorMessage(t('config.messages.CommonMessages.authenticationFailed'))
       restart()
+      return
+    }
+    if (step?.kind === 'requirements') {
+      const redirectCb = step.challenge.callbacks.find(isRedirectCallback)
+      if (redirectCb && !isRedirectingRef.current) {
+        isRedirectingRef.current = true
+        const url = getRedirectUrl(redirectCb)
+        if (getRedirectMethod(redirectCb) === 'POST') {
+          const data = getRedirectData(redirectCb)
+          const form = document.createElement('form')
+          form.action = url
+          form.method = 'POST'
+          for (const [name, value] of Object.entries(data)) {
+            const input = document.createElement('input')
+            input.type = 'hidden'
+            input.name = name
+            input.value = value
+            form.appendChild(input)
+          }
+          document.body.appendChild(form)
+          form.submit()
+        } else {
+          window.location.replace(url)
+        }
+      }
     }
   }, [step, navigate, restart, t])
 
@@ -49,6 +84,11 @@ export default function LoginPage() {
   }
 
   if (step.kind === 'requirements') {
+    // Show a spinner while a redirect is in progress (page is navigating away).
+    if (step.challenge.callbacks.some(isRedirectCallback)) {
+      return <Spinner animation="border" role="status" />
+    }
+
     return (
       <>
         {errorMessage && <Alert variant="danger">{errorMessage}</Alert>}

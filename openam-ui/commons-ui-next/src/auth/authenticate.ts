@@ -20,7 +20,7 @@ import type { AmAuthChallenge, AmAuthError, AmAuthSuccess, AuthStep } from './ty
 const AUTH_VERSION = 'protocol=1.0,resource=2.1'
 
 function resolveStep(json: AmAuthChallenge | AmAuthSuccess | AmAuthError, status: number): AuthStep {
-  if (status === 401) {
+  if (status === 401 || status === 408) {
     return { kind: 'failure', error: json as AmAuthError }
   }
   if ('tokenId' in json) {

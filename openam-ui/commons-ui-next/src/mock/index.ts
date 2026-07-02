@@ -44,9 +44,23 @@ export {
   CHOICE_AUTH_ID,
   CONFIRMATION_AUTH_ID,
   TEXT_OUTPUT_AUTH_ID,
+  REDIRECT_GET_AUTH_ID,
+  REDIRECT_POST_AUTH_ID,
+  AUTH_CHALLENGE_REDIRECT_GET,
+  AUTH_CHALLENGE_REDIRECT_POST,
+  POLLING_AUTH_ID_1,
+  POLLING_AUTH_ID_2,
+  AUTH_CHALLENGE_POLLING_1,
+  AUTH_CHALLENGE_POLLING_2,
+  AUTH_TIMEOUT_ERROR,
 } from './fixtures/authenticate.ts'
 
-export { multiStageAuthenticateHandler } from './handlers/authenticate.ts'
+export {
+  multiStageAuthenticateHandler,
+  redirectAuthenticateHandler,
+  pollingAuthenticateHandler,
+  make408ThenRecoverHandler,
+} from './handlers/authenticate.ts'
 
 export { SERVER_INFO } from './fixtures/serverinfo.ts'
 

@@ -15,7 +15,7 @@
  */
 
 import { useState, type FormEvent } from 'react'
-import { Alert, Button, Form } from 'react-bootstrap'
+import { Alert, Button, Form, Spinner } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 import { setCallbackValue } from './authenticate.ts'
 import {
@@ -23,11 +23,13 @@ import {
   getConfirmationOptions,
   getMessageType,
   getOutput,
+  getPollingMessage,
   getPrompt,
   isChoiceCallback,
   isConfirmationCallback,
   isHiddenValueCallback,
   isPasswordCallback,
+  isPollingWaitCallback,
   isTextInputCallback,
   isTextOutputCallback,
 } from './callbacks.ts'
@@ -52,6 +54,7 @@ export function CallbackForm({ challenge, onSubmit, submitting }: CallbackFormPr
   )
 
   const hasConfirmation = challenge.callbacks.some(isConfirmationCallback)
+  const pollingCb = challenge.callbacks.find(isPollingWaitCallback)
 
   function buildFilled(confirmationIndex?: number): AmAuthChallenge {
     return challenge.callbacks.reduce((ch, cb, i) => {
@@ -69,6 +72,18 @@ export function CallbackForm({ challenge, onSubmit, submitting }: CallbackFormPr
 
   function updateValue(index: number, value: string) {
     setValues((prev) => prev.map((v, i) => (i === index ? value : v)))
+  }
+
+  // PollingWaitCallback: render a waiting state — no user input, auto-submit is driven by the
+  // parent hook (useAuthenticationFlow). Show a message from the polling callback if present.
+  if (pollingCb) {
+    const message = getPollingMessage(pollingCb)
+    return (
+      <div className="d-flex flex-column align-items-center gap-3 py-3">
+        <Spinner animation="border" role="status" />
+        {message && <p className="mb-0">{message}</p>}
+      </div>
+    )
   }
 
   return (

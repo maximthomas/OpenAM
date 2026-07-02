@@ -42,6 +42,12 @@ export {
   getChoices,
   getMessageType,
   getConfirmationOptions,
+  getRedirectUrl,
+  getRedirectMethod,
+  getRedirectData,
+  getTrackingCookie,
+  getWaitTime,
+  getPollingMessage,
   isNameCallback,
   isPasswordCallback,
   isTextInputCallback,
@@ -49,6 +55,8 @@ export {
   isChoiceCallback,
   isConfirmationCallback,
   isTextOutputCallback,
+  isRedirectCallback,
+  isPollingWaitCallback,
 } from './callbacks.ts'
 
 export { CallbackForm } from './CallbackForm.tsx'

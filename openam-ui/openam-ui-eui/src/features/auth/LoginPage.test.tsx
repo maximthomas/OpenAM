@@ -14,14 +14,20 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http } from 'msw'
+import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commons-ui-next/i18n'
-import { multiStageAuthenticateHandler } from '@openidentityplatform/commons-ui-next/mock'
+import {
+  AUTH_CHALLENGE_REDIRECT_POST,
+  make408ThenRecoverHandler,
+  multiStageAuthenticateHandler,
+  pollingAuthenticateHandler,
+  redirectAuthenticateHandler,
+} from '@openidentityplatform/commons-ui-next/mock'
 import { server } from '../../test/setup.ts'
 import App from '../../App.tsx'
 
@@ -88,5 +94,88 @@ describe('LoginPage', () => {
 
     // Success → redirected to home
     expect(await screen.findByRole('heading', { name: /openam eui/i })).toBeInTheDocument()
+  })
+})
+
+// Helpers for redirect tests — vi.stubGlobal replaces window.location without hitting
+// jsdom's non-configurable location.replace descriptor.
+describe('LoginPage — RedirectCallback (P1-5c)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('calls window.location.replace for a GET redirect challenge', async () => {
+    const replaceFn = vi.fn()
+    // Stub the whole location object; provide a valid href so MSW can resolve relative fetch URLs.
+    vi.stubGlobal('location', { replace: replaceFn, href: 'http://localhost/' })
+
+    server.use(
+      http.post('*/json/authenticate', ({ request }) => redirectAuthenticateHandler(request)),
+      http.post('*/json/realms/root/authenticate', ({ request }) => redirectAuthenticateHandler(request)),
+    )
+
+    renderApp('/login')
+
+    await waitFor(() => {
+      expect(replaceFn).toHaveBeenCalledWith('https://mock-idp.example.com/oauth2/authorize')
+    })
+  })
+
+  it('shows a spinner while the GET redirect is in progress', async () => {
+    vi.stubGlobal('location', { replace: vi.fn(), href: 'http://localhost/' })
+
+    server.use(
+      http.post('*/json/authenticate', ({ request }) => redirectAuthenticateHandler(request)),
+      http.post('*/json/realms/root/authenticate', ({ request }) => redirectAuthenticateHandler(request)),
+    )
+
+    renderApp('/login')
+
+    expect(await screen.findByRole('status')).toBeInTheDocument()
+  })
+
+  it('submits a hidden POST form for a POST redirect challenge', async () => {
+    const submitSpy = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {})
+
+    server.use(
+      http.post('*/json/authenticate', () => HttpResponse.json(AUTH_CHALLENGE_REDIRECT_POST)),
+      http.post('*/json/realms/root/authenticate', () => HttpResponse.json(AUTH_CHALLENGE_REDIRECT_POST)),
+    )
+
+    renderApp('/login')
+
+    await waitFor(() => {
+      expect(submitSpy).toHaveBeenCalledOnce()
+    })
+    submitSpy.mockRestore()
+  })
+})
+
+describe('LoginPage — PollingWaitCallback (P1-5c)', () => {
+  it('auto-submits polling stages and succeeds', async () => {
+    server.use(
+      http.post('*/json/authenticate', ({ request }) => pollingAuthenticateHandler(request)),
+      http.post('*/json/realms/root/authenticate', ({ request }) => pollingAuthenticateHandler(request)),
+    )
+
+    renderApp('/login')
+
+    // Fixtures use 50ms wait time — two polls then success → home page.
+    expect(await screen.findByRole('heading', { name: /openam eui/i }, { timeout: 3000 })).toBeInTheDocument()
+  })
+})
+
+describe('LoginPage — 408 timeout restart (P1-5c)', () => {
+  it('restarts the authentication flow after a 408 timeout', async () => {
+    const handler = make408ThenRecoverHandler()
+    server.use(
+      http.post('*/json/authenticate', ({ request }) => handler(request)),
+      http.post('*/json/realms/root/authenticate', ({ request }) => handler(request)),
+    )
+
+    renderApp('/login')
+
+    // After the 408, the hook restarts — the login form should reappear.
+    expect(await screen.findByLabelText('User Name', {}, { timeout: 3000 })).toBeInTheDocument()
   })
 })

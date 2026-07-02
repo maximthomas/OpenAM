@@ -18,7 +18,7 @@
 
 export type AmCallbackOutput = {
   name: string
-  value: number | string | string[]
+  value: number | string | string[] | Record<string, string>
 }
 
 export type AmCallbackInput = {

@@ -20,12 +20,20 @@ import type { AmAuthChallenge } from '../types.ts'
 import {
   AUTH_CHALLENGE,
   AUTH_CHALLENGE_PASSWORD_STAGE,
+  AUTH_CHALLENGE_POLLING_1,
+  AUTH_CHALLENGE_POLLING_2,
+  AUTH_CHALLENGE_REDIRECT_GET,
   AUTH_CHALLENGE_USERNAME_STAGE,
   AUTH_ERROR,
   AUTH_ID,
   AUTH_SUCCESS,
+  AUTH_TIMEOUT_ERROR,
   MULTI_AUTH_ID_1,
   MULTI_AUTH_ID_2,
+  POLLING_AUTH_ID_1,
+  POLLING_AUTH_ID_2,
+  REDIRECT_GET_AUTH_ID,
+  REDIRECT_POST_AUTH_ID,
 } from '../fixtures/authenticate.ts'
 
 /**
@@ -68,6 +76,19 @@ export function resolveAuthenticateBody(body: Partial<AmAuthChallenge>): Respons
     return HttpResponse.json(AUTH_ERROR, { status: 401 })
   }
 
+  // Redirect path — after the browser is sent to the IdP and comes back, AM returns success.
+  if (authId === REDIRECT_GET_AUTH_ID || authId === REDIRECT_POST_AUTH_ID) {
+    return HttpResponse.json(AUTH_SUCCESS)
+  }
+
+  // Polling path — two poll stages, then success.
+  if (authId === POLLING_AUTH_ID_1) {
+    return HttpResponse.json(AUTH_CHALLENGE_POLLING_2)
+  }
+  if (authId === POLLING_AUTH_ID_2) {
+    return HttpResponse.json(AUTH_SUCCESS)
+  }
+
   // Unknown authId.
   return HttpResponse.json(AUTH_ERROR, { status: 401 })
 }
@@ -90,6 +111,51 @@ export async function multiStageAuthenticateHandler(request: Request): Promise<R
     return HttpResponse.json(AUTH_CHALLENGE_USERNAME_STAGE)
   }
   return resolveAuthenticateBody(body)
+}
+
+/**
+ * Redirect authenticate handler — initial call returns a GET redirect challenge.
+ * Use in tests via server.use() to exercise the redirect intercept path.
+ */
+export async function redirectAuthenticateHandler(request: Request): Promise<Response> {
+  const text = await request.text()
+  const body = (text ? JSON.parse(text) : {}) as Partial<AmAuthChallenge>
+  if (!body.authId) {
+    return HttpResponse.json(AUTH_CHALLENGE_REDIRECT_GET)
+  }
+  return resolveAuthenticateBody(body)
+}
+
+/**
+ * Polling authenticate handler — initial call returns the first polling stage.
+ * Two auto-submits later the flow resolves to success.
+ * Use in tests via server.use() to exercise the polling auto-submit path.
+ */
+export async function pollingAuthenticateHandler(request: Request): Promise<Response> {
+  const text = await request.text()
+  const body = (text ? JSON.parse(text) : {}) as Partial<AmAuthChallenge>
+  if (!body.authId) {
+    return HttpResponse.json(AUTH_CHALLENGE_POLLING_1)
+  }
+  return resolveAuthenticateBody(body)
+}
+
+/**
+ * 408 authenticate handler — returns a valid challenge first, then a 408 timeout, then
+ * a fresh challenge (simulating the restart-after-timeout flow).
+ * Use in tests via server.use() with a call counter to exercise the 408 retry path.
+ */
+export function make408ThenRecoverHandler() {
+  let callCount = 0
+  return async (request: Request): Promise<Response> => {
+    const text = await request.text()
+    const body = (text ? JSON.parse(text) : {}) as Partial<AmAuthChallenge>
+    callCount++
+    if (callCount === 1) return HttpResponse.json(AUTH_CHALLENGE) // initial challenge
+    if (callCount === 2 && body.authId === AUTH_ID)
+      return HttpResponse.json(AUTH_TIMEOUT_ERROR, { status: 408 }) // timeout on submit
+    return resolveAuthenticateBody({ ...body, authId: undefined }) // restart → fresh challenge
+  }
 }
 
 export const authenticateHandlers: RequestHandler[] = [

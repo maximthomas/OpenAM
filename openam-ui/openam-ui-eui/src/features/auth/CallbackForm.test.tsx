@@ -26,6 +26,7 @@ import {
   AUTH_CHALLENGE,
   AUTH_CHALLENGE_CHOICE,
   AUTH_CHALLENGE_CONFIRMATION,
+  AUTH_CHALLENGE_POLLING_1,
   AUTH_CHALLENGE_TEXT_OUTPUT,
 } from '@openidentityplatform/commons-ui-next/mock'
 
@@ -155,6 +156,24 @@ describe('CallbackForm', () => {
     it('renders a synthetic Submit button (no ConfirmationCallback in this challenge)', () => {
       renderForm(AUTH_CHALLENGE_TEXT_OUTPUT)
       expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument()
+    })
+  })
+
+  describe('PollingWaitCallback', () => {
+    it('renders a spinner', () => {
+      renderForm(AUTH_CHALLENGE_POLLING_1)
+      expect(screen.getByRole('status')).toBeInTheDocument()
+    })
+
+    it('shows the polling message from the callback output', () => {
+      renderForm(AUTH_CHALLENGE_POLLING_1)
+      expect(screen.getByText('Waiting for push notification...')).toBeInTheDocument()
+    })
+
+    it('does NOT render any submit button or input', () => {
+      renderForm(AUTH_CHALLENGE_POLLING_1)
+      expect(screen.queryByRole('button')).toBeNull()
+      expect(screen.queryByRole('textbox')).toBeNull()
     })
   })
 })

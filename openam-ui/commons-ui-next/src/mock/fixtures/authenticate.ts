@@ -165,3 +165,98 @@ export const AUTH_CHALLENGE_TEXT_OUTPUT: AmAuthChallenge = {
     },
   ],
 }
+
+// ── RedirectCallback fixtures ─────────────────────────────────────────────────
+
+export const REDIRECT_GET_AUTH_ID = 'redirect-get-auth-id-xxxxxxxxxxxxxxxxxxxxxxxx'
+export const REDIRECT_POST_AUTH_ID = 'redirect-post-auth-id-xxxxxxxxxxxxxxxxxxxxxx'
+
+/** Stage with a GET RedirectCallback (e.g. OAuth2 / OIDC federation). */
+export const AUTH_CHALLENGE_REDIRECT_GET: AmAuthChallenge = {
+  authId: REDIRECT_GET_AUTH_ID,
+  template: '',
+  stage: 'OAuthRedirect',
+  header: '',
+  callbacks: [
+    {
+      type: 'RedirectCallback',
+      output: [
+        { name: 'redirectUrl', value: 'https://mock-idp.example.com/oauth2/authorize' },
+        { name: 'redirectMethod', value: 'GET' },
+        { name: 'redirectData', value: {} },
+        { name: 'trackingCookie', value: '' },
+      ],
+      input: [],
+    },
+  ],
+}
+
+/** Stage with a POST RedirectCallback (e.g. SAML2 federation) including a trackingCookie. */
+export const AUTH_CHALLENGE_REDIRECT_POST: AmAuthChallenge = {
+  authId: REDIRECT_POST_AUTH_ID,
+  template: '',
+  stage: 'SAMLRedirect',
+  header: '',
+  callbacks: [
+    {
+      type: 'RedirectCallback',
+      output: [
+        { name: 'redirectUrl', value: 'https://mock-idp.example.com/saml2/sso' },
+        { name: 'redirectMethod', value: 'POST' },
+        { name: 'redirectData', value: { SAMLRequest: 'mock-saml-request', RelayState: 'mock-relay-state' } },
+        { name: 'trackingCookie', value: 'mock-tracking-cookie' },
+      ],
+      input: [],
+    },
+  ],
+}
+
+// ── PollingWaitCallback fixtures ──────────────────────────────────────────────
+// Short waitTime (50 ms) so tests complete quickly without fake timers.
+
+export const POLLING_AUTH_ID_1 = 'polling-auth-id-stage-1-xxxxxxxxxxxxxxxxxxxx'
+export const POLLING_AUTH_ID_2 = 'polling-auth-id-stage-2-xxxxxxxxxxxxxxxxxxxx'
+
+/** First poll stage — returns another poll stage. */
+export const AUTH_CHALLENGE_POLLING_1: AmAuthChallenge = {
+  authId: POLLING_AUTH_ID_1,
+  template: '',
+  stage: 'PushAuth',
+  header: '',
+  callbacks: [
+    {
+      type: 'PollingWaitCallback',
+      output: [
+        { name: 'waitTime', value: 50 },
+        { name: 'message', value: 'Waiting for push notification...' },
+      ],
+      input: [{ name: 'IDToken1', value: '' }],
+    },
+  ],
+}
+
+/** Second (final) poll stage — resolves to success on next submit. */
+export const AUTH_CHALLENGE_POLLING_2: AmAuthChallenge = {
+  authId: POLLING_AUTH_ID_2,
+  template: '',
+  stage: 'PushAuth',
+  header: '',
+  callbacks: [
+    {
+      type: 'PollingWaitCallback',
+      output: [
+        { name: 'waitTime', value: 50 },
+        { name: 'message', value: 'Almost there...' },
+      ],
+      input: [{ name: 'IDToken1', value: '' }],
+    },
+  ],
+}
+
+// ── 408 timeout fixture ───────────────────────────────────────────────────────
+
+export const AUTH_TIMEOUT_ERROR: AmAuthError = {
+  code: 408,
+  reason: 'Request Timeout',
+  message: 'Authentication session timed out',
+}

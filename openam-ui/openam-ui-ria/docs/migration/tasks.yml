@@ -151,7 +151,7 @@ phases:
           redirect/polling scenarios. See docs/migration/plans/P1-5c-redirect-polling.md.
         depends_on: [P1-5b]
         plan: docs/migration/plans/P1-5c-redirect-polling.md
-        status: todo
+        status: done
       - id: P1-5d
         title: Login parity — goto/realm/fragment params + validateGoto
         detail: >-

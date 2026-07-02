@@ -14,7 +14,7 @@ This plan was produced by analyzing the current code and confirming each consequ
 | 2 | ForgeRock Commons UI coupling | **Self-contained new app**; reusable core isolated as a workspace package (`commons-ui-next`), **extracted upstream to the commons project later** | No AMD↔ESM bridge; prove primitives in one real consumer before promoting them |
 | 3 | First slice | **Login / auth flow** | Forces building the reusable core (session, http, i18n, shell) that everything reuses; self-contained against AM auth REST; least Commons-coupled |
 | 4 | Runtime coexistence | **Separate mounts** (temporary `/EUI` new, `/XUI` legacy) + **full-page handoff**; **final path `/XUI`** (new app deployed there at cutover, legacy deleted) | AM cookie session (`iPlanetDirectoryPro`) survives reloads, so no iframe, no dual-runtime loader; canonical `/XUI` URLs unchanged for the outside world |
-| 8 | URL backward-compat | **Preserve legacy `/XUI` deep links** via a route-compat/redirect map | Bookmarks, AM config, OAuth2 redirect URIs reference `/XUI`; legacy is hash-routed, new app is history-routed (ADR-0008) |
+| 8 | URL backward-compat | **Preserve legacy `/XUI` deep links** via hash routing + hash-spelling normalization | Bookmarks, AM config, OAuth2 redirect URIs reference `/XUI`; both legacy and new app are hash-routed; the compat map normalizes legacy `#login` spellings to react-router's `#/login` form (ADR-0011) |
 | 5 | Data / client state | **TanStack Query** (server state) + **Context/Zustand** (client state); drop Redux | Admin is mostly REST CRUD; caching/dedup/invalidation for free |
 | 6 | UI / styling | **react-bootstrap 5 + Sass**; **TanStack Table** for grids; **rjsf** for JSON-schema forms | Visual parity with legacy during the side-by-side period; defer any redesign |
 | 7 | Language | **TypeScript (strict)** | Type-safety across the new reusable core; mainstream modern baseline |
@@ -93,10 +93,10 @@ openam-ui/
 ### Coexistence / deployment
 
 - **Final path is `/XUI`.** During coexistence the new app is served at a **temporary `/EUI`**; legacy XUI keeps the canonical **`/XUI`** untouched. At cutover the new build is deployed to **`/XUI`** and legacy is deleted — one swap at the end (ADR-0004).
-- **Path-relocatable build:** the *same* build serves `/EUI` then `/XUI`, no rebuild. Vite `base` relative/injected (not hardcoded `/EUI`); react-router `basename` from runtime config; internal links relative; no absolute `/EUI/...` strings.
+- **Path-relocatable build:** the *same* build serves `/EUI` then `/XUI`, no rebuild. Vite `base` relative/injected (not hardcoded `/EUI`); internal links relative; no absolute `/EUI/...` strings. The router is `HashRouter` (no `basename`) — asset relocatability is independent and comes from the `<base href>` + relative Vite `base`.
 - Built by `frontend-maven-plugin` running `vite build`, packaged into the webapp (at `/EUI` during coexistence, `/XUI` at cutover).
 - A **route-ownership map** records which paths are migrated. Legacy nav links to migrated areas point at `/EUI/...`; new-app links to not-yet-migrated areas point at `/XUI/...`. Crossing the boundary is a normal full-page navigation — the **AM cookie keeps the session alive**, so no bridge/iframe/dual-runtime.
-- **Preserve legacy `/XUI` deep links:** legacy is hash-routed (`#login`, `#dashboard/`, password-reset/register regexes); existing URLs (bookmarks, AM config, OAuth2 redirect URIs) must keep resolving. The new app ships a **route-compat/redirect map** (ADR-0008), grown per slice.
+- **Preserve legacy `/XUI` deep links:** both legacy and new app are hash-routed. Legacy URLs use `#login` (no leading slash); the new app's react-router produces `#/login`. The new app ships a **hash-spelling normalization map** (ADR-0011, P1-10) that redirects `#login` → `#/login` and handles `#!/...` forms and regex-pattern routes, grown per slice.
 - Cutover = deploy the new app to `/XUI`, retire `/EUI` (or alias it to `/XUI`), then delete legacy.
 
 ---
@@ -149,7 +149,7 @@ Admin is schema-driven config — **rjsf + TanStack Table heavy**. Do an **rjsf 
 - **i18n**: migrate `src/main/resources/locales` to modern i18next namespaces; the 1.7.3 → latest jump changes the API.
 - **Session/CSRF/realm semantics**: nail header/cookie/realm-path handling in `commons-ui-next/http` in Phase 1 — every later slice depends on it.
 - **Maven/packaging**: the new build must drop assets where the webapp expects them; configure `frontend-maven-plugin` + assembly to emit into `/EUI` during coexistence and `/XUI` at cutover. Keep the build path-relocatable so this is a deploy-location change, not a rebuild.
-- **URL backward-compat**: legacy `/XUI` is hash-routed; preserve externally-referenced deep links (auth/OAuth2 flows especially) via the route-compat/redirect map (ADR-0008), grown per slice.
+- **URL backward-compat**: both legacy and new `/XUI` are hash-routed; the compat map (ADR-0011, P1-10) normalizes legacy hash spellings (`#login` → `#/login`, `#!/...` forms, regex-pattern routes), grown per slice.
 - **Testing**: Vitest + Testing Library + MSW (mock AM REST). Port the 17 legacy specs' intent where still relevant; don't port Karma/RequireJS scaffolding.
 - **Local dev without OpenAM (ADR-0010)**: one set of MSW handlers models the AM REST contract and runs in three modes — Vitest (node), the EUI browser worker (`dev:mock`), and a standalone `@mswjs/http-middleware` server. The legacy XUI runs against the standalone server via a dev proxy (static assets, no `OPENAM_HOME`/Tomcat). Handlers grow per slice; seed fixtures by recording real AM responses to limit drift.
 

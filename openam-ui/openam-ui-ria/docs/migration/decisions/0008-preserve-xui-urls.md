@@ -1,6 +1,6 @@
 # ADR-0008: New UI served at `/XUI`, preserving legacy deep-link URLs
 
-Status: Accepted · Date: 2026-06-27
+Status: Superseded by ADR-0011 · Date: 2026-06-27
 
 ## Context
 The new UI must end up at the canonical `/XUI` path (ADR-0004). Beyond the base path, **existing `/XUI` deep links must keep resolving after cutover** — bookmarks, AM server config, OAuth2 redirect URIs, and docs reference specific URLs. Legacy XUI is **hash-routed**: route tables (`config/routes/*.js`) map patterns like `login`, `dashboard/`, `oauth2/tokens`, `confirmLogin/`, and regexes such as `/continuePasswordReset(\/[^&]*)(&.+)?/` against the URL fragment (`/XUI#login`, `/XUI#dashboard/...`). react-router 7 uses history (path) routing by default, so the URL shape changes unless we bridge it.

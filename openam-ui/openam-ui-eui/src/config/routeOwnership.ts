@@ -20,9 +20,9 @@ import type { MountMap, RouteOwnership } from '@openidentityplatform/commons-ui-
 // asserts the two stay in sync, so flip an entry to "eui" in BOTH places as each slice migrates.
 //
 // These absolute mounts are the legitimate cross-app coexistence-handoff targets, NOT a violation of
-// "never hardcode the mount" (ADR-0004) — that rule is about the router basename / asset paths, which
-// stay runtime-resolved in config/runtime.ts. CrossLink only uses mounts for the OTHER app's prefix;
-// same-app links resolve through react-router against the runtime basename.
+// "never hardcode the mount" (ADR-0004) — that rule is about asset paths, which stay relocatable via
+// Vite base + <base href>. CrossLink only uses mounts for the OTHER app's prefix; same-app links
+// resolve through react-router against the fragment (HashRouter, ADR-0011).
 export const mounts: MountMap = {
   eui: '/EUI',
   xui: '/XUI',

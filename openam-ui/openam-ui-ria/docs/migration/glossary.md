@@ -2,8 +2,8 @@
 
 - **XUI** — the OpenAM single-page UI in `openam-ui-ria`; legacy stack is RequireJS/Backbone/Grunt. Deployed under `/XUI`. Also the **final, canonical path** the new UI takes over at cutover.
 - **/EUI** — the **temporary** coexistence mount for the new app while legacy still owns `/XUI`. Retired at cutover (new app deployed to `/XUI`). Never hardcoded — the build is path-relocatable (ADR-0004).
-- **Path-relocatable build** — the new app's single build serves from `/EUI` then `/XUI` with no rebuild (Vite `base` relative/injected, react-router `basename` from runtime config).
-- **URL-compat / route-compat map** — translates legacy hash-routed `/XUI` deep links (`#login`, `#dashboard/`, password-reset/register regexes) to the new app's history routes so existing bookmarks/AM config/OAuth2 redirect URIs keep working (ADR-0008).
+- **Path-relocatable build** — the new app's single build serves from `/EUI` then `/XUI` with no rebuild (Vite `base` relative/injected; asset relocatability is independent of the router, which is `HashRouter` with no `basename`).
+- **URL-compat / route-compat map** — normalizes legacy hash spellings (`#login`, `#!/...`, regex-pattern routes) to the new app's `#/login` form (react-router `HashRouter` emits a leading slash in the fragment). Both apps are hash-routed, so no hash→history translation is needed (ADR-0011).
 - **Commons UI / forgerock-ui** — shared base UI from the Maven artifact `org.openidentityplatform.commons.ui:user`, unpacked at build time. Provides Router, EventManager, SessionManager, ProcessConfiguration, Constants, base views (`org/forgerock/commons/...`). XUI references 45 distinct modules from it.
 - **eui / openam-ui-eui** — the new app. Its own Maven module `openam-ui/openam-ui-eui` (sibling to `openam-ui-ria`), npm app name `eui`; replaces the old placeholder name `app-next` (ADR-0009).
 - **commons-ui-next** — the new modern replacement core (TypeScript) built in this migration as a workspace package (`@openidentityplatform/commons-ui-next`), consumed by `eui` via an npm workspace at `openam-ui/`; extracted to the commons repo later (ADR-0002).

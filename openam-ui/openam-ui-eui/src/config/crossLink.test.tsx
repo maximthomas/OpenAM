@@ -24,7 +24,7 @@ import {
   createCrossLinkResolver,
 } from '@openidentityplatform/commons-ui-next/routing'
 
-function renderWithResolver(ui: ReactNode, basename?: string) {
+function renderWithResolver(ui: ReactNode) {
   const resolver = createCrossLinkResolver({
     routes: [
       { path: 'login', owner: 'xui' },
@@ -34,7 +34,7 @@ function renderWithResolver(ui: ReactNode, basename?: string) {
     currentOwner: 'eui',
   })
   return render(
-    <MemoryRouter basename={basename} initialEntries={[basename ?? '/']}>
+    <MemoryRouter>
       <CrossLinkProvider resolver={resolver}>{ui}</CrossLinkProvider>
     </MemoryRouter>,
   )
@@ -51,9 +51,12 @@ describe('CrossLink', () => {
     expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/dashboard')
   })
 
-  it('same-app link honors the router basename (proves it is a router Link, not a raw anchor)', () => {
-    renderWithResolver(<CrossLink to="dashboard">Dashboard</CrossLink>, '/EUI')
-    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/EUI/dashboard')
+  it('same-app link renders the resolver href, not a mount-prefixed cross-boundary URL', () => {
+    renderWithResolver(<CrossLink to="dashboard">Dashboard</CrossLink>)
+    const link = screen.getByRole('link', { name: 'Dashboard' })
+    expect(link).toHaveAttribute('href', '/dashboard')
+    expect(link).not.toHaveAttribute('href', expect.stringContaining('/EUI/'))
+    expect(link).not.toHaveAttribute('href', expect.stringContaining('/XUI/'))
   })
 
   it('forwards anchor props (e.g. className) to the rendered link', () => {

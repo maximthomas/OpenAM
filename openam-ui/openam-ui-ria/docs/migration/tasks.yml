@@ -24,7 +24,7 @@ phases:
         detail: >-
           App name "eui" inside openam-ui-eui. Scaffold fresh from the standard Vite React-TS template;
           do not copy another module. PATH-RELOCATABLE: Vite base relative/injected (not hardcoded /EUI);
-          react-router basename from runtime config; no absolute /EUI URLs. Same build serves /EUI then /XUI (ADR-0004).
+          no absolute /EUI URLs. Same build serves /EUI then /XUI (ADR-0004). Router is HashRouter (no basename); asset relocatability uses Vite base + <base href> (ADR-0011).
         depends_on: [P0-0]
         status: done
       - id: P0-2
@@ -48,12 +48,12 @@ phases:
         detail: >-
           App-agnostic mechanism in commons-ui-next/routing (createCrossLinkResolver +
           <CrossLink>/<CrossLinkProvider>, ADR-0002): same-app routes navigate in-app (react-router
-          Link, root-relative vs the runtime basename), other-owner routes are full-page <a> handoffs
-          to that app's mount (ADR-0004). App data (route-ownership map mirroring route-ownership.yml
-          + mounts) lives in openam-ui-eui/src/config/routeOwnership.ts, wired via the provider in
-          main.tsx. A Vitest sync test parses route-ownership.yml and fails on drift. All routes still
-          owner: xui (nothing migrated yet); slices flip entries. Precise legacy hash-URL formatting
-          deferred to the route-compat map (ADR-0008, P1-10).
+          Link, root-relative), other-owner routes are full-page <a> handoffs to that app's mount
+          (ADR-0004). App data (route-ownership map mirroring route-ownership.yml + mounts) lives in
+          openam-ui-eui/src/config/routeOwnership.ts, wired via the provider in main.tsx. A Vitest
+          sync test parses route-ownership.yml and fails on drift. All routes still owner: xui
+          (nothing migrated yet); slices flip entries. Hash-spelling normalization (legacy #login →
+          new #/login) deferred to the compat map (ADR-0011, P1-10).
         depends_on: [P0-1]
         status: done
       - id: P0-5
@@ -157,10 +157,13 @@ phases:
         title: Lock testing patterns (Vitest + Testing Library + MSW for AM REST)
         status: todo
       - id: P1-10
-        title: Route-compat/redirect map — start with auth URLs (legacy hash routes -> new routes)
+        title: Hash-spelling normalization map — legacy #login forms -> react-router #/login
         detail: >-
-          ADR-0008. Map legacy /XUI hash routes (#login, password-reset/register/logout regexes)
-          to new routes; each later slice appends its mappings. Preserve query/fragment params.
+          ADR-0011. The new app is HashRouter-routed and emits #/login (leading slash); legacy
+          used #login (no leading slash) and #!/... forms. On load, detect these legacy spellings
+          and client-side redirect to the #/... equivalent, preserving query params. Start with
+          auth URLs (#login, password-reset/register/logout regexes); each later slice appends
+          its mappings. Simpler than the original ADR-0008 plan (no hash->history translation needed).
         depends_on: [P1-5]
         status: todo
 

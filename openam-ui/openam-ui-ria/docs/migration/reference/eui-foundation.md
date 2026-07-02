@@ -60,15 +60,18 @@ Provider stack, outside-in:
 ```
 <I18nextProvider i18n={createI18nInstance()}>
   <StrictMode>
-    <BrowserRouter basename={getBasename()}>
-      <CrossLinkProvider resolver={crossLinkResolver}>
-        <App />
-      </CrossLinkProvider>
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <HashRouter>
+        <CrossLinkProvider resolver={crossLinkResolver}>
+          <App />
+        </CrossLinkProvider>
+      </HashRouter>
+    </QueryClientProvider>
   </StrictMode>
 </I18nextProvider>
 ```
-- `getBasename()` (`src/config/runtime.ts`) resolves the router basename at runtime — never hardcode `/EUI` or `/XUI` (path-relocatable build, ADR-0004).
+- `HashRouter` (react-router 7, ADR-0011): the mount path (`/EUI`, `/XUI`) lives in the real URL; react-router sees only the fragment (`/login`, `/dashboard`). No `basename` needed or used.
+- Asset relocatability is independent: Vite `base: './'` + host-rewritten `<base href>` in `index.html` (ADR-0004). `src/config/runtime.ts` has been removed (it was only used to derive the router basename).
 - `crossLinkResolver` is built from `mounts` + `routeOwnership` in `src/config/routeOwnership.ts`.
 - Mock worker (`src/mocks/browser.ts`) is started conditionally via a dynamic import gated on `import.meta.env.VITE_MOCK`, so it's dead-code-eliminated from production builds. `onUnhandledRequest` only warns for un-mocked `/json/` calls (app static assets/HMR pass through silently).
 

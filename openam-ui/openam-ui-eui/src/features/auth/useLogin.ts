@@ -14,34 +14,60 @@
  * Copyright 2026 3A Systems LLC.
  */
 
+import { useCallback, useEffect, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { startAuthentication, submitCallbacks, setCallbackValue, type AuthStep } from '@openidentityplatform/commons-ui-next/auth'
+import {
+  startAuthentication,
+  submitCallbacks,
+  type AmAuthChallenge,
+  type AuthStep,
+} from '@openidentityplatform/commons-ui-next/auth'
 import { amTransport } from '../../config/transport.ts'
 
-type Credentials = { username: string; password: string }
-
-// Single-stage username/password login only (P1-5 minimal slice). Multi-stage callback chains,
-// redirects, and polling are deferred to P1-5b — see docs/migration/reference/legacy-login.md.
-async function login({ username, password }: Credentials): Promise<AuthStep> {
-  const start = await startAuthentication(amTransport)
-  if (start.kind !== 'requirements') {
-    return start
-  }
-
-  const nameIndex = start.challenge.callbacks.findIndex((cb) => cb.type === 'NameCallback')
-  const passwordIndex = start.challenge.callbacks.findIndex((cb) => cb.type === 'PasswordCallback')
-
-  let challenge = start.challenge
-  if (nameIndex !== -1) {
-    challenge = setCallbackValue(challenge, nameIndex, username)
-  }
-  if (passwordIndex !== -1) {
-    challenge = setCallbackValue(challenge, passwordIndex, password)
-  }
-
-  return submitCallbacks(amTransport, challenge)
+export type AuthFlowHook = {
+  /** Current authentication step; null while the initial startAuthentication is in flight. */
+  step: AuthStep | null
+  /** True while startAuthentication is running (initial or restart). */
+  isStarting: boolean
+  /** True while a submitCallbacks mutation is in flight. */
+  isSubmitting: boolean
+  /** Submit a filled challenge to advance the flow. */
+  submit: (filledChallenge: AmAuthChallenge) => void
+  /** Restart the flow from scratch (fresh startAuthentication). */
+  restart: () => void
 }
 
-export function useLogin() {
-  return useMutation({ mutationFn: login })
+/**
+ * Multi-stage AM authentication flow hook (P1-5b).
+ * Starts authentication on mount; loops until success or failure via submit().
+ */
+export function useAuthenticationFlow(): AuthFlowHook {
+  const [step, setStep] = useState<AuthStep | null>(null)
+  const [isStarting, setIsStarting] = useState(false)
+
+  const startAuth = useCallback(() => {
+    setStep(null)
+    setIsStarting(true)
+    startAuthentication(amTransport)
+      .then(setStep)
+      .finally(() => setIsStarting(false))
+  }, [])
+
+  useEffect(() => {
+    startAuth()
+  }, [startAuth])
+
+  const submitMutation = useMutation({
+    mutationFn: (challenge: AmAuthChallenge) => submitCallbacks(amTransport, challenge),
+    onSuccess: setStep,
+    retry: false,
+  })
+
+  return {
+    step,
+    isStarting,
+    isSubmitting: submitMutation.isPending,
+    submit: submitMutation.mutate,
+    restart: startAuth,
+  }
 }

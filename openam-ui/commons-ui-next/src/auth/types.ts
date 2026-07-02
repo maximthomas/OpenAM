@@ -26,9 +26,33 @@ export type AmCallbackInput = {
   value: number | string
 }
 
-// Extend this union as new callback types are introduced per slice.
+// Well-known callback types — renderer switch uses this union; unknown types fall back to text input.
+export type KnownCallbackType =
+  | 'NameCallback'
+  | 'PasswordCallback'
+  | 'TextInputCallback'
+  | 'HiddenValueCallback'
+  | 'ChoiceCallback'
+  | 'ConfirmationCallback'
+  | 'TextOutputCallback'
+  | 'RedirectCallback'
+  | 'PollingWaitCallback'
+
+export const KNOWN_CALLBACK_TYPES: readonly KnownCallbackType[] = [
+  'NameCallback',
+  'PasswordCallback',
+  'TextInputCallback',
+  'HiddenValueCallback',
+  'ChoiceCallback',
+  'ConfirmationCallback',
+  'TextOutputCallback',
+  'RedirectCallback',
+  'PollingWaitCallback',
+] as const
+
+// Open type — use KnownCallbackType guards (src/auth/callbacks.ts) to narrow.
 export type AmCallback = {
-  type: 'NameCallback' | 'PasswordCallback'
+  type: string
   output: AmCallbackOutput[]
   input: AmCallbackInput[]
 }

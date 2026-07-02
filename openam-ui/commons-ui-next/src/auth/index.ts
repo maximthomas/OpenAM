@@ -22,7 +22,10 @@ export type {
   AmAuthSuccess,
   AmAuthError,
   AuthStep,
+  KnownCallbackType,
 } from './types.ts'
+
+export { KNOWN_CALLBACK_TYPES } from './types.ts'
 
 export {
   startAuthentication,
@@ -32,6 +35,24 @@ export {
   isAuthSuccess,
   isAuthFailure,
 } from './authenticate.ts'
+
+export {
+  getOutput,
+  getPrompt,
+  getChoices,
+  getMessageType,
+  getConfirmationOptions,
+  isNameCallback,
+  isPasswordCallback,
+  isTextInputCallback,
+  isHiddenValueCallback,
+  isChoiceCallback,
+  isConfirmationCallback,
+  isTextOutputCallback,
+} from './callbacks.ts'
+
+export { CallbackForm } from './CallbackForm.tsx'
+export type { CallbackFormProps } from './CallbackForm.tsx'
 
 export { createFetchTransport } from '../transport.ts'
 export type { Transport } from '../transport.ts'

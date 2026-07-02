@@ -34,7 +34,19 @@ export {
   AUTH_ID,
   AUTH_SUCCESS,
   DEMO_TOKEN_ID,
+  MULTI_AUTH_ID_1,
+  MULTI_AUTH_ID_2,
+  AUTH_CHALLENGE_USERNAME_STAGE,
+  AUTH_CHALLENGE_PASSWORD_STAGE,
+  AUTH_CHALLENGE_CHOICE,
+  AUTH_CHALLENGE_CONFIRMATION,
+  AUTH_CHALLENGE_TEXT_OUTPUT,
+  CHOICE_AUTH_ID,
+  CONFIRMATION_AUTH_ID,
+  TEXT_OUTPUT_AUTH_ID,
 } from './fixtures/authenticate.ts'
+
+export { multiStageAuthenticateHandler } from './handlers/authenticate.ts'
 
 export { SERVER_INFO } from './fixtures/serverinfo.ts'
 

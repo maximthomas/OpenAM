@@ -141,7 +141,7 @@ phases:
           status: in_progress.
         depends_on: [P1-5]
         plan: docs/migration/plans/P1-5b-callback-engine.md
-        status: todo
+        status: done
       - id: P1-5c
         title: Login parity — RedirectCallback (SAML/OAuth) + PollingWaitCallback (push) + 408 retry
         detail: >-

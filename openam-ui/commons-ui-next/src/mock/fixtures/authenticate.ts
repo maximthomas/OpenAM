@@ -56,3 +56,112 @@ export const AUTH_ERROR: AmAuthError = {
   reason: 'Unauthorized',
   message: 'Authentication Failed!!',
 }
+
+// ── Multi-stage fixtures (2-stage: username → password) ─────────────────────
+
+export const MULTI_AUTH_ID_1 = 'multi-stage-auth-id-stage-1-xxxxxxxxxxxxxxxxxx'
+export const MULTI_AUTH_ID_2 = 'multi-stage-auth-id-stage-2-xxxxxxxxxxxxxxxxxx'
+
+/** Stage 1: username only. */
+export const AUTH_CHALLENGE_USERNAME_STAGE: AmAuthChallenge = {
+  authId: MULTI_AUTH_ID_1,
+  template: '',
+  stage: 'MultiStage1',
+  header: 'Sign in to OpenAM',
+  callbacks: [
+    {
+      type: 'NameCallback',
+      output: [{ name: 'prompt', value: 'User Name:' }],
+      input: [{ name: 'IDToken1', value: '' }],
+    },
+  ],
+}
+
+/** Stage 2: password only. */
+export const AUTH_CHALLENGE_PASSWORD_STAGE: AmAuthChallenge = {
+  authId: MULTI_AUTH_ID_2,
+  template: '',
+  stage: 'MultiStage2',
+  header: 'Sign in to OpenAM',
+  callbacks: [
+    {
+      type: 'PasswordCallback',
+      output: [{ name: 'prompt', value: 'Password:' }],
+      input: [{ name: 'IDToken2', value: '' }],
+    },
+  ],
+}
+
+// ── Callback-type fixtures (used in CallbackForm component tests) ─────────────
+
+export const CHOICE_AUTH_ID = 'choice-callback-auth-id-xxxxxxxxxxxxxxxxxx'
+
+/** Stage with a ChoiceCallback. */
+export const AUTH_CHALLENGE_CHOICE: AmAuthChallenge = {
+  authId: CHOICE_AUTH_ID,
+  template: '',
+  stage: 'ChoiceStage',
+  header: 'Choose an option',
+  callbacks: [
+    {
+      type: 'ChoiceCallback',
+      output: [
+        { name: 'prompt', value: 'Select security question:' },
+        { name: 'choices', value: ['What is your pet name?', 'What city were you born in?'] },
+        { name: 'defaultChoice', value: 0 },
+      ],
+      input: [{ name: 'IDToken1', value: 0 }],
+    },
+  ],
+}
+
+export const CONFIRMATION_AUTH_ID = 'confirmation-callback-auth-id-xxxxxxxxxxxxxxx'
+
+/** Stage with a ConfirmationCallback. */
+export const AUTH_CHALLENGE_CONFIRMATION: AmAuthChallenge = {
+  authId: CONFIRMATION_AUTH_ID,
+  template: '',
+  stage: 'ConfirmStage',
+  header: 'Confirm',
+  callbacks: [
+    {
+      type: 'ConfirmationCallback',
+      output: [
+        { name: 'prompt', value: '' },
+        { name: 'messageType', value: 0 },
+        { name: 'options', value: ['Submit', 'Cancel'] },
+        { name: 'optionType', value: -1 },
+        { name: 'defaultOption', value: 0 },
+      ],
+      input: [{ name: 'IDToken1', value: 0 }],
+    },
+  ],
+}
+
+export const TEXT_OUTPUT_AUTH_ID = 'text-output-callback-auth-id-xxxxxxxxxxxxxxxxx'
+
+/** Stage with a TextOutputCallback (info) and a HiddenValueCallback. */
+export const AUTH_CHALLENGE_TEXT_OUTPUT: AmAuthChallenge = {
+  authId: TEXT_OUTPUT_AUTH_ID,
+  template: '',
+  stage: 'TextOutputStage',
+  header: 'Notice',
+  callbacks: [
+    {
+      type: 'TextOutputCallback',
+      output: [
+        { name: 'message', value: 'Please review your profile before continuing.' },
+        { name: 'messageType', value: 0 },
+      ],
+      input: [],
+    },
+    {
+      type: 'HiddenValueCallback',
+      output: [
+        { name: 'value', value: 'hidden-token-value' },
+        { name: 'id', value: 'hv1' },
+      ],
+      input: [{ name: 'IDToken1', value: 'hidden-token-value' }],
+    },
+  ],
+}

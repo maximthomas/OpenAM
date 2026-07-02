@@ -14,58 +14,57 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { useState, type FormEvent } from 'react'
-import { Form, Button, Alert } from 'react-bootstrap'
+import { useEffect, useState } from 'react'
+import { Alert, Spinner } from 'react-bootstrap'
 import { useNavigate } from 'react-router'
 import { useTranslation } from '@openidentityplatform/commons-ui-next/i18n'
+import { CallbackForm } from '@openidentityplatform/commons-ui-next/auth'
 import { setToken } from '@openidentityplatform/commons-ui-next/session'
-import { isAuthSuccess, isAuthFailure } from '@openidentityplatform/commons-ui-next/auth'
-import { useLogin } from './useLogin.ts'
+import { useAuthenticationFlow } from './useLogin.ts'
 
-// Single-stage username/password login (P1-5 minimal slice). Multi-stage callback chains,
-// remember-me, goto handling, etc. are deferred to P1-5b.
 export default function LoginPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const login = useLogin()
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const { step, isStarting, isSubmitting, submit, restart } = useAuthenticationFlow()
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-    setError(null)
-
-    const step = await login.mutateAsync({ username, password })
-    if (isAuthSuccess(step)) {
+  useEffect(() => {
+    if (step?.kind === 'success') {
       setToken(step.success.tokenId)
-      navigate('/')
-    } else if (isAuthFailure(step)) {
-      setError(t('config.messages.CommonMessages.authenticationFailed'))
-    } else {
-      setError(t('config.messages.CommonMessages.unknown'))
+      void navigate('/')
     }
+    if (step?.kind === 'failure') {
+      setErrorMessage(t('config.messages.CommonMessages.authenticationFailed'))
+      restart()
+    }
+  }, [step, navigate, restart, t])
+
+  if (isStarting || step === null) {
+    return (
+      <>
+        {errorMessage && <Alert variant="danger">{errorMessage}</Alert>}
+        <Spinner animation="border" role="status" />
+      </>
+    )
   }
 
-  return (
-    <Form onSubmit={handleSubmit}>
-      {error && <Alert variant="danger">{error}</Alert>}
-      <Form.Group className="mb-3" controlId="login-username">
-        <Form.Label>{t('common.user.username')}</Form.Label>
-        <Form.Control value={username} onChange={(event) => setUsername(event.target.value)} required />
-      </Form.Group>
-      <Form.Group className="mb-3" controlId="login-password">
-        <Form.Label>{t('common.user.password')}</Form.Label>
-        <Form.Control
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
+  if (step.kind === 'requirements') {
+    return (
+      <>
+        {errorMessage && <Alert variant="danger">{errorMessage}</Alert>}
+        <CallbackForm
+          key={step.challenge.authId}
+          challenge={step.challenge}
+          onSubmit={(ch) => {
+            setErrorMessage(null)
+            submit(ch)
+          }}
+          submitting={isSubmitting}
         />
-      </Form.Group>
-      <Button type="submit" disabled={login.isPending}>
-        {t('common.user.login')}
-      </Button>
-    </Form>
-  )
+      </>
+    )
+  }
+
+  // success / failure handled by the useEffect above; render nothing while navigating.
+  return null
 }

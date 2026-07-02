@@ -15,9 +15,11 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { DEMO_TOKEN_ID } from '../mock/index.ts'
+import { http } from 'msw'
+import { DEMO_TOKEN_ID, multiStageAuthenticateHandler } from '../mock/index.ts'
+import { server } from '../test/setup.ts'
 import { createFetchTransport } from '../transport.ts'
-import { startAuthentication, submitCallbacks, fillCallbacks, isAuthSuccess, isAuthFailure } from './authenticate.ts'
+import { startAuthentication, submitCallbacks, fillCallbacks, setCallbackValue, isAuthSuccess, isAuthFailure } from './authenticate.ts'
 
 // MSW intercepts fetch for any hostname; use a recognisable test origin.
 const transport = createFetchTransport({ baseUrl: 'http://openam.test' })
@@ -57,6 +59,46 @@ describe('authenticate', () => {
     expect(isAuthFailure(step)).toBe(true)
     if (!isAuthFailure(step)) return
     expect(step.error.code).toBe(401)
+  })
+
+  it('multi-stage flow: username stage → password stage → success', async () => {
+    server.use(http.post('*/json/authenticate', ({ request }) => multiStageAuthenticateHandler(request)))
+    server.use(http.post('*/json/realms/root/authenticate', ({ request }) => multiStageAuthenticateHandler(request)))
+
+    // Stage 1: username only
+    const stage1 = await startAuthentication(transport)
+    expect(stage1.kind).toBe('requirements')
+    if (stage1.kind !== 'requirements') return
+    const s1Types = stage1.challenge.callbacks.map((cb) => cb.type)
+    expect(s1Types).toEqual(['NameCallback'])
+
+    // Submit stage 1 with correct username → password stage
+    const filled1 = setCallbackValue(stage1.challenge, 0, 'demo')
+    const stage2 = await submitCallbacks(transport, filled1)
+    expect(stage2.kind).toBe('requirements')
+    if (stage2.kind !== 'requirements') return
+    const s2Types = stage2.challenge.callbacks.map((cb) => cb.type)
+    expect(s2Types).toEqual(['PasswordCallback'])
+
+    // Submit stage 2 with correct password → success
+    const filled2 = setCallbackValue(stage2.challenge, 0, 'changeit')
+    const result = await submitCallbacks(transport, filled2)
+    expect(isAuthSuccess(result)).toBe(true)
+    if (!isAuthSuccess(result)) return
+    expect(result.success.tokenId).toBe(DEMO_TOKEN_ID)
+  })
+
+  it('multi-stage flow: wrong username returns failure', async () => {
+    server.use(http.post('*/json/authenticate', ({ request }) => multiStageAuthenticateHandler(request)))
+    server.use(http.post('*/json/realms/root/authenticate', ({ request }) => multiStageAuthenticateHandler(request)))
+
+    const stage1 = await startAuthentication(transport)
+    expect(stage1.kind).toBe('requirements')
+    if (stage1.kind !== 'requirements') return
+
+    const filled1 = setCallbackValue(stage1.challenge, 0, 'wrong-user')
+    const result = await submitCallbacks(transport, filled1)
+    expect(isAuthFailure(result)).toBe(true)
   })
 
   it('fillCallbacks populates all callback inputs in order and is immutable', () => {

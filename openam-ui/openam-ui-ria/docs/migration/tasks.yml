@@ -7,6 +7,7 @@ meta:
   new_mount: /EUI
   legacy_mount: /XUI
   decisions: docs/migration/decisions
+  plans: docs/migration/plans
 
 phases:
   - id: phase-0
@@ -116,21 +117,84 @@ phases:
           commons-ui-next/auth, mounted at /EUI/login, validated against the MSW mock. Introduces
           TanStack Query. Success redirects to app home "/" only (goto/realm/fragment params
           deferred). route-ownership login flipped to owner: eui, status: in_progress (NOT
-          migrated — parity incomplete until P1-5b lands). See
+          migrated — parity incomplete until the P1-5b–f login-parity split lands). See
           docs/migration/reference/legacy-login.md for the full legacy feature map.
         depends_on: [P1-1, P1-2, P1-4]
         status: in_progress
+      # P1-5b was too big for one task (~9 legacy sub-features / ~1,200 LOC), so it is split into
+      # P1-5b..P1-5g. Login route stays status: in_progress across the whole split; flip to
+      # status: migrated only when P1-5f (the parity gate) lands. Shared research + split rationale:
+      # docs/migration/plans/README.md.
       - id: P1-5b
-        title: Login parity — multi-stage callbacks, redirects, session dialog, goto handling
+        title: Login parity (engine) — multi-stage callback loop + generic callback renderer
         detail: >-
-          Deferred from P1-5 (minimal slice). Multi-stage loop + generic callback renderer
-          (Choice, Confirmation, TextOutput/Script, TextInput, HiddenValue, Default/NameCallback);
-          RedirectCallback (SAML/OAuth) + PollingWaitCallback (push); session-timeout login dialog
-          (RESTLoginDialog); zero-page/auto-login; existing-session/realm-change (confirmLogin);
-          LoginFailure/SessionExpired/logout views; remember-me; goto/realm/fragment params +
-          validateGoto (may share work with P1-10). See docs/migration/reference/legacy-login.md.
-          Flip route-ownership login -> status: migrated only once this reaches parity.
+          First and largest sub-task of the P1-5b–g login-parity split. THIS task = the callback
+          engine only: widen the commons-ui-next/auth callback model to an open type: string + typed
+          guards; add a reusable commons-ui-next CallbackForm renderer (Name/Default, Password,
+          TextInput, HiddenValue, Choice, Confirmation, TextOutput msg 0/1/2 as alerts); drive a
+          multi-stage loop (start→render→submit→repeat until success/failure) from an eui
+          TanStack-Query hook; refactor P1-5's single-stage LoginPage/useLogin to run through it (one
+          code path); restart-on-failure; field labels from the AM output prompt; extend MSW with a
+          synthetic multi-stage fixture set + stage state-machine. Redirect/Polling, goto,
+          existing-session, zero-page, dialog, error/expired/logout views, remember-me, and
+          ScriptTextOutput execution are all deferred to P1-5c..P1-5g. Login route stays
+          status: in_progress.
         depends_on: [P1-5]
+        plan: docs/migration/plans/P1-5b-callback-engine.md
+        status: todo
+      - id: P1-5c
+        title: Login parity — RedirectCallback (SAML/OAuth) + PollingWaitCallback (push) + 408 retry
+        detail: >-
+          Special callbacks that alter the engine loop: RedirectCallback builds a form POST / GET
+          navigation to an external IdP (SAML/OAuth federation); PollingWaitCallback auto-resubmits
+          after waitTime (push auth); plus AuthNService-style 408 timeout-retry. Adds MSW
+          redirect/polling scenarios. See docs/migration/plans/P1-5c-redirect-polling.md.
+        depends_on: [P1-5b]
+        plan: docs/migration/plans/P1-5c-redirect-polling.md
+        status: todo
+      - id: P1-5d
+        title: Login parity — goto/realm/fragment params + validateGoto
+        detail: >-
+          Entry + success URL handling: parse fragment+query params, map legacy shorthand
+          (authlevel/module/service/user/resource → authIndexType/authIndexValue), realm handling,
+          and the open-redirect guard via POST /json/users?_action=validateGoto. Coordinate with
+          P1-10 (hash-spelling normalization) on query-param preservation + entry point. See
+          docs/migration/plans/P1-5d-goto-validate.md.
+        depends_on: [P1-5b]
+        plan: docs/migration/plans/P1-5d-goto-validate.md
+        status: todo
+      - id: P1-5e
+        title: Login parity — existing-session/realm-change (confirmLogin) + zero-page/auto-login
+        detail: >-
+          Session-on-entry + URL-driven auto-submit: if the initial /json/authenticate already
+          carries a tokenId, detect the existing session; realm-change → confirmLogin flow
+          (RESTConfirmLoginView); arg=newsession force-logout; zero-page/auto-login maps IDTokenN URL
+          params to callbacks and submits without rendering the form (referrer whitelist +
+          autoLoginAttempts guard). See docs/migration/plans/P1-5e-existing-session-zeropage.md.
+        depends_on: [P1-5b]
+        plan: docs/migration/plans/P1-5e-existing-session-zeropage.md
+        status: todo
+      - id: P1-5f
+        title: "Login parity (GATE) — session dialog + LoginFailure/SessionExpired/logout views + remember-me"
+        detail: >-
+          Ancillary UI + modal + logout: session-timeout re-auth dialog (RESTLoginDialog — reuse the
+          engine form in a modal; admin modal vs self-service full logout); LoginFailure /
+          SessionExpired / RESTLogoutView views; remember-me (persist username). PARITY GATE — once
+          this lands, flip route-ownership.yml login -> status: migrated and keep the TS mirror
+          (openam-ui-eui/src/config/routeOwnership.ts) in sync. See
+          docs/migration/plans/P1-5f-dialog-error-views-rememberme.md.
+        depends_on: [P1-5b]
+        plan: docs/migration/plans/P1-5f-dialog-error-views-rememberme.md
+        status: todo
+      - id: P1-5g
+        title: Login parity — ScriptTextOutput execution (device-print/WebAuthn/reCAPTCHA)
+        detail: >-
+          Hardened handling of TextOutputCallback messageType 4 (ScriptTextOutput), which legacy
+          executed as raw server-provided JS (device print, WebAuthn, reCAPTCHA hooks). Deferred from
+          P1-5b as security-sensitive; not required for the parity gate and may be re-prioritized into
+          a later auth-module slice. See docs/migration/plans/P1-5g-scripttextoutput.md.
+        depends_on: [P1-5b]
+        plan: docs/migration/plans/P1-5g-scripttextoutput.md
         status: todo
       - id: P1-6
         title: Migrate anonymousProcess — password reset, self-register, forgot username

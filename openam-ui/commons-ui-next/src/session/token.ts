@@ -18,9 +18,9 @@
 // for cross-request persistence; we also keep it in memory so the new app can include
 // tokenId in /json/sessions query params. Full cookie/HttpOnly parity is deferred to P1-5.
 
-let _token: string | undefined
+let _token: string | null = null
 
-export function getToken(): string | undefined {
+export function getToken(): string | null {
   return _token
 }
 
@@ -29,5 +29,5 @@ export function setToken(token: string): void {
 }
 
 export function clearToken(): void {
-  _token = undefined
+  _token = null
 }

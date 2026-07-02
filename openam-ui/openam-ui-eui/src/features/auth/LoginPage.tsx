@@ -30,7 +30,7 @@ import {
 } from '@openidentityplatform/commons-ui-next/auth'
 import { clearToken, setToken } from '@openidentityplatform/commons-ui-next/session'
 import { fetchServerInfo } from '@openidentityplatform/commons-ui-next/serverinfo'
-import { amTransport } from '../../config/transport.ts'
+import { amTransport, serverInfoTransport } from '../../config/transport.ts'
 import { buildAuthQuery, extractIDTokens, parseLoginParams } from './loginParams.ts'
 import { useAuthenticationFlow } from './useLogin.ts'
 
@@ -60,7 +60,7 @@ export default function LoginPage() {
   // Step 7: fetch server info once to check zeroPageLoginAllowed.
   const { data: serverInfo } = useQuery({
     queryKey: ['serverinfo'],
-    queryFn: () => fetchServerInfo(amTransport),
+    queryFn: () => fetchServerInfo(serverInfoTransport),
     staleTime: Infinity,
   })
 
@@ -169,7 +169,11 @@ export default function LoginPage() {
       return <Spinner animation="border" role="status" />
     }
 
-    // Show a spinner while zero-page auto-submit is in flight.
+    // Show a spinner while zero-page auto-submit is about to fire (effect hasn't run yet)
+    // or is already in flight. Prevents a brief form flash before auto-submit.
+    if (idTokens.length > 0 && !!serverInfo?.zeroPageLoginAllowed && !zeroPageAttemptedRef.current) {
+      return <Spinner animation="border" role="status" />
+    }
     if (zeroPageAttemptedRef.current && isSubmitting) {
       return <Spinner animation="border" role="status" />
     }

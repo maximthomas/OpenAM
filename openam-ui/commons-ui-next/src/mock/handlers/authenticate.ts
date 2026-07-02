@@ -160,6 +160,22 @@ export function make408ThenRecoverHandler() {
 }
 
 /**
+ * Zero-page reject handler — returns AUTH_CHALLENGE for the initial (no-authId) request,
+ * and AUTH_ERROR 401 for any submit (authId present). Subsequent restarts return AUTH_CHALLENGE.
+ * Use in tests via server.use() to verify the zero-page path does not retry on credential failure.
+ */
+export function makeZeroPageRejectHandler() {
+  return async (request: Request): Promise<Response> => {
+    const text = await request.text()
+    const body = (text ? JSON.parse(text) : {}) as Partial<AmAuthChallenge>
+    if (body.authId) {
+      return HttpResponse.json(AUTH_ERROR, { status: 401 })
+    }
+    return HttpResponse.json(AUTH_CHALLENGE)
+  }
+}
+
+/**
  * Existing-session handler — initial /authenticate (no authId) immediately returns success.
  * Use in tests via server.use() to simulate a user with a live session visiting /login.
  */

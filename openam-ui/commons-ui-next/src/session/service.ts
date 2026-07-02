@@ -25,7 +25,7 @@ import { getToken, setToken, clearToken } from './token.ts'
 export function createSessionService(transport: Transport) {
   function requireToken(): string {
     const t = getToken()
-    if (t === undefined) throw new Error('No active session token')
+    if (t === null) throw new Error('No active session token')
     return t
   }
 
@@ -38,7 +38,7 @@ export function createSessionService(transport: Transport) {
     getSessionInfo: () => getSessionInfo(transport, requireToken()),
     isSessionValid: () => {
       const t = getToken()
-      if (t === undefined) return Promise.resolve(false)
+      if (t === null) return Promise.resolve(false)
       return isSessionValid(transport, t)
     },
     getTimeLeft: () => getTimeLeft(transport, requireToken()),

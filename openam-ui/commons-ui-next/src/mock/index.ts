@@ -63,6 +63,7 @@ export {
   redirectAuthenticateHandler,
   pollingAuthenticateHandler,
   make408ThenRecoverHandler,
+  makeZeroPageRejectHandler,
 } from './handlers/authenticate.ts'
 
 export { SERVER_INFO } from './fixtures/serverinfo.ts'

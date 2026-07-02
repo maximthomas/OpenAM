@@ -27,6 +27,7 @@ import {
   existingSessionAuthenticateHandler,
   existingSessionOtherRealmHandler,
   make408ThenRecoverHandler,
+  makeZeroPageRejectHandler,
   MOCK_GOTO_ALLOWED,
   MOCK_GOTO_REJECTED,
   multiStageAuthenticateHandler,
@@ -290,14 +291,12 @@ describe('LoginPage — arg=newsession (P1-5e)', () => {
 
 describe('LoginPage — zero-page auto-login (P1-5e)', () => {
   it('auto-submits IDToken params and succeeds when zeroPageLoginAllowed is true', async () => {
-    // Enable zero-page in the server info mock.
+    // Enable zero-page in the server info mock. The default authenticate handler handles
+    // IDToken1=demo&IDToken2=changeit → AUTH_CHALLENGE (initial) → AUTH_SUCCESS (submit).
     server.use(
       http.get('*/json/serverinfo/:attribute', () =>
         HttpResponse.json({ ...SERVER_INFO, zeroPageLoginAllowed: true }),
       ),
-      // Use the default single-stage handler so IDToken1=demo&IDToken2=changeit → AUTH_SUCCESS.
-      http.post('*/json/authenticate', () => HttpResponse.json(AUTH_CHALLENGE)),
-      http.post('*/json/realms/root/authenticate', () => HttpResponse.json(AUTH_CHALLENGE)),
     )
 
     renderApp('/login?IDToken1=demo&IDToken2=changeit')
@@ -315,16 +314,15 @@ describe('LoginPage — zero-page auto-login (P1-5e)', () => {
   })
 
   it('does not retry auto-submit when AM rejects the zero-page credentials', async () => {
+    // Reject only the submit (authId present); restarts (no authId) get AUTH_CHALLENGE so
+    // the form can render and the test can confirm no second auto-submit occurs.
+    const handler = makeZeroPageRejectHandler()
     server.use(
       http.get('*/json/serverinfo/:attribute', () =>
         HttpResponse.json({ ...SERVER_INFO, zeroPageLoginAllowed: true }),
       ),
-      http.post('*/json/authenticate', () =>
-        HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'fail' }, { status: 401 }),
-      ),
-      http.post('*/json/realms/root/authenticate', () =>
-        HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'fail' }, { status: 401 }),
-      ),
+      http.post('*/json/authenticate', ({ request }) => handler(request)),
+      http.post('*/json/realms/root/authenticate', ({ request }) => handler(request)),
     )
 
     renderApp('/login?IDToken1=wrong&IDToken2=bad')

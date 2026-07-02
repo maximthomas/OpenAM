@@ -19,3 +19,6 @@ import { createFetchTransport } from '@openidentityplatform/commons-ui-next/auth
 // Relative/same-origin so MSW intercepts requests in dev:mock and tests. Pointing this at a real
 // AM base URL is a deployment concern for P1-7/P1-8.
 export const amTransport = createFetchTransport({ baseUrl: '' })
+
+// serverinfo is not realm-scoped — must call /json/serverinfo/* without a realm prefix.
+export const serverInfoTransport = createFetchTransport({ baseUrl: '', realm: false })

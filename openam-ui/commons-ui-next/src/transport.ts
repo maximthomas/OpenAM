@@ -21,6 +21,6 @@ import { createAmTransport } from './http/index.ts'
 
 export type Transport = (path: string, init?: RequestInit) => Promise<Response>
 
-export function createFetchTransport(opts: { baseUrl: string }): Transport {
-  return createAmTransport({ baseUrl: opts.baseUrl, realm: '/' })
+export function createFetchTransport(opts: { baseUrl: string; realm?: string | false }): Transport {
+  return createAmTransport({ baseUrl: opts.baseUrl, realm: opts.realm ?? '/' })
 }

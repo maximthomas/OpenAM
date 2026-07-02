@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { buildAuthQuery, parseLoginParams } from './loginParams.ts'
+import { buildAuthQuery, extractIDTokens, parseLoginParams } from './loginParams.ts'
 
 function sp(query: string): URLSearchParams {
   return new URLSearchParams(query)
@@ -79,8 +79,8 @@ describe('parseLoginParams', () => {
 
   it('strips params not in the whitelist', () => {
     const result = parseLoginParams(sp('realm=/sub&unknownParam=x&goto=/dashboard'))
-    // realm and unknownParam are not in the whitelist
-    expect(result).toEqual({ goto: '/dashboard' })
+    // unknownParam is stripped; realm is whitelisted (P1-5e)
+    expect(result).toEqual({ goto: '/dashboard', realm: '/sub' })
   })
 
   it('returns empty object for empty params', () => {
@@ -108,14 +108,33 @@ describe('buildAuthQuery', () => {
     expect(parsed.get('arg')).toBe('newsession')
   })
 
-  it('does not include goto or gotoOnFail', () => {
-    const q = buildAuthQuery({ goto: '/home', gotoOnFail: '/fail', authIndexType: 'module' })
+  it('does not include goto, gotoOnFail, or realm', () => {
+    const q = buildAuthQuery({ goto: '/home', gotoOnFail: '/fail', realm: '/sub', authIndexType: 'module' })
     expect(q).not.toContain('goto')
+    expect(q).not.toContain('realm')
     expect(q).toContain('authIndexType')
   })
 
   it('starts with ? when non-empty', () => {
     const q = buildAuthQuery({ authIndexType: 'service', authIndexValue: 'ldap' })
     expect(q.startsWith('?')).toBe(true)
+  })
+})
+
+describe('extractIDTokens', () => {
+  it('returns empty array when no IDToken params present', () => {
+    expect(extractIDTokens(sp(''))).toEqual([])
+  })
+
+  it('extracts IDToken1 and IDToken2 in order', () => {
+    expect(extractIDTokens(sp('IDToken1=demo&IDToken2=changeit'))).toEqual(['demo', 'changeit'])
+  })
+
+  it('stops at the first gap in the sequence', () => {
+    expect(extractIDTokens(sp('IDToken1=a&IDToken3=c'))).toEqual(['a'])
+  })
+
+  it('extracts a single IDToken1', () => {
+    expect(extractIDTokens(sp('IDToken1=demo&goto=/home'))).toEqual(['demo'])
   })
 })

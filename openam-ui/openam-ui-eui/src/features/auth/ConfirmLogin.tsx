@@ -14,17 +14,20 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-// Auth/session types re-exported here so handlers and fixtures that import from this module
-// continue to work unchanged.
-export type {
-  AmCallback,
-  AmCallbackInput,
-  AmCallbackOutput,
-  AmAuthChallenge,
-  AmAuthSuccess,
-  AmAuthError,
-} from '../auth/types.ts'
+import { Alert } from 'react-bootstrap'
+import { Link, useSearchParams } from 'react-router'
+import { useTranslation } from '@openidentityplatform/commons-ui-next/i18n'
 
-export type { AmSessionInfo, AmLogoutResult } from '../session/types.ts'
+export default function ConfirmLogin() {
+  const [searchParams] = useSearchParams()
+  const previousRealm = searchParams.get('previousRealm') ?? '/'
+  const { t } = useTranslation()
 
-export type { AmServerInfo } from '../serverinfo/types.ts'
+  return (
+    <Alert variant="info">
+      <Alert.Heading>{t('common.user.loggedOutOfPreviousSite')}</Alert.Heading>
+      <p>{t('login.confirmLogin.body', { realm: previousRealm })}</p>
+      <Link to="/login">{t('common.user.logInToNewSite')}</Link>
+    </Alert>
+  )
+}

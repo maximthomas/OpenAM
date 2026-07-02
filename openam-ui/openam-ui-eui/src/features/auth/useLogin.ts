@@ -35,6 +35,8 @@ export type AuthFlowHook = {
   isStarting: boolean
   /** True while a submitCallbacks mutation is in flight or a poll is scheduled. */
   isSubmitting: boolean
+  /** True when the initial /authenticate call returned success without any submit — live session. */
+  isExistingSession: boolean
   /** Submit a filled challenge to advance the flow. */
   submit: (filledChallenge: AmAuthChallenge) => void
   /** Restart the flow from scratch (fresh startAuthentication). */
@@ -56,10 +58,13 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
   // Set to true when a redirect challenge with a trackingCookie is seen — suppresses 408 restart.
   const hasTrackingCookieRef = useRef(false)
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Count of submitted callbacks — zero at the time of a success means an existing session.
+  const submitCountRef = useRef(0)
 
   const startAuth = useCallback(() => {
     setStep(null)
     setIsStarting(true)
+    submitCountRef.current = 0
     startAuthentication(amTransport, queryString)
       .then(setStep)
       .finally(() => setIsStarting(false))
@@ -71,7 +76,10 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
 
   const submitMutation = useMutation({
     mutationFn: (challenge: AmAuthChallenge) => submitCallbacks(amTransport, challenge),
-    onSuccess: setStep,
+    onSuccess: (result: AuthStep) => {
+      submitCountRef.current += 1
+      setStep(result)
+    },
     retry: false,
   })
 
@@ -122,6 +130,7 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
     step,
     isStarting,
     isSubmitting: submitMutation.isPending,
+    isExistingSession: step?.kind === 'success' && submitCountRef.current === 0,
     submit: submitMutation.mutate,
     restart: startAuth,
   }

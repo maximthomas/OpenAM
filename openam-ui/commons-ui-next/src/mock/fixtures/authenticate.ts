@@ -260,3 +260,11 @@ export const AUTH_TIMEOUT_ERROR: AmAuthError = {
   reason: 'Request Timeout',
   message: 'Authentication session timed out',
 }
+
+// ── Existing-session fixtures (initial /authenticate returns success) ─────────
+
+// AUTH_SUCCESS_OTHER_REALM simulates a session in a different realm from the URL realm.
+export const AUTH_SUCCESS_OTHER_REALM: AmAuthSuccess = {
+  ...AUTH_SUCCESS,
+  realm: '/other-realm',
+}

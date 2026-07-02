@@ -173,7 +173,7 @@ phases:
           autoLoginAttempts guard). See docs/migration/plans/P1-5e-existing-session-zeropage.md.
         depends_on: [P1-5b]
         plan: docs/migration/plans/P1-5e-existing-session-zeropage.md
-        status: todo
+        status: done
       - id: P1-5f
         title: "Login parity (GATE) — session dialog + LoginFailure/SessionExpired/logout views + remember-me"
         detail: >-

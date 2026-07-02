@@ -18,6 +18,7 @@ import { Routes, Route } from 'react-router'
 import { AppShell } from '@openidentityplatform/commons-ui-next/shell'
 import Home from './routes/Home.tsx'
 import LoginPage from './features/auth/LoginPage.tsx'
+import ConfirmLogin from './features/auth/ConfirmLogin.tsx'
 import Brand from './shell/Brand.tsx'
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
       {/* Minimal pre-auth shell (no nav/end) for the login route (P1-5). */}
       <Route element={<AppShell variant="auth" brand={<Brand />} />}>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/confirmLogin" element={<ConfirmLogin />} />
       </Route>
     </Routes>
   )

@@ -22,13 +22,17 @@ import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commons-ui-next/i18n'
 import {
+  AUTH_CHALLENGE,
   AUTH_CHALLENGE_REDIRECT_POST,
+  existingSessionAuthenticateHandler,
+  existingSessionOtherRealmHandler,
   make408ThenRecoverHandler,
   MOCK_GOTO_ALLOWED,
   MOCK_GOTO_REJECTED,
   multiStageAuthenticateHandler,
   pollingAuthenticateHandler,
   redirectAuthenticateHandler,
+  SERVER_INFO,
 } from '@openidentityplatform/commons-ui-next/mock'
 import { server } from '../../test/setup.ts'
 import App from '../../App.tsx'
@@ -238,5 +242,94 @@ describe('LoginPage — goto param + validateGoto (P1-5d)', () => {
     const url = new URL(capturedUrl!)
     expect(url.searchParams.get('authIndexType')).toBe('module')
     expect(url.searchParams.get('authIndexValue')).toBe('DataStore')
+  })
+})
+
+describe('LoginPage — existing session (P1-5e)', () => {
+  it('redirects to home when existing session realm matches URL realm', async () => {
+    server.use(
+      http.post('*/json/authenticate', ({ request }) => existingSessionAuthenticateHandler(request)),
+      http.post('*/json/realms/root/authenticate', ({ request }) => existingSessionAuthenticateHandler(request)),
+    )
+
+    renderApp('/login')
+
+    // Existing session in same realm ('/') → navigate to home directly.
+    expect(await screen.findByRole('heading', { name: /openam eui/i })).toBeInTheDocument()
+  })
+
+  it('redirects to /confirmLogin when session realm differs from URL realm', async () => {
+    server.use(
+      http.post('*/json/authenticate', ({ request }) => existingSessionOtherRealmHandler(request)),
+      http.post('*/json/realms/root/authenticate', ({ request }) => existingSessionOtherRealmHandler(request)),
+    )
+
+    renderApp('/login')
+
+    // Realm changed: AUTH_SUCCESS_OTHER_REALM has realm '/other-realm', URL has realm '/'.
+    expect(await screen.findByText(/logged you out of the previous site/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /log in to new site/i })).toBeInTheDocument()
+  })
+})
+
+describe('LoginPage — arg=newsession (P1-5e)', () => {
+  it('clears the stored token on mount when arg=newsession', async () => {
+    const { getToken, setToken: storeToken } = await import('@openidentityplatform/commons-ui-next/session')
+    // Pre-store a token to simulate a leftover session.
+    storeToken('existing-token-to-clear')
+    expect(getToken()).toBe('existing-token-to-clear')
+
+    renderApp('/login?arg=newsession')
+
+    // After mount, LoginPage should have called clearToken().
+    await waitFor(() => {
+      expect(getToken()).toBeNull()
+    })
+  })
+})
+
+describe('LoginPage — zero-page auto-login (P1-5e)', () => {
+  it('auto-submits IDToken params and succeeds when zeroPageLoginAllowed is true', async () => {
+    // Enable zero-page in the server info mock.
+    server.use(
+      http.get('*/json/serverinfo/:attribute', () =>
+        HttpResponse.json({ ...SERVER_INFO, zeroPageLoginAllowed: true }),
+      ),
+      // Use the default single-stage handler so IDToken1=demo&IDToken2=changeit → AUTH_SUCCESS.
+      http.post('*/json/authenticate', () => HttpResponse.json(AUTH_CHALLENGE)),
+      http.post('*/json/realms/root/authenticate', () => HttpResponse.json(AUTH_CHALLENGE)),
+    )
+
+    renderApp('/login?IDToken1=demo&IDToken2=changeit')
+
+    // Zero-page auto-submit fills callbacks and submits → home page.
+    expect(await screen.findByRole('heading', { name: /openam eui/i }, { timeout: 3000 })).toBeInTheDocument()
+  })
+
+  it('shows the form normally when zeroPageLoginAllowed is false', async () => {
+    // Server info has zeroPageLoginAllowed: false (default mock fixture).
+    renderApp('/login?IDToken1=demo&IDToken2=changeit')
+
+    // Form should render — no auto-submit.
+    expect(await screen.findByRole('button', { name: 'Submit' })).toBeInTheDocument()
+  })
+
+  it('does not retry auto-submit when AM rejects the zero-page credentials', async () => {
+    server.use(
+      http.get('*/json/serverinfo/:attribute', () =>
+        HttpResponse.json({ ...SERVER_INFO, zeroPageLoginAllowed: true }),
+      ),
+      http.post('*/json/authenticate', () =>
+        HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'fail' }, { status: 401 }),
+      ),
+      http.post('*/json/realms/root/authenticate', () =>
+        HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'fail' }, { status: 401 }),
+      ),
+    )
+
+    renderApp('/login?IDToken1=wrong&IDToken2=bad')
+
+    // After the failed auto-submit the flow restarts and the form should reappear.
+    expect(await screen.findByRole('button', { name: 'Submit' }, { timeout: 3000 })).toBeInTheDocument()
   })
 })

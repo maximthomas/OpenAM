@@ -33,6 +33,7 @@ export {
   AUTH_ERROR,
   AUTH_ID,
   AUTH_SUCCESS,
+  AUTH_SUCCESS_OTHER_REALM,
   DEMO_TOKEN_ID,
   MULTI_AUTH_ID_1,
   MULTI_AUTH_ID_2,
@@ -56,6 +57,8 @@ export {
 } from './fixtures/authenticate.ts'
 
 export {
+  existingSessionAuthenticateHandler,
+  existingSessionOtherRealmHandler,
   multiStageAuthenticateHandler,
   redirectAuthenticateHandler,
   pollingAuthenticateHandler,

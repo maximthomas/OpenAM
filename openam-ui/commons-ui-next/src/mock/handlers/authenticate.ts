@@ -27,6 +27,7 @@ import {
   AUTH_ERROR,
   AUTH_ID,
   AUTH_SUCCESS,
+  AUTH_SUCCESS_OTHER_REALM,
   AUTH_TIMEOUT_ERROR,
   MULTI_AUTH_ID_1,
   MULTI_AUTH_ID_2,
@@ -156,6 +157,22 @@ export function make408ThenRecoverHandler() {
       return HttpResponse.json(AUTH_TIMEOUT_ERROR, { status: 408 }) // timeout on submit
     return resolveAuthenticateBody({ ...body, authId: undefined }) // restart → fresh challenge
   }
+}
+
+/**
+ * Existing-session handler — initial /authenticate (no authId) immediately returns success.
+ * Use in tests via server.use() to simulate a user with a live session visiting /login.
+ */
+export async function existingSessionAuthenticateHandler(_request: Request): Promise<Response> {
+  return HttpResponse.json(AUTH_SUCCESS)
+}
+
+/**
+ * Existing-session handler for a different-realm scenario — same as above but realm differs.
+ * Navigate to /confirmLogin when the URL realm doesn't match the session realm.
+ */
+export async function existingSessionOtherRealmHandler(_request: Request): Promise<Response> {
+  return HttpResponse.json(AUTH_SUCCESS_OTHER_REALM)
 }
 
 export const authenticateHandlers: RequestHandler[] = [

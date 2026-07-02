@@ -11,7 +11,8 @@
     "./i18n": "./src/i18n/index.ts",
     "./shell": "./src/shell/index.ts",
     "./routing": "./src/routing/index.ts",
-    "./mock": "./src/mock/index.ts"
+    "./mock": "./src/mock/index.ts",
+    "./serverinfo": "./src/serverinfo/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

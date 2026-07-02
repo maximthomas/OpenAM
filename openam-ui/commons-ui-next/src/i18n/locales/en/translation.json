@@ -20,6 +20,11 @@
             }
         }
     },
+    "login": {
+        "confirmLogin": {
+            "body": "Your session from {{realm}} has ended. Please sign in to continue."
+        }
+    },
     "common": {
         "user": {
             "login": "Log in",

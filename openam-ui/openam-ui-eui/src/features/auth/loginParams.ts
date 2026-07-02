@@ -27,6 +27,7 @@ export type LoginParams = {
   ForceAuth?: string
   locale?: string
   arg?: string
+  realm?: string
 }
 
 // Legacy shorthand param → authIndexType value mapping.
@@ -47,6 +48,7 @@ const PARAM_WHITELIST = new Set([
   'ForceAuth',
   'locale',
   'arg',
+  'realm',
 ])
 
 /**
@@ -86,6 +88,7 @@ export function parseLoginParams(searchParams: URLSearchParams): LoginParams {
 /**
  * Build the query string to append to `/authenticate` based on the parsed login params.
  * Only auth-selection params (authIndexType, authIndexValue, ForceAuth, locale, arg) are sent.
+ * realm is intentionally excluded — realm routing is handled by the transport layer's path resolution.
  */
 export function buildAuthQuery(params: LoginParams): string {
   const AUTH_KEYS: Array<keyof LoginParams> = ['authIndexType', 'authIndexValue', 'ForceAuth', 'locale', 'arg']
@@ -96,4 +99,19 @@ export function buildAuthQuery(params: LoginParams): string {
   }
   const str = qs.toString()
   return str ? `?${str}` : ''
+}
+
+/**
+ * Extract IDToken1, IDToken2, … values from the URL search params in order.
+ * Used for zero-page/auto-login: these URL params map to callback input slots.
+ * Stops at the first missing index.
+ */
+export function extractIDTokens(searchParams: URLSearchParams): string[] {
+  const tokens: string[] = []
+  for (let i = 1; ; i++) {
+    const val = searchParams.get(`IDToken${i}`)
+    if (val === null) break
+    tokens.push(val)
+  }
+  return tokens
 }

@@ -36,6 +36,8 @@ export {
   isAuthFailure,
 } from './authenticate.ts'
 
+export { validateGoto } from './validateGoto.ts'
+
 export {
   getOutput,
   getPrompt,

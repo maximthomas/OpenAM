@@ -19,25 +19,68 @@ P1-5b's hardcoded "success → `/`".
   gotoOnFail, ForceAuth, locale`.
 
 ## Approach (new stack)
-- Add a small param module (eui `features/auth` or commons-ui-next if reusable): read HashRouter query/fragment
-  params, normalize the shorthand → `authIndexType`/`authIndexValue`, expose a `goto` accessor + a whitelist filter.
-- Thread `authIndexType`/`authIndexValue`/`realm` into `startAuthentication` (extend its signature — currently
-  takes only `transport`) so the correct tree/realm is selected.
-- Add `validateGoto(transport, goto)` to `commons-ui-next/session` (or `/auth`) → `POST /json/users?_action=validateGoto`;
-  on success navigate to the sanitized URL instead of `/`.
-- **Coordinate with P1-10:** P1-10 normalizes `#login` → `#/login` and must preserve these query params; agree on
-  the entry point where params are read so validation and spelling-normalization don't fight. Validation can run
-  before or after normalization — document the order chosen.
 
-## Files (anticipated)
-- `commons-ui-next/src/auth/authenticate.ts` (params on `startAuthentication`), maybe `src/http` for realm.
-- `commons-ui-next/src/session/` or `src/auth/` — `validateGoto`.
-- `openam-ui-eui/src/features/auth/` — param parsing/whitelist + success-redirect wiring in the loop hook.
-- `commons-ui-next/src/mock/handlers/` — mock `validateGoto` + authIndex-aware `/authenticate`.
-- Tests: shorthand mapping, goto validation (allowed + rejected), authIndex selection.
+### 1. Auth URL param parsing — `openam-ui-eui/src/features/auth/loginParams.ts`
+
+Parse `useSearchParams()` from react-router (HashRouter exposes params after `#/path?`).  
+Shorthand normalization: `authlevel/module/service/user/resource` → `authIndexType`/`authIndexValue`, skipped if
+`authIndexType === 'composite_advice'` already set.  
+`buildAuthQuery(params)` builds `?authIndexType=...&authIndexValue=...` query string for appending to `/authenticate`.
+
+SSORedirect/SSOPOST context-prefixing deferred — the AM validateGoto call handles this on the server side.
+
+### 2. Thread params into `startAuthentication`
+
+Extend `commons-ui-next/src/auth/authenticate.ts` `startAuthentication(transport, queryString?)` — appends the
+optional query string to `/authenticate`. Backward-compatible (queryString is optional).
+
+Pass `queryString` through `useAuthenticationFlow(queryString?)` → `startAuthentication`.
+
+### 3. `validateGoto` — `commons-ui-next/src/auth/validateGoto.ts`
+
+`POST /users?_action=validateGoto` with `{ goto: decodedGoto }` body.  
+Returns sanitized `successURL` string or `null` on failure (400 / network error).  
+On success in `LoginPage`: if `goto` param present, call `validateGoto`; navigate to validated URL via
+`window.location.href` (may be external); on failure fall back to `'/'`.  
+If no `goto`, fall back to `'/'` (the EUI home). AM's `successUrl` not used (points to admin console for root realm).
+
+### 4. MSW handler — `commons-ui-next/src/mock/handlers/users.ts`
+
+Handles `POST */json/users?_action=validateGoto` and `POST */json/realms/root/users?_action=validateGoto`.  
+Allowlist: relative paths (`/…`), `http://localhost:…/*`, `http://allowed.example.com`.  
+Rejects `http://open-redirect.evil.com` with 400.
+
+### 5. Coordination with P1-10
+
+P1-10 normalizes hash spellings (`#login` → `#/login`) on app load, before any route renders. LoginPage reads URL
+params via react-router `useSearchParams`, which runs after the hash normalization. Order is:
+
+```
+load → P1-10 normalization → HashRouter routes match → LoginPage useSearchParams → parseLoginParams
+```
+
+No conflict. P1-10 must preserve query params when normalizing hash spellings (document this constraint in P1-10).
+
+## Files to create/modify
+
+| File | Action | Notes |
+|---|---|---|
+| `commons-ui-next/src/auth/authenticate.ts` | modify | Add `queryString?: string` to `startAuthentication` |
+| `commons-ui-next/src/auth/validateGoto.ts` | **new** | `validateGoto(transport, goto)` |
+| `commons-ui-next/src/auth/index.ts` | modify | Export `validateGoto` |
+| `commons-ui-next/src/mock/handlers/users.ts` | **new** | MSW handler for validateGoto |
+| `commons-ui-next/src/mock/handlers/index.ts` | modify | Add `usersHandlers` |
+| `openam-ui-eui/src/features/auth/loginParams.ts` | **new** | Parse + normalize URL params |
+| `openam-ui-eui/src/features/auth/loginParams.test.ts` | **new** | Shorthand mapping, whitelist, composite_advice bypass |
+| `openam-ui-eui/src/features/auth/useLogin.ts` | modify | Accept and thread `queryString` |
+| `openam-ui-eui/src/features/auth/LoginPage.tsx` | modify | Parse params, thread query, validate goto on success |
+| `openam-ui-eui/src/features/auth/LoginPage.test.tsx` | modify | Add goto-accepted, goto-rejected, authIndexType cases |
 
 ## Out of scope
-Multi-stage engine (P1-5b) · hash-spelling normalization itself (P1-10) · existing-session realm change (P1-5e).
+Multi-stage engine (P1-5b) · RedirectCallback/PollingWaitCallback (P1-5c) · hash-spelling normalization itself (P1-10)
+· existing-session realm change (P1-5e) · SSORedirect context-prefixing (rare edge case, deferred).
 
 ## Verification
-Vitest + typecheck + lint; `dev:mock` login with `?goto=` (accepted + rejected) and an authIndexType/Value param.
+Vitest + typecheck + lint in both packages; `dev:mock` login with `?goto=http://allowed.example.com` (accepted),
+`?goto=http://open-redirect.evil.com` (rejected → falls back to `/`), and `?module=DataStore` (shorthand maps to
+`?authIndexType=module&authIndexValue=DataStore` on the authenticate request).

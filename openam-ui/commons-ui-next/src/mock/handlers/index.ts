@@ -18,9 +18,11 @@ import type { RequestHandler } from 'msw'
 import { authenticateHandlers } from './authenticate.ts'
 import { serverinfoHandlers } from './serverinfo.ts'
 import { sessionsHandlers } from './sessions.ts'
+import { usersHandlers } from './users.ts'
 
 export const handlers: RequestHandler[] = [
   ...authenticateHandlers,
   ...serverinfoHandlers,
   ...sessionsHandlers,
+  ...usersHandlers,
 ]

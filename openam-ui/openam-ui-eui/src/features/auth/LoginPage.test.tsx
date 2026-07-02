@@ -24,6 +24,8 @@ import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commo
 import {
   AUTH_CHALLENGE_REDIRECT_POST,
   make408ThenRecoverHandler,
+  MOCK_GOTO_ALLOWED,
+  MOCK_GOTO_REJECTED,
   multiStageAuthenticateHandler,
   pollingAuthenticateHandler,
   redirectAuthenticateHandler,
@@ -177,5 +179,64 @@ describe('LoginPage — 408 timeout restart (P1-5c)', () => {
 
     // After the 408, the hook restarts — the login form should reappear.
     expect(await screen.findByLabelText('User Name', {}, { timeout: 3000 })).toBeInTheDocument()
+  })
+})
+
+describe('LoginPage — goto param + validateGoto (P1-5d)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('navigates to the validated goto URL after successful login', async () => {
+    // Stub window.location so jsdom does not throw on external href assignment.
+    vi.stubGlobal('location', { href: 'http://localhost/', replace: vi.fn() })
+
+    const user = userEvent.setup()
+    renderApp(`/login?goto=${encodeURIComponent(MOCK_GOTO_ALLOWED)}`)
+
+    await user.type(await screen.findByLabelText('User Name'), 'demo')
+    await user.type(screen.getByLabelText('Password'), 'changeit')
+    await user.click(screen.getByRole('button', { name: 'Submit' }))
+
+    await waitFor(() => {
+      expect(window.location.href).toBe(MOCK_GOTO_ALLOWED)
+    })
+  })
+
+  it('falls back to app home when goto is rejected by AM', async () => {
+    const user = userEvent.setup()
+    renderApp(`/login?goto=${encodeURIComponent(MOCK_GOTO_REJECTED)}`)
+
+    await user.type(await screen.findByLabelText('User Name'), 'demo')
+    await user.type(screen.getByLabelText('Password'), 'changeit')
+    await user.click(screen.getByRole('button', { name: 'Submit' }))
+
+    // goto rejected → fall back to EUI home page.
+    expect(await screen.findByRole('heading', { name: /openam eui/i })).toBeInTheDocument()
+  })
+
+  it('threads authIndexType/authIndexValue into the /authenticate request URL', async () => {
+    let capturedUrl: string | null = null
+
+    server.use(
+      http.post('*/json/authenticate', ({ request }) => {
+        capturedUrl = request.url
+        return HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'fail' }, { status: 401 })
+      }),
+      http.post('*/json/realms/root/authenticate', ({ request }) => {
+        capturedUrl = request.url
+        return HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'fail' }, { status: 401 })
+      }),
+    )
+
+    renderApp('/login?module=DataStore')
+
+    await waitFor(() => {
+      expect(capturedUrl).not.toBeNull()
+    })
+
+    const url = new URL(capturedUrl!)
+    expect(url.searchParams.get('authIndexType')).toBe('module')
+    expect(url.searchParams.get('authIndexValue')).toBe('DataStore')
   })
 })

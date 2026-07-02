@@ -162,7 +162,7 @@ phases:
           docs/migration/plans/P1-5d-goto-validate.md.
         depends_on: [P1-5b]
         plan: docs/migration/plans/P1-5d-goto-validate.md
-        status: todo
+        status: done
       - id: P1-5e
         title: Login parity — existing-session/realm-change (confirmLogin) + zero-page/auto-login
         detail: >-

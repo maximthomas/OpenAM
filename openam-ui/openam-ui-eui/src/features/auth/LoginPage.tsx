@@ -14,9 +14,9 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
 import { Alert, Spinner } from 'react-bootstrap'
-import { useNavigate } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { useTranslation } from '@openidentityplatform/commons-ui-next/i18n'
 import {
   CallbackForm,
@@ -24,14 +24,21 @@ import {
   getRedirectMethod,
   getRedirectUrl,
   isRedirectCallback,
+  validateGoto,
 } from '@openidentityplatform/commons-ui-next/auth'
 import { setToken } from '@openidentityplatform/commons-ui-next/session'
+import { amTransport } from '../../config/transport.ts'
+import { buildAuthQuery, parseLoginParams } from './loginParams.ts'
 import { useAuthenticationFlow } from './useLogin.ts'
 
 export default function LoginPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { step, isStarting, isSubmitting, submit, restart } = useAuthenticationFlow()
+  const [searchParams] = useSearchParams()
+  const loginParams = useMemo(() => parseLoginParams(searchParams), [searchParams])
+  const authQuery = useMemo(() => buildAuthQuery(loginParams), [loginParams])
+
+  const { step, isStarting, isSubmitting, submit, restart } = useAuthenticationFlow(authQuery)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const isRedirectingRef = useRef(false)
 
@@ -39,7 +46,19 @@ export default function LoginPage() {
   useEffect(() => {
     if (step?.kind === 'success') {
       setToken(step.success.tokenId)
-      void navigate('/')
+
+      if (loginParams.goto) {
+        validateGoto(amTransport, loginParams.goto).then((sanitizedUrl) => {
+          if (sanitizedUrl) {
+            window.location.href = sanitizedUrl
+          } else {
+            // goto was rejected by AM's open-redirect guard — fall back to app home.
+            void navigate('/')
+          }
+        })
+      } else {
+        void navigate('/')
+      }
       return
     }
     if (step?.kind === 'failure' && step.error.code !== 408) {
@@ -72,7 +91,7 @@ export default function LoginPage() {
         }
       }
     }
-  }, [step, navigate, restart, t])
+  }, [step, navigate, restart, t, loginParams.goto])
 
   if (isStarting || step === null) {
     return (

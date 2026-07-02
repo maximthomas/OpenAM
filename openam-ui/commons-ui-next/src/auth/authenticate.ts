@@ -30,8 +30,11 @@ function resolveStep(json: AmAuthChallenge | AmAuthSuccess | AmAuthError, status
 }
 
 // Step 1: POST with empty body → challenge (authId + callbacks).
-export async function startAuthentication(transport: Transport): Promise<AuthStep> {
-  const res = await transport('/authenticate', {
+// queryString (e.g. "?authIndexType=module&authIndexValue=DataStore") is appended to the path when
+// auth URL params are present (P1-5d).
+export async function startAuthentication(transport: Transport, queryString?: string): Promise<AuthStep> {
+  const path = queryString ? `/authenticate${queryString}` : '/authenticate'
+  const res = await transport(path, {
     method: 'POST',
     headers: { 'Accept-API-Version': AUTH_VERSION },
   })

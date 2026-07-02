@@ -42,12 +42,15 @@ export type AuthFlowHook = {
 }
 
 /**
- * Multi-stage AM authentication flow hook (P1-5b/P1-5c).
+ * Multi-stage AM authentication flow hook (P1-5b/P1-5c/P1-5d).
  * Starts authentication on mount; loops until success or failure via submit().
  * Handles PollingWaitCallback auto-submit, RedirectCallback tracking-cookie detection,
  * and 408 timeout restart.
+ *
+ * queryString (P1-5d): optional query string to append to /authenticate
+ * (e.g. "?authIndexType=module&authIndexValue=DataStore").
  */
-export function useAuthenticationFlow(): AuthFlowHook {
+export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
   const [step, setStep] = useState<AuthStep | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   // Set to true when a redirect challenge with a trackingCookie is seen — suppresses 408 restart.
@@ -57,10 +60,10 @@ export function useAuthenticationFlow(): AuthFlowHook {
   const startAuth = useCallback(() => {
     setStep(null)
     setIsStarting(true)
-    startAuthentication(amTransport)
+    startAuthentication(amTransport, queryString)
       .then(setStep)
       .finally(() => setIsStarting(false))
-  }, [])
+  }, [queryString])
 
   useEffect(() => {
     startAuth()

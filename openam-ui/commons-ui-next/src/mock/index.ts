@@ -65,3 +65,5 @@ export {
 export { SERVER_INFO } from './fixtures/serverinfo.ts'
 
 export { DEMO_SESSION, LOGOUT_RESULT } from './fixtures/sessions.ts'
+
+export { MOCK_GOTO_ALLOWED, MOCK_GOTO_REJECTED } from './handlers/users.ts'

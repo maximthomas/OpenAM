@@ -100,9 +100,12 @@ the TS mirror (`openam-ui-eui/src/config/routeOwnership.ts`) in sync.
      modal. Role via `isSelfServiceUser(sessionInfo)` **defaulting false → modal** (legacy `else` fallback);
      documented limitation — real role wiring lands with the user/profile slice (P2-4). Mount inside the full-chrome
      `AppShell` group in `App.tsx`.
-9. **Parity GATE flip:** `route-ownership.yml` login → `status: migrated`; `routeOwnership.ts` unchanged; confirm
-   `routeOwnership.test.ts` passes. **Only do this once P1-5h and P1-5i have also landed** (see the gate-hardening
-   note under Goal above) — not just this task's own steps.
+9. **Parity GATE flip:** `route-ownership.yml` login → `status: migrated`; also flip the ancillary auth routes
+   landed by this task — `logout`, `failedLogin`, `sessionExpired` → `owner: eui, status: migrated`, and
+   `confirmLogin` → `status: migrated` (owner already `eui`) — plus the matching `owner` edits (where changed)
+   in the `routeOwnership.ts` TS mirror in the same commit; confirm `routeOwnership.test.ts` passes. **Only do
+   this once P1-5h and P1-5i have also landed** (see the gate-hardening note under Goal above) — not just this
+   task's own steps.
 10. **Tests:** LoginFailure (start error → failure view); failure navigation (`gotoOnFail` present → navigates to
     the validated goto; `detail.failureUrl` in the failure body → hard-navigates via `window.location.href`);
     SessionExpired + Logout (title + return link; logout calls `_action=logout`, token cleared); remember-me

@@ -17,9 +17,27 @@ mounts:
 
 routes:
   # ---- Phase 1: login / auth ----
+  # Ancillary auth routes (confirmLogin/logout/failedLogin/sessionExpired) tracked explicitly as of
+  # 2026-07-03 (docs review remediation, Stage 3) — previously implicit/unlisted.
   - path: login
     owner: eui
     status: in_progress
+    slice: phase-1
+  - path: confirmLogin        # realm-change interstitial; rides the login gate
+    owner: eui
+    status: in_progress
+    slice: phase-1
+  - path: logout              # must-preserve external URL (#logout/, see xui-url-audit.md)
+    owner: xui
+    status: planned
+    slice: phase-1
+  - path: failedLogin
+    owner: xui
+    status: planned
+    slice: phase-1
+  - path: sessionExpired
+    owner: xui
+    status: planned
     slice: phase-1
   - path: passwordReset
     owner: xui

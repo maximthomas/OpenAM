@@ -32,6 +32,10 @@ export const mounts: MountMap = {
 export const routeOwnership: RouteOwnership[] = [
   // ---- Phase 1: login / auth ----
   { path: 'login', owner: 'eui' },
+  { path: 'confirmLogin', owner: 'eui' },
+  { path: 'logout', owner: 'xui' },
+  { path: 'failedLogin', owner: 'xui' },
+  { path: 'sessionExpired', owner: 'xui' },
   { path: 'passwordReset', owner: 'xui' },
   { path: 'register', owner: 'xui' },
   { path: 'forgotUsername', owner: 'xui' },

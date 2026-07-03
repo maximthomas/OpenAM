@@ -202,6 +202,22 @@ every A-finding now maps to a task id or an ADR; decisions/README lists ADR-0012
 
 ## Stage 3 — Route-ownership completion (yml + TS mirror + drift test)
 
+> **Status: DONE (2026-07-03).** All 4 items applied:
+> - `route-ownership.yml` gained `confirmLogin` (`eui`/`in_progress`), `logout`/`failedLogin`/`sessionExpired`
+>   (`xui`/`planned`), inserted right after `login` in the phase-1 block, plus a header comment noting these
+>   ancillary routes are now tracked explicitly.
+> - `routeOwnership.ts` gained the matching four `{path, owner}` pairs at the same ordinal position.
+> - `plans/P1-5f-…md` step 9 (the gate-flip step — renumbered by Stage 2) extended: on landing, also flip
+>   `logout`/`failedLogin`/`sessionExpired` → `owner: eui, status: migrated` and `confirmLogin` →
+>   `status: migrated`, with the matching `routeOwnership.ts` edits in the same commit.
+>
+> Verification: `route-ownership.yml` parses (`npx js-yaml`); `routeOwnership.test.ts` (all 3 assertions,
+> including the ordered path+owner sync) passes; full `npm run test:run` in `openam-ui-eui` — 87/87 passed.
+> `npm run lint` / `npm run typecheck` both fail, but **only** on a pre-existing unrelated error (unused
+> `AUTH_CHALLENGE` import in `LoginPage.test.tsx`, introduced by the zero-page-login work, commit
+> `992bd52e92`) — not touched by or related to this stage's route-ownership changes. Left as-is (out of
+> scope for this stage); flagged here for a future cleanup pass.
+
 Goal: the map answers "who serves this URL" for every auth route that exists today.
 
 1. **`route-ownership.yml`** — append to the phase-1 section, after `login`:

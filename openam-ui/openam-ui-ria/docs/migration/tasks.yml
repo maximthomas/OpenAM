@@ -191,7 +191,7 @@ phases:
           docs/migration/plans/P1-5f-error-logout-views.md.
         depends_on: [P1-5b]
         plan: docs/migration/plans/P1-5f-error-logout-views.md
-        status: todo
+        status: done
       - id: P1-5g
         title: Login parity — ScriptTextOutput execution (device-print/WebAuthn/reCAPTCHA)
         detail: >-

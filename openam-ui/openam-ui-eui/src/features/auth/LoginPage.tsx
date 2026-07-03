@@ -32,6 +32,7 @@ import { clearToken, setToken } from '@openidentityplatform/commons-ui-next/sess
 import { fetchServerInfo, isZeroPageLoginAllowed } from '@openidentityplatform/commons-ui-next/serverinfo'
 import { amTransport, serverInfoTransport } from '../../config/transport.ts'
 import { buildAuthQuery, extractIDTokens, parseLoginParams } from './loginParams.ts'
+import { rememberLoginParams } from './loginReturn.ts'
 import { useAuthenticationFlow } from './useLogin.ts'
 
 function normalizeRealm(realm: string): string {
@@ -45,7 +46,7 @@ export default function LoginPage() {
   const loginParams = useMemo(() => parseLoginParams(searchParams), [searchParams])
   const authQuery = useMemo(() => buildAuthQuery(loginParams), [loginParams])
 
-  const { step, isStarting, isSubmitting, isExistingSession, isTimedOut, submit, restart } =
+  const { step, isStarting, isSubmitting, isExistingSession, isTimedOut, startFailed, submit, restart } =
     useAuthenticationFlow(authQuery)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const isRedirectingRef = useRef(false)
@@ -57,6 +58,20 @@ export default function LoginPage() {
       clearToken()
     }
   }, [loginParams.arg])
+
+  // P1-5f: record the whitelisted entry params (the fullLoginURL equivalent) so a later
+  // failure/expired/logout view can recall them for the return-to-login link.
+  useEffect(() => {
+    rememberLoginParams(searchParams)
+  }, [searchParams])
+
+  // P1-5f: startAuthentication/resumeAuthentication itself threw — navigate to the ancillary
+  // failure view rather than hanging on the spinner forever.
+  useEffect(() => {
+    if (startFailed) {
+      void navigate('/failedLogin')
+    }
+  }, [startFailed, navigate])
 
   // Step 7: fetch server info once to check the zeroPageLogin gate.
   const { data: serverInfo } = useQuery({
@@ -128,6 +143,26 @@ export default function LoginPage() {
       return
     }
     if (step?.kind === 'failure') {
+      // Failure navigation (P1-5f): a server-supplied failureUrl is a hard, unvalidated navigation
+      // (legacy AuthNService.js goToFailureUrl — the URL comes from AM, not user input).
+      const failureUrl = step.error.detail?.failureUrl
+      if (failureUrl) {
+        window.location.href = failureUrl
+        return
+      }
+      // gotoOnFail is user-supplied, so it goes through the same validateGoto open-redirect guard
+      // as the success goto path.
+      if (loginParams.gotoOnFail) {
+        validateGoto(amTransport, loginParams.gotoOnFail).then((sanitizedUrl) => {
+          if (sanitizedUrl) {
+            window.location.href = sanitizedUrl
+          } else {
+            setErrorMessage(t('config.messages.CommonMessages.authenticationFailed'))
+            restart()
+          }
+        })
+        return
+      }
       setErrorMessage(t('config.messages.CommonMessages.authenticationFailed'))
       restart()
       return

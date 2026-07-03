@@ -19,6 +19,9 @@ import { AppShell } from '@openidentityplatform/commons-ui-next/shell'
 import Home from './routes/Home.tsx'
 import LoginPage from './features/auth/LoginPage.tsx'
 import ConfirmLogin from './features/auth/ConfirmLogin.tsx'
+import LoginFailure from './features/auth/LoginFailure.tsx'
+import SessionExpired from './features/auth/SessionExpired.tsx'
+import Logout from './features/auth/Logout.tsx'
 import Brand from './shell/Brand.tsx'
 
 export default function App() {
@@ -32,6 +35,9 @@ export default function App() {
       <Route element={<AppShell variant="auth" brand={<Brand />} />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/confirmLogin" element={<ConfirmLogin />} />
+        <Route path="/failedLogin" element={<LoginFailure />} />
+        <Route path="/sessionExpired" element={<SessionExpired />} />
+        <Route path="/logout" element={<Logout />} />
       </Route>
     </Routes>
   )

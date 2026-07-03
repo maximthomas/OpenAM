@@ -47,6 +47,11 @@ export type AuthFlowHook = {
    * using Redirect Callback" branch. The caller should show the timeout message and stop.
    */
   isTimedOut: boolean
+  /**
+   * True when startAuthentication/resumeAuthentication itself threw (network/unexpected error),
+   * as opposed to a 'failure' step *value*. The caller should navigate to /failedLogin (P1-5f).
+   */
+  startFailed: boolean
   /** Submit a filled challenge to advance the flow. */
   submit: (filledChallenge: AmAuthChallenge) => void
   /** Restart the flow from scratch (fresh startAuthentication). */
@@ -66,6 +71,7 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
   const [step, setStep] = useState<AuthStep | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [isTimedOut, setIsTimedOut] = useState(false)
+  const [startFailed, setStartFailed] = useState(false)
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Count of submitted callbacks — zero at the time of a success means an existing session.
   const submitCountRef = useRef(0)
@@ -74,6 +80,7 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
     setStep(null)
     setIsStarting(true)
     setIsTimedOut(false)
+    setStartFailed(false)
     submitCountRef.current = 0
 
     // Return-leg resume (P1-5i): a tracked authId cookie means a federated redirect is
@@ -90,7 +97,10 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
         })
       : startAuthentication(amTransport, queryString)
 
-    authPromise.then(setStep).finally(() => setIsStarting(false))
+    authPromise
+      .then(setStep)
+      .catch(() => setStartFailed(true))
+      .finally(() => setIsStarting(false))
   }, [queryString])
 
   useEffect(() => {
@@ -159,6 +169,7 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
     isSubmitting: submitMutation.isPending,
     isExistingSession: step?.kind === 'success' && submitCountRef.current === 0,
     isTimedOut,
+    startFailed,
     submit: submitMutation.mutate,
     restart: startAuth,
   }

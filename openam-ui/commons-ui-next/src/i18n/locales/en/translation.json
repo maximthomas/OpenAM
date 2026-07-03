@@ -32,7 +32,8 @@
             "logInToNewSite": "Log in to new site",
             "username": "Username",
             "password": "Password",
-            "forgotPassword": "Forgot password?"
+            "forgotPassword": "Forgot password?",
+            "returnToLoginPage": "Return to Login Page"
         },
         "form": {
             "submit": "Submit",

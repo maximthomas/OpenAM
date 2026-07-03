@@ -22,6 +22,7 @@ import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commons-ui-next/i18n'
 import {
+  AUTH_CHALLENGE,
   AUTH_CHALLENGE_REDIRECT_POST,
   AUTH_TIMEOUT_ERROR,
   existingSessionAuthenticateHandler,
@@ -37,6 +38,7 @@ import {
   SERVER_INFO,
   SERVER_INFO_ZERO_PAGE_ENABLED,
 } from '@openidentityplatform/commons-ui-next/mock'
+import { getToken, setToken } from '@openidentityplatform/commons-ui-next/session'
 import { server } from '../../test/setup.ts'
 import App from '../../App.tsx'
 
@@ -418,5 +420,82 @@ describe('LoginPage — zero-page auto-login (P1-5e, referrer gate P1-5h)', () =
     expect(await screen.findByRole('button', { name: 'Submit' })).toBeInTheDocument()
 
     Object.defineProperty(document, 'referrer', { value: '', configurable: true })
+  })
+})
+
+describe('LoginPage — failure navigation (P1-5f)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('navigates to the validated gotoOnFail URL after a login failure', async () => {
+    vi.stubGlobal('location', { href: 'http://localhost/', replace: vi.fn() })
+
+    const user = userEvent.setup()
+    renderApp(`/login?gotoOnFail=${encodeURIComponent(MOCK_GOTO_ALLOWED)}`)
+
+    await user.type(await screen.findByLabelText('User Name'), 'demo')
+    await user.type(screen.getByLabelText('Password'), 'wrong')
+    await user.click(screen.getByRole('button', { name: 'Submit' }))
+
+    await waitFor(() => {
+      expect(window.location.href).toBe(MOCK_GOTO_ALLOWED)
+    })
+  })
+
+  it('falls back to the failure message and restarts when gotoOnFail is rejected by AM', async () => {
+    const user = userEvent.setup()
+    renderApp(`/login?gotoOnFail=${encodeURIComponent(MOCK_GOTO_REJECTED)}`)
+
+    await user.type(await screen.findByLabelText('User Name'), 'demo')
+    await user.type(screen.getByLabelText('Password'), 'wrong')
+    await user.click(screen.getByRole('button', { name: 'Submit' }))
+
+    expect(await screen.findByText('User name/password combination is invalid.')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Submit' })).toBeEnabled()
+  })
+
+  it('hard-navigates to detail.failureUrl on a failure response, bypassing validateGoto', async () => {
+    vi.stubGlobal('location', { href: 'http://localhost/', replace: vi.fn() })
+
+    const failOnSubmit = async (request: Request): Promise<Response> => {
+      const text = await request.text()
+      const body = (text ? JSON.parse(text) : {}) as { authId?: string }
+      if (!body.authId) return HttpResponse.json(AUTH_CHALLENGE)
+      return HttpResponse.json(
+        { code: 401, reason: 'Unauthorized', message: 'fail', detail: { failureUrl: 'http://failure.example.com/retry' } },
+        { status: 401 },
+      )
+    }
+    server.use(
+      http.post('*/json/authenticate', ({ request }) => failOnSubmit(request)),
+      http.post('*/json/realms/root/authenticate', ({ request }) => failOnSubmit(request)),
+    )
+
+    const user = userEvent.setup()
+    renderApp('/login')
+
+    await user.type(await screen.findByLabelText('User Name'), 'demo')
+    await user.type(screen.getByLabelText('Password'), 'wrong')
+    await user.click(screen.getByRole('button', { name: 'Submit' }))
+
+    await waitFor(() => {
+      expect(window.location.href).toBe('http://failure.example.com/retry')
+    })
+  })
+})
+
+describe('LoginPage — start failure (P1-5f)', () => {
+  it('navigates to /failedLogin and clears the token when startAuthentication throws', async () => {
+    setToken('leftover-token')
+    server.use(
+      http.post('*/json/authenticate', () => HttpResponse.error()),
+      http.post('*/json/realms/root/authenticate', () => HttpResponse.error()),
+    )
+
+    renderApp('/login')
+
+    expect(await screen.findByText('Unable to login to OpenAM')).toBeInTheDocument()
+    expect(getToken()).toBeNull()
   })
 })

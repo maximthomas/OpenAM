@@ -75,6 +75,9 @@ export type AmAuthError = {
   code: number
   reason: string
   message: string
+  // Present on some terminal failures — a server-supplied hard-navigation target
+  // (legacy AuthNService.js goToFailureUrl).
+  detail?: { failureUrl?: string }
 }
 
 // Discriminated result for one authenticate step: failure is a value, not a thrown exception.

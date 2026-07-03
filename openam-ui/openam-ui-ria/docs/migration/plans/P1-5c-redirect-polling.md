@@ -28,7 +28,7 @@ Handle the two "special" callbacks that alter the P1-5b engine loop, plus AM req
 - `commons-ui-next/src/auth/types.ts` (add the two types to the known set), `callbacks.ts` (redirect/poll accessors).
 - `commons-ui-next/src/auth/CallbackForm.tsx` (polling "waiting" UI + redirect intercept), or a small sibling
   component if the loop owns the intercept.
-- `openam-ui-eui/src/features/auth/useAuthenticationFlow.ts` (poll scheduling, 408 retry).
+- `openam-ui-eui/src/features/auth/useAuthenticationFlow.ts` (poll scheduling, 408 retry) — (landed as `useLogin.ts`).
 - `commons-ui-next/src/mock/{fixtures,handlers}/authenticate.ts` — add a SAML/OAuth redirect scenario and a
   push-polling scenario (returns PollingWaitCallback N times, then success).
 - Tests: redirect intercept, polling advance/stop, 408 retry.

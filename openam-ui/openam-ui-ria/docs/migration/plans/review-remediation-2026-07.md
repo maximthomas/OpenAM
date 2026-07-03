@@ -49,6 +49,22 @@ completed plans with dated correction blocks, don't rewrite them; tasks.yml stat
 
 ## Stage 1 — Factual doc corrections (docs only, no scope change)
 
+> **Status: DONE (2026-07-03).** All 11 items applied. Scope clarifications agreed with the user before
+> execution (verification's grep sweeps implied broader scope than the itemized edit list):
+> - **ADR-0008 sweep** extended beyond the itemized MIGRATION.md edit to every other non-historical
+>   pointer: `context.md`, `route-ownership.yml`, `decisions/0004-coexistence-separate-mounts.md`, and
+>   three `tasks.yml` details (P0-6, P1-10, P4-2) now point at ADR-0011. `decisions/0011`'s own
+>   `Supersedes: ADR-0008` / "the original ADR-0008 plan" mentions are untouched (legitimate history).
+> - **`/EUI/login` (no `#/`) sweep** additionally fixed `tasks.yml`'s P1-5 detail. `decisions/0011`
+>   line 9's `/EUI/login` example was deliberately left as-is — it illustrates the pre-hash-routing
+>   (ADR-0008) world by design; rewriting it to `#/login` would misstate what that ADR-0011 paragraph
+>   is arguing against.
+> - `plans/README.md` gained a new "Other plans" section (none existed) linking this file.
+>
+> Verification: `grep -rn "ADR-0008"` / `"Vite 7"` / `/EUI/login` (no `#/`) sweeps all clean except this
+> plan file itself and the two deliberate exceptions above; `tasks.yml` and `route-ownership.yml` parse
+> as valid YAML (`npx js-yaml`).
+
 Goal: every statement in the docs is true again. No planned-work changes, no code.
 
 1. **`reference/eui-foundation.md` — refresh to post-P1-5e reality:**

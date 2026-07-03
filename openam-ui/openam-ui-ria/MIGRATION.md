@@ -2,7 +2,7 @@
 
 Migration of `openam-ui-ria` (the OpenAM **XUI** admin/end-user SPA) from RequireJS/Backbone/Grunt to a modern React/Vite/TypeScript stack, using an **incremental strangler-fig** approach.
 
-This plan was produced by analyzing the current code and confirming each consequential decision. The target stack (React 19 + Vite 7 + TypeScript strict + Vitest) is a deliberate modern baseline chosen on its own merits — see ADR-0007. The sibling module `openam-ui-js-sdk` happens to use a similar stack but is treated as an **independent example only**: not a template, reference, or dependency for this migration.
+This plan was produced by analyzing the current code and confirming each consequential decision. The target stack (React 19 + Vite + TypeScript strict + Vitest) is a deliberate modern baseline chosen on its own merits — see ADR-0007. The sibling module `openam-ui-js-sdk` happens to use a similar stack but is treated as an **independent example only**: not a template, reference, or dependency for this migration.
 
 ---
 
@@ -30,7 +30,7 @@ This plan was produced by analyzing the current code and confirming each consequ
 | Modules | RequireJS AMD | **ES modules** |
 | Framework | Backbone + partial React | **React 19** |
 | Routing | Commons UI `Router` | **react-router 7** |
-| Build | Grunt + r.js + Babel | **Vite 7** |
+| Build | Grunt + r.js + Babel | **Vite** |
 | Styling | LESS + Bootstrap 3.3.5 | **Sass + Bootstrap 5 / react-bootstrap** |
 | Templates | 187 Handlebars `.html` | **JSX** |
 | Data grids | `backgrid` | **TanStack Table** |
@@ -79,7 +79,7 @@ openam-ui/
     src/
       main.tsx, router.tsx           path-relocatable (base/basename from runtime config)
       features/{login,dashboard,realms,...}
-      compat/    legacy /XUI hash-route → new-route redirect map (ADR-0008)
+      compat/    legacy /XUI hash-spelling normalization map (ADR-0011, P1-10)
       imports "@openidentityplatform/commons-ui-next"
   openam-ui-ria/                   ← the legacy app (frozen except security fixes, deleted at the end)
     src/ (legacy XUI)
@@ -108,13 +108,14 @@ openam-ui/
 - Create `commons-ui-next` workspace package skeleton.
 - Wire `frontend-maven-plugin` to `vite build` `/EUI` into the packaged webapp; keep the legacy Grunt build running in parallel.
 - Establish the route-ownership map + `<CrossLink>` helper.
+- **`/XUI` URL audit (P0-6):** catalog external references to `/XUI` (AM config, OAuth2 redirect URIs, docs, integrations) to size the must-preserve vs best-effort set for the URL-compat map — see `docs/migration/xui-url-audit.md`.
 - **Mock AM backend (ADR-0010):** shared MSW handlers for AM REST → run the **new EUI** in-browser (`npm run dev:mock`, service worker) and the **legacy XUI** in-browser (static serve + proxy to a standalone mock server), both **without OpenAM**.
 - CI: `eslint` + `vitest` for the new app.
 
 ### Phase 1 — Login / auth slice (proves the whole pattern)
 - Build the reusable core: **SessionService** (`/json/authenticate` callback flow, `/json/sessions`), **http client** (realm path, CSRF/auth headers, error normalization), **i18n**, **shell** skeleton (header/footer/nav), error handling.
 - Migrate: `RESTLoginView` + login dialog, `anonymousProcess` (password reset, self-registration, forgot username).
-- Deploy `/EUI` side by side; legacy `/XUI` login redirects to `/EUI/login`.
+- Deploy `/EUI` side by side; legacy `/XUI` login redirects to `/EUI/#/login`.
 - Lock in testing patterns (Vitest + Testing Library + MSW for AM REST mocking).
 
 ### Phase 2 — User self-service (~5.3k LOC)
@@ -164,7 +165,7 @@ Admin is schema-driven config — **rjsf + TanStack Table heavy**. Do an **rjsf 
 | Admin breadth (13.4k LOC) stalls the migration | Keep the route-ownership map honest — **`log`/track every unmigrated route**, no silent gaps; ship sub-slices independently |
 | Dual-maintenance tax during coexistence | Freeze legacy XUI except security fixes; all new work lands in `/EUI` |
 | Visual seam between `/EUI` and `/XUI` | react-bootstrap 5 keeps parity; defer any redesign until after cutover |
-| Breaking external `/XUI` deep links at cutover | Audit `/XUI` references in Phase 0; ship a route-compat/redirect map (ADR-0008); keep the new build path-relocatable so `/XUI` is reused, not changed |
+| Breaking external `/XUI` deep links at cutover | Audit `/XUI` references in Phase 0; ship a hash-spelling normalization map (ADR-0011, P1-10); keep the new build path-relocatable so `/XUI` is reused, not changed |
 
 ---
 

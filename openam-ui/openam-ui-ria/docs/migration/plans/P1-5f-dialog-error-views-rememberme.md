@@ -94,8 +94,9 @@ reaches parity** — flip `route-ownership.yml` login → `status: migrated` and
    `_action=logout`, token cleared); remember-me round-trip (submit checked → cookie; reload → pre-filled + checked);
    session-timeout (expiry → admin modal re-auth via `demo/changeit` restores token; self-service → `/sessionExpired`).
 10. **Docs:** update `reference/eui-foundation.md` (new `features/auth/*`, `CallbackForm` `rememberMe` prop,
-    `useLogin` `startFailed`); update `tasks.yml` (P1-5f → done, P1-5 → migrated); note new routes
-    (`/failedLogin`, `/sessionExpired`, `/logout`) for P1-10's hash-compat map.
+    `useLogin` `startFailed`); update `tasks.yml` (P1-5f → done, P1-5 → done (and `route-ownership.yml`
+    login → `status: migrated`)); note new routes (`/failedLogin`, `/sessionExpired`, `/logout`) for
+    P1-10's hash-compat map.
 
 ## Files
 - **New (eui `openam-ui-eui/src/features/auth/`):** `ReturnToLogin.tsx`, `loginReturn.ts`, `LoginFailure.tsx`,

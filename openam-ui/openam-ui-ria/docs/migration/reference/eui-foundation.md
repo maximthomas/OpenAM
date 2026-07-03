@@ -1,6 +1,6 @@
 # EUI foundation — new-app API surface
 
-_Reference inventory, not a decision doc — see [`../decisions/`](../decisions/) for the ADRs behind these choices. Update this file whenever a slice adds/changes a `commons-ui-next` export or app wiring pattern; last updated for P1-5 (login, minimal slice)._
+_Reference inventory, not a decision doc — see [`../decisions/`](../decisions/) for the ADRs behind these choices. Update this file whenever a slice adds/changes a `commons-ui-next` export or app wiring pattern; last updated for P1-5e (existing-session/realm-change + zero-page/auto-login) — Stage 1 doc remediation, 2026-07-02._
 
 Read this when building a slice (see the `migrate-slice` skill) and you need to know what already exists in `commons-ui-next` / the `eui` app scaffold before writing new code.
 
@@ -9,13 +9,16 @@ Read this when building a slice (see the `migrate-slice` skill) and you need to 
 Workspace package `@openidentityplatform/commons-ui-next` (`openam-ui/commons-ui-next`). No app-specific imports allowed here (ADR-0002) — everything is generic enough to extract to the ForgeRock commons project later (Phase 5).
 
 ### `commons-ui-next/auth` — AM `/json/authenticate` callback flow
-- `startAuthentication(transport: Transport): Promise<AuthStep>` — step 1, empty POST → challenge.
+- `startAuthentication(transport: Transport, queryString?: string): Promise<AuthStep>` — step 1, empty POST → challenge. `queryString` (P1-5d) appends auth-selection params (e.g. `?authIndexType=module&authIndexValue=DataStore`).
 - `submitCallbacks(transport: Transport, challenge: AmAuthChallenge): Promise<AuthStep>` — step 2+, POST the (filled) challenge back.
 - `setCallbackValue(challenge, index, value)` — immutable update of one callback's first input.
 - `fillCallbacks(challenge, values)` — fill all callbacks in order.
 - `isAuthSuccess(step)` / `isAuthFailure(step)` — type-guards on `AuthStep`.
-- Types: `AmCallback` (currently `{ type: 'NameCallback' | 'PasswordCallback', output, input }` — **extend this union when a slice needs another callback type**), `AmAuthChallenge` (`authId, template, stage, header, callbacks`), `AmAuthSuccess` (`tokenId, successUrl, realm`), `AmAuthError` (`code, reason, message`), `AuthStep` (discriminated union: `{kind:'requirements',challenge}` | `{kind:'success',success}` | `{kind:'failure',error}`).
+- `validateGoto(transport, goto): Promise<string | null>` (`validateGoto.ts`) — open-redirect guard; POSTs `/users?_action=validateGoto`, returns AM's sanitized `successURL` or `null` on rejection/error.
+- Types (`types.ts`): `AmCallback` is now an **open type** — `{ type: string, output, input }` — plus `KnownCallbackType` (`'NameCallback' | 'PasswordCallback' | 'TextInputCallback' | 'HiddenValueCallback' | 'ChoiceCallback' | 'ConfirmationCallback' | 'TextOutputCallback' | 'RedirectCallback' | 'PollingWaitCallback'`) and the `KNOWN_CALLBACK_TYPES` array. Narrow with the type guards below rather than comparing `type` directly. `AmAuthChallenge` (`authId, template, stage, header, callbacks`), `AmAuthSuccess` (`tokenId, successUrl, realm`), `AmAuthError` (`code, reason, message`), `AuthStep` (discriminated union: `{kind:'requirements',challenge}` | `{kind:'success',success}` | `{kind:'failure',error}`).
 - Failure is a **value** (`kind: 'failure'`), not a thrown exception. Only network/unexpected errors throw.
+- `callbacks.ts` — pure accessors/guards over `AmCallback`: `getOutput(cb, name)`, `getPrompt(cb)`, `getChoices(cb)`, `getMessageType(cb)`, `getConfirmationOptions(cb)`, `getRedirectUrl(cb)`/`getRedirectMethod(cb)`/`getRedirectData(cb)`/`getTrackingCookie(cb)` (RedirectCallback), `getWaitTime(cb)`/`getPollingMessage(cb)` (PollingWaitCallback), plus one `isXCallback(cb): boolean` guard per `KnownCallbackType`.
+- `CallbackForm({ challenge, onSubmit, submitting })` (`CallbackForm.tsx`) — generic renderer for an `AmAuthChallenge`: one control per callback (Name/Default/Password → text/password input, TextInput → textarea, HiddenValue → hidden input, Choice → `<Form.Select>`, Confirmation → one button per option that submits immediately), a synthetic submit button when no `ConfirmationCallback` is present, `TextOutputCallback` messageType 0/1/2 rendered as Bootstrap alerts (info/warning/danger) — **messageType 4 (ScriptTextOutput) is skipped (returns `null`), deferred to P1-5g**. A `PollingWaitCallback` present anywhere in the challenge switches the whole form to a spinner + optional message (auto-resubmit is driven by the caller, not this component).
 - `createFetchTransport` / `Transport` are re-exported here too (see below).
 
 ### `commons-ui-next` (root) — `transport.ts`
@@ -27,6 +30,11 @@ Workspace package `@openidentityplatform/commons-ui-next` (`openam-ui/commons-ui
 - `AmApiError` — `{ status, code, reason, message }`.
 - `parseAmError(res: Response): Promise<AmApiError>`.
 - `createAmTransport(opts: { baseUrl: string; realm?: string | false }): Transport` — builds `${baseUrl}/json${resolveRealmPath(realm, path)}`, always `credentials: 'include'` (cookie-based AM session). Returns the raw `Response`; callers own error handling.
+
+### `commons-ui-next/serverinfo`
+- `fetchServerInfo(transport: Transport): Promise<AmServerInfo>` (`serverinfo.ts`) — `GET /json/serverinfo/*` (the wildcard attribute returns the full object).
+- Type `AmServerInfo` (`types.ts`) — `domains, protectedUserAttributes, cookieName, secureCookie, forgotPassword, selfRegistration, lang, successfulUserRegistrationDestination, socialImplementations, referralsEnabled, zeroPageLoginAllowed, realm, xuiUserSessionValidationEnabled, FQDN, inplaceUpgrade`. **Note:** `zeroPageLoginAllowed` is a flat `boolean` invented by the mock/type model — real AM returns a nested `zeroPageLogin: { enabled, refererWhitelist, allowedWithoutReferer }` object (see the dated correction in [`../plans/P1-5e-existing-session-zeropage.md`](../plans/P1-5e-existing-session-zeropage.md)). Fix tracked as task **P1-5h** — update this section once that lands.
+- `./serverinfo` is a separate `commons-ui-next` package export entry (`import { fetchServerInfo, type AmServerInfo } from '@openidentityplatform/commons-ui-next/serverinfo'`). `mock/types.ts`'s `AmServerInfo` re-exports from here — one definition.
 
 ### `commons-ui-next/session`
 - `getSessionInfo`, `isSessionValid`, `getTimeLeft`, `logout` (`sessions.ts`).
@@ -84,8 +92,13 @@ Provider stack, outside-in:
 Plain react-router `<Routes>`/`<Route>` tree. `<AppShell>` is used as a layout route (wraps children, renders matched child via `<Outlet>`). Different route groups can mount under different `<AppShell variant=...>` instances (e.g. full-chrome `app` variant for the home/dashboard tree, minimal `auth` variant for pre-auth routes).
 
 ### Deps installed (`package.json`)
-react 19.2, react-dom 19.2, react-router 7.15, react-bootstrap 2.10 (+ `bootstrap` 5.3 CSS), i18next 25 + react-i18next 15, `@openidentityplatform/commons-ui-next` (workspace `*`). Dev: vite 8, vitest 4, @testing-library/{react,jest-dom,user-event}, msw 2.4, tsx, express (mock server), js-yaml, eslint 9 + typescript-eslint 8, typescript ~5.8.
-**Not yet present:** `@tanstack/react-query` — required by ADR-0005 for server state; add it when a slice first needs a query/mutation (e.g. login).
+react 19.2, react-dom 19.2, react-router 7.15, react-bootstrap 2.10 (+ `bootstrap` 5.3 CSS), i18next 25 + react-i18next 15, `@tanstack/react-query` 5.101 (used by `useLogin`/`LoginPage` for the auth-flow mutation + serverinfo query), `@openidentityplatform/commons-ui-next` (workspace `*`). Dev: vite 8, vitest 4, @testing-library/{react,jest-dom,user-event}, msw 2.4, tsx, express (mock server), js-yaml, eslint 9 + typescript-eslint 8, typescript ~5.8.
+
+### `features/auth` (login slice, `src/features/auth/`)
+- `LoginPage.tsx` — the `/login` route. Drives `useAuthenticationFlow` (below), renders `CallbackForm` for `kind: 'requirements'` steps, intercepts `RedirectCallback` (builds+submits a hidden-field POST form or `location.replace` for GET), handles `success` (sets the token, resolves `goto` via `validateGoto` or navigates `/`) and the existing-session branch (`isExistingSession`: same realm → treat as success, different realm → navigate to `/confirmLogin`), and zero-page auto-login (pre-fills callbacks from `IDToken1..N` URL params and auto-submits when `serverInfo.zeroPageLoginAllowed` — see the serverinfo note above).
+- `useLogin.ts` — exports `useAuthenticationFlow(queryString?)`: the multi-stage loop (`start → render → submit → repeat`), `isExistingSession` (true when the initial `/authenticate` returns success with zero submits), a `PollingWaitCallback` auto-resubmit schedule (`setTimeout` keyed off `getWaitTime`), and 408 retry (auto-restarts unless a `RedirectCallback` with a tracking cookie was seen — federation in flight).
+- `loginParams.ts` — `parseLoginParams(searchParams): LoginParams` (whitelist: `authIndexType, authIndexValue, goto, gotoOnFail, ForceAuth, locale, arg, realm`; maps legacy shorthand `authlevel/module/service/user/resource` → `authIndexType`/`authIndexValue`), `buildAuthQuery(params)` (auth-selection subset → `/authenticate` query string), `extractIDTokens(searchParams)` (ordered `IDToken1..N` values for zero-page).
+- `ConfirmLogin.tsx` + `/confirmLogin` route — realm-change interstitial shown when an existing session's realm differs from the URL's `realm` param; reads `previousRealm` from its own query string, links back to `/login`.
 
 ### Test pattern (Vitest + Testing Library + MSW)
 - `src/test/setup.ts` — registers `@testing-library/jest-dom/vitest` matchers, starts an MSW `setupServer(...handlers)` from `commons-ui-next/mock` for the whole run (`onUnhandledRequest: 'warn'`), calls Testing Library `cleanup()` + `server.resetHandlers()` in `afterEach` (Vitest is not configured with `globals: true`, so cleanup must be wired explicitly), `server.close()` in `afterAll`.
@@ -93,6 +106,7 @@ react 19.2, react-dom 19.2, react-router 7.15, react-bootstrap 2.10 (+ `bootstra
 - MSW handler overrides per-test: `server.use(...)` before the render/action, relies on `resetHandlers()` in the shared `afterEach` to undo it.
 
 ## Not yet built (add when a slice needs it)
-- `QueryClient`/`QueryClientProvider` wiring — no TanStack Query usage yet anywhere in `eui`.
-- Any callback type in `AmCallback` beyond `NameCallback`/`PasswordCallback`.
-- A generic AM-callback-driven form renderer (legacy `callbackRender` Handlebars helper equivalent) — see [`legacy-login.md`](legacy-login.md) for what that covers.
+- Session-timeout re-auth dialog, `LoginFailure`/`SessionExpired`/`Logout` views, and remember-me — **P1-5f** (the login parity gate; login stays `route-ownership.yml` `status: in_progress` until this lands).
+- `ScriptTextOutput` execution (`TextOutputCallback` messageType 4 — device-print/WebAuthn/reCAPTCHA hooks) — **P1-5g**, deferred as security-sensitive.
+- RedirectCallback return-leg resume (an `authId` tracking cookie so a federation login resumes after the IdP round-trip instead of restarting) — **P1-5i**.
+- `serverinfo` contract fix (`zeroPageLoginAllowed` → real `zeroPageLogin` object) + referrer-whitelist enforcement — **P1-5h**.

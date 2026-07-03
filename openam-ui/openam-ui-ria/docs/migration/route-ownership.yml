@@ -7,8 +7,8 @@
 # status: planned | in_progress | migrated
 #
 # NOTE: /EUI is temporary. At cutover the new app is deployed to the canonical /XUI and
-# legacy is deleted (ADR-0004). Legacy /XUI deep-link URLs are preserved via a route-compat
-# map (ADR-0008). The new build is path-relocatable, so the same build serves /EUI then /XUI.
+# legacy is deleted (ADR-0004). Legacy /XUI deep-link URLs are preserved via a hash-spelling
+# normalization map (ADR-0011). The new build is path-relocatable, so the same build serves /EUI then /XUI.
 
 mounts:
   eui: /EUI        # temporary (coexistence only)

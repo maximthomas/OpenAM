@@ -14,12 +14,19 @@ the new-app API surface is [`../reference/eui-foundation.md`](../reference/eui-f
 | P1-5f | [P1-5f-dialog-error-views-rememberme.md](P1-5f-dialog-error-views-rememberme.md) | session dialog + error/expired/logout views + remember-me (**parity gate**) |
 | P1-5g | [P1-5g-scripttextoutput.md](P1-5g-scripttextoutput.md) | ScriptTextOutput execution (device-print/WebAuthn/reCAPTCHA) |
 
+## Other plans
+
+| Plan | Scope |
+|------|------|
+| [review-remediation-2026-07.md](review-remediation-2026-07.md) | Staged fixes for doc↔doc/doc↔code drift found in the 2026-07-02 migration-docs review, plus new tasks P1-5h (serverinfo/referrer-whitelist) and P1-5i (redirect return-leg resume) |
+
 ## Why the split
 
 `tasks.yml`'s original P1-5b bundled ~9 distinct legacy sub-features spanning ~1,200 LOC — a mini-phase, not
 a task. It is carved so the parity-critical **engine** (P1-5b) ships first and everything else layers on it.
 **The login route stays `status: in_progress` across the whole split; flip to `migrated` only when P1-5f
-(the gate) lands.** Dependency shape: P1-5c/d/e/f/g all `depends_on: [P1-5b]`.
+(the gate) lands.** Dependency shape: P1-5c/d/f/g all `depends_on: [P1-5b]`; P1-5e additionally depends on
+P1-5d (it builds on P1-5d's param parsing — see P1-5e's own header).
 
 ## Shared research
 

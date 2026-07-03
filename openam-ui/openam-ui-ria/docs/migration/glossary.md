@@ -12,6 +12,7 @@
 - **Route-ownership map** — `route-ownership.yml`; records which URLs are served by `/EUI` (new) vs `/XUI` (legacy).
 - **Realm** — AM tenant/partition; most admin URLs are realm-scoped (`realms/<realm>/...`) and REST calls carry realm context.
 - **iPlanetDirectoryPro** — AM's SSO session cookie; makes cross-app full-page handoff safe (ADR-0004).
+- **react-bootstrap** — the React component library used for UI (ADR-0006). Where these docs say "react-bootstrap 5", they mean **react-bootstrap v2.x, which targets Bootstrap 5** — there is no react-bootstrap major version 5.
 - **rjsf** — react-jsonschema-form; renders forms from JSON Schema. Replaces legacy `jsoneditor` (ADR-0006).
 - **jsoneditor** — legacy JSON-Schema form/editor library driving most admin config screens.
 - **backgrid** — legacy Backbone data-grid library; replaced by TanStack Table.

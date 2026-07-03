@@ -31,6 +31,14 @@ form entirely or submits it automatically.
   `zeroPageLoginAllowed: boolean`. Use it as the sole gate; a referrer whitelist extension is a
   future enhancement, not a parity blocker.
 
+> **Correction (2026-07-02, docs review):** the real AM `/json/serverinfo/*` response returns
+> `zeroPageLogin: { enabled, refererWhitelist, allowedWithoutReferer }`
+> (`openam-core-rest/.../models/ServerInfo.java:87`, `ServerInfoResource.java:185`) — the flat
+> `zeroPageLoginAllowed` above was the mock's own invention, so "the current `AmServerInfo` exposes…"
+> was circular reasoning, not a grounded simplification. The referrer whitelist is required for both
+> parity and security (an unlisted referrer must not auto-submit credentials). Fixed by task **P1-5h**
+> (see `docs/migration/plans/review-remediation-2026-07.md`, Stage 4).
+
 ---
 
 ## Implementation steps

@@ -21,7 +21,7 @@ phases:
           New openam-ui/package.json workspace root with members openam-ui-eui + commons-ui-next (ADR-0009).
         status: done
       - id: P0-1
-        title: Scaffold the eui app (Vite 7 + React 19 + TS strict + react-router 7 + Vitest + ESLint 9)
+        title: Scaffold the eui app (Vite + React 19 + TS strict + react-router 7 + Vitest + ESLint 9)
         detail: >-
           App name "eui" inside openam-ui-eui. Scaffold fresh from the standard Vite React-TS template;
           do not copy another module. PATH-RELOCATABLE: Vite base relative/injected (not hardcoded /EUI);
@@ -69,7 +69,7 @@ phases:
       - id: P0-6
         title: Audit who references /XUI URLs (AM config, OAuth2 redirect URIs, docs, integrations)
         detail: >-
-          Sizes the must-preserve vs best-effort set for the URL-compat map (ADR-0008).
+          Sizes the must-preserve vs best-effort set for the URL-compat map (ADR-0011).
           Results captured in docs/migration/xui-url-audit.md.
         status: done
       - id: P0-7
@@ -94,7 +94,7 @@ phases:
 
   - id: phase-1
     name: Login / auth slice (proves the pattern end-to-end)
-    status: todo
+    status: in_progress
     depends_on: [phase-0]
     tasks:
       - id: P1-1
@@ -114,7 +114,7 @@ phases:
         detail: >-
           Split into a minimal first slice (this task) + P1-5b. This slice: single-stage
           username/password login only, driven by the real /json/authenticate protocol via
-          commons-ui-next/auth, mounted at /EUI/login, validated against the MSW mock. Introduces
+          commons-ui-next/auth, mounted at /EUI/#/login, validated against the MSW mock. Introduces
           TanStack Query. Success redirects to app home "/" only (goto/realm/fragment params
           deferred). route-ownership login flipped to owner: eui, status: in_progress (NOT
           migrated — parity incomplete until the P1-5b–f login-parity split lands). See
@@ -169,9 +169,10 @@ phases:
           Session-on-entry + URL-driven auto-submit: if the initial /json/authenticate already
           carries a tokenId, detect the existing session; realm-change → confirmLogin flow
           (RESTConfirmLoginView); arg=newsession force-logout; zero-page/auto-login maps IDTokenN URL
-          params to callbacks and submits without rendering the form (referrer whitelist +
-          autoLoginAttempts guard). See docs/migration/plans/P1-5e-existing-session-zeropage.md.
-        depends_on: [P1-5b]
+          params to callbacks and submits without rendering the form (zeroPageLoginAllowed gate +
+          autoLoginAttempts guard; referrer whitelist NOT implemented — see P1-5h). See
+          docs/migration/plans/P1-5e-existing-session-zeropage.md.
+        depends_on: [P1-5b, P1-5d]
         plan: docs/migration/plans/P1-5e-existing-session-zeropage.md
         status: done
       - id: P1-5f
@@ -214,12 +215,15 @@ phases:
         depends_on: [P0-3, P1-5]
         status: todo
       - id: P1-8
-        title: Deploy /EUI side by side; legacy /XUI login redirects to /EUI/login
+        title: Deploy /EUI side by side; legacy /XUI login redirects to /EUI/#/login
         depends_on: [P1-7, P1-5]
         status: todo
       - id: P1-9
         title: Lock testing patterns (Vitest + Testing Library + MSW for AM REST)
-        status: todo
+        detail: >-
+          Patterns established in P0-5/P1-5 and documented in reference/eui-foundation.md (Vitest +
+          Testing Library + shared MSW handlers, setup in src/test/setup.ts).
+        status: done
       - id: P1-10
         title: Hash-spelling normalization map — legacy #login forms -> react-router #/login
         detail: >-
@@ -227,7 +231,8 @@ phases:
           used #login (no leading slash) and #!/... forms. On load, detect these legacy spellings
           and client-side redirect to the #/... equivalent, preserving query params. Start with
           auth URLs (#login, password-reset/register/logout regexes); each later slice appends
-          its mappings. Simpler than the original ADR-0008 plan (no hash->history translation needed).
+          its mappings. Simpler than the originally-planned hash-to-history translation map, superseded
+          by ADR-0011 (no hash->history translation needed).
         depends_on: [P1-5]
         status: todo
 
@@ -285,7 +290,7 @@ phases:
         status: todo
       - id: P4-2
         title: Finalize URL-compat map — full legacy /XUI deep-link coverage verified
-        detail: ADR-0008. All must-preserve URLs from the P0-6 audit redirect correctly.
+        detail: ADR-0011. All must-preserve URLs from the P0-6 audit redirect correctly.
         depends_on: [P4-1]
         status: todo
       - id: P4-3

@@ -38,6 +38,12 @@ form entirely or submits it automatically.
 > was circular reasoning, not a grounded simplification. The referrer whitelist is required for both
 > parity and security (an unlisted referrer must not auto-submit credentials). Fixed by task **P1-5h**
 > (see `docs/migration/plans/review-remediation-2026-07.md`, Stage 4).
+>
+> **Resolved (2026-07-03, Stage 4).** `P1-5h` landed: `AmServerInfo.zeroPageLoginAllowed` is now
+> `zeroPageLogin: AmZeroPageLogin`, and `commons-ui-next/src/serverinfo/zeroPageLogin.ts` implements
+> the referrer-whitelist gate (`isZeroPageLoginAllowed`), wired into `LoginPage.tsx`. The "No
+> `refererWhitelist` sub-object" simplification above and the "Referrer whitelist enforcement" row in
+> Out of scope (below) are superseded by this fix.
 
 ---
 

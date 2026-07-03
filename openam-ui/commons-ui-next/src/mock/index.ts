@@ -26,6 +26,7 @@ export type {
   AmLogoutResult,
   AmServerInfo,
   AmSessionInfo,
+  AmZeroPageLogin,
 } from './types.ts'
 
 export {
@@ -66,7 +67,7 @@ export {
   makeZeroPageRejectHandler,
 } from './handlers/authenticate.ts'
 
-export { SERVER_INFO } from './fixtures/serverinfo.ts'
+export { SERVER_INFO, SERVER_INFO_ZERO_PAGE_ENABLED } from './fixtures/serverinfo.ts'
 
 export { DEMO_SESSION, LOGOUT_RESULT } from './fixtures/sessions.ts'
 

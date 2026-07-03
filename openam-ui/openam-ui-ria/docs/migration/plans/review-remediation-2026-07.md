@@ -254,6 +254,47 @@ Goal: the map answers "who serves this URL" for every auth route that exists tod
 
 ## Stage 4 — Code: serverinfo contract fix + referrer whitelist (task P1-5h)
 
+> **Status: DONE (2026-07-03).** All changes applied:
+> - `commons-ui-next/src/serverinfo/types.ts`: added `AmZeroPageLogin = { enabled, refererWhitelist,
+>   allowedWithoutReferer }`; replaced `AmServerInfo.zeroPageLoginAllowed: boolean` with
+>   `zeroPageLogin: AmZeroPageLogin`. Field-name audit sub-step: confirmed via grep across the Java
+>   backend (`ServerInfo.java`, `ServerInfoResource.java`) and the legacy XUI source that `FQDN` and
+>   `inplaceUpgrade` have **zero grounding anywhere** (not a rename target — wholly invented, unlike
+>   `zeroPageLoginAllowed` which at least mapped to a real-but-reshaped field) — dropped both. No other
+>   field-*name* mismatches found (`socialImplementations: string[]` vs. the real
+>   `List<SocialAuthenticationImplementation>`, and the missing `forgotUsername`/`kbaEnabled`/
+>   `cookieHttpOnly`/`cookieSameSite` fields, are shape/completeness gaps, not invented names — left
+>   alone as out of scope for this stage; flagged here for a future hygiene pass).
+> - `commons-ui-next/src/serverinfo/zeroPageLogin.ts` (new): `isZeroPageLoginAllowed`, an exact port of
+>   legacy `RESTLoginView.isZeroPageLoginAllowed`; exported from the barrel along with `AmZeroPageLogin`.
+> - `commons-ui-next/src/mock/fixtures/serverinfo.ts`: `SERVER_INFO.zeroPageLogin` defaults to
+>   `{ enabled: false, refererWhitelist: [], allowedWithoutReferer: false }`; added
+>   `SERVER_INFO_ZERO_PAGE_ENABLED` (`enabled: true, allowedWithoutReferer: true`) for the common
+>   "zero-page allowed" test scenario. Both re-exported from `mock/index.ts`; `mock/types.ts` re-exports
+>   `AmZeroPageLogin` alongside `AmServerInfo`.
+> - `openam-ui-eui/src/features/auth/LoginPage.tsx`: both zero-page gate checks (auto-submit effect and
+>   the spinner render-guard) now go through a memoized `isZeroPageLoginAllowed(serverInfo.zeroPageLogin,
+>   document.referrer)` instead of the flat boolean.
+> - Tests: new `serverinfo/zeroPageLogin.test.ts` (disabled; no-referrer × `allowedWithoutReferer`;
+>   empty-whitelist; whitelist hit/miss — 4 cases). `LoginPage.test.tsx`'s zero-page describe block
+>   updated to the new fixture shape (`SERVER_INFO_ZERO_PAGE_ENABLED`) and gained a whitelist-miss case
+>   (referrer stubbed via `Object.defineProperty(document, 'referrer', ...)`, not on the whitelist ⇒
+>   form renders, no auto-submit). `test/handlers.test.ts`'s serverinfo-handler test swapped its
+>   `FQDN` round-trip assertion for `realm` (field removed).
+> - Docs: `tasks.yml` P1-5h → `done` (detail rewritten past-tense, notes the dropped invented fields);
+>   P1-5e's detail line updated (whitelist gate no longer "NOT implemented"); a dated **Resolved**
+>   annotation added under P1-5e plan's existing 2026-07-02 correction blockquote (append-only — the
+>   original correction text is untouched); `eui-foundation.md`'s serverinfo section rewritten to the
+>   real shape + the new `isZeroPageLoginAllowed` export, the `LoginPage.tsx` description line updated,
+>   and the now-resolved "`serverinfo` contract fix — P1-5h" row removed from "Not yet built".
+>
+> Verification: `npm run typecheck && npm run lint && npm run test:run` green in both packages —
+> `commons-ui-next` 31/31 tests, `openam-ui-eui` 88/88 tests (was 87; +1 for the whitelist-miss case).
+> Manual `dev:mock` walk (IDToken URL, `zeroPageLogin.enabled: true` vs `false`) not run in this
+> environment (no dev server available); covered instead by the equivalent MSW-driven test scenarios.
+> Note: Stage 3's flagged pre-existing `AUTH_CHALLENGE` unused-import lint/typecheck failure is gone —
+> resolved by an intervening commit (`3963689d99`) unrelated to this stage.
+
 Goal: the serverinfo model matches real AM, and zero-page login enforces the legacy referrer gate.
 
 **Ground truth:** `ServerInfoResource.java:185` puts `zeroPageLogin` = `ZeroPageLoginConfig`

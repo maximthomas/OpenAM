@@ -169,8 +169,8 @@ phases:
           Session-on-entry + URL-driven auto-submit: if the initial /json/authenticate already
           carries a tokenId, detect the existing session; realm-change → confirmLogin flow
           (RESTConfirmLoginView); arg=newsession force-logout; zero-page/auto-login maps IDTokenN URL
-          params to callbacks and submits without rendering the form (zeroPageLoginAllowed gate +
-          autoLoginAttempts guard; referrer whitelist NOT implemented — see P1-5h). See
+          params to callbacks and submits without rendering the form (zeroPageLogin.enabled gate +
+          autoLoginAttempts guard; referrer whitelist gate implemented in P1-5h). See
           docs/migration/plans/P1-5e-existing-session-zeropage.md.
         depends_on: [P1-5b, P1-5d]
         plan: docs/migration/plans/P1-5e-existing-session-zeropage.md
@@ -202,15 +202,17 @@ phases:
       - id: P1-5h
         title: Login parity — serverinfo zeroPageLogin contract fix + referrer whitelist
         detail: >-
-          The mock/type model a flat zeroPageLoginAllowed boolean that does not exist in real AM;
-          reshape commons-ui-next/serverinfo to the real zeroPageLogin object ({enabled,
-          refererWhitelist, allowedWithoutReferer} — ServerInfo.java:87, ServerInfoResource.java:185)
-          and implement the referrer-whitelist gate dropped from P1-5e (security regression
-          otherwise). ADR-0010 drift instance found by the 2026-07 docs review. See
-          docs/migration/plans/review-remediation-2026-07.md, Stage 4.
+          Reshaped commons-ui-next/serverinfo's AmServerInfo.zeroPageLoginAllowed (a flat boolean that
+          did not exist in real AM) to the real zeroPageLogin object ({enabled, refererWhitelist,
+          allowedWithoutReferer} — ServerInfo.java:87, ServerInfoResource.java:185) and implemented
+          isZeroPageLoginAllowed (commons-ui-next/src/serverinfo/zeroPageLogin.ts), an exact port of
+          legacy RESTLoginView.isZeroPageLoginAllowed, wired into LoginPage's zero-page gate. Also
+          dropped two other invented AmServerInfo fields (FQDN, inplaceUpgrade) with no ServerInfo.java
+          counterpart, found during the field-name audit. ADR-0010 drift instance found by the 2026-07
+          docs review. See docs/migration/plans/review-remediation-2026-07.md, Stage 4.
         depends_on: [P1-5e]
         plan: docs/migration/plans/review-remediation-2026-07.md
-        status: todo
+        status: done
       - id: P1-5i
         title: Login parity — RedirectCallback return-leg resume (authId tracking cookie)
         detail: >-

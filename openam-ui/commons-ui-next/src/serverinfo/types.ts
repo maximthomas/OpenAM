@@ -14,6 +14,14 @@
  * Copyright 2026 3A Systems LLC.
  */
 
+// AM's own bean getters (ZeroPageLoginConfig.getRefererWhitelist / isAllowedWithoutReferer) are what
+// gets serialized onto the wire, not the private field names (whitelist / allowWithoutReferer).
+export type AmZeroPageLogin = {
+  enabled: boolean
+  refererWhitelist: string[]
+  allowedWithoutReferer: boolean
+}
+
 export type AmServerInfo = {
   domains: string[]
   protectedUserAttributes: string[]
@@ -25,9 +33,7 @@ export type AmServerInfo = {
   successfulUserRegistrationDestination: string
   socialImplementations: string[]
   referralsEnabled: string
-  zeroPageLoginAllowed: boolean
+  zeroPageLogin: AmZeroPageLogin
   realm: string
   xuiUserSessionValidationEnabled: boolean
-  FQDN: string
-  inplaceUpgrade: boolean
 }

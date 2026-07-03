@@ -27,9 +27,13 @@ export const SERVER_INFO: AmServerInfo = {
   successfulUserRegistrationDestination: 'default',
   socialImplementations: [],
   referralsEnabled: 'false',
-  zeroPageLoginAllowed: false,
+  zeroPageLogin: { enabled: false, refererWhitelist: [], allowedWithoutReferer: false },
   realm: '/',
   xuiUserSessionValidationEnabled: true,
-  FQDN: 'openam.example.com',
-  inplaceUpgrade: false,
+}
+
+// Zero-page enabled, no referrer required — the common "enabled" test scenario.
+export const SERVER_INFO_ZERO_PAGE_ENABLED: AmServerInfo = {
+  ...SERVER_INFO,
+  zeroPageLogin: { enabled: true, refererWhitelist: [], allowedWithoutReferer: true },
 }

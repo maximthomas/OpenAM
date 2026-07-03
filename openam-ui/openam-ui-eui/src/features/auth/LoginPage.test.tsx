@@ -33,6 +33,7 @@ import {
   pollingAuthenticateHandler,
   redirectAuthenticateHandler,
   SERVER_INFO,
+  SERVER_INFO_ZERO_PAGE_ENABLED,
 } from '@openidentityplatform/commons-ui-next/mock'
 import { server } from '../../test/setup.ts'
 import App from '../../App.tsx'
@@ -288,15 +289,11 @@ describe('LoginPage — arg=newsession (P1-5e)', () => {
   })
 })
 
-describe('LoginPage — zero-page auto-login (P1-5e)', () => {
-  it('auto-submits IDToken params and succeeds when zeroPageLoginAllowed is true', async () => {
+describe('LoginPage — zero-page auto-login (P1-5e, referrer gate P1-5h)', () => {
+  it('auto-submits IDToken params and succeeds when zeroPageLogin.enabled is true', async () => {
     // Enable zero-page in the server info mock. The default authenticate handler handles
     // IDToken1=demo&IDToken2=changeit → AUTH_CHALLENGE (initial) → AUTH_SUCCESS (submit).
-    server.use(
-      http.get('*/json/serverinfo/:attribute', () =>
-        HttpResponse.json({ ...SERVER_INFO, zeroPageLoginAllowed: true }),
-      ),
-    )
+    server.use(http.get('*/json/serverinfo/:attribute', () => HttpResponse.json(SERVER_INFO_ZERO_PAGE_ENABLED)))
 
     renderApp('/login?IDToken1=demo&IDToken2=changeit')
 
@@ -304,8 +301,8 @@ describe('LoginPage — zero-page auto-login (P1-5e)', () => {
     expect(await screen.findByRole('heading', { name: /openam eui/i }, { timeout: 3000 })).toBeInTheDocument()
   })
 
-  it('shows the form normally when zeroPageLoginAllowed is false', async () => {
-    // Server info has zeroPageLoginAllowed: false (default mock fixture).
+  it('shows the form normally when zeroPageLogin.enabled is false', async () => {
+    // Server info has zeroPageLogin.enabled: false (default mock fixture).
     renderApp('/login?IDToken1=demo&IDToken2=changeit')
 
     // Form should render — no auto-submit.
@@ -317,9 +314,7 @@ describe('LoginPage — zero-page auto-login (P1-5e)', () => {
     // the form can render and the test can confirm no second auto-submit occurs.
     const handler = makeZeroPageRejectHandler()
     server.use(
-      http.get('*/json/serverinfo/:attribute', () =>
-        HttpResponse.json({ ...SERVER_INFO, zeroPageLoginAllowed: true }),
-      ),
+      http.get('*/json/serverinfo/:attribute', () => HttpResponse.json(SERVER_INFO_ZERO_PAGE_ENABLED)),
       http.post('*/json/authenticate', ({ request }) => handler(request)),
       http.post('*/json/realms/root/authenticate', ({ request }) => handler(request)),
     )
@@ -328,5 +323,29 @@ describe('LoginPage — zero-page auto-login (P1-5e)', () => {
 
     // After the failed auto-submit the flow restarts and the form should reappear.
     expect(await screen.findByRole('button', { name: 'Submit' }, { timeout: 3000 })).toBeInTheDocument()
+  })
+
+  it('shows the form with no auto-submit when the referrer is not on the whitelist', async () => {
+    // enabled + allowedWithoutReferer: false + a whitelist that doesn't include the stubbed referrer.
+    Object.defineProperty(document, 'referrer', { value: 'https://untrusted.example.com', configurable: true })
+    server.use(
+      http.get('*/json/serverinfo/:attribute', () =>
+        HttpResponse.json({
+          ...SERVER_INFO,
+          zeroPageLogin: {
+            enabled: true,
+            refererWhitelist: ['https://trusted.example.com'],
+            allowedWithoutReferer: false,
+          },
+        }),
+      ),
+    )
+
+    renderApp('/login?IDToken1=demo&IDToken2=changeit')
+
+    // Referrer gate rejects the auto-submit — the form renders normally instead.
+    expect(await screen.findByRole('button', { name: 'Submit' })).toBeInTheDocument()
+
+    Object.defineProperty(document, 'referrer', { value: '', configurable: true })
   })
 })

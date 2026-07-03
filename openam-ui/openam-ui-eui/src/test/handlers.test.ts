@@ -72,7 +72,7 @@ describe('serverinfo handler', () => {
     expect(res.status).toBe(200)
     const body = await res.json() as typeof SERVER_INFO
     expect(body.cookieName).toBe(SERVER_INFO.cookieName)
-    expect(body.FQDN).toBe(SERVER_INFO.FQDN)
+    expect(body.realm).toBe(SERVER_INFO.realm)
   })
 })
 

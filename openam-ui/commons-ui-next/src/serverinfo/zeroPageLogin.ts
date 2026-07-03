@@ -14,6 +14,18 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-export { fetchServerInfo } from './serverinfo.ts'
-export type { AmServerInfo, AmZeroPageLogin } from './types.ts'
-export { isZeroPageLoginAllowed } from './zeroPageLogin.ts'
+import type { AmZeroPageLogin } from './types.ts'
+
+// Port of legacy RESTLoginView.isZeroPageLoginAllowed (org/forgerock/openam/ui/user/login/RESTLoginView.js,
+// ~191-204): disabled -> never; no referrer -> allowedWithoutReferer; otherwise an empty/missing whitelist
+// allows any referrer, else the referrer must exact-string match an entry.
+export function isZeroPageLoginAllowed(config: AmZeroPageLogin, referrer: string): boolean {
+  if (!config.enabled) {
+    return false
+  }
+  if (!referrer) {
+    return config.allowedWithoutReferer
+  }
+  return !config.refererWhitelist || config.refererWhitelist.length === 0 ||
+    config.refererWhitelist.includes(referrer)
+}

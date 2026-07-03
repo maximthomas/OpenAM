@@ -29,7 +29,7 @@ import {
   validateGoto,
 } from '@openidentityplatform/commons-ui-next/auth'
 import { clearToken, setToken } from '@openidentityplatform/commons-ui-next/session'
-import { fetchServerInfo } from '@openidentityplatform/commons-ui-next/serverinfo'
+import { fetchServerInfo, isZeroPageLoginAllowed } from '@openidentityplatform/commons-ui-next/serverinfo'
 import { amTransport, serverInfoTransport } from '../../config/transport.ts'
 import { buildAuthQuery, extractIDTokens, parseLoginParams } from './loginParams.ts'
 import { useAuthenticationFlow } from './useLogin.ts'
@@ -57,7 +57,7 @@ export default function LoginPage() {
     }
   }, [loginParams.arg])
 
-  // Step 7: fetch server info once to check zeroPageLoginAllowed.
+  // Step 7: fetch server info once to check the zeroPageLogin gate.
   const { data: serverInfo } = useQuery({
     queryKey: ['serverinfo'],
     queryFn: () => fetchServerInfo(serverInfoTransport),
@@ -66,6 +66,12 @@ export default function LoginPage() {
 
   // Step 7: extract IDToken params from URL for zero-page auto-login.
   const idTokens = useMemo(() => extractIDTokens(searchParams), [searchParams])
+
+  // Referrer whitelist gate (Stage 4, P1-5h) — mirrors legacy RESTLoginView.isZeroPageLoginAllowed.
+  const zeroPageAllowed = useMemo(
+    () => (serverInfo ? isZeroPageLoginAllowed(serverInfo.zeroPageLogin, document.referrer) : false),
+    [serverInfo],
+  )
 
   // Guard: only attempt zero-page auto-submit once per page load.
   const zeroPageAttemptedRef = useRef(false)
@@ -143,14 +149,14 @@ export default function LoginPage() {
       }
 
       // Step 7: zero-page auto-login — pre-fill callbacks from URL IDToken params and submit.
-      if (!zeroPageAttemptedRef.current && idTokens.length > 0 && serverInfo?.zeroPageLoginAllowed) {
+      if (!zeroPageAttemptedRef.current && idTokens.length > 0 && zeroPageAllowed) {
         zeroPageAttemptedRef.current = true
         const filled = fillCallbacks(step.challenge, idTokens)
         submit(filled)
         return
       }
     }
-  }, [step, isExistingSession, navigate, restart, t, loginParams, submit, idTokens, serverInfo])
+  }, [step, isExistingSession, navigate, restart, t, loginParams, submit, idTokens, zeroPageAllowed])
 
   // While server info is loading and IDTokens are present, show a spinner to avoid briefly
   // flashing the form before the zero-page check completes.
@@ -171,7 +177,7 @@ export default function LoginPage() {
 
     // Show a spinner while zero-page auto-submit is about to fire (effect hasn't run yet)
     // or is already in flight. Prevents a brief form flash before auto-submit.
-    if (idTokens.length > 0 && !!serverInfo?.zeroPageLoginAllowed && !zeroPageAttemptedRef.current) {
+    if (idTokens.length > 0 && zeroPageAllowed && !zeroPageAttemptedRef.current) {
       return <Spinner animation="border" role="status" />
     }
     if (zeroPageAttemptedRef.current && isSubmitting) {

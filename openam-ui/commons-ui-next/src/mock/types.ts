@@ -27,4 +27,4 @@ export type {
 
 export type { AmSessionInfo, AmLogoutResult } from '../session/types.ts'
 
-export type { AmServerInfo } from '../serverinfo/types.ts'
+export type { AmServerInfo, AmZeroPageLogin } from '../serverinfo/types.ts'

@@ -22,7 +22,6 @@ import { MemoryRouter } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commons-ui-next/i18n'
 import {
-  AUTH_CHALLENGE,
   AUTH_CHALLENGE_REDIRECT_POST,
   existingSessionAuthenticateHandler,
   existingSessionOtherRealmHandler,

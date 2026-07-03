@@ -17,10 +17,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import {
+  clearTrackingToken,
   getTrackingCookie,
+  getTrackingToken,
   getWaitTime,
   isPollingWaitCallback,
   isRedirectCallback,
+  resumeAuthentication,
+  setTrackingToken,
   startAuthentication,
   submitCallbacks,
   type AmAuthChallenge,
@@ -37,6 +41,12 @@ export type AuthFlowHook = {
   isSubmitting: boolean
   /** True when the initial /authenticate call returned success without any submit — live session. */
   isExistingSession: boolean
+  /**
+   * True when the current 'failure' step is a 408 whose restart was suppressed because a tracked
+   * authId (return-leg resume, P1-5i) is in play — mirrors AuthNService's "Suppress retry when
+   * using Redirect Callback" branch. The caller should show the timeout message and stop.
+   */
+  isTimedOut: boolean
   /** Submit a filled challenge to advance the flow. */
   submit: (filledChallenge: AmAuthChallenge) => void
   /** Restart the flow from scratch (fresh startAuthentication). */
@@ -44,10 +54,10 @@ export type AuthFlowHook = {
 }
 
 /**
- * Multi-stage AM authentication flow hook (P1-5b/P1-5c/P1-5d).
+ * Multi-stage AM authentication flow hook (P1-5b/P1-5c/P1-5d/P1-5i).
  * Starts authentication on mount; loops until success or failure via submit().
  * Handles PollingWaitCallback auto-submit, RedirectCallback tracking-cookie detection,
- * and 408 timeout restart.
+ * 408 timeout restart, and return-leg resume after a federated redirect (P1-5i).
  *
  * queryString (P1-5d): optional query string to append to /authenticate
  * (e.g. "?authIndexType=module&authIndexValue=DataStore").
@@ -55,8 +65,7 @@ export type AuthFlowHook = {
 export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
   const [step, setStep] = useState<AuthStep | null>(null)
   const [isStarting, setIsStarting] = useState(false)
-  // Set to true when a redirect challenge with a trackingCookie is seen — suppresses 408 restart.
-  const hasTrackingCookieRef = useRef(false)
+  const [isTimedOut, setIsTimedOut] = useState(false)
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Count of submitted callbacks — zero at the time of a success means an existing session.
   const submitCountRef = useRef(0)
@@ -64,10 +73,24 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
   const startAuth = useCallback(() => {
     setStep(null)
     setIsStarting(true)
+    setIsTimedOut(false)
     submitCountRef.current = 0
-    startAuthentication(amTransport, queryString)
-      .then(setStep)
-      .finally(() => setIsStarting(false))
+
+    // Return-leg resume (P1-5i): a tracked authId cookie means a federated redirect is
+    // returning — resume instead of restarting (mirrors AuthNService.getRequirements).
+    const trackedAuthId = getTrackingToken()
+    const authPromise = trackedAuthId
+      ? resumeAuthentication(amTransport, trackedAuthId, queryString).then((result) => {
+          // Legacy clears the cookie only once the resume call resolves (jQuery .done() — a
+          // next stage or success), not on a 401/408 failure.
+          if (result.kind !== 'failure') {
+            clearTrackingToken()
+          }
+          return result
+        })
+      : startAuthentication(amTransport, queryString)
+
+    authPromise.then(setStep).finally(() => setIsStarting(false))
   }, [queryString])
 
   useEffect(() => {
@@ -87,17 +110,21 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
   useEffect(() => {
     if (!step) return
 
-    // Detect a redirect with a tracking cookie — suppress 408 restart after federation.
+    // Detect a redirect with a tracking cookie — store the authId (P1-5i) so a return visit can
+    // resume, and mirror AuthNService.handleRequirements: only set it if none is already stored.
     if (step.kind === 'requirements') {
       const redirectCb = step.challenge.callbacks.find(isRedirectCallback)
-      if (redirectCb && getTrackingCookie(redirectCb)) {
-        hasTrackingCookieRef.current = true
+      if (redirectCb && getTrackingCookie(redirectCb) && !getTrackingToken()) {
+        setTrackingToken(step.challenge.authId)
       }
     }
 
-    // 408 timeout: restart the flow unless a redirect tracking cookie is in play.
+    // 408 timeout: restart the flow unless a tracked authId is in play — matches legacy, which
+    // shows the timeout message and stops rather than looping when a redirect token is tracked.
     if (step.kind === 'failure' && step.error.code === 408) {
-      if (!hasTrackingCookieRef.current) {
+      if (getTrackingToken()) {
+        setIsTimedOut(true)
+      } else {
         startAuth()
       }
       return
@@ -131,6 +158,7 @@ export function useAuthenticationFlow(queryString?: string): AuthFlowHook {
     isStarting,
     isSubmitting: submitMutation.isPending,
     isExistingSession: step?.kind === 'success' && submitCountRef.current === 0,
+    isTimedOut,
     submit: submitMutation.mutate,
     restart: startAuth,
   }

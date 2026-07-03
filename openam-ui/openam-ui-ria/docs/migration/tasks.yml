@@ -216,13 +216,19 @@ phases:
       - id: P1-5i
         title: Login parity — RedirectCallback return-leg resume (authId tracking cookie)
         detail: >-
-          P1-5c stored nothing across a federation (SAML/OAuth) IdP round-trip, so a redirect login
-          restarts at stage 1 on return instead of resuming. Mirror the legacy authId tracking-cookie
-          protocol (AuthNService.js) to store/resume/clear across the redirect. Found by the 2026-07
-          docs review. See docs/migration/plans/review-remediation-2026-07.md, Stage 5.
+          Done: commons-ui-next/src/auth/trackingToken.ts ports AuthenticationToken.jsm's authId
+          cookie (get/set/clear, path "/", optional per-domain + secure); authenticate.ts gained
+          resumeAuthentication (POSTs { authId } instead of an empty begin()). useLogin.ts sets the
+          cookie when a requirements step carries a tracked RedirectCallback (before the page
+          navigates away) and, on mount/restart, resumes from a stored cookie instead of calling
+          begin() — clearing it only once the resume call resolves (mirrors AuthNService's
+          jQuery .done() semantics: cleared on a next stage or success, left in place on 401/408).
+          The prior in-memory 408-suppression flag was replaced with a direct tracked-cookie check,
+          which also matches AuthNService.js:176-180's "show loginTimeout, don't restart" behavior
+          for a tracked authId — LoginPage now surfaces that message via a new isTimedOut flag.
         depends_on: [P1-5c]
         plan: docs/migration/plans/review-remediation-2026-07.md
-        status: todo
+        status: done
       - id: P1-6
         title: Migrate anonymousProcess — password reset, self-register, forgot username
         detail: >-

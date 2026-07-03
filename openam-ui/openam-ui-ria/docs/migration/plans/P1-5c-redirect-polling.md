@@ -41,6 +41,12 @@ Handle the two "special" callbacks that alter the P1-5b engine loop, plus AM req
 > parity progress. Tracked separately as task **P1-5i** (depends on this task) — see
 > `docs/migration/plans/review-remediation-2026-07.md`, Stage 5. P1-5f's parity gate cannot flip
 > login → `migrated` until P1-5i lands.
+>
+> **Resolved (2026-07-03, Stage 5).** P1-5i is done: `commons-ui-next/src/auth/trackingToken.ts` ports the
+> `authId` cookie; `resumeAuthentication` (in `authenticate.ts`) resumes with `{ authId }` instead of an
+> empty `begin()`; `useLogin.ts` sets the cookie when a tracked `RedirectCallback` requirements step
+> appears (before navigating away) and resumes from it on mount instead of restarting. See P1-5i's
+> `tasks.yml` detail for the full breakdown.
 
 ## Out of scope
 Rendering of standard callbacks (P1-5b) · goto (P1-5d). ScriptTextOutput stays deferred (P1-5g).

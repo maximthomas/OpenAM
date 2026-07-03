@@ -329,6 +329,62 @@ IDToken URL with mock `zeroPageLogin.enabled: true` auto-submits; with `enabled:
 
 ## Stage 5 — Code: RedirectCallback return-leg resume (task P1-5i)
 
+> **Status: DONE (2026-07-03).** All changes applied:
+> - `commons-ui-next/src/auth/trackingToken.ts` (new): `getTrackingToken`/`setTrackingToken`/`clearTrackingToken`
+>   — a port of `AuthenticationToken.jsm`'s `authId` cookie (name kept for XUI/EUI coexistence interop;
+>   path `/`; optional `{ domains?, secure? }`, one cookie written per domain or a host-only cookie when
+>   omitted). The cookie-string builder (`buildTrackingCookieStrings`) is factored out as a pure function
+>   so it's unit-testable in this package's `node`-environment Vitest run (no DOM) — mirrors the legacy
+>   `CookieHelper.createCookie` (pure) vs. `setCookie` (impure) split. `get`/`set`/`clear` themselves touch
+>   `document.cookie` and are exercised indirectly via the jsdom-based `openam-ui-eui` tests instead.
+> - `commons-ui-next/src/auth/authenticate.ts`: added `resumeAuthentication(transport, authId, queryString?)`
+>   — POSTs `{ authId }` instead of an empty `begin()`, matching `AuthNService.getRequirements`'s
+>   tracked-token branch. Simplification from legacy (documented, not silent): legacy's body also merges in
+>   `Configuration.globalData.auth.urlParams`, duplicating what `submitRequirements`'s URL-querystring
+>   append already carries; the port relies on the querystring alone (same pattern `startAuthentication`
+>   already uses), since the body-level duplication doesn't add information AM doesn't already have.
+> - `openam-ui-eui/src/features/auth/useLogin.ts`: on `startAuth` (mount and every `restart()`), checks
+>   `getTrackingToken()` first — if set, calls `resumeAuthentication` instead of `startAuthentication` and
+>   clears the cookie only once the response resolves to a non-`'failure'` kind (mirrors legacy's
+>   jQuery-`.done()`-only-fires-on-2xx semantics: a next stage or success clears it, a 401/408 leaves it).
+>   When a `requirements` step carries a `RedirectCallback` with a tracking-cookie output and no token is
+>   already stored, it calls `setTrackingToken(challenge.authId)` — this runs before `LoginPage`'s own
+>   effect performs the actual navigation (hook effects run in call order on the same render pass), so the
+>   cookie is set before the page navigates away. The former in-memory `hasTrackingCookieRef` (used only to
+>   suppress 408 auto-restart) was **replaced** with a direct `getTrackingToken()` check at 408-time — this
+>   is both more faithful to legacy (a single cookie check, not a parallel in-memory flag) and closes an
+>   infinite-loop risk the old ref would have had once resume was added (a 408 during a resume attempt
+>   left the cookie in place per the point above; re-checking the real cookie means the retry is correctly
+>   suppressed instead of looping). The hook now also exposes `isTimedOut` for the suppressed-408 case.
+> - `openam-ui-eui/src/features/auth/LoginPage.tsx`: destructures `isTimedOut`; a tracked 408 now shows
+>   `t('config.messages.CommonMessages.loginTimeout')` (translation key already existed, unused until now)
+>   and renders it in a new terminal branch instead of falling through to `return null` — mirrors
+>   `AuthNService.js:176–180`'s "show the timeout message, don't restart" behavior for a tracked authId.
+>   A non-tracked 408 is unchanged (silent auto-restart inside the hook, no message).
+> - Mock fixtures/handlers: **no changes needed** — `resolveAuthenticateBody`'s existing
+>   `authId === REDIRECT_GET_AUTH_ID || authId === REDIRECT_POST_AUTH_ID → AUTH_SUCCESS` branch already
+>   answers a bare `{ authId }` resume POST correctly, since it doesn't inspect `callbacks`. Documented
+>   here as a deliberate no-op rather than silently skipping the Changes table's fixture row.
+> - Tests: `trackingToken.test.ts` (pure builder, 4 cases: host-only, per-domain, secure, expires).
+>   `auth.test.ts` gained 2 `resumeAuthentication` cases (tracked authId → success; unknown authId →
+>   failure). `LoginPage.test.tsx` gained a new "return-leg resume (P1-5i)" describe block (3 cases: cookie
+>   set before the hidden-form POST redirect submits; mount-with-cookie resumes with no `begin()` call and
+>   clears the cookie on success; a tracked 408 shows the timeout message, does not restart, and leaves the
+>   cookie in place).
+> - Docs: `tasks.yml` P1-5i → `done` (detail rewritten past-tense); a dated **Resolved** annotation added
+>   under `P1-5c-redirect-polling.md`'s existing 2026-07-02 gap-note blockquote (append-only — the original
+>   gap note is untouched); `eui-foundation.md`'s auth section gained `resumeAuthentication` and
+>   `trackingToken.ts` entries, the `LoginPage.tsx`/`useLogin.ts` description lines were updated, the
+>   now-resolved P1-5i row was removed from "Not yet built", and the "last updated for" line now points at
+>   this stage.
+>
+> Verification: `npm run typecheck && npm run lint && npm run test:run` green in both packages —
+> `commons-ui-next` 37/37 tests (was 31; +6), `openam-ui-eui` 91/91 tests (was 88; +3). Manual `dev:mock`
+> walk of the redirect scenario (redirect out → simulated return → resumed stage → success) not run in
+> this environment (no dev server available); covered instead by the equivalent MSW-driven test scenarios
+> above. P1-5f's gate `depends_on` already includes P1-5h and P1-5i (set in Stage 2) — both now done, but
+> flipping `route-ownership.yml` login → `migrated` remains P1-5f's own task, not touched here.
+
 Goal: a federation (SAML/OAuth) login resumes after the IdP round-trip instead of restarting.
 
 **Legacy protocol (ground truth, `AuthNService.js` + `AuthenticationToken.jsm`):**

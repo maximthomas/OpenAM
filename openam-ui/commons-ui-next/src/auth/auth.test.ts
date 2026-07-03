@@ -16,10 +16,18 @@
 
 import { describe, expect, it } from 'vitest'
 import { http } from 'msw'
-import { DEMO_TOKEN_ID, multiStageAuthenticateHandler } from '../mock/index.ts'
+import { DEMO_TOKEN_ID, multiStageAuthenticateHandler, REDIRECT_POST_AUTH_ID } from '../mock/index.ts'
 import { server } from '../test/setup.ts'
 import { createFetchTransport } from '../transport.ts'
-import { startAuthentication, submitCallbacks, fillCallbacks, setCallbackValue, isAuthSuccess, isAuthFailure } from './authenticate.ts'
+import {
+  startAuthentication,
+  resumeAuthentication,
+  submitCallbacks,
+  fillCallbacks,
+  setCallbackValue,
+  isAuthSuccess,
+  isAuthFailure,
+} from './authenticate.ts'
 
 // MSW intercepts fetch for any hostname; use a recognisable test origin.
 const transport = createFetchTransport({ baseUrl: 'http://openam.test' })
@@ -116,5 +124,17 @@ describe('authenticate', () => {
     expect(filled.callbacks[0].input[0].value).toBe('alice')
     expect(filled.callbacks[1].input[0].value).toBe('secret')
     expect(challenge.callbacks[0].input[0].value).toBe('')
+  })
+
+  it('resumeAuthentication posts a bare authId and resolves the tracked redirect flow', async () => {
+    const step = await resumeAuthentication(transport, REDIRECT_POST_AUTH_ID)
+    expect(isAuthSuccess(step)).toBe(true)
+    if (!isAuthSuccess(step)) return
+    expect(step.success.tokenId).toBe(DEMO_TOKEN_ID)
+  })
+
+  it('resumeAuthentication with an unknown authId returns a failure step', async () => {
+    const step = await resumeAuthentication(transport, 'not-a-tracked-authId')
+    expect(isAuthFailure(step)).toBe(true)
   })
 })

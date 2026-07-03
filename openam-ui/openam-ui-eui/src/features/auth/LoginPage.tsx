@@ -45,7 +45,8 @@ export default function LoginPage() {
   const loginParams = useMemo(() => parseLoginParams(searchParams), [searchParams])
   const authQuery = useMemo(() => buildAuthQuery(loginParams), [loginParams])
 
-  const { step, isStarting, isSubmitting, isExistingSession, submit, restart } = useAuthenticationFlow(authQuery)
+  const { step, isStarting, isSubmitting, isExistingSession, isTimedOut, submit, restart } =
+    useAuthenticationFlow(authQuery)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const isRedirectingRef = useRef(false)
 
@@ -117,8 +118,16 @@ export default function LoginPage() {
       }
       return
     }
-    if (step?.kind === 'failure' && step.error.code !== 408) {
-      // 408 is handled inside useAuthenticationFlow (auto-restart); show error for other failures.
+    if (step?.kind === 'failure' && step.error.code === 408) {
+      // Non-tracked 408s auto-restart inside useAuthenticationFlow (no message). A tracked authId
+      // (return-leg resume, P1-5i) suppresses the restart — show the timeout message instead,
+      // mirroring AuthNService's "Suppress retry when using Redirect Callback" branch.
+      if (isTimedOut) {
+        setErrorMessage(t('config.messages.CommonMessages.loginTimeout'))
+      }
+      return
+    }
+    if (step?.kind === 'failure') {
       setErrorMessage(t('config.messages.CommonMessages.authenticationFailed'))
       restart()
       return
@@ -156,7 +165,7 @@ export default function LoginPage() {
         return
       }
     }
-  }, [step, isExistingSession, navigate, restart, t, loginParams, submit, idTokens, zeroPageAllowed])
+  }, [step, isExistingSession, isTimedOut, navigate, restart, t, loginParams, submit, idTokens, zeroPageAllowed])
 
   // While server info is loading and IDTokens are present, show a spinner to avoid briefly
   // flashing the form before the zero-page check completes.
@@ -198,6 +207,12 @@ export default function LoginPage() {
         />
       </>
     )
+  }
+
+  // Return-leg resume (P1-5i): a tracked 408 stops here rather than restarting — show the
+  // timeout message set by the effect above and wait for the user to retry (matches legacy).
+  if (step.kind === 'failure' && isTimedOut) {
+    return <Alert variant="danger">{errorMessage}</Alert>
   }
 
   // success / failure handled by the useEffect above; render nothing while navigating.

@@ -42,6 +42,27 @@ export async function startAuthentication(transport: Transport, queryString?: st
   return resolveStep(json, res.status)
 }
 
+// Return-leg resume (P1-5i): after a federated (RedirectCallback) round-trip, AM identifies the
+// pending auth step by authId alone — mirrors legacy AuthNService.getRequirements's tracked-token
+// branch, which posts `{ authId, ...urlParams }` instead of an empty begin().
+export async function resumeAuthentication(
+  transport: Transport,
+  authId: string,
+  queryString?: string,
+): Promise<AuthStep> {
+  const path = queryString ? `/authenticate${queryString}` : '/authenticate'
+  const res = await transport(path, {
+    method: 'POST',
+    headers: {
+      'Accept-API-Version': AUTH_VERSION,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ authId }),
+  })
+  const json = (await res.json()) as AmAuthChallenge | AmAuthSuccess | AmAuthError
+  return resolveStep(json, res.status)
+}
+
 // Step 2+: POST the challenge (with input values filled) → next challenge, success, or failure.
 export async function submitCallbacks(transport: Transport, challenge: AmAuthChallenge): Promise<AuthStep> {
   const res = await transport('/authenticate', {

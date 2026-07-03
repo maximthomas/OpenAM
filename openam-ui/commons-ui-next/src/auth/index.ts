@@ -29,6 +29,7 @@ export { KNOWN_CALLBACK_TYPES } from './types.ts'
 
 export {
   startAuthentication,
+  resumeAuthentication,
   submitCallbacks,
   fillCallbacks,
   setCallbackValue,
@@ -37,6 +38,9 @@ export {
 } from './authenticate.ts'
 
 export { validateGoto } from './validateGoto.ts'
+
+export { getTrackingToken, setTrackingToken, clearTrackingToken } from './trackingToken.ts'
+export type { TrackingCookieOptions } from './trackingToken.ts'
 
 export {
   getOutput,

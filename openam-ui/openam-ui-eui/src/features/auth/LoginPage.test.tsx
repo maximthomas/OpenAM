@@ -23,6 +23,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createI18nInstance, I18nextProvider } from '@openidentityplatform/commons-ui-next/i18n'
 import {
   AUTH_CHALLENGE_REDIRECT_POST,
+  AUTH_TIMEOUT_ERROR,
   existingSessionAuthenticateHandler,
   existingSessionOtherRealmHandler,
   make408ThenRecoverHandler,
@@ -32,6 +33,7 @@ import {
   multiStageAuthenticateHandler,
   pollingAuthenticateHandler,
   redirectAuthenticateHandler,
+  REDIRECT_POST_AUTH_ID,
   SERVER_INFO,
   SERVER_INFO_ZERO_PAGE_ENABLED,
 } from '@openidentityplatform/commons-ui-next/mock'
@@ -184,6 +186,75 @@ describe('LoginPage — 408 timeout restart (P1-5c)', () => {
 
     // After the 408, the hook restarts — the login form should reappear.
     expect(await screen.findByLabelText('User Name', {}, { timeout: 3000 })).toBeInTheDocument()
+  })
+})
+
+describe('LoginPage — return-leg resume (P1-5i)', () => {
+  afterEach(() => {
+    // jsdom does not reset document.cookie between tests — clear it explicitly.
+    document.cookie = 'authId=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+  })
+
+  it('sets the tracking cookie before navigating away when a redirect carries a trackingCookie', async () => {
+    const submitSpy = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {})
+
+    server.use(
+      http.post('*/json/authenticate', () => HttpResponse.json(AUTH_CHALLENGE_REDIRECT_POST)),
+      http.post('*/json/realms/root/authenticate', () => HttpResponse.json(AUTH_CHALLENGE_REDIRECT_POST)),
+    )
+
+    renderApp('/login')
+
+    await waitFor(() => {
+      expect(document.cookie).toContain(`authId=${REDIRECT_POST_AUTH_ID}`)
+    })
+
+    submitSpy.mockRestore()
+  })
+
+  it('resumes (no begin) when a tracking cookie is present on mount, and clears it on success', async () => {
+    document.cookie = `authId=${REDIRECT_POST_AUTH_ID};path=/`
+    let sawInitialBeginCall = false
+
+    const resumeOrFail = async (request: Request): Promise<Response> => {
+      const body = (await request.json()) as { authId?: string }
+      if (!body.authId) {
+        sawInitialBeginCall = true
+        return HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'unexpected begin() call' })
+      }
+      if (body.authId === REDIRECT_POST_AUTH_ID) {
+        return HttpResponse.json({ tokenId: 'resumed-token-id', successUrl: '/openam/console', realm: '/' })
+      }
+      return HttpResponse.json({ code: 401, reason: 'Unauthorized', message: 'unexpected authId' })
+    }
+
+    server.use(
+      http.post('*/json/authenticate', ({ request }) => resumeOrFail(request)),
+      http.post('*/json/realms/root/authenticate', ({ request }) => resumeOrFail(request)),
+    )
+
+    renderApp('/login')
+
+    expect(await screen.findByRole('heading', { name: /openam eui/i })).toBeInTheDocument()
+    expect(sawInitialBeginCall).toBe(false)
+    expect(document.cookie).not.toContain('authId=')
+  })
+
+  it('shows the timeout message without restarting when a tracked authId 408s', async () => {
+    document.cookie = `authId=${REDIRECT_POST_AUTH_ID};path=/`
+
+    server.use(
+      http.post('*/json/authenticate', () => HttpResponse.json(AUTH_TIMEOUT_ERROR, { status: 408 })),
+      http.post('*/json/realms/root/authenticate', () => HttpResponse.json(AUTH_TIMEOUT_ERROR, { status: 408 })),
+    )
+
+    renderApp('/login')
+
+    expect(await screen.findByText('Login processed timed out. Restarting...')).toBeInTheDocument()
+    // No restart: the login form never appears, and the cookie is not cleared (legacy only
+    // clears the token on a resolved response, not on a 401/408 failure).
+    expect(screen.queryByLabelText('User Name')).toBeNull()
+    expect(document.cookie).toContain(`authId=${REDIRECT_POST_AUTH_ID}`)
   })
 })
 

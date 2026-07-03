@@ -166,6 +166,41 @@ export const AUTH_CHALLENGE_TEXT_OUTPUT: AmAuthChallenge = {
   ],
 }
 
+// ── ScriptTextOutputCallback fixtures (P1-5g) ─────────────────────────────────
+// Models a device-print-style stage: a HiddenValueCallback (empty) paired with a
+// ScriptTextOutputCallback (messageType "4", a real string per AM's wire format — see
+// RestAuthTextOutputCallbackHandler.convertToJson). The script calls the documented `setResult`
+// hook; the handler below (mock/handlers/authenticate.ts) checks the value comes back on submit.
+
+export const SCRIPT_TEXT_OUTPUT_AUTH_ID = 'script-text-output-callback-auth-id-xxxxxxxxxxxxx'
+export const SCRIPT_TEXT_OUTPUT_RESULT = 'mock-device-print-result'
+
+/** Stage with a HiddenValueCallback + a ScriptTextOutputCallback (messageType 4). */
+export const AUTH_CHALLENGE_SCRIPT_TEXT_OUTPUT: AmAuthChallenge = {
+  authId: SCRIPT_TEXT_OUTPUT_AUTH_ID,
+  template: '',
+  stage: 'DeviceScript1',
+  header: '',
+  callbacks: [
+    {
+      type: 'HiddenValueCallback',
+      output: [
+        { name: 'value', value: '' },
+        { name: 'id', value: 'devicePrintCallback' },
+      ],
+      input: [{ name: 'IDToken1', value: '' }],
+    },
+    {
+      type: 'TextOutputCallback',
+      output: [
+        { name: 'message', value: `setResult('${SCRIPT_TEXT_OUTPUT_RESULT}');` },
+        { name: 'messageType', value: '4' },
+      ],
+      input: [],
+    },
+  ],
+}
+
 // ── RedirectCallback fixtures ─────────────────────────────────────────────────
 
 export const REDIRECT_GET_AUTH_ID = 'redirect-get-auth-id-xxxxxxxxxxxxxxxxxxxxxxxx'

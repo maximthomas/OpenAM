@@ -54,6 +54,7 @@ export {
   getTrackingCookie,
   getWaitTime,
   getPollingMessage,
+  getScript,
   isNameCallback,
   isPasswordCallback,
   isTextInputCallback,
@@ -61,6 +62,7 @@ export {
   isChoiceCallback,
   isConfirmationCallback,
   isTextOutputCallback,
+  isScriptTextOutputCallback,
   isRedirectCallback,
   isPollingWaitCallback,
 } from './callbacks.ts'

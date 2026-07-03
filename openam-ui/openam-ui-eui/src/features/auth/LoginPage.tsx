@@ -239,6 +239,9 @@ export default function LoginPage() {
             submit(ch)
           }}
           submitting={isSubmitting}
+          // ScriptTextOutputCallback execution (P1-5g) stays off until a human security review
+          // signs off — see docs/migration/reference/script-text-output.md (openam-ui-ria).
+          allowScriptExecution={false}
         />
       </>
     )

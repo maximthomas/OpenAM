@@ -195,13 +195,23 @@ phases:
       - id: P1-5g
         title: Login parity — ScriptTextOutput execution (device-print/WebAuthn/reCAPTCHA)
         detail: >-
-          Hardened handling of TextOutputCallback messageType 4 (ScriptTextOutput), which legacy
-          executed as raw server-provided JS (device print, WebAuthn, reCAPTCHA hooks). Deferred from
-          P1-5b as security-sensitive; not required for the parity gate and may be re-prioritized into
-          a later auth-module slice. See docs/migration/plans/P1-5g-scripttextoutput.md.
+          Hardened execution adapter for TextOutputCallback messageType 4 (ScriptTextOutput):
+          commons-ui-next/src/auth/scriptExecution.ts runs the AM-provided script via a real
+          <script> element (same-origin/cookie trust boundary, documented) and writes its reported
+          result into the stage's sole HiddenValueCallback. Also fixed a real latent bug —
+          getMessageType only recognized a numeric messageType, but AM serializes it as a JSON
+          string (String.valueOf), so ScriptTextOutput was never detected against real AM. Ships
+          DISABLED by default (CallbackForm's allowScriptExecution prop; LoginPage.tsx passes
+          false) pending a human security review sign-off — the plan's own gate, operationalized
+          as a concrete default rather than a TODO. Every known first-party AM script producer
+          (QR/authenticator-app registration, the built-in reCAPTCHA module, the generic Scripted
+          module's document.forms[0] convention) depends on legacy XUI globals (jQuery/RequireJS)
+          this app doesn't provide and remains non-functional unmodified — follow-up, not done
+          here. See docs/migration/reference/script-text-output.md for the full research + design,
+          and docs/migration/plans/P1-5g-scripttextoutput.md.
         depends_on: [P1-5b]
         plan: docs/migration/plans/P1-5g-scripttextoutput.md
-        status: todo
+        status: done
       - id: P1-5h
         title: Login parity — serverinfo zeroPageLogin contract fix + referrer whitelist
         detail: >-

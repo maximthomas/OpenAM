@@ -46,6 +46,9 @@ export {
   CHOICE_AUTH_ID,
   CONFIRMATION_AUTH_ID,
   TEXT_OUTPUT_AUTH_ID,
+  AUTH_CHALLENGE_SCRIPT_TEXT_OUTPUT,
+  SCRIPT_TEXT_OUTPUT_AUTH_ID,
+  SCRIPT_TEXT_OUTPUT_RESULT,
   REDIRECT_GET_AUTH_ID,
   REDIRECT_POST_AUTH_ID,
   AUTH_CHALLENGE_REDIRECT_GET,
@@ -63,6 +66,7 @@ export {
   multiStageAuthenticateHandler,
   redirectAuthenticateHandler,
   pollingAuthenticateHandler,
+  scriptTextOutputAuthenticateHandler,
   make408ThenRecoverHandler,
   makeZeroPageRejectHandler,
 } from './handlers/authenticate.ts'

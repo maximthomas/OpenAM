@@ -27,13 +27,25 @@ import {
   AUTH_CHALLENGE_CHOICE,
   AUTH_CHALLENGE_CONFIRMATION,
   AUTH_CHALLENGE_POLLING_1,
+  AUTH_CHALLENGE_SCRIPT_TEXT_OUTPUT,
   AUTH_CHALLENGE_TEXT_OUTPUT,
+  SCRIPT_TEXT_OUTPUT_RESULT,
 } from '@openidentityplatform/commons-ui-next/mock'
 
-function renderForm(challenge: AmAuthChallenge, onSubmit = vi.fn(), submitting = false) {
+function renderForm(
+  challenge: AmAuthChallenge,
+  onSubmit = vi.fn(),
+  submitting = false,
+  allowScriptExecution = false,
+) {
   return render(
     <I18nextProvider i18n={createI18nInstance()}>
-      <CallbackForm challenge={challenge} onSubmit={onSubmit} submitting={submitting} />
+      <CallbackForm
+        challenge={challenge}
+        onSubmit={onSubmit}
+        submitting={submitting}
+        allowScriptExecution={allowScriptExecution}
+      />
     </I18nextProvider>,
   )
 }
@@ -156,6 +168,57 @@ describe('CallbackForm', () => {
     it('renders a synthetic Submit button (no ConfirmationCallback in this challenge)', () => {
       renderForm(AUTH_CHALLENGE_TEXT_OUTPUT)
       expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument()
+    })
+  })
+
+  describe('ScriptTextOutputCallback (P1-5g)', () => {
+    // jsdom evaluates an appended <script> element's text in a separate vm context from the one
+    // this test module runs in (verified empirically — window/globalThis assignments made inside
+    // the injected script are not visible here), so these tests inspect the *setup* (spy on
+    // document.createElement) and simulate the script's effect by invoking the exposed setResult
+    // hook directly, rather than relying on jsdom to execute the injected script text. Real
+    // execution should be checked manually via `npm run dev:mock` before this is enabled in prod.
+
+    it('does not create a <script> element when allowScriptExecution is unset (default false)', () => {
+      const spy = vi.spyOn(document, 'createElement')
+      renderForm(AUTH_CHALLENGE_SCRIPT_TEXT_OUTPUT)
+      expect(spy).not.toHaveBeenCalledWith('script')
+      spy.mockRestore()
+    })
+
+    it('does not render a visible alert or control for the script callback either way', () => {
+      renderForm(AUTH_CHALLENGE_SCRIPT_TEXT_OUTPUT, undefined, undefined, true)
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('creates a <script> element wrapping the raw script with a setResult binding when enabled', () => {
+      const spy = vi.spyOn(document, 'createElement')
+      renderForm(AUTH_CHALLENGE_SCRIPT_TEXT_OUTPUT, undefined, undefined, true)
+
+      expect(spy).toHaveBeenCalledWith('script')
+      const scriptEl = spy.mock.results.map((r) => r.value).find((el) => el?.tagName === 'SCRIPT') as HTMLScriptElement
+      expect(scriptEl.text).toContain(`setResult('${SCRIPT_TEXT_OUTPUT_RESULT}');`)
+      expect(scriptEl.text).toMatch(/\(function \(setResult\) \{/)
+      expect(scriptEl.text).toMatch(/window\.__scriptTextOutputResult_\d+/)
+      spy.mockRestore()
+    })
+
+    it('writes a reported result into the sole HiddenValueCallback and submits it', async () => {
+      const user = userEvent.setup()
+      const onSubmit = vi.fn()
+      renderForm(AUTH_CHALLENGE_SCRIPT_TEXT_OUTPUT, onSubmit, false, true)
+
+      // Simulate the script calling setResult(...) — see the file-level comment on jsdom's
+      // separate script-execution realm.
+      const globalName = Object.keys(window).find((k) => k.startsWith('__scriptTextOutputResult_'))
+      expect(globalName).toBeDefined()
+      ;(window as unknown as Record<string, (value: string) => void>)[globalName!](SCRIPT_TEXT_OUTPUT_RESULT)
+
+      await user.click(screen.getByRole('button', { name: 'Submit' }))
+
+      expect(onSubmit).toHaveBeenCalledOnce()
+      const [filledChallenge] = onSubmit.mock.calls[0] as [AmAuthChallenge]
+      expect(filledChallenge.callbacks[0].input[0].value).toBe(SCRIPT_TEXT_OUTPUT_RESULT)
     })
   })
 

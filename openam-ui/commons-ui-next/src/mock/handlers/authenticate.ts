@@ -23,6 +23,7 @@ import {
   AUTH_CHALLENGE_POLLING_1,
   AUTH_CHALLENGE_POLLING_2,
   AUTH_CHALLENGE_REDIRECT_GET,
+  AUTH_CHALLENGE_SCRIPT_TEXT_OUTPUT,
   AUTH_CHALLENGE_USERNAME_STAGE,
   AUTH_ERROR,
   AUTH_ID,
@@ -35,6 +36,8 @@ import {
   POLLING_AUTH_ID_2,
   REDIRECT_GET_AUTH_ID,
   REDIRECT_POST_AUTH_ID,
+  SCRIPT_TEXT_OUTPUT_AUTH_ID,
+  SCRIPT_TEXT_OUTPUT_RESULT,
 } from '../fixtures/authenticate.ts'
 
 /**
@@ -88,6 +91,15 @@ export function resolveAuthenticateBody(body: Partial<AmAuthChallenge>): Respons
   }
   if (authId === POLLING_AUTH_ID_2) {
     return HttpResponse.json(AUTH_SUCCESS)
+  }
+
+  // Script-text-output path (P1-5g) — succeed once the script-computed hidden value comes back.
+  if (authId === SCRIPT_TEXT_OUTPUT_AUTH_ID) {
+    const hiddenValue = callbacks?.find((cb) => cb.type === 'HiddenValueCallback')?.input[0]?.value
+    if (hiddenValue === SCRIPT_TEXT_OUTPUT_RESULT) {
+      return HttpResponse.json(AUTH_SUCCESS)
+    }
+    return HttpResponse.json(AUTH_ERROR, { status: 401 })
   }
 
   // Unknown authId.
@@ -173,6 +185,20 @@ export function makeZeroPageRejectHandler() {
     }
     return HttpResponse.json(AUTH_CHALLENGE)
   }
+}
+
+/**
+ * Script-text-output authenticate handler — initial call returns the HiddenValueCallback +
+ * ScriptTextOutputCallback stage (P1-5g). Use in tests via server.use() to exercise the script
+ * execution + write-back path.
+ */
+export async function scriptTextOutputAuthenticateHandler(request: Request): Promise<Response> {
+  const text = await request.text()
+  const body = (text ? JSON.parse(text) : {}) as Partial<AmAuthChallenge>
+  if (!body.authId) {
+    return HttpResponse.json(AUTH_CHALLENGE_SCRIPT_TEXT_OUTPUT)
+  }
+  return resolveAuthenticateBody(body)
 }
 
 /**

@@ -14,7 +14,7 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Alert, Button, Form, Spinner } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 import { setCallbackValue } from './authenticate.ts'
@@ -25,28 +25,39 @@ import {
   getOutput,
   getPollingMessage,
   getPrompt,
+  getScript,
   isChoiceCallback,
   isConfirmationCallback,
   isHiddenValueCallback,
   isPasswordCallback,
   isPollingWaitCallback,
+  isScriptTextOutputCallback,
   isTextInputCallback,
   isTextOutputCallback,
 } from './callbacks.ts'
+import { runScriptTextOutput } from './scriptExecution.ts'
 import type { AmAuthChallenge } from './types.ts'
 
 export type CallbackFormProps = {
   challenge: AmAuthChallenge
   onSubmit: (filledChallenge: AmAuthChallenge) => void
   submitting: boolean
+  /**
+   * Execute ScriptTextOutputCallback (messageType 4) scripts — default false. Stays off until a
+   * human security review signs off; see scriptExecution.ts and
+   * docs/migration/reference/script-text-output.md (P1-5g).
+   */
+  allowScriptExecution?: boolean
 }
 
 /**
  * Generic AM callback renderer. Seeds controlled state from the challenge, renders one control
  * per callback, injects a synthetic Submit button when no ConfirmationCallback is present.
- * TextOutputCallback messageType 4 (ScriptTextOutput) is intentionally skipped — deferred to P1-5g.
+ * TextOutputCallback messageType 4 (ScriptTextOutput) renders nothing visible; when
+ * allowScriptExecution is true it is executed via scriptExecution.ts and its reported result is
+ * written into the stage's sole HiddenValueCallback (P1-5g) — otherwise it stays a no-op.
  */
-export function CallbackForm({ challenge, onSubmit, submitting }: CallbackFormProps) {
+export function CallbackForm({ challenge, onSubmit, submitting, allowScriptExecution = false }: CallbackFormProps) {
   const { t } = useTranslation()
 
   const [values, setValues] = useState<string[]>(() =>
@@ -74,6 +85,30 @@ export function CallbackForm({ challenge, onSubmit, submitting }: CallbackFormPr
     setValues((prev) => prev.map((v, i) => (i === index ? value : v)))
   }
 
+  // ScriptTextOutputCallback (P1-5g): run each script, writing its reported result into the
+  // stage's sole HiddenValueCallback (the pairing convention both real AM producers we found use —
+  // see the reference doc). Gated behind allowScriptExecution; runs once per stage (challenge.authId).
+  useEffect(() => {
+    if (!allowScriptExecution) return
+
+    const scriptIndices = challenge.callbacks
+      .map((cb, i) => (isScriptTextOutputCallback(cb) ? i : -1))
+      .filter((i) => i !== -1)
+    if (scriptIndices.length === 0) return
+
+    const hiddenIndices = challenge.callbacks
+      .map((cb, i) => (isHiddenValueCallback(cb) ? i : -1))
+      .filter((i) => i !== -1)
+    const targetIndex = hiddenIndices.length === 1 ? hiddenIndices[0] : undefined
+
+    const cleanups = scriptIndices.map((i) =>
+      runScriptTextOutput(getScript(challenge.callbacks[i]), (value) => {
+        if (targetIndex !== undefined) updateValue(targetIndex, value)
+      }),
+    )
+    return () => cleanups.forEach((cleanup) => cleanup())
+  }, [challenge.authId, allowScriptExecution])
+
   // PollingWaitCallback: render a waiting state — no user input, auto-submit is driven by the
   // parent hook (useAuthenticationFlow). Show a message from the polling callback if present.
   if (pollingCb) {
@@ -91,7 +126,8 @@ export function CallbackForm({ challenge, onSubmit, submitting }: CallbackFormPr
       {challenge.header && <h4>{challenge.header}</h4>}
 
       {challenge.callbacks.map((cb, i) => {
-        // TextOutputCallback: render as Bootstrap alert (messageType 4 = script, skipped)
+        // TextOutputCallback: render as Bootstrap alert (messageType 4 = ScriptTextOutput, handled
+        // invisibly by the useEffect above — see allowScriptExecution)
         if (isTextOutputCallback(cb)) {
           const msgType = getMessageType(cb)
           if (msgType === 4) return null

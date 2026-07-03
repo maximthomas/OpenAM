@@ -34,10 +34,15 @@ export function getChoices(cb: AmCallback): string[] {
   return Array.isArray(val) ? (val as string[]) : []
 }
 
-/** Returns the messageType number for TextOutputCallback / ConfirmationCallback. */
+/**
+ * Returns the messageType number for TextOutputCallback / ConfirmationCallback. AM serializes
+ * messageType as a JSON string on the wire (RestAuthTextOutputCallbackHandler.convertToJson does
+ * `String.valueOf(messageType)`), so this coerces a numeric string (e.g. "4") as well as a number.
+ */
 export function getMessageType(cb: AmCallback): number {
   const val = getOutput(cb, 'messageType')?.value
-  return typeof val === 'number' ? val : 0
+  const num = typeof val === 'string' ? Number(val) : val
+  return typeof num === 'number' && Number.isFinite(num) ? num : 0
 }
 
 /** Returns the options array (button labels) for a ConfirmationCallback. */
@@ -56,6 +61,15 @@ export const isConfirmationCallback = (cb: AmCallback): boolean => cb.type === '
 export const isTextOutputCallback = (cb: AmCallback): boolean => cb.type === 'TextOutputCallback'
 export const isRedirectCallback = (cb: AmCallback): boolean => cb.type === 'RedirectCallback'
 export const isPollingWaitCallback = (cb: AmCallback): boolean => cb.type === 'PollingWaitCallback'
+
+/** ScriptTextOutputCallback — a TextOutputCallback with messageType 4 (raw script, P1-5g). */
+export const isScriptTextOutputCallback = (cb: AmCallback): boolean =>
+  isTextOutputCallback(cb) && getMessageType(cb) === 4
+
+/** Returns the raw server-provided script for a ScriptTextOutputCallback (messageType 4). */
+export function getScript(cb: AmCallback): string {
+  return String(getOutput(cb, 'message')?.value ?? '')
+}
 
 // RedirectCallback accessors.
 export function getRedirectUrl(cb: AmCallback): string {

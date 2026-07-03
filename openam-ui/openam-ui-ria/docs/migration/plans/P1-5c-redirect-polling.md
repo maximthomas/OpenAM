@@ -33,8 +33,18 @@ Handle the two "special" callbacks that alter the P1-5b engine loop, plus AM req
   push-polling scenario (returns PollingWaitCallback N times, then success).
 - Tests: redirect intercept, polling advance/stop, 408 retry.
 
+> **Gap found (2026-07-02, docs review):** this task specified and implemented the **outbound** redirect
+> (navigating to the external IdP) but nothing for the **return leg** — resuming the flow when the browser
+> comes back from the IdP. Legacy tracks this via an `authId` cookie set before navigating away and
+> consumed on return (`AuthNService.js`); the new engine stores nothing, so a federation login restarts at
+> stage 1 instead of resuming. This task was nonetheless marked `done` since the outbound half is real
+> parity progress. Tracked separately as task **P1-5i** (depends on this task) — see
+> `docs/migration/plans/review-remediation-2026-07.md`, Stage 5. P1-5f's parity gate cannot flip
+> login → `migrated` until P1-5i lands.
+
 ## Out of scope
 Rendering of standard callbacks (P1-5b) · goto (P1-5d). ScriptTextOutput stays deferred (P1-5g).
+RedirectCallback return-leg resume (authId tracking cookie) — see the gap note above; tracked as P1-5i.
 
 ## Verification
 Vitest + typecheck + lint in both packages; `dev:mock` walk of a push-polling flow and a (mock) redirect flow.

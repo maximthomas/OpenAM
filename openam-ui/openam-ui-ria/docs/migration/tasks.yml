@@ -180,11 +180,13 @@ phases:
         detail: >-
           Ancillary UI + modal + logout: session-timeout re-auth dialog (RESTLoginDialog — reuse the
           engine form in a modal; admin modal vs self-service full logout); LoginFailure /
-          SessionExpired / RESTLogoutView views; remember-me (persist username). PARITY GATE — once
+          SessionExpired / RESTLogoutView views; remember-me (persist username); failure navigation
+          (gotoOnFail param + 401 detail.failureUrl — legacy goToFailureUrl). PARITY GATE — once
           this lands, flip route-ownership.yml login -> status: migrated and keep the TS mirror
-          (openam-ui-eui/src/config/routeOwnership.ts) in sync. See
-          docs/migration/plans/P1-5f-dialog-error-views-rememberme.md.
-        depends_on: [P1-5b]
+          (openam-ui-eui/src/config/routeOwnership.ts) in sync. Gate must NOT flip login ->
+          migrated until P1-5h (serverinfo zeroPageLogin contract fix) and P1-5i (redirect
+          return-leg resume) also land. See docs/migration/plans/P1-5f-dialog-error-views-rememberme.md.
+        depends_on: [P1-5b, P1-5h, P1-5i]
         plan: docs/migration/plans/P1-5f-dialog-error-views-rememberme.md
         status: todo
       - id: P1-5g
@@ -197,8 +199,34 @@ phases:
         depends_on: [P1-5b]
         plan: docs/migration/plans/P1-5g-scripttextoutput.md
         status: todo
+      - id: P1-5h
+        title: Login parity — serverinfo zeroPageLogin contract fix + referrer whitelist
+        detail: >-
+          The mock/type model a flat zeroPageLoginAllowed boolean that does not exist in real AM;
+          reshape commons-ui-next/serverinfo to the real zeroPageLogin object ({enabled,
+          refererWhitelist, allowedWithoutReferer} — ServerInfo.java:87, ServerInfoResource.java:185)
+          and implement the referrer-whitelist gate dropped from P1-5e (security regression
+          otherwise). ADR-0010 drift instance found by the 2026-07 docs review. See
+          docs/migration/plans/review-remediation-2026-07.md, Stage 4.
+        depends_on: [P1-5e]
+        plan: docs/migration/plans/review-remediation-2026-07.md
+        status: todo
+      - id: P1-5i
+        title: Login parity — RedirectCallback return-leg resume (authId tracking cookie)
+        detail: >-
+          P1-5c stored nothing across a federation (SAML/OAuth) IdP round-trip, so a redirect login
+          restarts at stage 1 on return instead of resuming. Mirror the legacy authId tracking-cookie
+          protocol (AuthNService.js) to store/resume/clear across the redirect. Found by the 2026-07
+          docs review. See docs/migration/plans/review-remediation-2026-07.md, Stage 5.
+        depends_on: [P1-5c]
+        plan: docs/migration/plans/review-remediation-2026-07.md
+        status: todo
       - id: P1-6
         title: Migrate anonymousProcess — password reset, self-register, forgot username
+        detail: >-
+          Also owns rendering the login page's self-service links (showForgotPassword /
+          showForgotUserName / showSelfRegistration from serverinfo flags) — P1-5f's parity gate
+          explicitly excludes them (see plans/P1-5f-dialog-error-views-rememberme.md Out of scope).
         depends_on: [P1-1, P1-2]
         status: todo
       - id: P1-7
@@ -229,10 +257,21 @@ phases:
         detail: >-
           ADR-0011. The new app is HashRouter-routed and emits #/login (leading slash); legacy
           used #login (no leading slash) and #!/... forms. On load, detect these legacy spellings
-          and client-side redirect to the #/... equivalent, preserving query params. Start with
-          auth URLs (#login, password-reset/register/logout regexes); each later slice appends
-          its mappings. Simpler than the originally-planned hash-to-history translation map, superseded
-          by ADR-0011 (no hash->history translation needed).
+          and client-side redirect to the #/... equivalent, preserving query params. Must-preserve
+          spellings from the P0-6 audit (docs/migration/xui-url-audit.md): #login -> #/login,
+          #!/X -> #/X; composite & fragment params (#login&realm=/x&goto=... ->
+          #/login?realm=/x&goto=...), since react-router useSearchParams only sees ?-delimited
+          params but legacy parsed &-composites; realm path-suffix (#login/myRealm ->
+          #/login?realm=/myRealm); outside-hash query (/XUI/?realm=x#login — merge
+          window.location.search into the fragment query, since HashRouter never sees
+          location.search); anonymous-process/aux routes (#passwordReset/..., #register/...,
+          #continuePasswordReset... regex, #logout/, #failedLogin..., #confirmLogin/), grown per
+          slice; phase-2/3 appends (#uma/share/{id}, #uma/requests/{id},
+          #realms/%2F/dashboard). confirm.html is a static page -> cutover/P4 concern, not hash
+          normalization. Constraint (from P1-5d): normalization must preserve every query param.
+          Start with auth URLs; each later slice appends its mappings. Simpler than the
+          originally-planned hash-to-history translation map, superseded by ADR-0011 (no
+          hash->history translation needed).
         depends_on: [P1-5]
         status: todo
 
@@ -256,6 +295,12 @@ phases:
       - id: P2-5
         title: "RISK GATE — rjsf vs jsoneditor gap analysis (do BEFORE phase-3)"
         detail: Custom widgets, conditional schemas, inline validation. Build custom-widget set in commons-ui-next.
+        status: todo
+      - id: P2-6
+        title: Social login buttons on login page (socialImplementations from serverinfo)
+        detail: >-
+          P1-5f's parity gate explicitly excludes social login; needs serverinfo
+          socialImplementations modeling. Found by the 2026-07 docs review.
         status: todo
 
   - id: phase-3

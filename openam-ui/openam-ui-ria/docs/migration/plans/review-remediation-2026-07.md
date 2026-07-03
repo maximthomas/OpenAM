@@ -125,6 +125,25 @@ its README index row, and ADR-0011's supersedes references; `grep -rn "Vite 7"` 
 
 ## Stage 2 — Scope & decision records (docs only, changes planned work)
 
+> **Status: DONE (2026-07-03).** All 7 items applied:
+> - New tasks **P1-5h** and **P1-5i** added to `tasks.yml` (phase-1), each `plan:` pointing at this file.
+> - **P1-5f** gate hardened: `depends_on` → `[P1-5b, P1-5h, P1-5i]` in `tasks.yml`; mirrored as a dated
+>   "Gate hardening" note under Goal in `plans/P1-5f-…md`, plus a reminder on its (renumbered) gate-flip step.
+> - **A3** folded into P1-5f: new implementation step 4 ("Failure navigation"), extended step 10 (Tests),
+>   `tasks.yml` P1-5f detail, and a new row in `plans/README.md`'s sub-feature table. Inserting the step
+>   renumbered P1-5f's original steps 4–10 to 5–11 — content unchanged, only step numbers shifted.
+> - **A4** given owners: `tasks.yml` P1-6 detail extended for self-service links; new task **P2-6** for
+>   social login; both noted as documented exclusions in P1-5f's Out-of-scope section.
+> - **A5** — new **ADR-0012** (deployment-time customization parity deferred post-cutover), indexed in
+>   `decisions/README.md`; risk row added to `MIGRATION.md` §7 and a caveat line to §8.
+> - **A6** — P1-10's `tasks.yml` detail expanded to enumerate the must-preserve spellings from
+>   `xui-url-audit.md` (composite `&` params, realm path-suffix, outside-hash query, aux routes, phase-2/3
+>   appends, `confirm.html` exclusion).
+> - **A2**'s dated gap note added to `plans/P1-5c-redirect-polling.md` (Stage 2 item 2), pointing at P1-5i.
+>
+> Verification: `tasks.yml` parses (`npx js-yaml`); every A-finding (A1–A6, plus A2 already tracked) now
+> maps to a task id or ADR-0012; `decisions/README.md` lists ADR-0012.
+
 Goal: every known parity gap has a written owner or a written "not doing it" decision.
 
 1. **New task `P1-5h` in tasks.yml** — "Login parity — serverinfo `zeroPageLogin` contract fix +

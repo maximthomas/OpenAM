@@ -1,12 +1,17 @@
 # P1-5f — Login parity (GATE): session dialog + LoginFailure/SessionExpired/Logout views + remember-me
 
-**Depends on:** P1-5b · **Parity gate** · Read [`README.md`](README.md) (shared research) first.
+**Depends on:** P1-5b, P1-5h, P1-5i · **Parity gate** · Read [`README.md`](README.md) (shared research) first.
 
 ## Goal
 
-The remaining ancillary login UI, the session-timeout re-auth modal, and remember-me. **When this lands, login
-reaches parity** — flip `route-ownership.yml` login → `status: migrated` and keep the TS mirror
-(`openam-ui-eui/src/config/routeOwnership.ts`) in sync.
+The remaining ancillary login UI, the session-timeout re-auth modal, remember-me, and failure navigation.
+**When this lands, login reaches parity** — flip `route-ownership.yml` login → `status: migrated` and keep
+the TS mirror (`openam-ui-eui/src/config/routeOwnership.ts`) in sync.
+
+> **Gate hardening (2026-07-03, docs review):** the gate must **not** flip login → `migrated` before
+> **P1-5h** (serverinfo `zeroPageLogin` contract fix + referrer whitelist) and **P1-5i** (RedirectCallback
+> return-leg resume) also land — both are security/parity gaps found by the review, tracked separately so
+> this gate's own scope doesn't balloon. See `docs/migration/plans/review-remediation-2026-07.md`.
 
 ## Legacy reference
 - **session-timeout dialog** — `RESTLoginDialog.js` (46) + `AMConfig.js` 271–309 (`EVENT_SHOW_LOGIN_DIALOG`).
@@ -68,17 +73,24 @@ reaches parity** — flip `route-ownership.yml` login → `status: migrated` and
    (thrown error, distinct from the `failure` *value*). `LoginPage`: `startFailed` → `navigate('/failedLogin')`.
    `LoginFailure.tsx`: `clearToken()` + `<ReturnToLogin title={t('openam.authentication.unavailable')} />`. Route
    `/failedLogin` (auth shell).
-4. **SessionExpired** (`SessionExpired.tsx`): `clearToken()` +
+4. **Failure navigation (A3, `useLogin.ts`/`LoginPage.tsx`):** on a terminal `failure` step (not `startFailed` —
+   this is the *value* failure path from step 3's engine, see `README.md`'s "failure is a value" note), if the
+   `gotoOnFail` query param is present → validate it via `validateGoto` then navigate there; if the failure
+   response body carries `detail.failureUrl` → hard `window.location.href` navigation (bypasses `validateGoto`,
+   matching legacy `goToFailureUrl` — the URL comes from AM itself, not user input). Legacy reference:
+   `AuthNService.js` `goToFailureUrl`. Both params are already parsed by P1-5d/`loginParams.ts` but not yet acted
+   on.
+5. **SessionExpired** (`SessionExpired.tsx`): `clearToken()` +
    `<ReturnToLogin title={t('templates.user.SessionExpiredTemplate.sessionExpired')} />` with recalled params. Route
    `/sessionExpired`.
-5. **Logout** (`Logout.tsx`): on mount, if `getToken()` → best-effort `logout(amTransport, token)`; always
+6. **Logout** (`Logout.tsx`): on mount, if `getToken()` → best-effort `logout(amTransport, token)`; always
    `clearToken()`; then `<ReturnToLogin title={t('templates.user.RestLogoutTemplate.loggedOut')} />`. Route `/logout`.
-6. **Remember-me:** `rememberMe.ts` (cookie `login`, 20-day: get/set/clear). `CallbackForm.tsx` gains optional
+7. **Remember-me:** `rememberMe.ts` (cookie `login`, 20-day: get/set/clear). `CallbackForm.tsx` gains optional
    `rememberMe?: { checked; onChange }` — renders the checkbox (`templates.user.LoginTemplate.loginRemember`) before
    the submit button **only when** the challenge has a `NameCallback` (pure props, no app import → ADR-0002 clean).
    `LoginPage`: seed the `NameCallback` value + default the box checked when a remembered login exists; on submit set
    or clear the cookie; autoFocus password when pre-filled.
-7. **Session-timeout dialog + monitor** (eui `features/auth/`):
+8. **Session-timeout dialog + monitor** (eui `features/auth/`):
    - `useSessionMonitor.ts` — interval poll of `isSessionValid`/`getTimeLeft` against `getToken()`; fires `onExpiry`
      once; pauses when no token; clears its timer on unmount.
    - `SessionTimeoutDialog.tsx` — non-closable react-bootstrap `Modal` (`backdrop="static"`) reusing
@@ -88,12 +100,15 @@ reaches parity** — flip `route-ownership.yml` login → `status: migrated` and
      modal. Role via `isSelfServiceUser(sessionInfo)` **defaulting false → modal** (legacy `else` fallback);
      documented limitation — real role wiring lands with the user/profile slice (P2-4). Mount inside the full-chrome
      `AppShell` group in `App.tsx`.
-8. **Parity GATE flip:** `route-ownership.yml` login → `status: migrated`; `routeOwnership.ts` unchanged; confirm
-   `routeOwnership.test.ts` passes.
-9. **Tests:** LoginFailure (start error → failure view); SessionExpired + Logout (title + return link; logout calls
-   `_action=logout`, token cleared); remember-me round-trip (submit checked → cookie; reload → pre-filled + checked);
-   session-timeout (expiry → admin modal re-auth via `demo/changeit` restores token; self-service → `/sessionExpired`).
-10. **Docs:** update `reference/eui-foundation.md` (new `features/auth/*`, `CallbackForm` `rememberMe` prop,
+9. **Parity GATE flip:** `route-ownership.yml` login → `status: migrated`; `routeOwnership.ts` unchanged; confirm
+   `routeOwnership.test.ts` passes. **Only do this once P1-5h and P1-5i have also landed** (see the gate-hardening
+   note under Goal above) — not just this task's own steps.
+10. **Tests:** LoginFailure (start error → failure view); failure navigation (`gotoOnFail` present → navigates to
+    the validated goto; `detail.failureUrl` in the failure body → hard-navigates via `window.location.href`);
+    SessionExpired + Logout (title + return link; logout calls `_action=logout`, token cleared); remember-me
+    round-trip (submit checked → cookie; reload → pre-filled + checked); session-timeout (expiry → admin modal
+    re-auth via `demo/changeit` restores token; self-service → `/sessionExpired`).
+11. **Docs:** update `reference/eui-foundation.md` (new `features/auth/*`, `CallbackForm` `rememberMe` prop,
     `useLogin` `startFailed`); update `tasks.yml` (P1-5f → done, P1-5 → done (and `route-ownership.yml`
     login → `status: migrated`)); note new routes (`/failedLogin`, `/sessionExpired`, `/logout`) for
     P1-10's hash-compat map.
@@ -109,6 +124,9 @@ reaches parity** — flip `route-ownership.yml` login → `status: migrated` and
 
 ## Out of scope
 ScriptTextOutput exec (P1-5g). Redirect/polling (P1-5c), goto (P1-5d), existing-session/zero-page (P1-5e) land first.
+Social login buttons on the login page — a documented exclusion, not a gap (→ new task **P2-6**, needs
+serverinfo `socialImplementations` modeling). Login-page self-service links
+(`showForgotPassword`/`showForgotUserName`/`showSelfRegistration`) — also a documented exclusion (→ **P1-6**).
 
 ## Verification
 `npm run test:run` + `npm run lint` + typecheck for `openam-ui-eui` and `commons-ui-next`; **route-ownership drift test

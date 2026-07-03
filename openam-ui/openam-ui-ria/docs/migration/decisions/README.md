@@ -17,5 +17,6 @@ Use the table below to load **only** the ADR you need; don't read all eleven (`c
 | [0009](0009-new-app-separate-module.md) | New app as a separate Maven module `openam-ui-eui` (rename `app-next` → `eui`) | Accepted |
 | [0010](0010-mock-am-server.md) | Mock AM backend (shared MSW handlers) for standalone browser dev/test of both UIs | Accepted |
 | [0011](0011-hash-routing-for-url-parity.md) | New app uses HashRouter for `/XUI` URL parity with the legacy hash-routed app | Accepted |
+| [0012](0012-deployment-customization-parity-deferred.md) | Deployment-time customization parity (themes, template overrides) deferred until after cutover | Accepted |
 
 _Template: Context → Decision → Consequences → Alternatives considered._

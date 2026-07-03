@@ -69,6 +69,7 @@ Legacy source under `openam-ui-ria/src/main/js/org/forgerock/openam/ui/user/logi
 | session-timeout re-auth dialog | RESTLoginDialog.js (46), AMConfig.js 271–300 | ~80 | `POST /json/authenticate` | P1-5f |
 | LoginFailure / SessionExpired / logout views | LoginFailureView.js (41), SessionExpiredView.js (54), RESTLogoutView.js (55) | ~150 | `POST /json/users?_action=idFromSession`, logout | P1-5f |
 | remember-me | RESTLoginView.formSubmit 221–228 / prefillLoginData 407–418, `_RememberLogin.html` | ~25 | none (cookie) | P1-5f |
+| failure navigation (`gotoOnFail` param, 401 `detail.failureUrl`) | AuthNService.js `goToFailureUrl` | ~30 | `POST /json/users?_action=validateGoto` (reused) | P1-5f |
 | ScriptTextOutput execution (msg type 4) | RESTLoginView.callbackRender (script branch) | small | none (raw JS exec) | P1-5g |
 
 ### Cross-cutting conventions for every sub-task

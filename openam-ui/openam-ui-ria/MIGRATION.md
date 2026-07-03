@@ -166,6 +166,7 @@ Admin is schema-driven config — **rjsf + TanStack Table heavy**. Do an **rjsf 
 | Dual-maintenance tax during coexistence | Freeze legacy XUI except security fixes; all new work lands in `/EUI` |
 | Visual seam between `/EUI` and `/XUI` | react-bootstrap 5 keeps parity; defer any redesign until after cutover |
 | Breaking external `/XUI` deep links at cutover | Audit `/XUI` references in Phase 0; ship a hash-spelling normalization map (ADR-0011, P1-10); keep the new build path-relocatable so `/XUI` is reused, not changed |
+| Deployment-time customization (theme/template overrides, `confirm.html`) has no Vite equivalent | Parity explicitly deferred until after cutover (ADR-0012); revisit with a runtime-config/CSS-custom-properties approach |
 
 ---
 
@@ -176,4 +177,6 @@ Admin is schema-driven config — **rjsf + TanStack Table heavy**. Do an **rjsf 
 - Legacy Backbone/RequireJS/Grunt/Karma/Handlebars deleted; `commons.ui:user` dependency dropped.
 - `commons-ui-next` extracted to the commons project and consumed as a published artifact.
 - Test + lint green in CI on the new stack.
+- Deployment-time customization parity (themes, template overrides, `confirm.html`) is explicitly
+  deferred post-cutover (ADR-0012) — not a blocking criterion here.
 </content>

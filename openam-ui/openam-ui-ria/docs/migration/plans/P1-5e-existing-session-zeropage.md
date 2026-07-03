@@ -322,10 +322,10 @@ Extend `openam-ui-eui/src/features/auth/LoginPage.test.tsx`:
 - `idFromSession` (`POST /json/users?_action=idFromSession`) — needed by P1-5f's error/expired views; defer.
 - `RESTLoginDialog` session-timeout modal — P1-5f.
 - `LoginFailureView` / `SessionExpiredView` / `RESTLogoutView` — P1-5f.
-- Remember-me — P1-5f.
+- Remember-me — P1-5j (split out of P1-5f, 2026-07-03).
 - `ScriptTextOutput` execution — P1-5g.
 - Referrer whitelist enforcement — not exposed by `AmServerInfo.zeroPageLoginAllowed` (flat boolean); future enhancement.
-- Login route stays `status: in_progress` until P1-5f (the parity gate) lands.
+- Login route stays `status: in_progress` until P1-5k (the parity gate — P1-5f was split 3-way on 2026-07-03) lands.
 
 ## Verification
 

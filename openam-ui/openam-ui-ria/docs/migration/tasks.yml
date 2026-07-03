@@ -122,8 +122,9 @@ phases:
         depends_on: [P1-1, P1-2, P1-4]
         status: in_progress
       # P1-5b was too big for one task (~9 legacy sub-features / ~1,200 LOC), so it is split into
-      # P1-5b..P1-5g. Login route stays status: in_progress across the whole split; flip to
-      # status: migrated only when P1-5f (the parity gate) lands. Shared research + split rationale:
+      # P1-5b..P1-5g plus P1-5h..P1-5k. Login route stays status: in_progress across the whole
+      # split; flip to status: migrated only when P1-5k (the parity gate — originally P1-5f, itself
+      # split 3-way on 2026-07-03 into P1-5f/P1-5j/P1-5k) lands. Shared research + split rationale:
       # docs/migration/plans/README.md.
       - id: P1-5b
         title: Login parity (engine) — multi-stage callback loop + generic callback renderer
@@ -176,18 +177,20 @@ phases:
         plan: docs/migration/plans/P1-5e-existing-session-zeropage.md
         status: done
       - id: P1-5f
-        title: "Login parity (GATE) — session dialog + LoginFailure/SessionExpired/logout views + remember-me"
+        title: "Login parity — return-to-login views (LoginFailure/SessionExpired/Logout) + failure navigation"
         detail: >-
-          Ancillary UI + modal + logout: session-timeout re-auth dialog (RESTLoginDialog — reuse the
-          engine form in a modal; admin modal vs self-service full logout); LoginFailure /
-          SessionExpired / RESTLogoutView views; remember-me (persist username); failure navigation
-          (gotoOnFail param + 401 detail.failureUrl — legacy goToFailureUrl). PARITY GATE — once
-          this lands, flip route-ownership.yml login -> status: migrated and keep the TS mirror
-          (openam-ui-eui/src/config/routeOwnership.ts) in sync. Gate must NOT flip login ->
-          migrated until P1-5h (serverinfo zeroPageLogin contract fix) and P1-5i (redirect
-          return-leg resume) also land. See docs/migration/plans/P1-5f-dialog-error-views-rememberme.md.
-        depends_on: [P1-5b, P1-5h, P1-5i]
-        plan: docs/migration/plans/P1-5f-dialog-error-views-rememberme.md
+          Split (2026-07-03): the original P1-5f (session dialog + error/expired/logout views +
+          remember-me, the parity gate) was ~9 new files across three concerns, so it was carved
+          3-way — P1-5f (this: return-to-login views + failure navigation), P1-5j (remember-me),
+          P1-5k (session-timeout dialog + monitor + guard, which inherits the parity gate). THIS
+          task: the shared ReturnToLogin partial + param recall (loginReturn), LoginFailure (+ a
+          startFailed surface on useLogin's start error), SessionExpired, RESTLogoutView -> Logout,
+          and failure navigation (gotoOnFail param + 401 detail.failureUrl — legacy goToFailureUrl).
+          Adds routes /failedLogin, /sessionExpired, /logout. NOT the gate — leaves
+          route-ownership.yml untouched (the atomic flip stays with P1-5k). See
+          docs/migration/plans/P1-5f-error-logout-views.md.
+        depends_on: [P1-5b]
+        plan: docs/migration/plans/P1-5f-error-logout-views.md
         status: todo
       - id: P1-5g
         title: Login parity — ScriptTextOutput execution (device-print/WebAuthn/reCAPTCHA)
@@ -229,12 +232,41 @@ phases:
         depends_on: [P1-5c]
         plan: docs/migration/plans/review-remediation-2026-07.md
         status: done
+      - id: P1-5j
+        title: "Login parity — remember-me (persist username in the legacy `login` cookie)"
+        detail: >-
+          Split out of the original P1-5f (2026-07-03). Small/self-contained: rememberMe.ts (cookie
+          `login`, 20-day) + an optional rememberMe prop on commons-ui-next CallbackForm (checkbox
+          shown only on NameCallback stages, pure prop — ADR-0002 clean) + LoginPage wiring
+          (pre-fill username, check the box, focus password on return; set/clear the cookie on
+          submit). Same cookie name legacy XUI uses, so the remembered username carries across
+          /XUI <-> /EUI during coexistence. Gate precondition for P1-5k (full login parity includes
+          remember-me). Recommended to land after P1-5f to avoid LoginPage merge friction.
+        depends_on: [P1-5b]
+        plan: docs/migration/plans/P1-5j-remember-me.md
+        status: todo
+      - id: P1-5k
+        title: "Login parity (GATE) — session-timeout re-auth dialog + monitor + guard"
+        detail: >-
+          Split out of the original P1-5f (2026-07-03) and inherits the PARITY GATE. Session-timeout
+          re-auth: useSessionMonitor (poll isSessionValid/getTimeLeft), SessionTimeoutDialog
+          (non-closable modal reusing useAuthenticationFlow + CallbackForm; admin modal re-auth vs
+          self-service -> /sessionExpired), SessionGuard (runs the monitor in the authenticated
+          shell; isSelfServiceUser defaults false -> modal, real role wiring deferred to P2-4). Adds
+          an expiring-session MSW scenario. PARITY GATE — once this lands, flip route-ownership.yml
+          login -> status: migrated (+ confirmLogin/logout/failedLogin/sessionExpired owner/status)
+          and keep the TS mirror (openam-ui-eui/src/config/routeOwnership.ts) in sync, in one atomic
+          commit; then P1-5 -> done. Gate preconditions (all done first): P1-5f, P1-5j, P1-5h, P1-5i
+          (P1-5h/P1-5i already done). See docs/migration/plans/P1-5k-session-timeout-dialog.md.
+        depends_on: [P1-5f, P1-5j, P1-5h, P1-5i]
+        plan: docs/migration/plans/P1-5k-session-timeout-dialog.md
+        status: todo
       - id: P1-6
         title: Migrate anonymousProcess — password reset, self-register, forgot username
         detail: >-
           Also owns rendering the login page's self-service links (showForgotPassword /
-          showForgotUserName / showSelfRegistration from serverinfo flags) — P1-5f's parity gate
-          explicitly excludes them (see plans/P1-5f-dialog-error-views-rememberme.md Out of scope).
+          showForgotUserName / showSelfRegistration from serverinfo flags) — the login parity split
+          explicitly excludes them (see plans/P1-5f-error-logout-views.md Out of scope).
         depends_on: [P1-1, P1-2]
         status: todo
       - id: P1-7
@@ -307,7 +339,7 @@ phases:
       - id: P2-6
         title: Social login buttons on login page (socialImplementations from serverinfo)
         detail: >-
-          P1-5f's parity gate explicitly excludes social login; needs serverinfo
+          The login parity split explicitly excludes social login; needs serverinfo
           socialImplementations modeling. Found by the 2026-07 docs review.
         status: todo
 

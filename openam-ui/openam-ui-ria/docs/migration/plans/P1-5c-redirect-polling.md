@@ -39,8 +39,8 @@ Handle the two "special" callbacks that alter the P1-5b engine loop, plus AM req
 > consumed on return (`AuthNService.js`); the new engine stores nothing, so a federation login restarts at
 > stage 1 instead of resuming. This task was nonetheless marked `done` since the outbound half is real
 > parity progress. Tracked separately as task **P1-5i** (depends on this task) — see
-> `docs/migration/plans/review-remediation-2026-07.md`, Stage 5. P1-5f's parity gate cannot flip
-> login → `migrated` until P1-5i lands.
+> `docs/migration/plans/review-remediation-2026-07.md`, Stage 5. The login parity gate (now P1-5k, after
+> the 2026-07-03 3-way split of P1-5f) cannot flip login → `migrated` until P1-5i lands.
 >
 > **Resolved (2026-07-03, Stage 5).** P1-5i is done: `commons-ui-next/src/auth/trackingToken.ts` ports the
 > `authId` cookie; `resumeAuthentication` (in `authenticate.ts`) resumes with `{ authId }` instead of an

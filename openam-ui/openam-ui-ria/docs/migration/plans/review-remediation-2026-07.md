@@ -4,6 +4,14 @@ Produced by the 2026-07-02 documentation review of `docs/migration/`. It fixes d
 drift accumulated during P1-5b–P1-5e, records missing scope decisions, and closes two substantive
 parity/contract gaps discovered by cross-checking the docs against the AM server source.
 
+> **Superseded scope note (2026-07-03).** After this remediation landed, the original **P1-5f** ("session
+> dialog + error/expired/logout views + remember-me", the parity gate) was split 3-way — **P1-5f**
+> (return/logout views + failure-nav), **P1-5j** (remember-me), **P1-5k** (session-timeout dialog + monitor
+> + guard). The **parity gate and its `[P1-5h, P1-5i]` preconditions moved to P1-5k**. References below to
+> "the P1-5f gate" and `plans/P1-5f-dialog-error-views-rememberme.md` reflect the pre-split state; the renamed
+> successor is `plans/P1-5f-error-logout-views.md`, and the gate-flip step now lives in
+> `plans/P1-5k-session-timeout-dialog.md`. See `plans/README.md`.
+
 **How to use:** stages are ordered and independently landable — one stage = one commit = one session.
 Stages 1–3 are documentation (+ one tiny TS mirror change); stages 4–5 are code and are tracked as new
 tasks **P1-5h** and **P1-5i** (created in Stage 2). Do not start Stage 4/5 before Stage 2 has created
@@ -96,7 +104,7 @@ Goal: every statement in the docs is true again. No planned-work changes, no cod
    - P1-9 → `done`, with a detail line: "patterns established in P0-5/P1-5 and documented in
      reference/eui-foundation.md (Vitest + Testing Library + shared MSW handlers, setup in src/test/setup.ts)".
    - P1-8 title: `/EUI/login` → `/EUI/#/login`. P0-1 detail: "Vite 7" → "Vite".
-5. **plans/P1-5f-dialog-error-views-rememberme.md** step 10: "P1-5 → migrated" → "P1-5 → done (and
+5. **plans/P1-5f-error-logout-views.md** (was `P1-5f-dialog-error-views-rememberme.md`) step 10: "P1-5 → migrated" → "P1-5 → done (and
    `route-ownership.yml` login → `status: migrated`)".
 6. **plans/P1-5c-redirect-polling.md** — one-line annotations: files list
    "`useAuthenticationFlow.ts`" → "(landed as `useLogin.ts`)"; plus the Stage-2 gap note (may be

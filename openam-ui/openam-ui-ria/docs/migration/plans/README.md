@@ -11,8 +11,14 @@ the new-app API surface is [`../reference/eui-foundation.md`](../reference/eui-f
 | P1-5c | [P1-5c-redirect-polling.md](P1-5c-redirect-polling.md) | RedirectCallback + PollingWaitCallback + 408 retry |
 | P1-5d | [P1-5d-goto-validate.md](P1-5d-goto-validate.md) | goto/realm/fragment params + validateGoto |
 | P1-5e | [P1-5e-existing-session-zeropage.md](P1-5e-existing-session-zeropage.md) | existing-session/realm-change + zero-page/auto-login |
-| P1-5f | [P1-5f-dialog-error-views-rememberme.md](P1-5f-dialog-error-views-rememberme.md) | session dialog + error/expired/logout views + remember-me (**parity gate**) |
+| P1-5f | [P1-5f-error-logout-views.md](P1-5f-error-logout-views.md) | return-to-login views (LoginFailure/SessionExpired/Logout) + failure navigation |
+| P1-5j | [P1-5j-remember-me.md](P1-5j-remember-me.md) | remember-me (persist username) |
+| P1-5k | [P1-5k-session-timeout-dialog.md](P1-5k-session-timeout-dialog.md) | session-timeout re-auth dialog + monitor + guard (**parity gate**) |
 | P1-5g | [P1-5g-scripttextoutput.md](P1-5g-scripttextoutput.md) | ScriptTextOutput execution (device-print/WebAuthn/reCAPTCHA) |
+
+P1-5f was itself split 3-way (2026-07-03) into P1-5f / P1-5j / P1-5k — ~9 new files across three concerns
+(return views, remember-me, and a new background session-monitor subsystem). The **parity gate** moved from
+P1-5f to **P1-5k** (the last to land), with `depends_on` preconditions `[P1-5f, P1-5j, P1-5h, P1-5i]`.
 
 ## Other plans
 
@@ -24,9 +30,10 @@ the new-app API surface is [`../reference/eui-foundation.md`](../reference/eui-f
 
 `tasks.yml`'s original P1-5b bundled ~9 distinct legacy sub-features spanning ~1,200 LOC — a mini-phase, not
 a task. It is carved so the parity-critical **engine** (P1-5b) ships first and everything else layers on it.
-**The login route stays `status: in_progress` across the whole split; flip to `migrated` only when P1-5f
-(the gate) lands.** Dependency shape: P1-5c/d/f/g all `depends_on: [P1-5b]`; P1-5e additionally depends on
-P1-5d (it builds on P1-5d's param parsing — see P1-5e's own header).
+**The login route stays `status: in_progress` across the whole split; flip to `migrated` only when P1-5k
+(the gate) lands.** Dependency shape: P1-5c/d/f/g and P1-5j all `depends_on: [P1-5b]`; P1-5e additionally
+depends on P1-5d (it builds on P1-5d's param parsing — see P1-5e's own header); P1-5k (the gate)
+`depends_on: [P1-5f, P1-5j, P1-5h, P1-5i]`.
 
 ## Shared research
 

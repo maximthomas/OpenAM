@@ -109,5 +109,5 @@ react 19.2, react-dom 19.2, react-router 7.15, react-bootstrap 2.10 (+ `bootstra
 - MSW handler overrides per-test: `server.use(...)` before the render/action, relies on `resetHandlers()` in the shared `afterEach` to undo it.
 
 ## Not yet built (add when a slice needs it)
-- Session-timeout re-auth dialog, `LoginFailure`/`SessionExpired`/`Logout` views, and remember-me — **P1-5f** (the login parity gate; login stays `route-ownership.yml` `status: in_progress` until this lands).
+- `LoginFailure`/`SessionExpired`/`Logout` views + failure navigation — **P1-5f**; remember-me — **P1-5j**; session-timeout re-auth dialog + monitor + guard — **P1-5k** (the login parity gate; login stays `route-ownership.yml` `status: in_progress` until P1-5k lands). (The original single P1-5f was split 3-way on 2026-07-03 — see `plans/README.md`.)
 - `ScriptTextOutput` execution (`TextOutputCallback` messageType 4 — device-print/WebAuthn/reCAPTCHA hooks) — **P1-5g**, deferred as security-sensitive.

@@ -179,7 +179,7 @@ export function makeZeroPageRejectHandler() {
  * Existing-session handler — initial /authenticate (no authId) immediately returns success.
  * Use in tests via server.use() to simulate a user with a live session visiting /login.
  */
-export async function existingSessionAuthenticateHandler(_request: Request): Promise<Response> {
+export async function existingSessionAuthenticateHandler(): Promise<Response> {
   return HttpResponse.json(AUTH_SUCCESS)
 }
 
@@ -187,7 +187,7 @@ export async function existingSessionAuthenticateHandler(_request: Request): Pro
  * Existing-session handler for a different-realm scenario — same as above but realm differs.
  * Navigate to /confirmLogin when the URL realm doesn't match the session realm.
  */
-export async function existingSessionOtherRealmHandler(_request: Request): Promise<Response> {
+export async function existingSessionOtherRealmHandler(): Promise<Response> {
   return HttpResponse.json(AUTH_SUCCESS_OTHER_REALM)
 }
 

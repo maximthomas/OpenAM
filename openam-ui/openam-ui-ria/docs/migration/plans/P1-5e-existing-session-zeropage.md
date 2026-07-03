@@ -258,7 +258,7 @@ Add to `commons-ui-next/src/mock/handlers/authenticate.ts`:
  * Existing-session authenticate handler — initial call (no authId) immediately returns success.
  * Use in tests via server.use() to simulate a user with a live session visiting /login.
  */
-export async function existingSessionAuthenticateHandler(_request: Request): Promise<Response> {
+export async function existingSessionAuthenticateHandler(): Promise<Response> {
   return HttpResponse.json(AUTH_SUCCESS)
 }
 ```

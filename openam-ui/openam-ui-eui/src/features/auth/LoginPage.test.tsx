@@ -248,8 +248,8 @@ describe('LoginPage — goto param + validateGoto (P1-5d)', () => {
 describe('LoginPage — existing session (P1-5e)', () => {
   it('redirects to home when existing session realm matches URL realm', async () => {
     server.use(
-      http.post('*/json/authenticate', ({ request }) => existingSessionAuthenticateHandler(request)),
-      http.post('*/json/realms/root/authenticate', ({ request }) => existingSessionAuthenticateHandler(request)),
+      http.post('*/json/authenticate', () => existingSessionAuthenticateHandler()),
+      http.post('*/json/realms/root/authenticate', () => existingSessionAuthenticateHandler()),
     )
 
     renderApp('/login')
@@ -260,8 +260,8 @@ describe('LoginPage — existing session (P1-5e)', () => {
 
   it('redirects to /confirmLogin when session realm differs from URL realm', async () => {
     server.use(
-      http.post('*/json/authenticate', ({ request }) => existingSessionOtherRealmHandler(request)),
-      http.post('*/json/realms/root/authenticate', ({ request }) => existingSessionOtherRealmHandler(request)),
+      http.post('*/json/authenticate', () => existingSessionOtherRealmHandler()),
+      http.post('*/json/realms/root/authenticate', () => existingSessionOtherRealmHandler()),
     )
 
     renderApp('/login')

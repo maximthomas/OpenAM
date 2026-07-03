@@ -29,3 +29,9 @@ export const DEMO_SESSION: AmSessionInfo = {
 export const LOGOUT_RESULT: AmLogoutResult = {
   result: true,
 }
+
+// A token the mock does not recognize, so getSessionInfo/isSessionValid treat it as an
+// already-invalidated session (401) — mirrors real AM once a session has actually timed out.
+// Used by useSessionMonitor.test.ts / SessionGuard*.test.tsx (P1-5k) to drive expiry
+// deterministically.
+export const EXPIRING_TOKEN_ID = 'expiring-session-token-id'

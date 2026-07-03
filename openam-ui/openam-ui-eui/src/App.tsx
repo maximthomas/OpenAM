@@ -21,6 +21,7 @@ import LoginPage from './features/auth/LoginPage.tsx'
 import ConfirmLogin from './features/auth/ConfirmLogin.tsx'
 import LoginFailure from './features/auth/LoginFailure.tsx'
 import SessionExpired from './features/auth/SessionExpired.tsx'
+import SessionGuard from './features/auth/SessionGuard.tsx'
 import Logout from './features/auth/Logout.tsx'
 import Brand from './shell/Brand.tsx'
 
@@ -29,7 +30,10 @@ export default function App() {
     <Routes>
       {/* Full-chrome layout. Nav items are added as slices migrate. */}
       <Route element={<AppShell brand={<Brand />} />}>
-        <Route path="/" element={<Home />} />
+        {/* Session-timeout monitor + re-auth dialog (P1-5k) for the authenticated shell. */}
+        <Route element={<SessionGuard />}>
+          <Route path="/" element={<Home />} />
+        </Route>
       </Route>
       {/* Minimal pre-auth shell (no nav/end) for the login route (P1-5). */}
       <Route element={<AppShell variant="auth" brand={<Brand />} />}>

@@ -116,16 +116,16 @@ phases:
           username/password login only, driven by the real /json/authenticate protocol via
           commons-ui-next/auth, mounted at /EUI/#/login, validated against the MSW mock. Introduces
           TanStack Query. Success redirects to app home "/" only (goto/realm/fragment params
-          deferred). route-ownership login flipped to owner: eui, status: in_progress (NOT
-          migrated — parity incomplete until the P1-5b–f login-parity split lands). See
+          deferred). route-ownership login flipped to owner: eui; parity (and the yaml's
+          status: migrated) landed with P1-5k, the last sub-task of the P1-5b–k split. See
           docs/migration/reference/legacy-login.md for the full legacy feature map.
         depends_on: [P1-1, P1-2, P1-4]
-        status: in_progress
-      # P1-5b was too big for one task (~9 legacy sub-features / ~1,200 LOC), so it is split into
-      # P1-5b..P1-5g plus P1-5h..P1-5k. Login route stays status: in_progress across the whole
-      # split; flip to status: migrated only when P1-5k (the parity gate — originally P1-5f, itself
-      # split 3-way on 2026-07-03 into P1-5f/P1-5j/P1-5k) lands. Shared research + split rationale:
-      # docs/migration/plans/README.md.
+        status: done
+      # P1-5b was too big for one task (~9 legacy sub-features / ~1,200 LOC), so it was split into
+      # P1-5b..P1-5g plus P1-5h..P1-5k. Login route stayed status: in_progress across the whole
+      # split, flipping to status: migrated only once P1-5k (the parity gate — originally P1-5f,
+      # itself split 3-way on 2026-07-03 into P1-5f/P1-5j/P1-5k) landed (done, 2026-07-03). Shared
+      # research + split rationale: docs/migration/plans/README.md.
       - id: P1-5b
         title: Login parity (engine) — multi-stage callback loop + generic callback renderer
         detail: >-
@@ -270,7 +270,7 @@ phases:
           (P1-5h/P1-5i already done). See docs/migration/plans/P1-5k-session-timeout-dialog.md.
         depends_on: [P1-5f, P1-5j, P1-5h, P1-5i]
         plan: docs/migration/plans/P1-5k-session-timeout-dialog.md
-        status: todo
+        status: done
       - id: P1-6
         title: Migrate anonymousProcess — password reset, self-register, forgot username
         detail: >-

@@ -33,9 +33,9 @@ export const routeOwnership: RouteOwnership[] = [
   // ---- Phase 1: login / auth ----
   { path: 'login', owner: 'eui' },
   { path: 'confirmLogin', owner: 'eui' },
-  { path: 'logout', owner: 'xui' },
-  { path: 'failedLogin', owner: 'xui' },
-  { path: 'sessionExpired', owner: 'xui' },
+  { path: 'logout', owner: 'eui' },
+  { path: 'failedLogin', owner: 'eui' },
+  { path: 'sessionExpired', owner: 'eui' },
   { path: 'passwordReset', owner: 'xui' },
   { path: 'register', owner: 'xui' },
   { path: 'forgotUsername', owner: 'xui' },

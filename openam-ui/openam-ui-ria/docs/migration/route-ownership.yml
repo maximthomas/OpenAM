@@ -21,23 +21,23 @@ routes:
   # 2026-07-03 (docs review remediation, Stage 3) — previously implicit/unlisted.
   - path: login
     owner: eui
-    status: in_progress
+    status: migrated
     slice: phase-1
   - path: confirmLogin        # realm-change interstitial; rides the login gate
     owner: eui
-    status: in_progress
+    status: migrated
     slice: phase-1
   - path: logout              # must-preserve external URL (#logout/, see xui-url-audit.md)
-    owner: xui
-    status: planned
+    owner: eui
+    status: migrated
     slice: phase-1
   - path: failedLogin
-    owner: xui
-    status: planned
+    owner: eui
+    status: migrated
     slice: phase-1
   - path: sessionExpired
-    owner: xui
-    status: planned
+    owner: eui
+    status: migrated
     slice: phase-1
   - path: passwordReset
     owner: xui

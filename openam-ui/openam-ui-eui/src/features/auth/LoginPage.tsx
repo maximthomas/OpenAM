@@ -25,18 +25,33 @@ import {
   getRedirectData,
   getRedirectMethod,
   getRedirectUrl,
+  isNameCallback,
   isRedirectCallback,
+  setCallbackValue,
   validateGoto,
+  type AmAuthChallenge,
 } from '@openidentityplatform/commons-ui-next/auth'
 import { clearToken, setToken } from '@openidentityplatform/commons-ui-next/session'
 import { fetchServerInfo, isZeroPageLoginAllowed } from '@openidentityplatform/commons-ui-next/serverinfo'
 import { amTransport, serverInfoTransport } from '../../config/transport.ts'
 import { buildAuthQuery, extractIDTokens, parseLoginParams } from './loginParams.ts'
 import { rememberLoginParams } from './loginReturn.ts'
+import { clearRememberedLogin, getRememberedLogin, setRememberedLogin } from './rememberMe.ts'
 import { useAuthenticationFlow } from './useLogin.ts'
 
 function normalizeRealm(realm: string): string {
   return realm.replace(/\/+$/, '').toLowerCase() || '/'
+}
+
+// Remember-me pre-fill (P1-5j): seed the stage's NameCallback with the remembered username, if
+// any. Only affects the initial render of a stage — CallbackForm seeds its own controlled state
+// from the challenge once per stage (keyed on authId), so later re-renders don't fight typing.
+function withRememberedLogin(challenge: AmAuthChallenge): AmAuthChallenge {
+  const remembered = getRememberedLogin()
+  if (!remembered) return challenge
+  const nameIndex = challenge.callbacks.findIndex(isNameCallback)
+  if (nameIndex === -1) return challenge
+  return setCallbackValue(challenge, nameIndex, remembered)
 }
 
 export default function LoginPage() {
@@ -49,6 +64,7 @@ export default function LoginPage() {
   const { step, isStarting, isSubmitting, isExistingSession, isTimedOut, startFailed, submit, restart } =
     useAuthenticationFlow(authQuery)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [rememberChecked, setRememberChecked] = useState(() => getRememberedLogin() !== undefined)
   const isRedirectingRef = useRef(false)
 
   // Step 3: clear any stored EUI token on mount when arg=newsession is requested.
@@ -233,15 +249,28 @@ export default function LoginPage() {
         {errorMessage && <Alert variant="danger">{errorMessage}</Alert>}
         <CallbackForm
           key={step.challenge.authId}
-          challenge={step.challenge}
+          challenge={withRememberedLogin(step.challenge)}
           onSubmit={(ch) => {
             setErrorMessage(null)
+            // Remember-me (P1-5j): only touch the cookie on stages that actually show the
+            // checkbox (mirrors legacy — RESTLoginView only checks [name=loginRemember] when it
+            // exists in the DOM).
+            const nameIndex = ch.callbacks.findIndex(isNameCallback)
+            if (nameIndex !== -1) {
+              const username = String(ch.callbacks[nameIndex].input[0]?.value ?? '')
+              if (rememberChecked) {
+                setRememberedLogin(username)
+              } else {
+                clearRememberedLogin()
+              }
+            }
             submit(ch)
           }}
           submitting={isSubmitting}
           // ScriptTextOutputCallback execution (P1-5g) stays off until a human security review
           // signs off — see docs/migration/reference/script-text-output.md (openam-ui-ria).
           allowScriptExecution={false}
+          rememberMe={{ checked: rememberChecked, onChange: setRememberChecked }}
         />
       </>
     )

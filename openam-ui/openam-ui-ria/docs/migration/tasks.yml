@@ -254,7 +254,7 @@ phases:
           remember-me). Recommended to land after P1-5f to avoid LoginPage merge friction.
         depends_on: [P1-5b]
         plan: docs/migration/plans/P1-5j-remember-me.md
-        status: todo
+        status: done
       - id: P1-5k
         title: "Login parity (GATE) — session-timeout re-auth dialog + monitor + guard"
         detail: >-

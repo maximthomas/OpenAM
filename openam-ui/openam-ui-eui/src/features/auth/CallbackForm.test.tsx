@@ -20,6 +20,7 @@ import userEvent from '@testing-library/user-event'
 import { I18nextProvider, createI18nInstance } from '@openidentityplatform/commons-ui-next/i18n'
 import {
   CallbackForm,
+  setCallbackValue,
   type AmAuthChallenge,
 } from '@openidentityplatform/commons-ui-next/auth'
 import {
@@ -237,6 +238,76 @@ describe('CallbackForm', () => {
       renderForm(AUTH_CHALLENGE_POLLING_1)
       expect(screen.queryByRole('button')).toBeNull()
       expect(screen.queryByRole('textbox')).toBeNull()
+    })
+  })
+
+  describe('remember-me (P1-5j)', () => {
+    it('renders the checkbox when rememberMe is given and a NameCallback is present', () => {
+      render(
+        <I18nextProvider i18n={createI18nInstance()}>
+          <CallbackForm
+            challenge={AUTH_CHALLENGE}
+            onSubmit={vi.fn()}
+            submitting={false}
+            rememberMe={{ checked: false, onChange: vi.fn() }}
+          />
+        </I18nextProvider>,
+      )
+      expect(screen.getByRole('checkbox', { name: 'Remember my username' })).toBeInTheDocument()
+    })
+
+    it('does NOT render the checkbox when rememberMe is omitted', () => {
+      renderForm(AUTH_CHALLENGE)
+      expect(screen.queryByRole('checkbox')).toBeNull()
+    })
+
+    it('does NOT render the checkbox on a stage with no NameCallback', () => {
+      render(
+        <I18nextProvider i18n={createI18nInstance()}>
+          <CallbackForm
+            challenge={AUTH_CHALLENGE_CHOICE}
+            onSubmit={vi.fn()}
+            submitting={false}
+            rememberMe={{ checked: false, onChange: vi.fn() }}
+          />
+        </I18nextProvider>,
+      )
+      expect(screen.queryByRole('checkbox')).toBeNull()
+    })
+
+    it('reflects the checked prop and calls onChange when toggled', async () => {
+      const user = userEvent.setup()
+      const onChange = vi.fn()
+      render(
+        <I18nextProvider i18n={createI18nInstance()}>
+          <CallbackForm
+            challenge={AUTH_CHALLENGE}
+            onSubmit={vi.fn()}
+            submitting={false}
+            rememberMe={{ checked: true, onChange }}
+          />
+        </I18nextProvider>,
+      )
+      const checkbox = screen.getByRole('checkbox', { name: 'Remember my username' })
+      expect(checkbox).toBeChecked()
+
+      await user.click(checkbox)
+      expect(onChange).toHaveBeenCalledWith(false)
+    })
+
+    it('autofocuses the password field when the name field arrives pre-filled', () => {
+      const prefilled = setCallbackValue(AUTH_CHALLENGE, 0, 'alice')
+      render(
+        <I18nextProvider i18n={createI18nInstance()}>
+          <CallbackForm challenge={prefilled} onSubmit={vi.fn()} submitting={false} />
+        </I18nextProvider>,
+      )
+      expect(screen.getByLabelText('Password')).toHaveFocus()
+    })
+
+    it('does NOT autofocus the password field when the name field arrives empty', () => {
+      renderForm(AUTH_CHALLENGE)
+      expect(screen.getByLabelText('Password')).not.toHaveFocus()
     })
   })
 })

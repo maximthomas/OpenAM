@@ -499,3 +499,60 @@ describe('LoginPage — start failure (P1-5f)', () => {
     expect(getToken()).toBeNull()
   })
 })
+
+describe('LoginPage — remember-me (P1-5j)', () => {
+  afterEach(() => {
+    // jsdom does not reset document.cookie between tests — clear it explicitly.
+    document.cookie = 'login=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+  })
+
+  it('remembers the username when the checkbox is checked on submit', async () => {
+    const user = userEvent.setup()
+    renderApp('/login')
+
+    await user.type(await screen.findByLabelText('User Name'), 'demo')
+    await user.type(screen.getByLabelText('Password'), 'changeit')
+    await user.click(screen.getByRole('checkbox', { name: 'Remember my username' }))
+    await user.click(screen.getByRole('button', { name: 'Submit' }))
+
+    expect(await screen.findByRole('heading', { name: /openam eui/i })).toBeInTheDocument()
+    expect(document.cookie).toContain('login=demo')
+  })
+
+  it('clears the remembered username when the checkbox is left unchecked on submit', async () => {
+    const user = userEvent.setup()
+    renderApp('/login')
+
+    await user.type(await screen.findByLabelText('User Name'), 'demo')
+    await user.type(screen.getByLabelText('Password'), 'changeit')
+    await user.click(screen.getByRole('button', { name: 'Submit' }))
+
+    expect(await screen.findByRole('heading', { name: /openam eui/i })).toBeInTheDocument()
+    expect(document.cookie).not.toContain('login=demo')
+  })
+
+  it('pre-fills the username, checks the box, and focuses the password field on a later visit', async () => {
+    document.cookie = 'login=demo;path=/'
+
+    renderApp('/login')
+
+    const usernameField = await screen.findByLabelText('User Name')
+    expect(usernameField).toHaveValue('demo')
+    expect(screen.getByRole('checkbox', { name: 'Remember my username' })).toBeChecked()
+    expect(screen.getByLabelText('Password')).toHaveFocus()
+  })
+
+  it('clears the remembered username when unchecked and submitted on a later visit', async () => {
+    document.cookie = 'login=demo;path=/'
+    const user = userEvent.setup()
+    renderApp('/login')
+
+    await screen.findByLabelText('User Name')
+    await user.click(screen.getByRole('checkbox', { name: 'Remember my username' }))
+    await user.type(screen.getByLabelText('Password'), 'changeit')
+    await user.click(screen.getByRole('button', { name: 'Submit' }))
+
+    expect(await screen.findByRole('heading', { name: /openam eui/i })).toBeInTheDocument()
+    expect(document.cookie).not.toContain('login=demo')
+  })
+})

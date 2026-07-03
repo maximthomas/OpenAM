@@ -29,6 +29,7 @@ import {
   isChoiceCallback,
   isConfirmationCallback,
   isHiddenValueCallback,
+  isNameCallback,
   isPasswordCallback,
   isPollingWaitCallback,
   isScriptTextOutputCallback,
@@ -48,6 +49,12 @@ export type CallbackFormProps = {
    * docs/migration/reference/script-text-output.md (P1-5g).
    */
   allowScriptExecution?: boolean
+  /**
+   * Remember-me checkbox (P1-5j) — rendered just before the submit button, but only when the
+   * challenge contains a NameCallback (mirrors legacy showRememberLogin). Pure prop: the cookie
+   * (`login`) lives in the eui app's rememberMe.ts, keeping this component app-agnostic (ADR-0002).
+   */
+  rememberMe?: { checked: boolean; onChange: (checked: boolean) => void }
 }
 
 /**
@@ -57,7 +64,13 @@ export type CallbackFormProps = {
  * allowScriptExecution is true it is executed via scriptExecution.ts and its reported result is
  * written into the stage's sole HiddenValueCallback (P1-5g) — otherwise it stays a no-op.
  */
-export function CallbackForm({ challenge, onSubmit, submitting, allowScriptExecution = false }: CallbackFormProps) {
+export function CallbackForm({
+  challenge,
+  onSubmit,
+  submitting,
+  allowScriptExecution = false,
+  rememberMe,
+}: CallbackFormProps) {
   const { t } = useTranslation()
 
   const [values, setValues] = useState<string[]>(() =>
@@ -66,6 +79,10 @@ export function CallbackForm({ challenge, onSubmit, submitting, allowScriptExecu
 
   const hasConfirmation = challenge.callbacks.some(isConfirmationCallback)
   const pollingCb = challenge.callbacks.find(isPollingWaitCallback)
+  const nameIndex = challenge.callbacks.findIndex(isNameCallback)
+  // Autofocus the password field when the name field arrives pre-filled (remember-me, P1-5j) —
+  // mirrors legacy prefillLoginData's "focus password when a remembered login exists" behavior.
+  const autoFocusPassword = nameIndex !== -1 && Boolean(values[nameIndex])
 
   function buildFilled(confirmationIndex?: number): AmAuthChallenge {
     return challenge.callbacks.reduce((ch, cb, i) => {
@@ -198,10 +215,22 @@ export function CallbackForm({ challenge, onSubmit, submitting, allowScriptExecu
               type={isPasswordCallback(cb) ? 'password' : 'text'}
               value={values[i] ?? ''}
               onChange={(e) => updateValue(i, e.target.value)}
+              autoFocus={isPasswordCallback(cb) && autoFocusPassword}
             />
           </Form.Group>
         )
       })}
+
+      {rememberMe && nameIndex !== -1 && (
+        <Form.Group className="mb-3" controlId="rememberMe">
+          <Form.Check
+            type="checkbox"
+            label={t('templates.user.LoginTemplate.loginRemember')}
+            checked={rememberMe.checked}
+            onChange={(e) => rememberMe.onChange(e.target.checked)}
+          />
+        </Form.Group>
+      )}
 
       {!hasConfirmation && (
         <Button type="submit" disabled={submitting}>

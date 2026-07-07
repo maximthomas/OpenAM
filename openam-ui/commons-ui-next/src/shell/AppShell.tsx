@@ -21,15 +21,27 @@ import type { AppShellProps } from './types'
 import styles from './shell.module.scss'
 
 // The layout that wraps routed content with shared chrome. Used as a react-router layout-route
-// element (renders the matched child via <Outlet>). `variant="auth"` drops the nav/end regions for
-// the pre-auth login flow (legacy LoginBaseTemplate); the default `app` variant shows full chrome.
+// element (renders the matched child via <Outlet>). `variant="auth"` renders no navbar at all —
+// the legacy LoginBaseTemplate has none either, just a centered logo above the form — and instead
+// centers `brand` above a plain Bootstrap `.container` (each auth page narrows further itself, e.g.
+// LoginPage's col-md-6/offset-md-3, mirroring RESTLoginTemplate.html); the default `app` variant
+// shows full chrome.
 export function AppShell({ variant = 'app', brand, nav, end, footerVersion }: AppShellProps) {
   const minimal = variant === 'auth'
   return (
     <div className={styles.shell}>
-      <Header brand={brand} nav={minimal ? undefined : nav} end={minimal ? undefined : end} />
-      <main className={styles.main}>
-        <Outlet />
+      {!minimal && <Header brand={brand} nav={nav} end={end} />}
+      <main className={minimal ? styles.authMain : styles.main}>
+        {minimal ? (
+          <>
+            {brand != null && <div className={styles.authBrand}>{brand}</div>}
+            <div className="container">
+              <Outlet />
+            </div>
+          </>
+        ) : (
+          <Outlet />
+        )}
       </main>
       <Footer version={footerVersion} />
     </div>

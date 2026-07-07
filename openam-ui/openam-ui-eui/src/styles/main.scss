@@ -1,4 +1,57 @@
 // Global stylesheet for the EUI app. The app owns the theme: it loads Bootstrap 5 (Sass) once here
 // so react-bootstrap components across the app + commons-ui-next shell are styled. Bootstrap's
 // Reboot supplies the base resets (font, box-sizing, body margin) — no separate reset needed.
-@use 'bootstrap/scss/bootstrap';
+//
+// IMPORTANT: legacy /XUI's compiled CSS (bootstrap-3.3.5-custom.css) never overrides Bootstrap 3's
+// $brand-primary — it stays stock #337ab7 (25 occurrences, grepped from the compiled build; verified
+// against a live screenshot of the real login page: the submit button and links render blue, not
+// teal). @base-theme-color (#519387, forgerock-variables.less) is a separate accent used only for
+// h2/h3, disabled-button state, subnav/dropdown hover, and admin-panel chrome — see the literal
+// color rules below, not this primary override.
+@use 'bootstrap/scss/bootstrap' with (
+  $primary: #337ab7,
+);
+
+// Legacy heading treatment (compiled theme.css/styles-admin.css — not openam.less, despite the
+// name): `h1,h2,h3{font-weight:600}` / `h2,h3{color:#519387}`. h1 is overridden below whenever it's
+// inside `.page-header` (higher specificity) — see that rule for the login page's actual h1 style.
+h1,
+h2,
+h3 {
+  font-weight: 600;
+}
+
+h2,
+h3 {
+  // @base-theme-color (forgerock-variables.less) — an accent distinct from $primary above (see the
+  // comment on the `@use` line). `@use ... with (...)` doesn't export $primary as a bare name into
+  // this file's scope either way (it'd need the `bootstrap.` namespace prefix), so this is a literal.
+  color: #519387;
+}
+
+// Bootstrap 5 dropped BS3's `.page-header` component. The legacy login page does NOT use stock
+// Bootstrap's `.page-header` anyway — this project's own `am-common/structure/page-header.less` +
+// `theme/page-header.less` (compiled: structure.css/theme.css) redefine it, and the login chrome's
+// `#login-base` wrapper (LoginBaseTemplate.html) overrides further. Verified against the compiled
+// build: bare `.page-header` is just `position:relative` (no Bootstrap padding/margin/border), and
+// `#login-base .page-header{border-bottom:none}` removes the border entirely. The only `.page-header`
+// usage in this app today is the login flow (LoginPage/ReturnToLogin), so these are unscoped; scope
+// more narrowly if a non-login page-header is ever added.
+.page-header {
+  position: relative;
+  border-bottom: none;
+  padding-bottom: 9px;
+  margin: 40px 0 20px;
+}
+
+// `#login-base h1` (theme/page-header.less) wins over the generic `.page-header h1{font-size:40px}`
+// (structure/page-header.less) for size/transform/spacing (ID beats class), but not font-weight —
+// so the final computed style is font-weight:300 (not the h1,h2,h3{font-weight:600} rule above,
+// which loses on specificity to `.page-header h1`), font-size 20px, uppercase, letter-spaced.
+.page-header h1 {
+  margin: 0;
+  font-weight: 300;
+  font-size: 20px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}

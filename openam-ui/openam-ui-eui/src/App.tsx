@@ -36,7 +36,7 @@ export default function App() {
         </Route>
       </Route>
       {/* Minimal pre-auth shell (no nav/end) for the login route (P1-5). */}
-      <Route element={<AppShell variant="auth" brand={<Brand />} />}>
+      <Route element={<AppShell variant="auth" brand={<Brand size="lg" />} />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/confirmLogin" element={<ConfirmLogin />} />
         <Route path="/failedLogin" element={<LoginFailure />} />

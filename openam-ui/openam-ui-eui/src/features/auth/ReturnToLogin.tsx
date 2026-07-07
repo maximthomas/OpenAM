@@ -30,7 +30,9 @@ export default function ReturnToLogin({ title }: ReturnToLoginProps) {
 
   return (
     <div className="text-center">
-      <h1>{title}</h1>
+      <div className="page-header">
+        <h1>{title}</h1>
+      </div>
       <Link to={query ? `/login?${query}` : '/login'}>{t('common.user.returnToLoginPage')}</Link>
     </div>
   )

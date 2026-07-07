@@ -14,8 +14,23 @@
  * Copyright 2026 3A Systems LLC.
  */
 
+import loginLogo from '../assets/images/login-logo.png'
+
+type BrandProps = {
+  // 'sm' fits the dark navbar (app shell); 'lg' matches the legacy loginLogo size (225x57,
+  // ThemeConfiguration.js) for the centered pre-auth logo. Height-only so the PNG's own aspect
+  // ratio holds (width: auto).
+  size?: 'sm' | 'lg'
+}
+
 // App-owned product branding fed into the shell Header. Kept in the app (not commons) so the
-// reusable shell stays product-agnostic; swap in a logo image here later without touching commons.
-export default function Brand() {
-  return <span className="fw-semibold">OpenAM</span>
+// reusable shell stays product-agnostic. Imported (not a `public/` reference) so Vite fingerprints
+// it and rewrites its URL relative to `base: './'`, keeping it path-relocatable (ADR-0004) — a
+// hardcoded `/images/...` path would stay root-absolute and break under `/EUI` or `/XUI`.
+// Same asset as the legacy XUI's `images/login-logo.png` (ThemeConfiguration's `logo`/`loginLogo`
+// both default to it).
+export default function Brand({ size = 'sm' }: BrandProps) {
+  return (
+    <img src={loginLogo} alt="OpenAM" title="OpenAM" style={{ height: size === 'lg' ? 57 : 32, width: 'auto' }} />
+  )
 }

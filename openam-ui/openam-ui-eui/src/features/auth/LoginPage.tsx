@@ -14,8 +14,8 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-import { useMemo, useEffect, useRef, useState } from 'react'
-import { Alert, Spinner } from 'react-bootstrap'
+import { useMemo, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Alert, Col, Row, Spinner } from 'react-bootstrap'
 import { useNavigate, useSearchParams } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from '@openidentityplatform/commons-ui-next/i18n'
@@ -41,6 +41,19 @@ import { useAuthenticationFlow } from './useLogin.ts'
 
 function normalizeRealm(realm: string): string {
   return realm.replace(/\/+$/, '').toLowerCase() || '/'
+}
+
+// Narrows to a centered half-width column — legacy's `form.login.col-sm-6.col-sm-offset-3`
+// (RESTLoginTemplate.html), inside the `.container` the AppShell auth variant already provides.
+// Wrapped in a Row: unlike BS3's `.col-sm-6` (which carries its own gutter padding), BS5 only
+// applies `.col-*`'s padding via the `.row > *` selector — a bare Col outside a Row renders with
+// no inset at all.
+function LoginColumn({ children }: { children: ReactNode }) {
+  return (
+    <Row>
+      <Col md={{ span: 6, offset: 3 }}>{children}</Col>
+    </Row>
+  )
 }
 
 // Remember-me pre-fill (P1-5j): seed the stage's NameCallback with the remembered username, if
@@ -222,56 +235,79 @@ export default function LoginPage() {
   // flashing the form before the zero-page check completes.
   if (isStarting || step === null || (idTokens.length > 0 && serverInfo === undefined)) {
     return (
-      <>
+      <LoginColumn>
         {errorMessage && <Alert variant="danger">{errorMessage}</Alert>}
         <Spinner animation="border" role="status" />
-      </>
+      </LoginColumn>
     )
   }
 
   if (step.kind === 'requirements') {
     // Show a spinner while a redirect is in progress (page is navigating away).
     if (step.challenge.callbacks.some(isRedirectCallback)) {
-      return <Spinner animation="border" role="status" />
+      return (
+        <LoginColumn>
+          <Spinner animation="border" role="status" />
+        </LoginColumn>
+      )
     }
 
     // Show a spinner while zero-page auto-submit is about to fire (effect hasn't run yet)
     // or is already in flight. Prevents a brief form flash before auto-submit.
     if (idTokens.length > 0 && zeroPageAllowed && !zeroPageAttemptedRef.current) {
-      return <Spinner animation="border" role="status" />
+      return (
+        <LoginColumn>
+          <Spinner animation="border" role="status" />
+        </LoginColumn>
+      )
     }
     if (zeroPageAttemptedRef.current && isSubmitting) {
-      return <Spinner animation="border" role="status" />
+      return (
+        <LoginColumn>
+          <Spinner animation="border" role="status" />
+        </LoginColumn>
+      )
     }
 
     return (
       <>
-        {errorMessage && <Alert variant="danger">{errorMessage}</Alert>}
-        <CallbackForm
-          key={step.challenge.authId}
-          challenge={withRememberedLogin(step.challenge)}
-          onSubmit={(ch) => {
-            setErrorMessage(null)
-            // Remember-me (P1-5j): only touch the cookie on stages that actually show the
-            // checkbox (mirrors legacy — RESTLoginView only checks [name=loginRemember] when it
-            // exists in the DOM).
-            const nameIndex = ch.callbacks.findIndex(isNameCallback)
-            if (nameIndex !== -1) {
-              const username = String(ch.callbacks[nameIndex].input[0]?.value ?? '')
-              if (rememberChecked) {
-                setRememberedLogin(username)
-              } else {
-                clearRememberedLogin()
+        {/* Full-width sibling of the narrowed column below — mirrors RESTLoginTemplate.html,
+            where `.page-header` is a direct `.container` child, not nested inside
+            `form.col-sm-6.col-sm-offset-3`. */}
+        {step.challenge.header && (
+          <div className="page-header">
+            <h1 className="text-center">{step.challenge.header}</h1>
+          </div>
+        )}
+        <LoginColumn>
+          {errorMessage && <Alert variant="danger">{errorMessage}</Alert>}
+          <CallbackForm
+            key={step.challenge.authId}
+            challenge={withRememberedLogin(step.challenge)}
+            onSubmit={(ch) => {
+              setErrorMessage(null)
+              // Remember-me (P1-5j): only touch the cookie on stages that actually show the
+              // checkbox (mirrors legacy — RESTLoginView only checks [name=loginRemember] when it
+              // exists in the DOM).
+              const nameIndex = ch.callbacks.findIndex(isNameCallback)
+              if (nameIndex !== -1) {
+                const username = String(ch.callbacks[nameIndex].input[0]?.value ?? '')
+                if (rememberChecked) {
+                  setRememberedLogin(username)
+                } else {
+                  clearRememberedLogin()
+                }
               }
-            }
-            submit(ch)
-          }}
-          submitting={isSubmitting}
-          // ScriptTextOutputCallback execution (P1-5g) stays off until a human security review
-          // signs off — see docs/migration/reference/script-text-output.md (openam-ui-ria).
-          allowScriptExecution={false}
-          rememberMe={{ checked: rememberChecked, onChange: setRememberChecked }}
-        />
+              submit(ch)
+            }}
+            submitting={isSubmitting}
+            // ScriptTextOutputCallback execution (P1-5g) stays off until a human security review
+            // signs off — see docs/migration/reference/script-text-output.md (openam-ui-ria).
+            allowScriptExecution={false}
+            rememberMe={{ checked: rememberChecked, onChange: setRememberChecked }}
+            showHeader={false}
+          />
+        </LoginColumn>
       </>
     )
   }
@@ -279,7 +315,11 @@ export default function LoginPage() {
   // Return-leg resume (P1-5i): a tracked 408 stops here rather than restarting — show the
   // timeout message set by the effect above and wait for the user to retry (matches legacy).
   if (step.kind === 'failure' && isTimedOut) {
-    return <Alert variant="danger">{errorMessage}</Alert>
+    return (
+      <LoginColumn>
+        <Alert variant="danger">{errorMessage}</Alert>
+      </LoginColumn>
+    )
   }
 
   // success / failure handled by the useEffect above; render nothing while navigating.

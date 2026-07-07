@@ -55,6 +55,13 @@ export type CallbackFormProps = {
    * (`login`) lives in the eui app's rememberMe.ts, keeping this component app-agnostic (ADR-0002).
    */
   rememberMe?: { checked: boolean; onChange: (checked: boolean) => void }
+  /**
+   * Render the challenge's `.page-header` title inline — default true. Callers that must place
+   * the header outside a narrower wrapper than the form itself (LoginPage, P1-5) set this false
+   * and render the header themselves; mirrors RESTLoginTemplate.html, where `.page-header` is a
+   * full-width sibling of the (narrowed) `form`, not nested inside it (see LoginPage.tsx).
+   */
+  showHeader?: boolean
 }
 
 /**
@@ -70,6 +77,7 @@ export function CallbackForm({
   submitting,
   allowScriptExecution = false,
   rememberMe,
+  showHeader = true,
 }: CallbackFormProps) {
   const { t } = useTranslation()
 
@@ -140,7 +148,13 @@ export function CallbackForm({
 
   return (
     <Form onSubmit={handleFormSubmit}>
-      {challenge.header && <h4>{challenge.header}</h4>}
+      {/* Mirrors RESTLoginTemplate.html's `.page-header > h1.text-center` (BS3's .page-header:
+          padding-bottom .5625rem; margin: 40px 0 20px; border-bottom: 1px solid #eee). */}
+      {showHeader && challenge.header && (
+        <div className="page-header">
+          <h1 className="text-center">{challenge.header}</h1>
+        </div>
+      )}
 
       {challenge.callbacks.map((cb, i) => {
         // TextOutputCallback: render as Bootstrap alert (messageType 4 = ScriptTextOutput, handled
@@ -162,14 +176,18 @@ export function CallbackForm({
           return <input key={i} type="hidden" readOnly value={values[i] ?? ''} />
         }
 
-        // ConfirmationCallback: one button per option; clicking immediately submits
+        // ConfirmationCallback: one button per option; clicking immediately submits.
+        // size/w-100/text-uppercase mirror legacy _Confirmation.html's
+        // `.btn.btn-lg.btn-block.btn-uppercase` (stacked, not side-by-side).
         if (isConfirmationCallback(cb)) {
           return (
-            <div key={i} className="d-flex gap-2">
+            <div key={i} className="d-flex flex-column gap-2">
               {getConfirmationOptions(cb).map((label, btnIdx) => (
                 <Button
                   key={btnIdx}
                   type="button"
+                  size="lg"
+                  className="w-100 text-uppercase"
                   variant={btnIdx === 0 ? 'primary' : 'secondary'}
                   disabled={submitting}
                   onClick={() => onSubmit(buildFilled(btnIdx))}
@@ -207,12 +225,18 @@ export function CallbackForm({
           )
         }
 
-        // PasswordCallback: password input; NameCallback / unknown: text input (default)
+        // PasswordCallback: password input; NameCallback / unknown: text input (default).
+        // `size="lg"` mirrors legacy's `.form-control.input-lg`. The label is visually hidden with
+        // the prompt shown as placeholder text instead — matches legacy's _Default.html/_Password.html
+        // partials (`<label class="sr-only separator">` + `placeholder="{{prompt}}"`), not a visible
+        // label above the field.
         return (
           <Form.Group key={i} className="mb-3" controlId={`cb-${i}`}>
-            <Form.Label>{getPrompt(cb)}</Form.Label>
+            <Form.Label className="visually-hidden">{getPrompt(cb)}</Form.Label>
             <Form.Control
+              size="lg"
               type={isPasswordCallback(cb) ? 'password' : 'text'}
+              placeholder={getPrompt(cb)}
               value={values[i] ?? ''}
               onChange={(e) => updateValue(i, e.target.value)}
               autoFocus={isPasswordCallback(cb) && autoFocusPassword}
@@ -232,8 +256,9 @@ export function CallbackForm({
         </Form.Group>
       )}
 
+      {/* size/w-100/text-uppercase mirror the legacy `.btn-lg.btn-block.btn-uppercase` submit button. */}
       {!hasConfirmation && (
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" size="lg" className="w-100 text-uppercase" disabled={submitting}>
           {t('common.form.submit')}
         </Button>
       )}

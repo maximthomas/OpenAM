@@ -39,11 +39,16 @@ Credentials: **demo / changeit** (from the shared fixtures).
 > ```
 
 ```sh
-npm run dev:xui           # http://localhost:8081/XUI/  (override: XUI_PORT=9090)
+npm run dev:xui           # http://localhost:8081/openam/XUI/  (override: XUI_PORT=9090)
 ```
 
 Serves the compiled legacy XUI as static assets and intercepts its AM REST calls
-(`/XUI/json/*`) with the same mock handlers — runs the old UI in a browser with **no
+(`/openam/XUI/json/*`) with the same mock handlers — runs the old UI in a browser with **no
 `OPENAM_HOME` or Tomcat required**.
 
-Open `http://localhost:8081/XUI/` and log in with **demo / changeit**.
+Open `http://localhost:8081/openam/XUI/` and log in with **demo / changeit**.
+
+> The `/openam` segment isn't cosmetic — it must be there. The app's `Constants.js` derives its AM
+> deployment context from `location.pathname` by dropping the last segment; serving bare at `/XUI/`
+> makes that resolve to an empty context, breaking every REST base URL the app builds (`//json/...`
+> instead of `/json/...`) and leaving the login view stuck on "Loading...".

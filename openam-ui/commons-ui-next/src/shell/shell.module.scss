@@ -11,8 +11,23 @@
   flex: 1 0 auto;
 }
 
+// Pre-auth (`variant="auth"`) layout — mirrors the legacy LoginBaseTemplate, which has no navbar:
+// just a centered logo (`.main-logo-holder { margin: 60px auto 40px }`) above the content area.
+.authMain {
+  flex: 1 0 auto;
+  padding-bottom: 2.5rem;
+}
+
+.authBrand {
+  margin: 3.75rem auto 2.5rem;
+  text-align: center;
+}
+
+// legacy `.footer { border-top: 1px solid rgba(0,0,0,.1); background-color: rgba(0,0,0,.04) }`
+// (page-footer.less) — flex-based height/positioning instead of the legacy's `position: absolute`.
 .footer {
   flex-shrink: 0;
   padding: 1rem 0;
-  border-top: 1px solid var(--bs-border-color, #dee2e6);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  background-color: rgba(0, 0, 0, 0.04);
 }

@@ -39,6 +39,8 @@ Written 2026-07-08; branch `features/restlet-migration`.
 
 ## Phase 2 — XACML `/xacml` → CHF
 
+Detailed execution plan: [phase-2-xacml.md](phase-2-xacml.md).
+
 No `OAuth2Request` coupling; the existing CHF→Restlet bridge for CAF auth
 (`RestEndpointServlet.RestletAuthnHttpApplication`) already proves the filter chain.
 

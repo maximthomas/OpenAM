@@ -1,0 +1,317 @@
+# Restlet → CHF Migration Plan
+
+Executable phase plan for removing the Restlet framework from OpenAM. Research backing
+this plan: [inventory.md](inventory.md). Written 2026-07-08; branch
+`features/restlet-migration`.
+
+## Decisions (locked)
+
+- **Target**: CHF Handlers (`org.forgerock.http`) via the existing `HttpRouteProvider`
+  SPI and `Endpoints.from` annotated POJOs — the codebase's own declared direction.
+  Rejected alternatives: JAX-RS/Jersey (duplicates realm/audit/version infra, second
+  modern stack), plain servlets (boilerplate), Spring MVC (foreign stack).
+- **Strategy**: incremental strangler — one endpoint area per phase, each phase a
+  shippable green commit. Cutover lever: the `OpenAM` `HttpFrameworkServlet` uses
+  `routing-base=context_path`, so each area moves by (a) adding an `HttpRouteProvider`
+  for its leading path segment + `META-INF/services` registration, and (b) moving its
+  `<servlet-mapping>` from `ForgeRockRest` to `OpenAM` in
+  `openam-server-only/src/main/webapp/WEB-INF/web.xml`.
+- **Scope**: full removal — server endpoints, outbound scripting client, vestigial
+  imports, then deletion of `openam-restlet` and the vendored
+  `transform-jakarta/restlet-parent-jakarta` fork.
+- **Order**: XACML (smallest, proves the pattern) → core re-plumb → UMA → OAuth2/OIDC →
+  WebFinger/stragglers → outbound client → deletion.
+
+## Phase status
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Migration docs (this folder) | done |
+| 2 | XACML `/xacml` → CHF | pending |
+| 3 | `OAuth2Request` dual-transport + shared infra | pending |
+| 4 | UMA `/uma` → CHF | pending |
+| 5a–5d | OAuth2/OIDC `/oauth2` → CHF (flip in 5d) | pending |
+| 6 | WebFinger `/.well-known` + stragglers | pending |
+| 7 | Outbound scripting HTTP client | pending |
+| 8 | Delete openam-restlet + vendored fork + pom sweep | pending |
+
+---
+
+## Phase 2 — XACML `/xacml` → CHF
+
+No `OAuth2Request` coupling; the existing CHF→Restlet bridge for CAF auth
+(`RestEndpointServlet.RestletAuthnHttpApplication`) already proves the filter chain.
+
+**New (openam-entitlements):**
+- `org.forgerock.openam.xacml.v3.rest.XacmlServiceHandler` — `@Get` export / `@Post`
+  import via `Endpoints.from`; business logic moved from `XacmlService`. Realm from
+  `RealmContext` (replaces `RestletRealmRouter.getRealmFromRequest`); authenticated
+  caller from `AttributesContext` key `org.forgerock.authentication.context` (no more
+  servlet-attribute copying); query params (`filter` multi-valued, `dryrun`) from
+  `Form.fromRequestQuery`; export response sets
+  `Content-Type: application/xacml+xml; version=3.0` and
+  `Content-Disposition: attachment; filename=<realm>-realm-policies.xml`.
+- `org.forgerock.openam.xacml.v3.rest.XacmlXmlErrorFilter` — CHF `Filter` replacing
+  `XMLRestStatusService`; renders ResourceException as XML via existing
+  `XMLResourceExceptionHandler.asXMLDOM` (openam-rest).
+- `org.forgerock.openam.entitlement.rest.XacmlHttpRouteProvider` +
+  `src/main/resources/META-INF/services/org.forgerock.openam.http.HttpRouteProvider` —
+  `newHttpRoute(STARTS_WITH, "xacml", ...)`; chain mirrors `/json`:
+  `@Named("AuthenticationFilter")` → realm routing
+  (`RealmRoutingFactory.createRouter`/`createHostnameFilter` + `RealmContextFilter`) →
+  `requestResourceApiVersionMatcher(version(1))` on `policies` → error filter → handler.
+  Register `"policies"` into `@Named("InvalidRealmNames")` as today.
+
+**Modified:** web.xml (`/xacml/*` → `OpenAM`); `RestEndpointServlet` (drop xacml branch,
+`RestletAuthnHttpApplication`, `RestletHandler`, `HttpServletWrapper`);
+`EntitlementRestGuiceModule` (drop `XacmlRouter` binding).
+**Deleted:** `XacmlService`, `XacmlRouterProvider`, `XACMLServiceEndpointApplication`,
+`XMLRestStatusService`.
+**Tests:** port `XacmlServiceTest` (permission checks at
+`checkPermission(DelegationPermission, SSOToken, String)` granularity survive unchanged;
+export/import tests use constructed CHF Request + context chain).
+**Verify:** `mvn -pl openam-entitlements,openam-rest test`; Cargo IT; smoke:
+`GET /openam/xacml/policies` (admin cookie → 200 XACML XML + Content-Disposition; no
+cookie → CAF 401), `GET /openam/xacml/realms/root/policies`, POST import round-trip,
+`?filter=` query.
+
+## Phase 3 — `OAuth2Request` dual-transport re-plumb + shared infra (no route flips)
+
+Makes the OAuth2 core transport-neutral while both transports coexist, so UMA/OAuth2
+migrate incrementally afterwards.
+
+**3a. `OAuth2Request` (openam-oauth2, `org.forgerock.oauth2.core`)**
+- Make abstract; transport-neutral API (`getParameter`, `getParameterNames`,
+  `getParameterCount`, `getBody`, tokens, session, locale, client registration,
+  `getEndpointType`) plus new accessors replacing direct `getRequest()` grubbing:
+  `getHttpServletRequest()` (used by `ResourceOwnerSessionValidator`,
+  `StatefulTokenStore` cookie extraction, `OpenAMClientRegistrationStore`, baseURL),
+  `getBasicAuthCredentials()` + `getAuthorizationBearerToken()` (single Authorization
+  header parse, replaces `ChallengeResponse`), `getAcceptedLanguages()`.
+- `RestletOAuth2Request` — temporary subclass with the current implementation verbatim.
+- `ChfOAuth2Request` — wraps `Context` + `org.forgerock.http.protocol.Request`.
+  **Exact parameter precedence preserved**: (1) internal attribute map seeded from
+  `RealmContext.getRealm().asPath()` + accumulated
+  `UriRouterContext.getUriTemplateVariables()` (covers `realm`, `rsid`), writable by
+  handlers; (2) query via `Form.fromRequestQuery`; (3) POST form body; (4) POST JSON
+  body — form/JSON parsed once from the buffered entity and instance-cached (reproduces
+  Restlet's entity-reset re-readability). `getParameterCount` = **query-string
+  duplicates only** (`DuplicateRequestParameterValidator` contract). Locale from
+  `Accept-Language` (matches `HttpServletRequest.getLocale()` semantics).
+  `getEndpointType()` from the post-realm-routing remaining URI → `EndpointType.get`.
+- `OAuth2RequestFactory`: add `create(Context, Request)`; per-request cache moves to
+  `AttributesContext` under the same `OAUTH2_REQ_ATTR` key (mirrored to the servlet
+  attribute during the transition so mixed stacks agree).
+
+**3b. Transport-neutral collaborators (openam-oauth2)**
+- New `Header/FormBody/QueryParameter AccessTokenVerifier` (pure `OAuth2Request` API);
+  rebind in `OAuth2GuiceModule` (~180–183, ~312–334); delete the three
+  `Restlet*AccessTokenVerifier`s.
+- `ClientCredentialsReader`: `getBasicAuthCredentials()`; last-segment check →
+  `request.getEndpointType() == EndpointType.TOKEN_ENDPOINT`.
+- `OAuth2Utils`: delete the Restlet half (`getRealm(Request)`, `getLocale(Request)`,
+  `getRequestParameters`, `ParameterLocation`, `getRedirector`); keep string helpers,
+  `getDeploymentURL(HttpServletRequest)`, `getConfirmationKey`.
+
+**3c. Response/HTML/exception layer (new package `org.forgerock.oauth2.http`)**
+- `FreemarkerTemplateRenderer` — direct FreeMarker 2.3.31 (already a dependency);
+  singleton `Configuration` + `ClassTemplateLoader`, same
+  `templates/{display}/{name}.ftl` resolution incl. popup composition (`authorize.ftl`
+  embedded as `htmlCode` in `popup.ftl`) and `FormPostResponse.ftl`; renders to CHF
+  `Response` with `Content-Type: text/html; charset=UTF-8`.
+- `OAuth2ErrorResponseFactory` — replaces `ExceptionHandler` + `OAuth2RestletException`:
+  (a) auth-required → **301** `Location: <login url>`; (b) errors with `redirect_uri` →
+  **302** with error map in fragment (`UrlLocation.FRAGMENT`) or query, duplicate-free;
+  (c) JSON `{error, error_description, state?}` with the exception's status; (d)
+  rendered `page/error.ftl` for the authorize UI flow. Preserves `asMap()` field order.
+- `OAuth2ErrorFilter` — CHF `Filter` converting uncaught exceptions to JSON (parity with
+  `doCatch` + `JSONRestStatusService`).
+
+**3d. Audit**
+- `OAuth2HttpAccessAuditFilter` / `UMAHttpAccessAuditFilter` — extend
+  `AbstractHttpAccessAuditFilter` (openam-audit-core); port userId/trackingIds
+  extraction from `OAuth2AbstractAccessAuditFilter`; realm from `RealmContext`.
+- `HttpBodyAuditor` — CHF replacement for `RestletBodyAuditor`
+  (`formAuditor`/`jsonAuditor`/`jacksonAuditor`/`noBodyAuditor` over the buffered entity).
+
+**Tests:** `ChfOAuth2RequestTest` (precedence matrix, body re-read stability,
+per-method/media-type parameterNames, locale, endpoint type, ISO-8859-1 basic-auth
+charset), `OAuth2ErrorResponseFactoryTest` (all modes, fragment vs query, exact
+301/302/4xx), `FreemarkerTemplateRendererTest` (golden renders); port
+`ClientCredentialsReaderTest`, `OAuth2RequestFactoryTest`. Existing Restlet-path tests
+stay green.
+**Verify:** `mvn -pl openam-oauth2 test`; `mvn install -DskipTests`.
+
+## Phase 4 — UMA `/uma` → CHF
+
+- Convert in place (names kept, Restlet base → `Endpoints` annotations):
+  `PermissionRequestEndpoint` (`@Post`, 201 + `{"ticket": ...}`),
+  `AuthorizationRequestEndpoint` (`@Post`), `UmaWellKnownConfigurationEndpoint` (`@Get`).
+- `UmaExceptionHandler` → `UmaExceptionFilter` (CHF; same error format + status logic).
+- New shared `ChfAccessTokenProtectionFilter` (openam-oauth2): Bearer parse →
+  `tokenStore.readAccessToken` → scope check; 401 with `WWW-Authenticate: Bearer` /
+  403 / 404 / 500; stashes the `AccessToken` on the `OAuth2Request`.
+- New `UmaHttpRouteProvider` + services file; per-route chain:
+  `UMAHttpAccessAuditFilter(bodyAuditors)` → `ChfAccessTokenProtectionFilter(scope)` →
+  `UmaExceptionFilter` → handler; realm routing as Phase 2.
+- Modified: `UmaGuiceModule` (named `Restlet` providers → `Handler`; drop `UMARouter`),
+  web.xml (`/uma/*` → `OpenAM`), `RestEndpointServlet` (drop uma branch).
+  Deleted: `UmaRouterProvider`, `UMAServiceEndpointApplication`, Restlet
+  `UMAAccessAuditFilter`. (Restlet `AccessTokenProtectionFilter` survives until Phase 5c
+  — resource_set still uses it.)
+- Tests: port the 21 openam-uma tests to constructed CHF requests/contexts.
+- Verify: `mvn -pl openam-uma,openam-oauth2 test`; Cargo IT; smoke: permission_request
+  201/401 + error format, uma-configuration, realm-prefixed variants.
+
+## Phase 5 — OAuth2/OIDC `/oauth2` → CHF
+
+Sub-phases 5a–5c land as shippable commits while Restlet still serves `/oauth2`; 5d is
+the atomic flip (a path prefix moves whole in web.xml).
+
+**5a. JSON endpoints** — handlers in `org.forgerock.oauth2.http` /
+`org.forgerock.openidconnect.http`, each `Endpoints`-annotated, using
+`OAuth2RequestFactory.create(context, request)` + `OAuth2ErrorFilter` + audit wrappers:
+- `TokenEndpointHandler` (`/access_token`, POST-only): method/content-type validation
+  (405 `method_not_allowed`; non-form → `invalid_request`), `grant_type` dispatch
+  replacing `AccessTokenFlowFinder`/`OAuth2FlowFinder`/`TokenEndpointResource`/`ErrorResource`
+  (grant handlers like `AccessTokenService`/`Saml2GrantTypeHandler` are already
+  transport-free); `InvalidClientAuthZHeaderException` → 401 +
+  `WWW-Authenticate: Basic realm="..."`; re-sign `TokenRequestHook` to
+  `(OAuth2Request, Context, Request, Response)` (update `LoginHintHook`).
+- Conversion template (worked example): `TokenInfoHandler` (`/tokeninfo`) — `@Get`
+  method calls `tokenInfoService.getTokenInfo(req)` → 200 JSON +
+  `Cache-Control: no-cache, no-store`; `OAuth2Exception` rethrown to the error filter.
+- Also: `TokenIntrospectionHandler`, `TokenRevocationHandler`, `UserInfoHandler`
+  (GET+POST, Bearer via verifier), `IdTokenInfoHandler`,
+  `OpenIDConnectConfigurationHandler`, `JwkUriHandler`,
+  `ConnectClientRegistrationHandler` (raw Bearer via `getAuthorizationBearerToken()`),
+  `DeviceCodeHandler`.
+
+**5b. HTML/redirect flow**
+- `AuthorizeHandler` — port of `AuthorizeResource` + `AuthorizeEndpointFilter` +
+  `ConsentRequiredResource`: consent page via `FreemarkerTemplateRenderer` (data model
+  ported from `ConsentRequiredResource.getDataModel`: attributes+query merge, `target`,
+  ESAPI encoding, CSRF via `CsrfProtection`, `baseUrl` via `BaseURLProviderFactory`,
+  locales via `getAcceptedLanguages()`); success → 302 fragment/query per
+  `AuthorizationToken.isFragment()`, or `FormPostResponse.ftl` for
+  `response_mode=form_post`; all catches → `OAuth2ErrorResponseFactory` preserving
+  state/redirect_uri/parameter-location; re-sign `AuthorizeRequestHook`.
+- `DeviceCodeVerificationHandler` (`/device/user` — CodeVerificationForm/CodeThanks
+  ftl + CSRF), `CheckSessionHandler` (checkSession.ftl iframe), `EndSessionHandler`
+  (id_token_hint validation + **302** post_logout_redirect_uri with `state`).
+
+**5c. resource_set**
+- `ResourceSetRegistrationHandler` (POST/GET/PUT/DELETE; `rsid` from seeded template
+  attribute) + CHF port of `ResourceSetRegistrationExceptionFilter`; guard with
+  `ChfAccessTokenProtectionFilter(null scope)`; `OAuth2GuiceModule`
+  `@Named(RSR_ENDPOINT)` re-typed `Restlet` → `Handler`. Delete Restlet
+  `AccessTokenProtectionFilter`.
+
+**5d. Flip**
+- `OAuth2HttpRouteProvider` (`org.forgerock.openam.oauth2.rest`) —
+  `newHttpRoute(STARTS_WITH, "oauth2", ...)`; realm routing as before; endpoint router
+  registers the full table from `OAuth2RouterProvider` incl. per-route body-auditor
+  combos and **all three** resource_set routes (`resource_set`, `resource_set/`,
+  `resource_set/{rsid}` — trailing-slash is a distinct CHF route). Append to the
+  existing openam-oauth2 `META-INF/services` file.
+- web.xml: `/oauth2/*` → `OpenAM`; **delete the `ForgeRockRest` servlet + all mappings**
+  (last path). Delete `RestEndpointServlet`, `RestletServiceServlet`,
+  `ServiceEndpointApplication` + OAuth2 subclass, `RestStatusService`/`JSONRestStatusService`,
+  `org.forgerock.oauth2.restlet.*`, `org.forgerock.openidconnect.restlet.*` (except
+  `WebFinger`/`OpenIDConnectDiscovery` → Phase 6), `OAuth2RouterProvider`,
+  `RestletOAuth2Request` + the restlet factory overload, Restlet OAuth2 audit filters
+  (WebFinger's audit need moves to Phase 6). `OAuth2RestGuiceModule`: drop
+  `OAuth2Router`.
+- Tests: port the ~33 openam-oauth2 tests per sub-phase (`AuthorizeResourceTest` →
+  `AuthorizeHandlerTest` asserting 302 Location fragment/query composition + rendered
+  consent HTML; `ResourceSetRegistrationEndpointTest` → CHF). Golden-parity tests for
+  top error shapes against recorded Restlet responses.
+- Verify: `mvn -pl openam-oauth2,openam-oauth2-saml2,openam-uma test`;
+  `mvn install -DskipTests` + Cargo IT; smoke matrix: client_credentials /
+  authorization_code / refresh / device flows, browser consent grant+deny, form_post,
+  realm styles (`?realm=`, `/realms/root/`, legacy `/oauth2/subrealm/`),
+  introspect/tokeninfo/revoke, dynamic client registration, jwk_uri, checkSession,
+  endSession redirect.
+
+## Phase 6 — WebFinger + stragglers
+
+- `WebFingerHandler` (port of `OpenIDConnectDiscovery`; GET, `resource`/`rel`, JRD JSON)
+  + `WellKnownHttpRouteProvider` (`newHttpRoute(EQUALS, ".well-known/webfinger")`,
+  chained with `RealmContextFilter` + audit). web.xml: replace the
+  `org.restlet.ext.servlet.ServerServlet` WebFinger block with `/.well-known/*` on
+  `OpenAM`.
+- Delete `WebFinger`, `OpenIDConnectDiscovery`, `GuicedRestlet`, `OAuth2StatusService`,
+  remaining restlet audit classes in openam-oauth2.
+- Strip vestigial imports: `AuthenticationServiceV1` (openam-core-rest),
+  `DefaultWsFedAuthenticator` (OpenFM).
+- Delete dead `Saml2BearerServerResource` (+ test) and restlet deps in
+  `openam-oauth2-saml2/pom.xml`.
+- Verify: `mvn -pl openam-oauth2,openam-core-rest,openam-oauth2-saml2 test`; smoke
+  `GET /openam/.well-known/webfinger?resource=...&rel=http://openid.net/specs/connect/1.0/issuer`.
+
+## Phase 7 — Outbound scripting HTTP client
+
+- Rewrite `RestletHttpClient` (openam-http-client) on **`java.net.http.HttpClient`**
+  (Java 11 built-in, zero new WAR artifacts; `followRedirects(NEVER)` to match current
+  behavior). Preserve the deprecated public surface:
+  `getHttpClientResponse(uri, body, requestData, method)`,
+  `HttpClientRequest/Response/Cookie` beans, header/cookie/query conventions.
+- Type-rename updates: `JavaScriptHttpClient`, `GroovyHttpClient`,
+  `ScriptingGuiceModule` (openam-scripting), `Scripted` (openam-auth-scripted),
+  `ScriptCondition` (openam-entitlements). Remove restlet from
+  `openam-http-client/pom.xml`; fix javadoc refs in the beans.
+- Verify: `mvn -pl openam-http-client,openam-scripting,openam-authentication/openam-auth-scripted,openam-entitlements test`;
+  scripted-auth smoke via integration test.
+
+## Phase 8 — Final deletion
+
+1. Relocate `RestRealmValidator` openam-restlet → openam-rest
+   (`org.forgerock.openam.rest.router`); update importers (`RealmContextFilter` et al.).
+2. Delete module `openam-restlet`; delete `transform-jakarta/restlet-parent-jakarta/`
+   (+ module entry in `transform-jakarta/pom.xml`).
+3. Root pom sweep: `restlet.version`, all
+   `org.openidentityplatform.openam.jakarta:org.restlet*` + `org.restlet.jee:*`
+   dependencyManagement entries, restlet `excludeArtifact` lines, talend repo,
+   `<module>openam-restlet</module>`, openam-restlet dependencyManagement entry.
+4. openam-rest: delete `AbstractRestletAccessAuditFilter`, `RestletBodyAuditor`,
+   Restlet branch + inner `RestletRealmRouter` of `RealmRoutingFactory`; drop restlet
+   deps (and the "TODO until Restlet endpoints are moved to CHF" comment).
+5. Sweep remaining poms (openam-oauth2, openam-uma, openam-server-only war excludes).
+6. Gates: `grep -rn "org.restlet" --include="*.java" .` → 0 outside docs;
+   `grep -rn restlet --include=pom.xml .` → 0; `mvn clean install`;
+   `mvn -pl openam-server verify -P integration-test`.
+
+---
+
+## Risk register (behavioral compatibility)
+
+| # | Risk | Detail | Verification |
+|---|---|---|---|
+| 1 | Form-POST body re-reading | Restlet re-sets the entity after `new Form(entity)`; CHF handlers + audit + auth all read the body | `ChfOAuth2RequestTest` re-read tests; audit + `/access_token` in one integration request |
+| 2 | Redirect codes & semantics | 301 auth-required, 302 error/success/endSession; fragment vs query per `UrlLocation`; no auto-redirect on invalid redirect_uri | Exact-status unit asserts; record current responses with curl before flip, diff after |
+| 3 | Error-param encoding | Restlet `Reference`/`Form` vs CHF `Form.toQueryString` (spaces, `+`, unicode in `state`/`error_description`) | Parity unit test with special chars |
+| 4 | `WWW-Authenticate` on 401 | Basic challenge at token endpoint; Bearer challenge on protected endpoints | Header asserts in handler tests; pre/post curl diff |
+| 5 | Basic-auth charset | Restlet decodes `Authorization: Basic` as ISO-8859-1, not UTF-8 | Explicit charset in `getBasicAuthCredentials()` + test with high-bit char in secret |
+| 6 | Content types | Restlet conneg defaulted JSON (OAuth2/UMA), `application/xacml+xml; version=3.0`, HTML | Explicit `Content-Type` everywhere; asserts; curl `-H "Accept: */*"` diff |
+| 7 | StatusService error bodies | `JSONRestStatusService`/`XMLRestStatusService` CREST-format bodies for uncaught errors | Error-filter tests against recorded bodies |
+| 8 | Trailing-slash routes | `/resource_set`, `/resource_set/`, `/resource_set/{rsid}` are three attachments | Register all three CHF routes; integration hits each |
+| 9 | Realm resolution parity | DNS alias, legacy path realm, `?realm=` override, `realms/{realmId}` recursion, 400-vs-404 on bad realm | `RealmContextFilter` battle-tested on `/json`; per-area integration cases for all styles |
+| 10 | `getParameterCount` | Counts query duplicates only (`DuplicateRequestParameterValidator`) | Keep query-only semantics; test duplicate `redirect_uri` |
+| 11 | Case sensitivity | Both Restlet templates and CHF matchers are case-sensitive | Spot-check `/oauth2/Authorize` → 404 pre & post |
+| 12 | Endpoint-type checks | `ClientCredentialsReader` keys auth-method rules off the `/access_token` path | `EndpointType` tests incl. realm-prefixed URIs |
+| 13 | Audit event parity | Restlet `forHttpServletRequest` vs CHF `forRequest` builder paths; body detail per route | Compare emitted access events per area against recorded JSON |
+| 14 | HTML output | Same FreeMarker 2.3.31; only the loader changes | Golden-file render tests; browser smoke of consent + device pages |
+| 15 | Locale selection | `HttpServletRequest.getLocale()` vs Accept-Language parse (q-values) | Multi-range header unit test |
+| 16 | Scripting client behavior | Redirect-following / cookie defaults differ between Restlet client and java.net.http | `followRedirects(NEVER)`; script integration test |
+
+## Verification workflow (every phase)
+
+1. Module-scoped: `mvn -pl <changed modules> test`
+2. Whole build: `mvn install -DskipTests`
+3. Integration (Linux; needs `127.0.0.1 openam.local` in `/etc/hosts`, as CI does):
+   `mvn -pl openam-server verify -P integration-test`
+4. After 5d and 8: manual smoke of the full OAuth2/OIDC/UMA/XACML matrix against a
+   running WAR; record pre-flip curl responses so post-flip output can be diffed.
+
+CI (`.github/workflows/build.yml`) builds every push to `features/**` on JDK 11–26 × 3
+OSes, so each phase commit gets cross-version coverage automatically.

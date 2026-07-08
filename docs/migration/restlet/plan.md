@@ -1,8 +1,8 @@
 # Restlet → CHF Migration Plan
 
 Executable phase plan for removing the Restlet framework from OpenAM. Research backing
-this plan: [inventory.md](inventory.md). Written 2026-07-08; branch
-`features/restlet-migration`.
+this plan: [inventory.md](inventory.md); decision record: [decisions.md](decisions.md).
+Written 2026-07-08; branch `features/restlet-migration`.
 
 ## Decisions (locked)
 

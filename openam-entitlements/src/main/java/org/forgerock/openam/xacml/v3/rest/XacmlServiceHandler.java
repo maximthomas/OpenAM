@@ -12,15 +12,15 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.xacml.v3.rest;
 
-import static org.forgerock.json.resource.ResourceException.*;
+import static org.forgerock.json.resource.ResourceException.INTERNAL_ERROR;
 
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
@@ -33,27 +33,29 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import javax.security.auth.Subject;
+
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
-import javax.security.auth.Subject;
-import jakarta.servlet.http.HttpServletRequest;
 
+import org.forgerock.http.header.AcceptLanguageHeader;
+import org.forgerock.http.header.MalformedHeaderException;
+import org.forgerock.http.protocol.Form;
+import org.forgerock.http.protocol.Request;
+import org.forgerock.http.protocol.Response;
+import org.forgerock.http.protocol.Status;
+import org.forgerock.json.resource.BadRequestException;
+import org.forgerock.json.resource.ForbiddenException;
+import org.forgerock.json.resource.InternalServerErrorException;
 import org.forgerock.openam.forgerockrest.utils.RestLog;
-import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
-import org.forgerock.openam.rest.service.RestletRealmRouter;
-import org.forgerock.openam.rest.service.XACMLServiceEndpointApplication;
+import org.forgerock.openam.http.annotations.Contextual;
+import org.forgerock.openam.http.annotations.Get;
+import org.forgerock.openam.http.annotations.Post;
+import org.forgerock.openam.rest.RealmContext;
 import org.forgerock.openam.xacml.v3.ImportStep;
+import org.forgerock.services.context.AttributesContext;
+import org.forgerock.services.context.Context;
 import org.forgerock.util.annotations.VisibleForTesting;
-import org.restlet.Request;
-import org.restlet.data.Disposition;
-import org.restlet.data.Status;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
-import org.restlet.representation.OutputRepresentation;
-import org.restlet.representation.Representation;
-import org.restlet.resource.Get;
-import org.restlet.resource.Post;
-import org.restlet.resource.ResourceException;
-import org.restlet.resource.ServerResource;
 
 import com.iplanet.sso.SSOException;
 import com.iplanet.sso.SSOToken;
@@ -64,16 +66,15 @@ import com.sun.identity.delegation.DelegationPermission;
 import com.sun.identity.delegation.DelegationPermissionFactory;
 import com.sun.identity.entitlement.EntitlementException;
 import com.sun.identity.entitlement.opensso.SubjectUtils;
-import com.sun.identity.entitlement.xacml3.SearchFilterFactory;
 import com.sun.identity.entitlement.xacml3.XACMLExportImport;
 import com.sun.identity.entitlement.xacml3.XACMLPrivilegeUtils;
 import com.sun.identity.entitlement.xacml3.core.PolicySet;
 import com.sun.identity.shared.debug.Debug;
 
 /**
- * Provides XACML based services
+ * Provides XACML based services: export and import of the policies defined within a realm.
  */
-public class XacmlService extends ServerResource {
+public class XacmlServiceHandler {
 
     private static final String REST = "rest";
     private static final String VERSION = "1.0";
@@ -82,62 +83,93 @@ public class XacmlService extends ServerResource {
 
     private static final String FORGEROCK_AUTH_CONTEXT = "org.forgerock.authentication.context";
     private static final String ROOT_REALM = "/";
+    private static final String COMPONENT = "org.forgerock.openam.xacml.v3.rest.XacmlService";
+    private static final String CONTENT_TYPE_XACML3 = "application/xacml+xml; version=3.0";
 
     private final XACMLExportImport importExport;
     private final PrivilegedAction<SSOToken> admin;
     private final Debug debug;
     private final RestLog restLog;
     private final DelegationEvaluator evaluator;
-    private final JacksonRepresentationFactory jacksonRepresentationFactory;
 
     /**
      * Constructor with dependencies exposed for unit testing.
-     *  @param importExport Non null utility functions.
+     *
+     * @param importExport Non null utility functions.
      * @param adminTokenAction Non null admin action function.
      * @param debug The debug instance for logging.
-     * @param jacksonRepresentationFactory The factory for {@code JacksonRepresentation} instances.
+     * @param restLog The REST audit logger.
+     * @param evaluator The delegation permission evaluator.
      */
     @Inject
-    public XacmlService(XACMLExportImport importExport, PrivilegedAction<SSOToken> adminTokenAction,
-            @Named("frRest") Debug debug, RestLog restLog, DelegationEvaluator evaluator,
-            JacksonRepresentationFactory jacksonRepresentationFactory) {
+    public XacmlServiceHandler(XACMLExportImport importExport, PrivilegedAction<SSOToken> adminTokenAction,
+            @Named("frRest") Debug debug, RestLog restLog, DelegationEvaluator evaluator) {
         this.importExport = importExport;
         this.admin = adminTokenAction;
         this.debug = debug;
         this.restLog = restLog;
         this.evaluator = evaluator;
-        this.jacksonRepresentationFactory = jacksonRepresentationFactory;
+    }
+
+    private Subject getAdminToken() {
+        return SubjectUtils.createSubject(AccessController.doPrivileged(admin));
     }
 
     /**
-     * Returns a Subject for the valid admin SSOToken.
+     * Export all Policies defined within the Realm used to access this end point.
      *
-     * @return A subject for the valid admin SSOToken.
+     * <p>The end point supports the query parameter "filter" which can be used multiple times to
+     * define the Search Filters which will restrict the output to only those Privileges which
+     * match the Search Filters.
      */
-    private final Subject getAdminToken() {
-        return SubjectUtils.createSubject(AccessController.doPrivileged(admin));
+    @Get
+    public Response exportXACML(@Contextual Context context, @Contextual Request request) {
+        String realm = getRealm(context);
+        Locale locale = getRequestLocale(request);
+        List<String> filters = new Form().fromRequestQuery(request).get(QUERY_PARAM_STRING);
+        if (filters == null) {
+            filters = Collections.emptyList();
+        }
+
+        try {
+            if (!checkPermission("READ", context, request, realm)) {
+                return errorResponse(new ForbiddenException());
+            }
+
+            PolicySet policySet = importExport.exportXACML(realm, getAdminToken(), filters);
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            XACMLPrivilegeUtils.writeXMLToStream(policySet, outputStream);
+
+            Response response = new Response(Status.OK);
+            response.getHeaders().put("Content-Type", CONTENT_TYPE_XACML3);
+            response.getHeaders().put("Content-Disposition", "attachment; filename=" + getPolicyAttachmentFileName(realm));
+            response.setEntity(outputStream.toByteArray());
+            return response;
+        } catch (EntitlementException e) {
+            debug.warning("Reading Policies failed", e);
+            return errorResponse(new InternalServerErrorException(e.getLocalizedMessage(locale)));
+        }
     }
 
     /**
      * Expects to receive XACML formatted XML which will be read and imported.
      */
     @Post
-    public Representation importXACML(Representation entity) {
-        boolean dryRun = "true".equalsIgnoreCase(getQuery().getFirstValue("dryrun"));
-        List<ImportStep> steps;
+    public Response importXACML(@Contextual Context context, @Contextual Request request) {
+        String realm = getRealm(context);
+        Locale locale = getRequestLocale(request);
+        boolean dryRun = "true".equalsIgnoreCase(new Form().fromRequestQuery(request).getFirst("dryrun"));
 
         try {
-            if (!checkPermission("MODIFY")) {
-                // not allowed
-                throw new ResourceException(new Status(FORBIDDEN));
+            if (!checkPermission("MODIFY", context, request, realm)) {
+                return errorResponse(new ForbiddenException());
             }
 
-            String realm = RestletRealmRouter.getRealmFromRequest(getRequest());
-            steps = importExport.importXacml(realm, entity.getStream(), getAdminToken(), dryRun);
+            InputStream entityStream = request.getEntity().getRawContentInputStream();
+            List<ImportStep> steps = importExport.importXacml(realm, entityStream, getAdminToken(), dryRun);
 
             if (steps.isEmpty()) {
-                throw new ResourceException(new Status(BAD_REQUEST,
-                        "No policies found in XACML document", null, null));
+                return errorResponse(new BadRequestException("No policies found in XACML document"));
             }
 
             List<Map<String, String>> result = new ArrayList<>();
@@ -148,90 +180,46 @@ public class XacmlService extends ServerResource {
                 stepResult.put("type", step.getType());
                 result.add(stepResult);
             }
-            getResponse().setStatus(Status.SUCCESS_OK);
 
-            return jacksonRepresentationFactory.create(result);
-
+            Response response = new Response(Status.OK);
+            response.getHeaders().put("Content-Type", "application/json");
+            response.setEntity(result);
+            return response;
         } catch (EntitlementException e) {
             debug.warning("Importing XACML to policies failed", e);
-            throw new ResourceException(new Status(BAD_REQUEST, e, e
-                    .getLocalizedMessage(getRequestLocale()), null, null));
-        } catch (IOException e) {
-            debug.warning("Reading XACML import failed", e);
-            throw new ResourceException(new Status(BAD_REQUEST, e, e
-                    .getLocalizedMessage(), null, null));
+            return errorResponse(new BadRequestException(e.getLocalizedMessage(locale)));
         }
+    }
+
+    private Response errorResponse(org.forgerock.json.resource.ResourceException exception) {
+        return new Response(Status.valueOf(exception.getCode())).setEntity(exception.toJsonValue().getObject());
+    }
+
+    private String getRealm(Context context) {
+        return context.asContext(RealmContext.class).getRealm().asPath();
     }
 
     /**
      * Get the client's preferred locale, or the server default if not specified.
      */
-    private Locale getRequestLocale() {
-        final HttpServletRequest httpRequest = ServletUtils.getRequest(getRequest());
-        return httpRequest == null ? Locale.getDefault() : httpRequest.getLocale();
-    }
-
-    /**
-     * Export all Policies defined within the Realm used to access this end point.
-     *
-     * The end point supports the query parameter "filter" which can be used multiple
-     * times to define the Search Filters which will restrict the output to only those
-     * Privileges which match the Search Filters.
-     *
-     * See {@link SearchFilterFactory} for more details on the format of these
-     * Search Filters.
-     *
-     * @return XACML of the matching Privileges.
-     */
-    @Get
-    public Representation exportXACML() {
-        String realm = RestletRealmRouter.getRealmFromRequest(getRequest());
-        return exportXACML(realm);
-    }
-
-    /**
-     * This version of exportXACML here for testing - it saves trying to mock the static getRealmFromRequest
-     * @param realm The realm
-     * @return Representation object wrapping the converted XACML
-     */
-    @VisibleForTesting
-    Representation exportXACML(String realm) {
-
-        List<String> filters = new ArrayList<String>(Arrays.asList(getQuery().getValuesArray(QUERY_PARAM_STRING)));
-        PolicySet policySet;
-
+    private Locale getRequestLocale(Request request) {
         try {
-            if (!checkPermission("READ")) {
-                throw new ResourceException(new Status(FORBIDDEN));
-            }
-
-            policySet = importExport.exportXACML(realm, getAdminToken(), filters);
-            getResponse().setStatus(Status.SUCCESS_OK);
-
-        } catch (EntitlementException e) {
-            debug.warning("Reading Policies failed", e);
-            throw new ResourceException(new Status(INTERNAL_ERROR, e.getLocalizedMessage(getRequestLocale()), null,
-                    null));
-        }
-        final PolicySet finalPolicySet = policySet;
-
-        Representation result = new OutputRepresentation(XACMLServiceEndpointApplication.APPLICATION_XML_XACML3) {
-            @Override
-            public void write(OutputStream outputStream) throws IOException {
-                try {
-                    XACMLPrivilegeUtils.writeXMLToStream(finalPolicySet, outputStream);
-                } catch (EntitlementException e) {
-                    throw new IOException(e);
+            AcceptLanguageHeader header = request.getHeaders().get(AcceptLanguageHeader.class);
+            if (header != null) {
+                Locale preferred = header.getLocales().getPreferredLocale();
+                if (preferred != null) {
+                    return preferred;
                 }
             }
-        };
-        // OPENAM-4974
-        Disposition disposition = new Disposition();
-        disposition.setType(Disposition.TYPE_ATTACHMENT);
-        disposition.setFilename(getPolicyAttachmentFileName(realm));
-        result.setDisposition(disposition);
+        } catch (MalformedHeaderException e) {
+            debug.warning("Could not parse Accept-Language header", e);
+        }
+        return Locale.getDefault();
+    }
 
-        return result;
+    private String getUrlLastSegment(Request request) {
+        List<String> pathElements = request.getUri().getPathElements();
+        return pathElements.isEmpty() ? "" : pathElements.get(pathElements.size() - 1);
     }
 
     /**
@@ -258,16 +246,16 @@ public class XacmlService extends ServerResource {
      * @return true if the user has permission, false otherwise.
      */
     @VisibleForTesting
-    boolean checkPermission(String action) throws EntitlementException {
+    boolean checkPermission(String action, Context context, Request request, String realm)
+            throws EntitlementException {
 
         try {
-            Request restletRequest = getRequest();
-            String urlLastSegment = restletRequest.getResourceRef().getLastSegment();
-            String realm = RestletRealmRouter.getRealmFromRequest(restletRequest);
+            String urlLastSegment = getUrlLastSegment(request);
 
-            final Map<String, String> context = (Map<String, String>)
-                    ServletUtils.getRequest(getRequest()).getAttribute(FORGEROCK_AUTH_CONTEXT);
-            final String tokenId = context.get("tokenId");
+            @SuppressWarnings("unchecked")
+            final Map<String, String> authContext = (Map<String, String>)
+                    context.asContext(AttributesContext.class).getAttributes().get(FORGEROCK_AUTH_CONTEXT);
+            final String tokenId = authContext.get("tokenId");
             final SSOToken token = SSOTokenManager.getInstance().createSSOToken(tokenId);
 
             return checkPermission(action, urlLastSegment, realm, token);
@@ -307,8 +295,8 @@ public class XacmlService extends ServerResource {
     }
 
     /**
-     * This is the most atomic of the checkPermissions and finally gives us something we can test without having to mock
-     * out most of the universe.
+     * This is the most atomic of the checkPermissions and finally gives us something we can test without having to
+     * mock out most of the universe.
      *
      * @param permissionRequest the permission request, forged from the realm, URL segment, action and other things
      * @param token the user's SSO token
@@ -320,11 +308,10 @@ public class XacmlService extends ServerResource {
                                                 throws DelegationException, SSOException {
 
         boolean result = evaluator.isAllowed(token, permissionRequest, Collections.EMPTY_MAP);
-        String className = this.getClass().getName();
         if (result) {
-            restLog.auditAccessGranted(className, urlLastSegment, className, token);
+            restLog.auditAccessGranted(COMPONENT, urlLastSegment, COMPONENT, token);
         } else {
-            restLog.auditAccessDenied(className, urlLastSegment, className, token);
+            restLog.auditAccessDenied(COMPONENT, urlLastSegment, COMPONENT, token);
         }
         return result;
     }

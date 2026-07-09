@@ -1,7 +1,9 @@
 # Restlet → CHF Migration Plan
 
 Executable phase plan for removing the Restlet framework from OpenAM. Research backing
-this plan: [inventory.md](inventory.md); decision record: [decisions.md](decisions.md).
+this plan: [inventory.md](inventory.md); decision record: [decisions.md](decisions.md); CHF
+target-stack patterns verified during Phase 2, reused by every later phase:
+[chf-patterns.md](chf-patterns.md).
 Written 2026-07-08; branch `features/restlet-migration`.
 
 ## Decisions (locked)
@@ -27,7 +29,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Migration docs (this folder) | done |
-| 2 | XACML `/xacml` → CHF | pending |
+| 2 | XACML `/xacml` → CHF | done |
 | 3 | `OAuth2Request` dual-transport + shared infra | pending |
 | 4 | UMA `/uma` → CHF | pending |
 | 5a–5d | OAuth2/OIDC `/oauth2` → CHF (flip in 5d) | pending |
@@ -80,7 +82,9 @@ cookie → CAF 401), `GET /openam/xacml/realms/root/policies`, POST import round
 ## Phase 3 — `OAuth2Request` dual-transport re-plumb + shared infra (no route flips)
 
 Makes the OAuth2 core transport-neutral while both transports coexist, so UMA/OAuth2
-migrate incrementally afterwards.
+migrate incrementally afterwards. Reuse the CHF target-stack patterns (HttpRouteProvider SPI,
+`Endpoints.from` semantics, realm routing, filter ordering, error-map rewriting, test scaffolding)
+captured in [chf-patterns.md](chf-patterns.md) during Phase 2 — every phase below builds on it.
 
 **3a. `OAuth2Request` (openam-oauth2, `org.forgerock.oauth2.core`)**
 - Make abstract; transport-neutral API (`getParameter`, `getParameterNames`,

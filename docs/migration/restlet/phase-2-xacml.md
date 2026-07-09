@@ -113,9 +113,10 @@ XML `<error>` form reproduces the old `XMLRestStatusService` for **every** error
    `@Named("InvalidRealmNames") Set<String>`. `get()` builds: endpoint router
    (`requestUriMatcher(EQUALS,"policies")` → version router `version(1)` →
    `Endpoints.from(XacmlServiceHandler.class)`), inner chain
-   `Handlers.chainOf(endpointRouter, xacmlXmlErrorFilter, resourceApiVersionFilter,
-   authenticationFilter)`, realm wrapper mirroring `getChfRootRouter()`; `invalidRealmNames.add("policies")`;
-   returns `singleton(newHttpRoute(STARTS_WITH, "xacml", chain))`.
+   `Handlers.chainOf(endpointRouter, resourceApiVersionFilter, authenticationFilter)`, realm wrapper
+   mirroring `getChfRootRouter()`; `invalidRealmNames.add("policies")`; wraps the whole route in the
+   XML error filter (`Handlers.chainOf(root, xacmlXmlErrorFilter)`) so realm-resolution errors are
+   XML too; returns `singleton(newHttpRoute(STARTS_WITH, "xacml", chain))`.
 4. **`openam-entitlements/src/main/resources/META-INF/services/org.forgerock.openam.http.HttpRouteProvider`**
    — one line: `org.forgerock.openam.entitlement.rest.XacmlHttpRouteProvider`.
 5. **pom** — add explicit `openam-http` dependency to `openam-entitlements/pom.xml` if the

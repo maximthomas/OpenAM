@@ -28,7 +28,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
 import java.util.Collections;
 
-import org.forgerock.http.Filter;
 import org.forgerock.openam.rest.service.RestletServiceServlet;
 import org.mockito.ArgumentMatchers;
 import org.testng.annotations.BeforeClass;
@@ -40,29 +39,21 @@ public class RestEndpointServletTest {
 
     private RestEndpointServlet restEndpointServlet;
 
-    private RestletServiceServlet restletXACMLServiceServlet;
     private RestletServiceServlet restletOAuth2ServiceServlet;
     private RestletServiceServlet restletUMAServiceServlet;
-    private HttpServlet restletXACMLHttpServlet;
-    private Filter authenticationFilter;
 
     @BeforeClass
     public void setupMocks() {
-        restletXACMLServiceServlet = mock(RestletServiceServlet.class);
         restletOAuth2ServiceServlet = mock(RestletServiceServlet.class);
         restletUMAServiceServlet = mock(RestletServiceServlet.class);
-        restletXACMLHttpServlet = mock(HttpServlet.class);
-        authenticationFilter = mock(Filter.class);
     }
 
     @BeforeMethod
     public void setUp() {
 
-        reset(restletXACMLServiceServlet, restletOAuth2ServiceServlet, restletUMAServiceServlet,
-                restletXACMLHttpServlet, authenticationFilter);
+        reset(restletOAuth2ServiceServlet, restletUMAServiceServlet);
 
-        restEndpointServlet = new RestEndpointServlet(restletXACMLServiceServlet, restletOAuth2ServiceServlet,
-                restletUMAServiceServlet, restletXACMLHttpServlet, authenticationFilter);
+        restEndpointServlet = new RestEndpointServlet(restletOAuth2ServiceServlet, restletUMAServiceServlet);
     }
 
     @Test
@@ -74,7 +65,6 @@ public class RestEndpointServletTest {
         restEndpointServlet.init();
 
         //Then
-        verifyZeroInteractions(restletXACMLServiceServlet);
         verifyZeroInteractions(restletOAuth2ServiceServlet);
         verifyZeroInteractions(restletUMAServiceServlet);
     }
@@ -82,7 +72,6 @@ public class RestEndpointServletTest {
     @DataProvider(name = "restletPaths")
     public Object[][] restletPathData() {
         return new Object[][] {
-                {"/xacml", restletXACMLHttpServlet},
                 {"/oauth2", restletOAuth2ServiceServlet},
                 {"/uma", restletUMAServiceServlet}
         };
@@ -106,8 +95,7 @@ public class RestEndpointServletTest {
 
         //Then
         verify(servlet).service(ArgumentMatchers.<HttpServletRequest>anyObject(), eq(response));
-        for (HttpServlet s : Arrays.asList(restletXACMLHttpServlet, restletOAuth2ServiceServlet,
-                restletUMAServiceServlet)) {
+        for (HttpServlet s : Arrays.asList(restletOAuth2ServiceServlet, restletUMAServiceServlet)) {
             if (s != servlet) {
                 verifyZeroInteractions(s);
             }
@@ -123,7 +111,6 @@ public class RestEndpointServletTest {
         restEndpointServlet.destroy();
 
         //Then
-        verify(restletXACMLServiceServlet).destroy();
         verify(restletOAuth2ServiceServlet).destroy();
         verify(restletUMAServiceServlet).destroy();
     }

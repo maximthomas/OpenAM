@@ -30,7 +30,10 @@ Written 2026-07-08; branch `features/restlet-migration`.
 |---|---|---|
 | 1 | Migration docs (this folder) | done |
 | 2 | XACML `/xacml` → CHF | done |
-| 3 | `OAuth2Request` dual-transport + shared infra | pending |
+| 3a | `OAuth2Request` abstraction + consumer re-plumb | planned ([phase-3a-oauth2request.md](phase-3a-oauth2request.md)) |
+| 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | pending |
+| 3c | Response/HTML/exception layer (`org.forgerock.oauth2.http`) | pending |
+| 3d | CHF audit filters + `HttpBodyAuditor` | pending |
 | 4 | UMA `/uma` → CHF | pending |
 | 5a–5d | OAuth2/OIDC `/oauth2` → CHF (flip in 5d) | pending |
 | 6 | WebFinger `/.well-known` + stragglers | pending |
@@ -85,6 +88,14 @@ Makes the OAuth2 core transport-neutral while both transports coexist, so UMA/OA
 migrate incrementally afterwards. Reuse the CHF target-stack patterns (HttpRouteProvider SPI,
 `Endpoints.from` semantics, realm routing, filter ordering, error-map rewriting, test scaffolding)
 captured in [chf-patterns.md](chf-patterns.md) during Phase 2 — every phase below builds on it.
+
+> **Sizing (2026-07-09): Phase 3 is ~3–4 PRs, not one — recommend splitting into
+> sub-phases 3a–3d, each a shippable commit with its own detailed plan doc.** Coupling
+> map, verified CHF facts (servlet req/resp on `AttributesContext`), the full accessor
+> list, the `Request.getCurrent()` thread-local leak (missing from the bullets below), and
+> the split rationale are in [phase-3-research.md](phase-3-research.md). Author the 3a–3d
+> detailed plans from that research; the bullets below are the tracker-level outline.
+> Detailed 3a plan: [phase-3a-oauth2request.md](phase-3a-oauth2request.md).
 
 **3a. `OAuth2Request` (openam-oauth2, `org.forgerock.oauth2.core`)**
 - Make abstract; transport-neutral API (`getParameter`, `getParameterNames`,

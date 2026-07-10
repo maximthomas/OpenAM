@@ -117,8 +117,10 @@ captured in [chf-patterns.md](chf-patterns.md) during Phase 2 — every phase be
   `Accept-Language` (matches `HttpServletRequest.getLocale()` semantics).
   `getEndpointType()` from the post-realm-routing remaining URI → `EndpointType.get`.
 - `OAuth2RequestFactory`: add `create(Context, Request)`; per-request cache moves to
-  `AttributesContext` under the same `OAUTH2_REQ_ATTR` key (mirrored to the servlet
-  attribute during the transition so mixed stacks agree).
+  `AttributesContext` under the same `OAUTH2_REQ_ATTR` key. (Settled in the 3a plan: **no**
+  servlet-attribute mirroring — web.xml maps each path to exactly one servlet. And
+  `create(Request)` keeps resolving the client registration via `httpRequest.getParameter`;
+  only the CHF overload uses the neutral accessor.)
 
 **3b. Transport-neutral collaborators (openam-oauth2)**
 - New `Header/FormBody/QueryParameter AccessTokenVerifier` (pure `OAuth2Request` API);
@@ -318,8 +320,10 @@ the atomic flip (a path prefix moves whole in web.xml).
 | 12 | Endpoint-type checks | `ClientCredentialsReader` keys auth-method rules off the `/access_token` path | `EndpointType` tests incl. realm-prefixed URIs |
 | 13 | Audit event parity | Restlet `forHttpServletRequest` vs CHF `forRequest` builder paths; body detail per route | Compare emitted access events per area against recorded JSON |
 | 14 | HTML output | Same FreeMarker 2.3.31; only the loader changes | Golden-file render tests; browser smoke of consent + device pages |
-| 15 | Locale selection | `HttpServletRequest.getLocale()` vs Accept-Language parse (q-values) | Multi-range header unit test |
+| 15 | Locale selection | `HttpServletRequest.getLocale()` vs Accept-Language parse (q-values); servlet returns `Locale.getDefault()` when the header is absent | Multi-range header unit test + absent-header test |
 | 16 | Scripting client behavior | Redirect-following / cookie defaults differ between Restlet client and java.net.http | `followRedirects(NEVER)`; script integration test |
+| 17 | goto-URL query mutation | `alterMaxAge`/`removeLoginPrompt` rewrite the request URL's query; the result becomes the login redirect's `goto`. An attribute write cannot replace it — infinite re-auth loop | Neutral `setQueryParameter`/`removeQueryParameterValue`; `getRequestUrl()` asserts; browser smoke of `max_age` + `prompt=login` |
+| 18 | `Content-Type` parameters | CHF `Form.fromRequestEntity` exact-matches the whole header; `;charset=UTF-8` silently yields an empty form. Restlet compares the parsed `MediaType` | Parse via `ContentTypeHeader.valueOf`; form/JSON tests with a charset parameter |
 
 ## Verification workflow (every phase)
 

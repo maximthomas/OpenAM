@@ -27,6 +27,8 @@ import org.forgerock.oauth2.core.exceptions.InvalidClientException;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.openam.oauth2.OAuth2Constants;
 import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
+import org.forgerock.services.context.AttributesContext;
+import org.forgerock.services.context.RootContext;
 import org.mockito.ArgumentCaptor;
 import org.restlet.engine.adapter.HttpRequest;
 import org.forgerock.openam.rest.jakarta.servlet.internal.ServletCall;
@@ -106,6 +108,51 @@ public class OAuth2RequestFactoryTest {
         OAuth2Request oAuth2Request = factory.create(request);
 
         assertThat(oAuth2Request.getClientRegistration()).isNull();
+    }
+
+    @Test
+    public void chfRequestGetsItsClientRegistration() throws NotFoundException, InvalidClientException {
+        ClientRegistration clientRegistration = mock(ClientRegistration.class);
+        when(clientRegistrationStore.get(eq(CLIENT_ID), any(OAuth2Request.class))).thenReturn(clientRegistration);
+        AttributesContext context = new AttributesContext(new RootContext());
+
+        OAuth2Request oAuth2Request = factory.create(context, chfRequest("client_id=" + CLIENT_ID));
+
+        assertThat(oAuth2Request).isInstanceOf(ChfOAuth2Request.class);
+        assertThat(oAuth2Request.getClientRegistration()).isEqualTo(clientRegistration);
+    }
+
+    @Test
+    public void chfRequestIsCachedOnTheAttributesContext() throws NotFoundException, InvalidClientException {
+        AttributesContext context = new AttributesContext(new RootContext());
+        org.forgerock.http.protocol.Request request = chfRequest("client_id=" + CLIENT_ID);
+
+        OAuth2Request first = factory.create(context, request);
+        OAuth2Request second = factory.create(context, request);
+
+        assertThat(second).isSameAs(first);
+        assertThat(context.getAttributes().get("OAUTH2_REQ_ATTR")).isSameAs(first);
+    }
+
+    @Test
+    public void chfClientRegistrationIsNullWhenClientIdIsNotProvided() throws NotFoundException, InvalidClientException {
+        AttributesContext context = new AttributesContext(new RootContext());
+
+        OAuth2Request oAuth2Request = factory.create(context, chfRequest(null));
+
+        assertThat(oAuth2Request.getClientRegistration()).isNull();
+        verify(clientRegistrationStore, never()).get(any(String.class), any(OAuth2Request.class));
+    }
+
+    private org.forgerock.http.protocol.Request chfRequest(String query) {
+        org.forgerock.http.protocol.Request request = new org.forgerock.http.protocol.Request().setMethod("GET");
+        try {
+            request.setUri("http://openam.example.com:8080/openam/oauth2/authorize"
+                    + (query == null ? "" : "?" + query));
+        } catch (java.net.URISyntaxException e) {
+            throw new IllegalStateException(e);
+        }
+        return request;
     }
 
     private HttpRequest getRequest(String clientId) {

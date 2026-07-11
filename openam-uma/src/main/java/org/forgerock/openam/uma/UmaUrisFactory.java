@@ -26,6 +26,7 @@ import java.util.Map;
 import com.google.inject.Singleton;
 import org.forgerock.json.resource.http.HttpContext;
 import org.forgerock.oauth2.core.OAuth2Request;
+import org.forgerock.oauth2.core.RestletOAuth2Request;
 import org.forgerock.oauth2.core.OAuth2Uris;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
@@ -37,7 +38,6 @@ import org.forgerock.openam.services.baseurl.BaseURLProviderFactory;
 import org.forgerock.openam.services.baseurl.InvalidBaseUrlException;
 import org.forgerock.services.context.Context;
 import org.restlet.Request;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 
 /**
  * <p>A factory for creating/retrieving UmaUris instances.</p>
@@ -76,7 +76,7 @@ public class UmaUrisFactory {
      * @return A UmaProviderSettings instance.
      */
     UmaUris get(Request req) throws NotFoundException, ServerException {
-        return get(new OAuth2Request(jacksonRepresentationFactory, req));
+        return get(new RestletOAuth2Request(jacksonRepresentationFactory, req));
     }
 
     public UmaUris get(OAuth2Request request) throws NotFoundException, ServerException {
@@ -96,7 +96,7 @@ public class UmaUrisFactory {
     public UmaUris get(OAuth2Request oAuth2Request, Realm realm) throws NotFoundException, ServerException {
 
         String baseUrl;
-        HttpServletRequest request = ServletUtils.getRequest(oAuth2Request.<Request>getRequest());
+        HttpServletRequest request = oAuth2Request.getHttpServletRequest();
         try {
             baseUrl = baseURLProviderFactory.get(realm.asPath()).getRealmURL(request, "/uma", realm);
         } catch (InvalidBaseUrlException e) {

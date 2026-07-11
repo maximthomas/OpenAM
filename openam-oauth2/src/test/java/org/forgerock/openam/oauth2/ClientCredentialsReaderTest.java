@@ -38,8 +38,6 @@ import org.forgerock.oauth2.core.exceptions.InvalidClientException;
 import org.forgerock.oauth2.core.exceptions.InvalidRequestException;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistration;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistrationStore;
-import org.restlet.Request;
-import org.restlet.data.Reference;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -144,10 +142,8 @@ public class ClientCredentialsReaderTest {
                 .willReturn(OAuth2Constants.JwtProfile.JWT_PROFILE_CLIENT_ASSERTION_TYPE);
         given(oAuth2Request.<String>getParameter(OAuth2Constants.JwtProfile.CLIENT_ASSERTION))
                 .willReturn(clientAssertion);
-        Request restletRequest = mock(Request.class);
-        given(restletRequest.getChallengeResponse()).willReturn(null);
-        given(restletRequest.getResourceRef()).willReturn(new Reference(ENDPOINT));
-        given(oAuth2Request.getRequest()).willReturn(restletRequest);
+        // No Authorization header, so the request carries no basic-auth credentials.
+        given(oAuth2Request.getBasicAuthCredentials()).willReturn(null);
         return oAuth2Request;
     }
 

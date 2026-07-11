@@ -145,6 +145,21 @@ public class OAuthProblemException extends ResourceException {
         public OAuthProblemException handle(Request request, String description) {
             return new OAuthProblemException(this, request).description(description);
         }
+
+        /**
+         * Builds the exception without a request. A request would only populate {@code redirect_uri},
+         * {@code state} and {@code scope} on the exception; the sole reader of those fields —
+         * {@code OAuth2Utils.OAuthProblemExceptionRedirector#getRedirector} — has no callers, and the
+         * live error path ({@code ExceptionHandler}) rebuilds a fresh {@code OAuth2RestletException}
+         * from the status code alone. So the {@code SERVER_ERROR} sites that raise this away from a
+         * Restlet call stack can omit the request with no observable effect.
+         *
+         * @param description The error description.
+         * @return The exception.
+         */
+        public OAuthProblemException handle(String description) {
+            return new OAuthProblemException(this, null).description(description);
+        }
     }
 
     private String description;

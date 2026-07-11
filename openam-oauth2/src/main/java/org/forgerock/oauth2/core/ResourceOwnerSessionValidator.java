@@ -91,11 +91,7 @@ import org.forgerock.openidconnect.ClientDAO;
 import org.forgerock.openidconnect.OpenIdPrompt;
 import org.forgerock.util.annotations.VisibleForTesting;
 import org.owasp.esapi.errors.EncodingException;
-import org.restlet.Request;
-import org.restlet.data.Form;
-import org.restlet.data.Parameter;
 import org.restlet.data.Reference;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 
 /**
  * Validates whether a resource owner has a current authenticated session.
@@ -234,7 +230,7 @@ public class ResourceOwnerSessionValidator {
     public SSOToken getResourceOwnerSession(OAuth2Request request) {
         SSOToken token = null;
         try {
-            token = ssoTokenManager.createSSOToken(getHttpServletRequest(request.<Request>getRequest()));
+            token = ssoTokenManager.createSSOToken(getHttpServletRequest(request));
         } catch (SSOException e) {
             logger.warning("Error authenticating user against OpenAM: ", e);
         }
@@ -263,17 +259,7 @@ public class ResourceOwnerSessionValidator {
      * otherwise we'll loop forever and ever...
      */
     private void alterMaxAge(OAuth2Request req) {
-        final Request request = req.getRequest();
-        Form query = request.getResourceRef().getQueryAsForm();
-        Parameter param = query.getFirst(MAX_AGE);
-        if (param == null) {
-            param = new Parameter(MAX_AGE, CONFIRMED_MAX_AGE);
-            query.add(param);
-        } else {
-            param.setValue(CONFIRMED_MAX_AGE);
-        }
-
-        request.getResourceRef().setQuery(query.getQueryString());
+        req.setQueryParameter(MAX_AGE, CONFIRMED_MAX_AGE);
     }
 
     /**
@@ -322,7 +308,6 @@ public class ResourceOwnerSessionValidator {
         Set<String> acrValues = new HashSet<>(Arrays.asList(acrValuesStr.split("\\s+")));
         OAuth2ProviderSettings settings = providerSettingsFactory.get(request);
         Map<String, AuthenticationMethod> acrMap = settings.getAcrMapping();
-        final Request req = request.getRequest();
 
         String matchedAcr = UNMATCHED_ACR_VALUE;
         for (String serviceUsed : serviceUsedSet) {
@@ -335,7 +320,7 @@ public class ResourceOwnerSessionValidator {
                 }
             }
         }
-        req.getAttributes().put(OAuth2Constants.JWTTokenParams.ACR, matchedAcr);
+        request.setAttribute(OAuth2Constants.JWTTokenParams.ACR, matchedAcr);
     }
 
     private ResourceOwnerAuthenticationRequired authenticationRequired(OAuth2Request request, SSOToken token)
@@ -356,9 +341,9 @@ public class ResourceOwnerSessionValidator {
         OAuth2ProviderSettings providerSettings = providerSettingsFactory.get(request);
         Template loginUrlTemplate = providerSettings.getCustomLoginUrlTemplate();
 
-        removeLoginPrompt(request.<Request>getRequest());
+        removeLoginPrompt(request);
 
-        String gotoUrl = request.<Request>getRequest().getResourceRef().toString();
+        String gotoUrl = request.getRequestUrl();
         if (request.getParameter(USER_CODE) != null) {
             gotoUrl += (gotoUrl.indexOf('?') > -1 ? "&" : "?") + USER_CODE + "=" + request.getParameter(USER_CODE);
         }
@@ -392,8 +377,7 @@ public class ResourceOwnerSessionValidator {
             String moduleName, String serviceName, String locale) throws URISyntaxException, ServerException,
             NotFoundException {
 
-        final Request req = request.getRequest();
-        final String authURL = getAuthURL(getHttpServletRequest(req));
+        final String authURL = getAuthURL(getHttpServletRequest(request));
         final URI authURI = new URI(authURL);
         final Reference loginRef = new Reference(authURI);
 
@@ -496,14 +480,8 @@ public class ResourceOwnerSessionValidator {
      *
      * This needs to be done before redirecting the user to login so that an infinite redirect loop is avoided.
      */
-    private void removeLoginPrompt(Request req) {
-        Form query = req.getResourceRef().getQueryAsForm();
-        Parameter param = query.getFirst(PROMPT);
-        if (param != null && param.getValue() != null) {
-            String newValue = param.getValue().toLowerCase().replace(OpenIdPrompt.PROMPT_LOGIN, "").trim();
-            param.setValue(newValue);
-        }
-        req.getResourceRef().setQuery(query.getQueryString());
+    private void removeLoginPrompt(OAuth2Request req) {
+        req.removeQueryParameterValue(PROMPT, OpenIdPrompt.PROMPT_LOGIN);
     }
 
     /**
@@ -522,10 +500,10 @@ public class ResourceOwnerSessionValidator {
     }
 
     /**
-     * Hide static method call behind an instance method that can be overridden by unit tests.
+     * Hide the transport lookup behind an instance method that can be overridden by unit tests.
      */
     @VisibleForTesting
-    HttpServletRequest getHttpServletRequest(Request req) {
-        return ServletUtils.getRequest(req);
+    HttpServletRequest getHttpServletRequest(OAuth2Request req) {
+        return req.getHttpServletRequest();
     }
 }

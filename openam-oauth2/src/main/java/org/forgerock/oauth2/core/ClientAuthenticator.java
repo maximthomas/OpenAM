@@ -40,9 +40,6 @@ import org.forgerock.openam.oauth2.OAuth2AuditLogger;
 import org.forgerock.openam.oauth2.OAuth2Constants;
 import org.forgerock.openam.utils.RealmNormaliser;
 import org.forgerock.util.Reject;
-import org.restlet.Request;
-import org.restlet.Response;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 
 import com.sun.identity.authentication.AuthContext;
 import com.sun.identity.authentication.spi.AuthLoginException;
@@ -151,10 +148,10 @@ public class ClientAuthenticator {
             throws InvalidClientException {
         try {
             AuthContext lc = new AuthContext(realm);
-            HttpServletRequest httpRequest = ServletUtils.getRequest(Request.getCurrent());
+            HttpServletRequest httpRequest = request.getHttpServletRequest();
             httpRequest.setAttribute(ISAuthConstants.NO_SESSION_REQUEST_ATTR, "true");
             lc.login(AuthContext.IndexType.MODULE_INSTANCE, "Application", null, httpRequest,
-                    ServletUtils.getResponse(Response.getCurrent()));
+                    request.getHttpServletResponse());
 
             while (lc.hasMoreRequirements()) {
                 Callback[] callbacks = lc.getRequirements();
@@ -180,7 +177,7 @@ public class ClientAuthenticator {
 
             // validate the password..
             if (lc.getStatus() == AuthContext.Status.SUCCESS) {
-                request.<Request>getRequest().getAttributes().put(AM_CTX_ID,
+                request.setAttribute(AM_CTX_ID,
                         lc.getAuthContextLocal().getLoginState().getActivatedSessionTrackingId());
                 return true;
             } else {

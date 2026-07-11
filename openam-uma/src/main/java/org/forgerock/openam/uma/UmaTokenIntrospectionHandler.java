@@ -31,7 +31,6 @@ import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.TokenIntrospectionHandler;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
-import org.restlet.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,8 +54,8 @@ public class UmaTokenIntrospectionHandler implements TokenIntrospectionHandler {
     public JsonValue introspect(OAuth2Request request, String clientId, String tokenType, String tokenId)
             throws ServerException {
         try {
-            UmaProviderSettings providerSettings = providerSettingsFactory.get(request.<Request>getRequest());
-            UmaUris umaUris = umaUrisFactory.get(request.<Request>getRequest());
+            UmaProviderSettings providerSettings = providerSettingsFactory.get(request);
+            UmaUris umaUris = umaUrisFactory.get(request);
             if (tokenType == null || RPT_TYPE.equals(tokenType)) {
                 RequestingPartyToken token = providerSettings.getUmaTokenStore().readRPT(tokenId);
                 if (token != null && token.getResourceServerClientId().equals(clientId) &&

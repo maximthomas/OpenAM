@@ -46,6 +46,12 @@
         </dependency>
         <dependency>
             <groupId>org.openidentityplatform.openam</groupId>
+            <artifactId>openam-core</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.openidentityplatform.openam</groupId>
             <artifactId>openam-scripting</artifactId>
         </dependency>
         <dependency>

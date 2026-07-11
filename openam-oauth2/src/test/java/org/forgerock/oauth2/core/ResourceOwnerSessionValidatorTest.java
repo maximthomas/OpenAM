@@ -45,6 +45,7 @@ import org.forgerock.openam.oauth2.ClientCredentialsReader;
 import org.forgerock.openam.oauth2.OpenAMAuthenticationMethod;
 import org.forgerock.openidconnect.ClientDAO;
 import org.restlet.Request;
+import org.restlet.data.Method;
 import org.restlet.data.Reference;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
@@ -62,7 +63,7 @@ public class ResourceOwnerSessionValidatorTest {
     private SSOTokenManager mockSSOTokenManager;
     private OAuth2ProviderSettingsFactory mockProviderSettingsFactory;
     private OAuth2ProviderSettings providerSettings;
-    private OAuth2Request mockOAuth2Request;
+    private OAuth2Request oAuth2Request;
     private Request restletRequest;
     private HttpServletRequest mockHttpServletRequest;
 
@@ -72,14 +73,15 @@ public class ResourceOwnerSessionValidatorTest {
         mockSSOTokenManager = mock(SSOTokenManager.class);
         mockProviderSettingsFactory = mock(OAuth2ProviderSettingsFactory.class);
         providerSettings = mock(RealmOAuth2ProviderSettings.class);
-        mockOAuth2Request = mock(OAuth2Request.class);
         restletRequest = new Request();
+        restletRequest.setMethod(Method.GET);
+        // A real request wrapper: the validator rewrites the request URL's query string, and reads it
+        // back as the login redirect's "goto". Only the parameter lookups are stubbed.
+        oAuth2Request = spy(new RestletOAuth2Request(null, restletRequest));
         mockHttpServletRequest = mock(HttpServletRequest.class);
         DNWrapper dnWrapper = mock(DNWrapper.class);
         ClientDAO mockClientDAO = mock(ClientDAO.class);
         ClientCredentialsReader mockClientCredentialsReader = mock(ClientCredentialsReader.class);
-
-        given(mockOAuth2Request.getRequest()).willReturn(restletRequest);
 
         given(mockHttpServletRequest.getRequestURI()).willReturn("/openam/oauth2/authorize");
         given(mockHttpServletRequest.getScheme()).willReturn("http");
@@ -93,7 +95,7 @@ public class ResourceOwnerSessionValidatorTest {
                 new ResourceOwnerSessionValidator(dnWrapper, mockSSOTokenManager, mockProviderSettingsFactory,
                         mockClientDAO, mockClientCredentialsReader) {
             @Override
-            HttpServletRequest getHttpServletRequest(Request req) {
+            HttpServletRequest getHttpServletRequest(OAuth2Request req) {
                 return mockHttpServletRequest;
             }
         };
@@ -109,7 +111,7 @@ public class ResourceOwnerSessionValidatorTest {
         mockSSOToken(NO_SESSION_TOKEN);
 
         //When
-        resourceOwnerSessionValidator.validate(mockOAuth2Request);
+        resourceOwnerSessionValidator.validate(oAuth2Request);
 
         // Then
         // BadRequestException
@@ -124,7 +126,7 @@ public class ResourceOwnerSessionValidatorTest {
 
         try {
             //When
-            resourceOwnerSessionValidator.validate(mockOAuth2Request);
+            resourceOwnerSessionValidator.validate(oAuth2Request);
             fail();
 
         } catch (ResourceOwnerAuthenticationRequired ex) {
@@ -144,7 +146,7 @@ public class ResourceOwnerSessionValidatorTest {
 
         try {
             //When
-            resourceOwnerSessionValidator.validate(mockOAuth2Request);
+            resourceOwnerSessionValidator.validate(oAuth2Request);
             fail();
 
         } catch (ResourceOwnerAuthenticationRequired ex) {
@@ -165,7 +167,7 @@ public class ResourceOwnerSessionValidatorTest {
 
         try {
             //When
-            resourceOwnerSessionValidator.validate(mockOAuth2Request);
+            resourceOwnerSessionValidator.validate(oAuth2Request);
             fail();
 
         } catch (ResourceOwnerAuthenticationRequired ex) {
@@ -184,7 +186,7 @@ public class ResourceOwnerSessionValidatorTest {
         mockSSOToken(NO_SESSION_TOKEN);
 
         //When
-        resourceOwnerSessionValidator.validate(mockOAuth2Request);
+        resourceOwnerSessionValidator.validate(oAuth2Request);
 
         // Then
         // InteractionRequiredException
@@ -201,7 +203,7 @@ public class ResourceOwnerSessionValidatorTest {
         mockSSOToken(NO_SESSION_TOKEN);
 
         //When
-        resourceOwnerSessionValidator.validate(mockOAuth2Request);
+        resourceOwnerSessionValidator.validate(oAuth2Request);
 
         // Then
         // LoginRequiredException
@@ -221,7 +223,7 @@ public class ResourceOwnerSessionValidatorTest {
         // When
         URI loginUri = null;
         try {
-            resourceOwnerSessionValidator.validate(mockOAuth2Request);
+            resourceOwnerSessionValidator.validate(oAuth2Request);
             fail();
         } catch (ResourceOwnerAuthenticationRequired ex) {
             loginUri = ex.getRedirectUri();
@@ -247,7 +249,7 @@ public class ResourceOwnerSessionValidatorTest {
         // When
         URI loginUri = null;
         try {
-            resourceOwnerSessionValidator.validate(mockOAuth2Request);
+            resourceOwnerSessionValidator.validate(oAuth2Request);
             fail();
         } catch (ResourceOwnerAuthenticationRequired ex) {
             loginUri = ex.getRedirectUri();
@@ -266,7 +268,7 @@ public class ResourceOwnerSessionValidatorTest {
         // When
         URI loginUri = null;
         try {
-            resourceOwnerSessionValidator.validate(mockOAuth2Request);
+            resourceOwnerSessionValidator.validate(oAuth2Request);
             fail();
         } catch (ResourceOwnerAuthenticationRequired ex) {
             loginUri = ex.getRedirectUri();
@@ -287,7 +289,7 @@ public class ResourceOwnerSessionValidatorTest {
         // When
         URI loginUri = null;
         try {
-            resourceOwnerSessionValidator.validate(mockOAuth2Request);
+            resourceOwnerSessionValidator.validate(oAuth2Request);
             fail();
         } catch (ResourceOwnerAuthenticationRequired ex) {
             loginUri = ex.getRedirectUri();
@@ -316,7 +318,7 @@ public class ResourceOwnerSessionValidatorTest {
 
         //When
         try {
-            resourceOwnerSessionValidator.validate(mockOAuth2Request);
+            resourceOwnerSessionValidator.validate(oAuth2Request);
             fail();
         } catch (ResourceOwnerAuthenticationRequired e) {
             //Then
@@ -338,7 +340,7 @@ public class ResourceOwnerSessionValidatorTest {
 
         //When
         try {
-            resourceOwnerSessionValidator.validate(mockOAuth2Request);
+            resourceOwnerSessionValidator.validate(oAuth2Request);
             fail();
         } catch (ResourceOwnerAuthenticationRequired e) {
             //Then
@@ -353,23 +355,23 @@ public class ResourceOwnerSessionValidatorTest {
     private void mockPrompt(String prompt) {
         restletRequest.setResourceRef(new Reference(
                 "http://openam.example.com:8080/openam/oauth2/authorize?prompt=" + prompt));
-        given(mockOAuth2Request.getParameter("prompt")).willReturn(prompt);
+        doReturn(prompt).when(oAuth2Request).getParameter("prompt");
     }
 
     private void mockRequestRealm(String realm) {
-        given(mockOAuth2Request.getParameter("realm")).willReturn(realm);
+        doReturn(realm).when(oAuth2Request).getParameter("realm");
     }
 
     private void mockRequestLocale(String locale) {
-        given(mockOAuth2Request.getParameter("locale")).willReturn(locale);
+        doReturn(locale).when(oAuth2Request).getParameter("locale");
     }
 
     private void mockRequestModule(String module) {
-        given(mockOAuth2Request.getParameter("module")).willReturn(module);
+        doReturn(module).when(oAuth2Request).getParameter("module");
     }
 
     private void mockRequestService(String service) {
-        given(mockOAuth2Request.getParameter("service")).willReturn(service);
+        doReturn(service).when(oAuth2Request).getParameter("service");
     }
 
     private void mockSSOToken(SSOToken ssoToken) throws SSOException {
@@ -382,7 +384,7 @@ public class ResourceOwnerSessionValidatorTest {
 
     private void mockAcrValuesMap(Map<String, AuthenticationMethod> mapping) throws Exception {
         final OAuth2ProviderSettings mockSettings = mock(RealmOAuth2ProviderSettings.class);
-        given(mockProviderSettingsFactory.get(mockOAuth2Request)).willReturn(mockSettings);
+        given(mockProviderSettingsFactory.get(oAuth2Request)).willReturn(mockSettings);
         given(mockSettings.getAcrMapping()).willReturn(mapping);
     }
 
@@ -392,6 +394,6 @@ public class ResourceOwnerSessionValidatorTest {
     }
 
     private void mockRequestAcrValues(String acrValues) {
-        given(mockOAuth2Request.getParameter("acr_values")).willReturn(acrValues);
+        doReturn(acrValues).when(oAuth2Request).getParameter("acr_values");
     }
 }

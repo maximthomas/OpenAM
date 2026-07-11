@@ -19,7 +19,6 @@ import java.net.URI;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.restlet.Request;
 
 import com.sun.identity.idm.AMIdentity;
 import com.sun.identity.shared.debug.Debug;
@@ -126,7 +125,7 @@ final class Utils {
      */
     static OAuthProblemException createException(String attributeName, Exception e, Debug logger) {
         logException(attributeName, e, logger);
-        return OAuthProblemException.OAuthError.SERVER_ERROR.handle(Request.getCurrent(),
+        return OAuthProblemException.OAuthError.SERVER_ERROR.handle(
                 "Unable to get " + attributeName + " from repository");
     }
 

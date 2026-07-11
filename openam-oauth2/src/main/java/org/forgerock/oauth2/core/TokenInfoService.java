@@ -36,7 +36,6 @@ import org.forgerock.oauth2.core.exceptions.InvalidTokenException;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
 import org.forgerock.openam.oauth2.OAuth2Constants;
-import org.restlet.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -95,7 +94,7 @@ public class TokenInfoService {
         final AccessToken accessToken = request.getToken(AccessToken.class);
         //since the token info request is realm agnostic the realm is read from the token and is set on the
         //request object to correctly check the client for token is created still exists and is active
-        request.<Request>getRequest().getAttributes().put(OAuth2Constants.Custom.REALM, accessToken.getRealm());
+        request.setAttribute(OAuth2Constants.Custom.REALM, accessToken.getRealm());
         assertTokenClientExists(accessToken, request);
 
         logger.trace("In Validator resource - got token = " + accessToken);

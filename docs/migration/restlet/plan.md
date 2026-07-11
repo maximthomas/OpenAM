@@ -30,7 +30,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 |---|---|---|
 | 1 | Migration docs (this folder) | done |
 | 2 | XACML `/xacml` → CHF | done |
-| 3a | `OAuth2Request` abstraction + consumer re-plumb | planned ([phase-3a-oauth2request.md](phase-3a-oauth2request.md)) |
+| 3a | `OAuth2Request` abstraction + consumer re-plumb | done ([phase-3a-oauth2request.md](phase-3a-oauth2request.md)) |
 | 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | pending |
 | 3c | Response/HTML/exception layer (`org.forgerock.oauth2.http`) | pending |
 | 3d | CHF audit filters + `HttpBodyAuditor` | pending |

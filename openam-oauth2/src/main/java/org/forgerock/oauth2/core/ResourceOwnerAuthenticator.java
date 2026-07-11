@@ -44,10 +44,7 @@ import com.sun.identity.shared.debug.Debug;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.openam.oauth2.OAuth2Constants;
 import org.forgerock.openam.utils.RealmNormaliser;
-import org.restlet.Request;
-import org.restlet.Response;
 import org.restlet.data.Status;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 import org.restlet.resource.ResourceException;
 
 /**
@@ -86,25 +83,25 @@ public class ResourceOwnerAuthenticator {
         try {
             final String realm = realmNormaliser.normalise(request.<String>getParameter(OAuth2Constants.Custom.REALM));
             final String authChain = request.getParameter(AUTH_CHAIN);
-            return authenticate(request.<Request>getRequest(), username, password, realm, authChain);
+            return authenticate(request, username, password, realm, authChain);
         } catch (org.forgerock.json.resource.NotFoundException e) {
             throw new NotFoundException(e.getMessage());
         }
     }
 
-    private ResourceOwner authenticate(Request req, String username, char[] password, String realm, String service) {
+    private ResourceOwner authenticate(OAuth2Request req, String username, char[] password, String realm,
+            String service) {
 
         ResourceOwner ret = null;
         AuthContext lc;
         try {
             lc = new AuthContext(realm);
-            HttpServletRequest request = ServletUtils.getRequest(req);
+            HttpServletRequest request = req.getHttpServletRequest();
             request.setAttribute(ISAuthConstants.NO_SESSION_REQUEST_ATTR, "true");
             if (service != null) {
-                lc.login(AuthContext.IndexType.SERVICE, service, null, request,
-                        ServletUtils.getResponse(Response.getCurrent()));
+                lc.login(AuthContext.IndexType.SERVICE, service, null, request, req.getHttpServletResponse());
             } else {
-                lc.login(request, ServletUtils.getResponse(Response.getCurrent()));
+                lc.login(request, req.getHttpServletResponse());
             }
 
             while (lc.hasMoreRequirements()) {
@@ -136,7 +133,7 @@ public class ResourceOwnerAuthenticator {
                     String universalId = loginState.getUserUniversalId(loginState.getUserDN());
                     SSOToken adminToken = AccessController.doPrivileged(AdminTokenAction.getInstance());
                     final AMIdentity id = IdUtils.getIdentity(adminToken, universalId);
-                    req.getAttributes().put(AM_CTX_ID, loginState.getActivatedSessionTrackingId());
+                    req.setAttribute(AM_CTX_ID, loginState.getActivatedSessionTrackingId());
                     ret = new ResourceOwner(id.getName(), id, currentTimeMillis());
                 } catch (Exception e) {
                     logger.error("Unable to get SSOToken", e);

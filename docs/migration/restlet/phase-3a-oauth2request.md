@@ -288,6 +288,16 @@ neutral `OAuth2Request` (or its `getHttpServletRequest()`) to these call sites a
 and the Restlet request is only used for locale — pass `null`/the servlet request explicitly.
 Restlet-package callers of `getCurrent()` are untouched (deleted in Phase 5).
 
+The 7 error sites take the second route via the new `OAuthProblemException.handle(String)`
+overload, which builds `new OAuthProblemException(this, null)`. Dropping the request drops the
+`redirect_uri`/`state`/`scope` echo it would have populated — **verified unobservable**: the
+sole reader of those fields, `OAuth2Utils.OAuthProblemExceptionRedirector#getRedirector`, has
+**no callers** repo-wide (nor do `OAuthProblemException.pushException`/`popException`), and the
+live error path — `ExceptionHandler` — rebuilds a fresh `OAuth2RestletException` from the status
+code and never consults them. So a `SERVER_ERROR` raised after `redirect_uri` is known (e.g.
+`OpenIdConnectToken` during implicit/hybrid id_token issuance) renders the same error page it
+did before; no client error-redirect is lost because none was ever emitted from these fields.
+
 **The grep gate must exclude `RestletOAuth2Request` itself.** Its
 `getHttpServletResponse()` is defined as `ServletUtils.getResponse(Response.getCurrent())`
 and it lives in `org.forgerock.oauth2.core`, not a `/restlet/` path, so the naive gate can
@@ -380,3 +390,80 @@ query-mutation rewrite first — it is the riskiest) → convert the 12 `getCurr
 `mvn -pl openam-oauth2,openam-uma test` → whole build → grep gates → smoke/curl diff incl.
 `max_age` + `prompt=login` browser flows → mark 3a done in [plan.md](plan.md) and start
 [phase-3b] from [phase-3-research.md](phase-3-research.md).
+
+## As-built (3a delivered)
+
+Delivered as planned, with four deviations from the plan above. Each is deliberate; 3b/4 should
+pick them up from here rather than from the plan text.
+
+1. **`getEndpointPath()` is the abstract member, not `getEndpointType()`.** `getEndpointType()`
+   became a concrete `EndpointType.get(getEndpointPath())` on the base. This gave
+   `OpenAMScopeValidator` a neutral replacement for its `getResourceRef().getLastSegment()
+   .equals("userinfo")` check — `"/userinfo".equals(request.getEndpointPath())` — which
+   `EndpointType` alone could not express (it has no `USERINFO` constant).
+
+2. **`RestletOAuth2Request.getEndpointPath()` strips `/realms/{realm}` segments** (approved
+   deviation from "no observable change"). The Restlet realm router leaves `realmUrl` pointing at
+   the `/oauth2` base, so before this fix `getEndpointType()` returned `null` for every
+   realm-prefixed URI (`/oauth2/realms/root/access_token`). Converting
+   `ClientCredentialsReader` to `getEndpointType() == TOKEN_ENDPOINT` without the fix would have
+   silently disabled `token_endpoint_auth_method` enforcement for OIDC clients on realm-prefixed
+   token endpoints. **Consequence:** `AuthorizeRequestValidatorImpl:93` now also skips
+   `redirect_uri` validation on `/oauth2/realms/{r}/device/user`, aligning it with the
+   already-correct `/oauth2/device/user` behaviour. This is a **fix, not a regression**: before
+   the strip, `getEndpointType()` was `null` there, so the validator ran
+   `redirectUriValidator.validate(client, redirect_uri)` with the device flow's empty
+   `redirect_uri` — which, per `RedirectUriValidator:48-53`, throws
+   `InvalidRequestException("Missing parameter: redirect_uri")` for any device client not
+   registered with exactly one redirect URI (the usual case). The realm-prefixed device
+   verification path was therefore already broken; stripping repairs it. Pinned by
+   `RestletOAuth2RequestTest.endpointPathIsResolvedForAMultiSegmentEndpoint`.
+
+3. **`getAuthorizationBearerToken()` and `getAcceptedLanguages()` were not added.** Neither has a
+   consumer outside the `/restlet/` packages in 3a (`RestletHeaderAccessTokenVerifier` is 3b;
+   `ConsentRequiredResource` / `DeviceCodeVerificationResource` read languages off the Restlet
+   `ServerResource`, not off `OAuth2Request`). Add them in 3b/4 when their consumers are ported.
+   `ChfOAuth2Request.getLocale()` already parses `Accept-Language` q-values via
+   `AcceptLanguageHeader.valueOf(Set)` — note that the `valueOf(String...)` overload does **not**
+   parse q-values.
+
+4. **The new transport accessors are throwing defaults on the base, not `abstract`** (only
+   `getParameter`/`getParameterCount`/`getParameterNames`/`getBody`/`getLocale`/`getEndpointPath`
+   are abstract). `RealmOnlyOAuth2Request` inherits the throwing defaults;
+   `IdTokenInfo.ValidateIdTokenRequest` overrides all of them to delegate.
+
+**`ChfOAuth2Request.getEndpointPath()` contract for 4/5:** it concatenates the matched URIs of
+every `UriRouterContext` nested **inside the innermost `RealmContext`** and prepends `/`. This
+holds because `RealmRoutingFactory.ChfRealmRouter` creates a `RealmContext` at each realm level
+before routing onward, so the endpoint routers always sit below it. **Wire the CHF `/oauth2`
+routes through `new RealmRoutingFactory().createRouter(next)`** — with only `HostnameFilter`'s
+`RealmContext` in the chain the `/oauth2` prefix would leak into the endpoint path.
+
+**Tests:** `ChfOAuth2RequestTest` (27), `RestletOAuth2RequestTest` (14, incl. the realm-prefix
+regression), extended `OAuth2RequestFactoryTest` (`create(Context, Request)` + `AttributesContext`
+caching). `ResourceOwnerSessionValidatorTest` was reworked off a mocked `OAuth2Request` onto a
+spied real `RestletOAuth2Request`, so it now exercises the actual query-string rewrite behind
+`prompt=login` removal and the `goto` URL. `ResourceOwnerSessionValidator.getHttpServletRequest`
+kept its `@VisibleForTesting` seam, retyped to `OAuth2Request`.
+
+**Still Restlet-bound by design after 3a:** `OAuth2RequestFactory.create(Request)` resolves the
+client registration via `httpRequest.getParameter(CLIENT_ID)` (servlet semantics: query + form
+only); only `create(Context, Request)` uses the neutral `getParameter`. `OAuth2Utils` takes a
+Restlet `Request` directly and is 3b's problem. `RestletOAuth2Request.getHttpServletResponse()`
+is the last `Response.getCurrent()` reader and dies with the Restlet transport.
+
+**Verified:** `mvn -o -pl openam-oauth2,openam-uma test` is green (openam-oauth2 655, openam-uma
+192; 0 failures/errors/skips) and both static grep gates pass.
+
+**Not verified:** the OAuth2/UMA smoke matrix (`max_age` re-auth and `prompt=login` browser
+flows) has not been run against a deployed server — it needs a running instance. `ChfOAuth2Request`
+is wired to no live route, so its only coverage is `ChfOAuth2RequestTest`.
+
+**Reusable findings hoisted to [chf-patterns.md](chf-patterns.md) §§7–11** (the cross-phase
+reference every later handler consults): CHF request-side parameter/body parsing traps
+(`getForm`/`fromRequestEntity`/charset, buffered `Entity`, query mutation), header/locale/basic-auth
+parsing (Accept-Language q-values + `Locale.getDefault()` fallback, ISO-8859-1, servlet objects on
+`AttributesContext`), endpoint-path derivation across the realm router (the
+`new RealmRoutingFactory().createRouter(next)` wiring requirement for Phase 5), the
+`Request.getCurrent()` grep gate, and the openam-uma local-`~/.m2` build ordering + spy-don't-mock
+test rule. 3b/3c/4/5 should read those from chf-patterns, not re-derive them here.

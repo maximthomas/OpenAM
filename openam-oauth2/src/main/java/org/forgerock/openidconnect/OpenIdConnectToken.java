@@ -45,7 +45,6 @@ import org.forgerock.openam.audit.AuditConstants;
 import org.forgerock.openam.oauth2.OAuth2Constants;
 import org.forgerock.openam.oauth2.OAuthProblemException;
 import org.forgerock.openam.utils.CollectionUtils;
-import org.restlet.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -383,7 +382,7 @@ public class OpenIdConnectToken extends JsonValue implements Token {
                 || encryptionKey == null)) {
             logger.info("ID Token Encryption not set. algorithm: {}, method: {}", encryptionAlgorithm,
                     encryptionMethod);
-            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(Request.getCurrent(),
+            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(
                     "ID Token Encryption not set. algorithm: " + encryptionAlgorithm + ", method: " + encryptionMethod);
         }
         SigningHandler signingHandler = getSigningHandler(jwsAlgorithm);

@@ -34,8 +34,6 @@ import org.forgerock.oauth2.core.exceptions.InvalidClientException;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
 import org.forgerock.openam.utils.OpenAMSettings;
-import org.restlet.Request;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 
 /**
  * Implementation of the ResponseTypeHandler for handling OpenId Connect token response types.
@@ -82,7 +80,7 @@ public class IdTokenResponseTypeHandler implements ResponseTypeHandler {
      * @return The ops value.
      */
     private String getOps(OAuth2Request request) {
-        final HttpServletRequest req = ServletUtils.getRequest(request.<Request>getRequest());
+        final HttpServletRequest req = request.getHttpServletRequest();
         if (req.getCookies() != null) {
             final String cookieName = openAMSettings.getSSOCookieName();
             for (final Cookie cookie : req.getCookies()) {

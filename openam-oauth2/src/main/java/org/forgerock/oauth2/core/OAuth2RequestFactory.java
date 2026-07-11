@@ -21,11 +21,15 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.util.Map;
+
 import org.forgerock.oauth2.core.exceptions.InvalidClientException;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.openam.oauth2.OAuth2Constants;
 import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.forgerock.openam.utils.StringUtils;
+import org.forgerock.services.context.AttributesContext;
+import org.forgerock.services.context.Context;
 import org.restlet.Request;
 import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 
@@ -67,9 +71,29 @@ public class OAuth2RequestFactory {
         HttpServletRequest httpRequest = ServletUtils.getRequest(request);
         OAuth2Request o2request = getOAuth2Request(httpRequest);
         if (o2request == null) {
-            o2request = new OAuth2Request(jacksonRepresentationFactory, request);
+            o2request = new RestletOAuth2Request(jacksonRepresentationFactory, request);
             addClientRegistrationToOAuth2Request(httpRequest, o2request);
             setOauth2RequestAttributeOnHttpRequest(httpRequest, o2request);
+        }
+        return o2request;
+    }
+
+    /**
+     * Creates a new OAuth2Request for the underlying CHF request, caching it on the request's
+     * {@link AttributesContext} so that the collaborators of a single request share one instance.
+     *
+     * @param context The CHF context.
+     * @param request The CHF request.
+     * @return The OAuth2Request.
+     */
+    public OAuth2Request create(Context context, org.forgerock.http.protocol.Request request) {
+        Map<String, Object> attributes = context.asContext(AttributesContext.class).getAttributes();
+        OAuth2Request o2request = (OAuth2Request) attributes.get(OAUTH2_REQ_ATTR);
+        if (o2request == null) {
+            o2request = new ChfOAuth2Request(context, request);
+            // Publish before resolving the registration: the store is handed this same request.
+            attributes.put(OAUTH2_REQ_ATTR, o2request);
+            addClientRegistrationToOAuth2Request(o2request);
         }
         return o2request;
     }
@@ -83,7 +107,14 @@ public class OAuth2RequestFactory {
             return;
         }
 
-        String clientId = httpRequest.getParameter(OAuth2Constants.Params.CLIENT_ID);
+        setClientRegistration(o2request, httpRequest.getParameter(OAuth2Constants.Params.CLIENT_ID));
+    }
+
+    private void addClientRegistrationToOAuth2Request(OAuth2Request o2request) {
+        setClientRegistration(o2request, o2request.<String>getParameter(OAuth2Constants.Params.CLIENT_ID));
+    }
+
+    private void setClientRegistration(OAuth2Request o2request, String clientId) {
         if (StringUtils.isNotBlank(clientId)) {
             try {
                 ClientRegistration clientRegistration = clientRegistrationStore.get(clientId, o2request);

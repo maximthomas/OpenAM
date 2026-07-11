@@ -35,8 +35,6 @@ import org.forgerock.openam.services.baseurl.BaseURLProvider;
 import org.forgerock.openam.services.baseurl.BaseURLProviderFactory;
 import org.forgerock.openam.services.baseurl.InvalidBaseUrlException;
 import org.forgerock.services.context.Context;
-import org.restlet.Request;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 
 /**
  * A factory for creating/retrieving OAuth2Uris instances.
@@ -92,7 +90,7 @@ public class OAuth2UrisFactory {
     }
 
     public OAuth2Uris get(OAuth2Request oAuth2Request, Realm realm) throws NotFoundException, ServerException {
-        HttpServletRequest request = ServletUtils.getRequest(oAuth2Request.<Request>getRequest());
+        HttpServletRequest request = oAuth2Request.getHttpServletRequest();
         BaseURLProvider baseURLProvider = baseURLProviderFactory.get(realm.asPath());
         String baseUrl, deploymentUrl;
         try {

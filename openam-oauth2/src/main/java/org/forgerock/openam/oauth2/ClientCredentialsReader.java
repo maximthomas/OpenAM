@@ -25,6 +25,7 @@ import java.util.Set;
 import jakarta.inject.Inject;
 import org.forgerock.oauth2.core.ClientRegistration;
 import org.forgerock.openam.oauth2.OAuth2Constants;
+import org.forgerock.oauth2.core.BasicAuthHeader;
 import org.forgerock.oauth2.core.OAuth2Jwt;
 import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.exceptions.ClientAuthenticationFailureFactory;
@@ -34,8 +35,6 @@ import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.openidconnect.Client;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistration;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistrationStore;
-import org.restlet.Request;
-import org.restlet.data.ChallengeResponse;
 
 /**
  * Used to extract an OAuth2 client's credentials from its OAuth2 Request.
@@ -66,11 +65,8 @@ public class ClientCredentialsReader {
     public ClientCredentials extractCredentials(OAuth2Request request, String endpoint) throws InvalidRequestException,
             InvalidClientException, NotFoundException {
 
-        final Request req = request.getRequest();
-        boolean basicAuth = false;
-        if (req.getChallengeResponse() != null) {
-            basicAuth = true;
-        }
+        final BasicAuthHeader authorization = request.getBasicAuthCredentials();
+        boolean basicAuth = authorization != null;
 
         final ClientCredentials client;
         Client.TokenEndpointAuthMethod method = CLIENT_SECRET_POST;
@@ -88,13 +84,11 @@ public class ClientCredentialsReader {
                 throw new InvalidRequestException("Client authentication failed");
             }
 
-            if (req.getChallengeResponse() != null) {
-                final ChallengeResponse challengeResponse = req.getChallengeResponse();
-
-                clientId = challengeResponse.getIdentifier();
+            if (basicAuth) {
+                clientId = authorization.getClientId();
                 clientSecret = "";
-                if (challengeResponse.getSecret() != null && challengeResponse.getSecret().length > 0) {
-                    clientSecret = String.valueOf(req.getChallengeResponse().getSecret());
+                if (authorization.getSecret() != null && authorization.getSecret().length > 0) {
+                    clientSecret = String.valueOf(authorization.getSecret());
                 }
 
                 method = CLIENT_SECRET_BASIC;
@@ -114,7 +108,7 @@ public class ClientCredentialsReader {
 
         //if we're accessing the token endpoint, check we're authenticating using the appropriate method
         if (scopes.contains(OAuth2Constants.Params.OPENID)
-                && req.getResourceRef().getLastSegment().equals(OAuth2Constants.Params.ACCESS_TOKEN)
+                && request.getEndpointType() == OAuth2Constants.EndpointType.TOKEN_ENDPOINT
                 && !cr.getTokenEndpointAuthMethod().equals(method.getType())) {
                     throw failureFactory.getException(request, "Invalid authentication method for accessing this endpoint.");
         }

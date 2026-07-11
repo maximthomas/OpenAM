@@ -19,6 +19,7 @@ package org.forgerock.openidconnect.restlet;
 
 import jakarta.inject.Inject;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
@@ -31,6 +32,7 @@ import org.forgerock.json.jose.jws.JwsAlgorithm;
 import org.forgerock.json.jose.jws.JwsAlgorithmType;
 import org.forgerock.json.jose.jws.SigningManager;
 import org.forgerock.json.jose.jwt.JwtClaimsSet;
+import org.forgerock.oauth2.core.BasicAuthHeader;
 import org.forgerock.oauth2.core.ClientAuthenticator;
 import org.forgerock.oauth2.core.OAuth2Jwt;
 import org.forgerock.oauth2.core.OAuth2ProviderSettingsFactory;
@@ -236,7 +238,6 @@ public class IdTokenInfo extends ServerResource {
         private final String realm;
 
         ValidateIdTokenRequest(final OAuth2Request delegate, final String realm) {
-            super(null, null);
             this.delegate = delegate;
             this.realm = realm;
         }
@@ -283,6 +284,51 @@ public class IdTokenInfo extends ServerResource {
         @Override
         public Locale getLocale() {
             return delegate.getLocale();
+        }
+
+        @Override
+        public String getEndpointPath() {
+            return delegate.getEndpointPath();
+        }
+
+        @Override
+        public HttpServletRequest getHttpServletRequest() {
+            return delegate.getHttpServletRequest();
+        }
+
+        @Override
+        public HttpServletResponse getHttpServletResponse() {
+            return delegate.getHttpServletResponse();
+        }
+
+        @Override
+        public BasicAuthHeader getBasicAuthCredentials() {
+            return delegate.getBasicAuthCredentials();
+        }
+
+        @Override
+        public Object getAttribute(String name) {
+            return delegate.getAttribute(name);
+        }
+
+        @Override
+        public void setAttribute(String name, Object value) {
+            delegate.setAttribute(name, value);
+        }
+
+        @Override
+        public String getRequestUrl() {
+            return delegate.getRequestUrl();
+        }
+
+        @Override
+        public void setQueryParameter(String name, String value) {
+            delegate.setQueryParameter(name, value);
+        }
+
+        @Override
+        public void removeQueryParameterValue(String name, String value) {
+            delegate.removeQueryParameterValue(name, value);
         }
     }
 }

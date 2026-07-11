@@ -79,7 +79,6 @@ import org.forgerock.openam.utils.JsonValueBuilder;
 import org.forgerock.openam.utils.StringUtils;
 import org.forgerock.openidconnect.Client;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistration;
-import org.restlet.Request;
 
 import com.iplanet.sso.SSOException;
 import com.sun.identity.idm.AMIdentity;
@@ -693,7 +692,7 @@ public class OpenAMClientRegistration implements OpenIdConnectClientRegistration
 
         final String jwkSetStr = CollectionUtils.getFirstItem(set);
         if (jwkSetStr == null) {
-            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(Request.getCurrent(),
+            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(
                     "No Client Bearer JWK set.");
         }
 
@@ -732,7 +731,7 @@ public class OpenAMClientRegistration implements OpenIdConnectClientRegistration
         final Set<String> set = amIdentity.getAttribute(OAuth2Constants.OAuth2Client.JWKS_URI);
 
         if (set == null || set.isEmpty()) {
-            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(Request.getCurrent(),
+            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(
                     "No Client Bearer JWKs_URI set.");
         }
 
@@ -773,7 +772,7 @@ public class OpenAMClientRegistration implements OpenIdConnectClientRegistration
                     // client.
                     logger.error("Unable to load JWKs for client '" + getClientId()
                             + "' from " + url, e);
-                    throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(Request.getCurrent(),
+                    throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(
                             "Unable to load JWKs from registered jwks_uri.");
                 }
             }
@@ -791,7 +790,7 @@ public class OpenAMClientRegistration implements OpenIdConnectClientRegistration
         Set<String> set = amIdentity.getAttribute(OAuth2Constants.OAuth2Client.CLIENT_JWT_PUBLIC_KEY);
 
         if (set == null || set.isEmpty()) {
-            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(Request.getCurrent(),
+            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(
                     "No Client Bearer Jwt Public key certificate set");
         }
 
@@ -888,7 +887,7 @@ public class OpenAMClientRegistration implements OpenIdConnectClientRegistration
             set = amIdentity.getAttribute(attributeName);
         } catch (Exception e) {
             logger.error("Unable to get {} from repository", attributeName, e);
-            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(Request.getCurrent(),
+            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(
                     "Unable to get " + attributeName + " from repository");
         }
         if (set.iterator().hasNext()){

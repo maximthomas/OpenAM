@@ -73,8 +73,6 @@ import org.forgerock.openidconnect.OpenIdConnectClientRegistration;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.restlet.Request;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 
 import com.iplanet.am.sdk.AMHashMap;
 import com.iplanet.am.util.SystemProperties;
@@ -300,11 +298,9 @@ public class OpenAMScopeValidator implements ScopeValidator {
 
     private Map<String, Set<String>> gatherRequestedClaims(OAuth2ProviderSettings providerSettings,
                                                            OAuth2Request request, AccessToken token) {
-        Request req = request.getRequest();
-
         if (token != null) { //claims are in the extra data in the AccessToken
             String claimsJson = token.getClaims();
-            if (req.getResourceRef().getLastSegment().equals(OAuth2Constants.UserinfoEndpoint.USERINFO)) {
+            if (("/" + OAuth2Constants.UserinfoEndpoint.USERINFO).equals(request.getEndpointPath())) {
                 return gatherRequestedClaims(providerSettings, claimsJson, OAuth2Constants.UserinfoEndpoint.USERINFO);
             } else {
                 return gatherRequestedClaims(providerSettings, claimsJson, OAuth2Constants.JWTTokenParams.ID_TOKEN);
@@ -379,7 +375,7 @@ public class OpenAMScopeValidator implements ScopeValidator {
     private SSOToken getUsersSession(OAuth2Request request) {
         String sessionId = request.getSession();
         if (sessionId == null) {
-            final HttpServletRequest req = ServletUtils.getRequest(request.<Request>getRequest());
+            final HttpServletRequest req = request.getHttpServletRequest();
             if (req.getCookies() != null) {
                 final String cookieName = openAMSettings.getSSOCookieName();
                 for (final Cookie cookie : req.getCookies()) {

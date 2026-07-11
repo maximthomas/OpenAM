@@ -85,9 +85,7 @@ import org.forgerock.util.generator.IdGenerator;
 import org.forgerock.util.query.QueryFilter;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.restlet.Request;
 import org.restlet.data.Status;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 
 /**
  * Implementation of the OpenId Connect Token Store which the OpenId Connect Provider will implement.
@@ -224,14 +222,14 @@ public class StatefulTokenStore implements OpenIdConnectTokenStore {
     }
 
     private String getSsoTokenId(OAuth2Request request) {
-        return cookieExtractor.extract(ServletUtils.getRequest(request.<Request>getRequest()),
+        return cookieExtractor.extract(request.getHttpServletRequest(),
                 SystemProperties.get("com.iplanet.am.cookie.name"));
     }
 
     private String getAuthModulesFromSSOToken(OAuth2Request request) {
         String authModules = null;
         try {
-            SSOToken token = ssoTokenManager.createSSOToken(ServletUtils.getRequest(request.<Request>getRequest()));
+            SSOToken token = ssoTokenManager.createSSOToken(request.getHttpServletRequest());
             if (token != null) {
                 authModules = token.getProperty(ISAuthConstants.AUTH_TYPE);
             }
@@ -242,7 +240,7 @@ public class StatefulTokenStore implements OpenIdConnectTokenStore {
     }
 
     private String getAuthenticationContextClassReferenceFromRequest(OAuth2Request request) {
-        return (String) request.getRequest().getAttributes().get(OAuth2Constants.JWTTokenParams.ACR);
+        return (String) request.getAttribute(OAuth2Constants.JWTTokenParams.ACR);
     }
 
     /**

@@ -32,10 +32,7 @@ import com.sun.identity.shared.Constants;
 import com.sun.identity.shared.debug.Debug;
 import com.sun.identity.shared.encode.CookieUtils;
 
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 import org.forgerock.openam.utils.StringUtils;
-import org.restlet.Request;
-import org.restlet.Response;
 
 /**
  * This class provides methods for checking if a request is a part of a cross-site request forgery attack (CSRF).
@@ -131,7 +128,7 @@ public class CsrfProtection {
     }
 
     private void issueCsrfCookie(OAuth2Request request, String token) {
-        HttpServletResponse response = getServletResponse();
+        HttpServletResponse response = request.getHttpServletResponse();
         if (response == null) {
             return;
         }
@@ -174,7 +171,7 @@ public class CsrfProtection {
      * @return The cookie value, or {@code null} if absent.
      */
     protected String readCookie(OAuth2Request request, String name) {
-        HttpServletRequest servletRequest = getServletRequest(request);
+        HttpServletRequest servletRequest = request.getHttpServletRequest();
         if (servletRequest == null) {
             return null;
         }
@@ -195,19 +192,4 @@ public class CsrfProtection {
         return MessageDigest.isEqual(a.getBytes(UTF_8_CHARSET), b.getBytes(UTF_8_CHARSET));
     }
 
-    private HttpServletRequest getServletRequest(OAuth2Request request) {
-        Request restletRequest = request.getRequest();
-        if (restletRequest != null) {
-            return ServletUtils.getRequest(restletRequest);
-        }
-        return null;
-    }
-
-    private HttpServletResponse getServletResponse() {
-        Response restletResponse = Response.getCurrent();
-        if (restletResponse != null) {
-            return ServletUtils.getResponse(restletResponse);
-        }
-        return null;
-    }
 }

@@ -31,7 +31,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | 1 | Migration docs (this folder) | done |
 | 2 | XACML `/xacml` → CHF | done |
 | 3a | `OAuth2Request` abstraction + consumer re-plumb | done ([phase-3a-oauth2request.md](phase-3a-oauth2request.md)) |
-| 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | pending |
+| 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | pending ([phase-3b-collaborators.md](phase-3b-collaborators.md)) |
 | 3c | Response/HTML/exception layer (`org.forgerock.oauth2.http`) | pending |
 | 3d | CHF audit filters + `HttpBodyAuditor` | pending |
 | 4 | UMA `/uma` → CHF | pending |
@@ -122,15 +122,28 @@ captured in [chf-patterns.md](chf-patterns.md) during Phase 2 — every phase be
   `create(Request)` keeps resolving the client registration via `httpRequest.getParameter`;
   only the CHF overload uses the neutral accessor.)
 
-**3b. Transport-neutral collaborators (openam-oauth2)**
-- New `Header/FormBody/QueryParameter AccessTokenVerifier` (pure `OAuth2Request` API);
-  rebind in `OAuth2GuiceModule` (~180–183, ~312–334); delete the three
-  `Restlet*AccessTokenVerifier`s.
-- `ClientCredentialsReader`: `getBasicAuthCredentials()`; last-segment check →
-  `request.getEndpointType() == EndpointType.TOKEN_ENDPOINT`.
-- `OAuth2Utils`: delete the Restlet half (`getRealm(Request)`, `getLocale(Request)`,
-  `getRequestParameters`, `ParameterLocation`, `getRedirector`); keep string helpers,
-  `getDeploymentURL(HttpServletRequest)`, `getConfirmationKey`.
+**3b. Transport-neutral collaborators (openam-oauth2).** Detailed execution plan:
+[phase-3b-collaborators.md](phase-3b-collaborators.md).
+- New `Header/FormBody/QueryParameter AccessTokenVerifier` (pure `OAuth2Request` API) in
+  `org.forgerock.oauth2.core`; rebind in `OAuth2GuiceModule` (~180–183, ~314/319–335);
+  delete the three `Restlet*AccessTokenVerifier`s. Needs three new neutral accessors —
+  `getAuthorizationBearerToken()`, `getQueryParameter(name)`, `getFormParameter(name)` —
+  because the header/form/query **token-location distinction is load-bearing** (userinfo =
+  header+form, tokeninfo = header+query) and must not collapse to a merged `getParameter`.
+- `ClientCredentialsReader`: **already migrated in the 3a commit** (`getBasicAuthCredentials()`
+  + `getEndpointType() == TOKEN_ENDPOINT`) — 3b only back-fills its missing test coverage.
+- `OAuth2Utils` (**`org.forgerock.openam.oauth2.OAuth2Utils`**, not `oauth2.core`): delete the
+  Restlet half (`getRealm(Request)`, `getRealm(HttpServletRequest)`, `getLocale(Request)`,
+  `getRequestParameter`/`getRequestParameters`/`getParameters`, `ParameterLocation`,
+  `getRedirector`); keep string helpers, `getDeploymentURL(HttpServletRequest)`,
+  `getConfirmationKey`.
+- **Pulled forward** (both small, behaviour-neutral on the live path): (a)
+  `OAuthProblemException` — strip its dead, always-`null` Restlet-request plumbing
+  (`handle(Request*)`, the `Request` ctor branch, `pushException`/`popException`/`getErrorForm`/
+  `getErrorMessage`) to unblock the full `OAuth2Utils` clear; keeps `extends ResourceException`
+  + `Status` for Phase 5. (b) `OpenAMClientAuthenticationFailureFactory.hasAuthorizationHeader`
+  → `getBasicAuthCredentials() != null`, so `ClientCredentialsReader`'s failure path is neutral
+  end-to-end (de-risks the Phase 5 CHF token endpoint).
 
 **3c. Response/HTML/exception layer (new package `org.forgerock.oauth2.http`)**
 - `FreemarkerTemplateRenderer` — direct FreeMarker 2.3.31 (already a dependency);

@@ -4,6 +4,8 @@ Detailed execution plan for **sub-phase 3b** of the Restlet → CHF migration. P
 [plan.md](plan.md) (Phase 3); research & sizing: [phase-3-research.md](phase-3-research.md); reusable CHF
 patterns: [chf-patterns.md](chf-patterns.md); predecessor: [phase-3a-oauth2request.md](phase-3a-oauth2request.md);
 inventory: [inventory.md](inventory.md). Written 2026-07-11; branch `features/restlet-migration`.
+**Verified against the tree 2026-07-16** — the corrections are folded in below and recorded in
+[Plan review](#plan-review-2026-07-16). Execute from this text, not from the pre-review version.
 
 ## Context
 
@@ -30,6 +32,12 @@ is stripped; `ClientCredentialsReader`'s failure path is fully neutral end-to-en
   Restlet half of `OAuth2Utils`, removing every `org.restlet` import from it.
 - **Failure-factory: pull forward.** Make `OpenAMClientAuthenticationFailureFactory.hasAuthorizationHeader`
   neutral now (behaviour-identical on Restlet, de-risks Phase 5's CHF token endpoint).
+- **`getFormParameter`: verbatim, no entity restore** (decided 2026-07-16). The verifier drains the entity
+  today (`new Form(body)` with no `setEntity`), unlike `RestletOAuth2Request.getParameter:91-93` which
+  restores it. Preserve the drain — 3b's contract is no observable change. Comment the asymmetry so it is
+  not "fixed" later; revisit in Phase 5. See [review D5](#d5--two-form-readers-one-class-different-entity-semantics).
+- **`OAuth2Utils`: drop the `jacksonRepresentationFactory` field + ctor param** (decided 2026-07-16). It is
+  read only by the code 3b deletes. Sole call site to update: `OAuth2UtilsTest.java:48`.
 
 **~3 new classes** (the neutral verifiers), **~9 modified**, **~4 deleted** (3 Restlet verifiers + net
 method deletions), plus tests. Medium risk — live path, basic-auth ISO-8859-1 charset, and preserving the
@@ -55,12 +63,17 @@ header/form/query token-location distinction.
    `getAcceptedLanguages()` for whoever ports those.
 4. **Full `OAuth2Utils` deletion is blocked by one shared-package caller.**
    `OAuth2Utils.getRequestParameter(Request,…)` is called only from `OAuthProblemException`'s private
-   `(OAuthError, Request)` constructor — but **every runtime caller now passes `null`** (all 7 SERVER_ERROR
-   sites use `handle(String)`; the only two `handle(Request,String)` callers,
-   `RealmOAuth2ProviderSettings:132` and `OAuth2ProviderSettingsFactory:91`, pass `null`). So the
-   Restlet-request branch is dead. Verified callerless and removable with it: `pushException()`,
-   `popException(Request)`, `getErrorForm()`, `getErrorMessage()`. `OAuthProblemException` keeps
-   `extends org.restlet.resource.ResourceException` and `org.restlet.data.Status` (pervasive — Phase 5).
+   `(OAuthError, Request)` constructor (`:188,192,194`) — but **every runtime caller now passes `null`**
+   (all 7 SERVER_ERROR sites use `handle(String)`; **all three** `handle(Request,String)` callers pass
+   `null` — `RealmOAuth2ProviderSettings:132`, `OAuth2ProviderSettingsFactory:91`, and
+   **`openam-uma/.../UmaSettingsImpl:82`**). So the Restlet-request branch is dead. Verified callerless
+   and removable with it: `pushException()`, `popException(Request)`, `getErrorForm()`, `getErrorMessage()`.
+   `OAuthProblemException` keeps `extends org.restlet.resource.ResourceException` and
+   `org.restlet.data.Status` (pervasive — Phase 5).
+   > **Corrected 2026-07-16.** The pre-review text said "the only two `handle(Request,String)` callers" and
+   > missed `UmaSettingsImpl:82`, in a **different module**. Deleting the overload without retargeting it is
+   > a compile break that `mvn -pl openam-oauth2` cannot catch. See
+   > [review D1](#d1--handlerequest-string-has-three-callers-not-two-compile-break).
 5. **Package correction:** the class the parent plan called `org.forgerock.oauth2.core.OAuth2Utils` is
    actually `org.forgerock.openam.oauth2.OAuth2Utils`.
 
@@ -83,8 +96,17 @@ Add three accessors, following 3a's convention (throwing default on the base, ov
 transports; `IdTokenInfo.ValidateIdTokenRequest` delegates all three).
 
 - **`String getAuthorizationBearerToken()`** — Bearer token from the `Authorization` header, or `null`.
-- **`String getQueryParameter(String name)`** — first query-string value, or `null` (read companion to the
-  existing `setQueryParameter`).
+  **Not strictly "Bearer" on Restlet:** on a non-Bearer scheme the Restlet impl falls back to the parsed
+  `ChallengeResponse` and returns its raw value, so a `Basic` header yields a credential blob; CHF returns
+  `null`. Inherent (CHF has no `ChallengeResponse`) and unobservable at the `verify()` boundary — a garbage
+  token id fails `readAccessToken` → `INVALID_TOKEN`, same as `null`. Javadoc it; do not "unify" it.
+  See [review D3](#d3--the-header-verifier-mutates-the-request-and-falls-back-to-non-bearer).
+- **`String getQueryParameter(String name)`** — first value from the **original, pre-routing** query string,
+  or `null`. **It is _not_ a read companion to `setQueryParameter`** — that writes `getResourceRef()`, while
+  this reads `getOriginalRef()`, so on Restlet a `setQueryParameter` is invisible here (on CHF it is
+  visible; both go through the URI). Divergence is latent and accepted — parity with
+  `RestletQueryParameterAccessTokenVerifier` wins. See
+  [review D2](#d2--getqueryparameter-is-not-the-read-companion-to-setqueryparameter).
 - **`String getFormParameter(String name)`** — first value from a POST `application/x-www-form-urlencoded`
   body, or `null` when the body is absent / not form-encoded.
 
@@ -93,13 +115,20 @@ transports; `IdTokenInfo.ValidateIdTokenRequest` delegates all three).
 **`RestletOAuth2Request.java`** — implement with today's exact verifier logic (verbatim, so the Restlet
 path is byte-for-byte unchanged):
 - `getAuthorizationBearerToken()` ← the Bearer-parse body of
-  `RestletHeaderAccessTokenVerifier.getChallengeResponse(request)` (read the raw `Authorization` header off
-  `HttpRequest`; scheme `Bearer` → return the value; else fall back to `request.getChallengeResponse()`).
+  `RestletHeaderAccessTokenVerifier.getChallengeResponse(request)` (guard `request instanceof HttpRequest`;
+  read the raw `Authorization` header; split on the first space; scheme `Bearer` (case-insensitive) →
+  return the value; else fall back to `request.getChallengeResponse()`).
+  **Keep the `request.setChallengeResponse(result)` write** (`RestletHeaderAccessTokenVerifier:85`) — it
+  looks like a smell in a getter, but `OpenAMClientAuthenticationFailureFactory.hasAuthorizationHeader`
+  reads that exact field. Comment it. See [review D3](#d3--the-header-verifier-mutates-the-request-and-falls-back-to-non-bearer).
 - `getFormParameter(name)` ← `RestletFormBodyAccessTokenVerifier` body: guard
   `MediaType.APPLICATION_WWW_FORM.equals(entity.getMediaType())`, then `new Form(entity).getFirstValue(name)`
-  (no entity re-set — matches the verifier today).
+  — **no entity re-set**, matching the verifier today and deliberately unlike `getParameter:91-93`.
+  See [review D5](#d5--two-form-readers-one-class-different-entity-semantics).
 - `getQueryParameter(name)` ← `request.getOriginalRef().getQueryAsForm().getFirstValue(name)` (**note
-  `getOriginalRef()`**, matching `RestletQueryParameterAccessTokenVerifier`).
+  `getOriginalRef()`**, matching `RestletQueryParameterAccessTokenVerifier`). **Rename the existing private
+  `getQueryParameter(Request, String)` (`RestletOAuth2Request:231`) → `getResourceRefQueryParameter`** — it
+  reads `getResourceRef()`, the opposite source, and the name collision is a live trap for Phase 5.
 
 **`ChfOAuth2Request.java`** — implement with the existing helpers:
 - `getAuthorizationBearerToken()` — parse `request.getHeaders().getFirst(AUTHORIZATION_HEADER)`; if the
@@ -137,8 +166,18 @@ No source change (already neutral since 3a: `ClientCredentialsReader.java` reads
 `request.getBasicAuthCredentials()` and `request.getEndpointType() == TOKEN_ENDPOINT`). Add to
 `ClientCredentialsReaderTest` (`openam-oauth2/src/test/.../openam/oauth2/ClientCredentialsReaderTest.java`):
 a case stubbing `getBasicAuthCredentials()` → a real `BasicAuthHeader` (asserts `CLIENT_SECRET_BASIC` + the
-multiple-auth-methods conflict), and a case stubbing `getEndpointType()` → `TOKEN_ENDPOINT` (asserts the
-`token_endpoint_auth_method` enforcement branch).
+multiple-auth-methods conflict — the `InvalidRequestException` at `ClientCredentialsReader:84`), and a case
+stubbing `getEndpointType()` → `TOKEN_ENDPOINT` (asserts the `token_endpoint_auth_method` enforcement
+branch).
+
+> **The endpoint-type case must also stub `getAllowedScopes()` to a set containing `openid`.** The existing
+> test stubs it to `Collections.emptySet()` (`ClientCredentialsReaderTest:123`), so `scopes.contains(OPENID)`
+> short-circuits and the endpoint-type condition at `:111` is **never evaluated** — a test that stubs only
+> `getEndpointType()` would pass without exercising the branch it claims to cover. Existing coverage is
+> narrower than "only `private_key_jwt`" implies: `getBasicAuthCredentials()` is stubbed `null` in **every**
+> test (`:146`) and `getEndpointType()` is **never** stubbed (unstubbed mock → `null` ≠ `TOKEN_ENDPOINT`).
+> The `CLIENT_SECRET_POST` branch is entirely unexercised, and the one positive test swallows
+> `RuntimeException` (`:128-132`), so it cannot catch a return-value regression.
 
 ### 4. Failure-factory pull-forward
 
@@ -150,23 +189,50 @@ failure path is neutral end-to-end. (The class stays in the `.restlet` package �
 
 ### 5. `OAuth2Utils` full clear + `OAuthProblemException` enabling edit
 
-**`OAuthProblemException.java`** (`org.forgerock.openam.oauth2`) — strip dead Restlet-request plumbing:
-- delete `handle(Request)` and `handle(Request, String)`; retarget the two `handle(null, message)` callers
-  (`RealmOAuth2ProviderSettings:132`, `OAuth2ProviderSettingsFactory:91`) to `handle(message)`.
-- replace the private `(OAuthError, Request)` constructor with `(OAuthError)` (redirect_uri/state/scope =
-  null); `handle(String)` calls it.
-- delete the `request` field, `pushException()`, `popException(Request)`, `getErrorForm()`,
-  `getErrorMessage()`, and the now-unused `oAuth2Utils` field.
-- remove imports `org.restlet.Request`, `org.restlet.data.Form`. **Keep**
-  `extends org.restlet.resource.ResourceException` and `org.restlet.data.Status` (Phase 5).
+**`OAuthProblemException.java`** (`org.forgerock.openam.oauth2`) — strip dead Restlet-request plumbing.
+**Order matters — do step 1 first, and keep step 3's two deletions in one step:**
+1. Retarget **all three** `handle(null, message)` callers to `handle(message)`:
+   `RealmOAuth2ProviderSettings:132`, `OAuth2ProviderSettingsFactory:91`, and
+   **`openam-uma/src/main/java/org/forgerock/openam/uma/UmaSettingsImpl.java:82`**. Semantically identical —
+   a `null` request already skips the Restlet branch (`:185-199`).
+2. delete `handle(Request)` (`:142`) and `handle(Request, String)` (`:146`).
+3. replace the private `(OAuthError, Request)` constructor (`:180`) with `(OAuthError)`
+   (redirect_uri/state/scope = null); `handle(String)` calls it.
+4. delete the `request` field (`:170`), **`pushException()` and `popException(Request)` together**,
+   `getErrorForm()`, `getErrorMessage()`, and the now-unused `oAuth2Utils` field (`:177`) with its
+   `InjectorHolder` static-injection wart.
+5. remove imports `org.restlet.Request`, `org.restlet.data.Form`. **Keep**
+   `extends org.restlet.resource.ResourceException` and `org.restlet.data.Status` (Phase 5).
+6. rewrite the stale `OAuth2Utils.OAuthProblemExceptionRedirector#getRedirector` reference in
+   `handle(String)`'s javadoc (`:153`) — **that class does not exist**; the real member is the private
+   `OAuth2Utils.ParameterLocation#getRedirector`, which 3b deletes. `{@code}`, so not fatal, but it will
+   name deleted code.
 
-**`OAuth2Utils.java`** (`org.forgerock.openam.oauth2`) — delete the Restlet half: `getRealm(Request)`,
-`getRealm(HttpServletRequest)` (dead once the former is gone), `getLocale(Request)`,
-`getRequestParameter(Request,…)`, `getRequestParameters(Request)`, `getParameters(Request)`, and the private
-`ParameterLocation` enum (incl. `getRedirector`). Remove all ten `org.restlet.*` imports and the
-`ServletUtils` import. **Keep** (all Restlet-free): ctor, `getDeploymentURL(HttpServletRequest)`,
+> **Doclint is fatal now** (commit `3c45ff8d53` enabled `-Xdoclint:all,-missing` + `failOnWarnings`).
+> `pushException`'s javadoc (`:299-308`) contains `{@link OAuthProblemException#popException(org.restlet.Request)}`
+> — a dangling `{@link}` is a **build error**. Deleting both members together removes the link with the
+> javadoc; deleting `popException` alone breaks the build. See
+> [review D4](#d4--doclint-is-now-fatal-so-deletion-order-matters).
+
+**`OAuth2Utils.java`** (`org.forgerock.openam.oauth2`) — delete the Restlet half: `getRealm(Request)`
+(`:178`), `getRealm(HttpServletRequest)` (`:183`, dead once the former is gone), `getLocale(Request)`
+(`:191`), `getRequestParameter(Request,…)` (`:199`), `getRequestParameters(Request)` (`:216`),
+`getParameters(Request)` (`:242`), and the private `ParameterLocation` enum (`:251`, incl. `getRedirector`
+at `:306`). Remove all ten `org.restlet.*` imports (`:39-45,47-49`) and the `ServletUtils` import (`:46`).
+Also drop the `jacksonRepresentationFactory` field (`:59`) **and the ctor param** (`:66`) — read only by
+the deleted code (`:245,247,255,286`); update `OAuth2UtilsTest.java:48` (`new OAuth2Utils(factory)` →
+`new OAuth2Utils()`). Guice JIT-binds the no-arg `@Inject` ctor; that test is the only construction site
+repo-wide. **Keep** (all Restlet-free): `getDeploymentURL(HttpServletRequest)`,
 `getConfirmationKey(OAuth2Request)`, and the string helpers (`isEmpty/isBlank/isNotBlank/join/joinStatic/
 split`). *(Note: `getDeploymentURL` is currently callerless but is on the KEEP list — leave it.)*
+
+Live callers that pin the KEEP list: `getConfirmationKey` ← `StatefulTokenStore:545`,
+`StatelessTokenStore:286`, `ConfirmationKeyValidator:58`; `join` ← `DeviceCodeVerificationResource:233,248`;
+`joinStatic` ← `ConsentRequiredResource:105`; `split` ← `DeviceCodeResource:107`; `isNotBlank` ←
+`OAuthProblemException:331,356,362` (all inside code 3b deletes, so it survives on internal use only).
+*(Beware two decoys: `OAuth2ProviderSettingsFactory:89` / `RealmOAuth2ProviderSettings:130` contain
+`"OAuth2Utils::Unable to construct…"` **string literals**, not calls; and `ExceptionHandler:41` imports
+`isEmpty` from a different class, `org.forgerock.oauth2.core.Utils`.)*
 
 ## Tests
 
@@ -175,21 +241,34 @@ split`). *(Note: `getDeploymentURL` is currently callerless but is on the KEEP l
   (per [chf-patterns.md](chf-patterns.md) §5/§11 scaffolding), assert token extraction from the right
   location and `null` from the wrong one (e.g. form verifier ignores a query token).
 - Extend `ChfOAuth2RequestTest` / `RestletOAuth2RequestTest` for the three new accessors:
-  `getAuthorizationBearerToken` (Bearer present / absent / non-Bearer scheme), `getQueryParameter`,
-  `getFormParameter` (form vs non-form content type, incl. `;charset=UTF-8` — [chf-patterns.md](chf-patterns.md) §7).
-- `ClientCredentialsReaderTest` — the two new cases from work item 3.
-- `OAuth2UtilsTest` (if present) — remove cases for deleted methods; keep the kept-method cases.
+  `getAuthorizationBearerToken` (Bearer present / absent / non-Bearer scheme — assert the **divergence**:
+  Restlet returns the challenge raw value, CHF returns `null`), `getQueryParameter`, `getFormParameter`
+  (form vs non-form content type, incl. `;charset=UTF-8` — [chf-patterns.md](chf-patterns.md) §7).
+  **Pin the D2 asymmetry**: after `setQueryParameter(n, v)`, `getQueryParameter(n)` returns the **old**
+  value on Restlet and the **new** value on CHF. Follow the established parallel-naming convention for
+  transport-parity pairs (e.g. `ChfOAuth2RequestTest:286` ↔ `RestletOAuth2RequestTest:168`).
+  Scaffolding: `ChfOAuth2RequestTest` helpers at `:346-382`; `RestletOAuth2RequestTest` helper at `:181-186`.
+- `ClientCredentialsReaderTest` — the two new cases from work item 3 (**note the `getAllowedScopes()` trap**).
+- `OAuth2UtilsTest` — its only two tests cover `getConfirmationKey` (`:52`, `:66`), which 3b keeps, so
+  **no cases need removing**; the sole edit is `new OAuth2Utils(factory)` → `new OAuth2Utils()` at `:48`.
+  There is no `OAuthProblemExceptionTest`; the nearest indirect coverage
+  (`AgentClientRegistrationTest`, `OpenAMClientRegistrationTest` via `expectedExceptions`) exercises only
+  the `handle(String)` path and stays green.
 - **Existing Restlet-path suite stays green unchanged** — the acceptance gate for behaviour parity.
 
 ## Verification
 
 1. `mvn -o -pl openam-oauth2 install -DskipTests` (openam-uma resolves openam-oauth2 from `~/.m2` —
    [chf-patterns.md](chf-patterns.md) §11) → `mvn -o -pl openam-oauth2,openam-uma test`.
-2. `mvn install -DskipTests` (whole reactor; no dangling refs / signature breaks).
+   Baseline to beat (3a as-built): openam-oauth2 **655**, openam-uma **192**, 0 failures/errors/skips.
+2. `mvn install -DskipTests` (whole reactor; no dangling refs / signature breaks). **Non-negotiable** — it
+   is the only gate that catches the `UmaSettingsImpl` caller (D1) and the doclint trap (D4); neither is
+   visible to a `-pl openam-oauth2` build.
 3. Grep gates:
    - `grep -n "org.restlet" openam-oauth2/src/main/java/org/forgerock/openam/oauth2/OAuth2Utils.java` → 0.
    - the three `Restlet*AccessTokenVerifier` files are gone; no references remain
      (`grep -rn "RestletHeaderAccessTokenVerifier\|RestletFormBodyAccessTokenVerifier\|RestletQueryParameterAccessTokenVerifier" --include=*.java .` → 0).
+   - `grep -rn "handle(null" --include=*.java . | grep -v /target/` → 0 (**catches D1**).
    - `grep -rn "getCurrent()" openam-oauth2/src/main --include=*.java | grep -v /restlet/ | grep -v RestletOAuth2Request.java` → still 0 (no regressions).
 4. No route flip ⇒ no Cargo IT behaviour change expected. Smoke the token-verifier paths on the live Restlet
    server: userinfo with the token in the `Authorization` header **and** in a POST form body (both must
@@ -207,7 +286,9 @@ split`). *(Note: `getDeploymentURL` is currently callerless but is on the KEEP l
 | Form content-type trap (`;charset=UTF-8`) | CHF `getFormParameter` uses the content-type-guarded `formBody()` helper; test with charset param |
 | Query source parity | Restlet uses `getOriginalRef()` (not `getResourceRef()`); asserted |
 | Basic-auth ISO-8859-1 (risk #5) | `ClientCredentialsReaderTest` basic-auth case via `BasicAuthHeader` |
-| Endpoint-type enforcement (risk #12) | `ClientCredentialsReaderTest` `TOKEN_ENDPOINT` case |
+| Endpoint-type enforcement (risk #12) | `ClientCredentialsReaderTest` `TOKEN_ENDPOINT` case **+ `openid` in `getAllowedScopes()`**, else the branch is never reached |
+| `handle(Request,…)` deletion doesn't break openam-uma (D1) | all three `handle(null,…)` retargeted; `grep -rn "handle(null"` → 0; whole-reactor build |
+| Doclint survives the deletions (D4) | `pushException` + `popException` deleted together; whole-reactor build |
 | CHF failure path no longer throws | failure-factory pull-forward + `getBasicAuthCredentials()` |
 | `OAuthProblemException` behaviour unchanged | request branch was already dead (always-null); redirect_uri/state/scope readers are callerless |
 
@@ -215,8 +296,128 @@ split`). *(Note: `getDeploymentURL` is currently callerless but is on the KEEP l
 
 new accessors on `OAuth2Request` base (throwing defaults) → impl in `RestletOAuth2Request` (verbatim) +
 `ChfOAuth2Request` (helpers) + delegate in `ValidateIdTokenRequest` → three neutral verifier classes →
-rebind `OAuth2GuiceModule` → delete the three `Restlet*` verifiers → failure-factory pull-forward →
-`OAuthProblemException` enabling edit (retarget the two `handle(null,…)` callers first) → `OAuth2Utils`
-delete-half → `mvn -o -pl openam-oauth2 install -DskipTests` → `mvn -o -pl openam-oauth2,openam-uma test` →
-whole build → grep gates → tests → smoke/curl → mark 3b done in [plan.md](plan.md) and start
-[phase-3c] from [phase-3-research.md](phase-3-research.md).
+rebind `OAuth2GuiceModule` (**all six** bindings) → delete the three `Restlet*` verifiers →
+failure-factory pull-forward → `OAuthProblemException` enabling edit (**retarget all three
+`handle(null,…)` callers first — incl. `UmaSettingsImpl` in openam-uma**; delete `pushException` +
+`popException` together) → `OAuth2Utils` delete-half (+ `OAuth2UtilsTest:48`) →
+`mvn -o -pl openam-oauth2 install -DskipTests` → `mvn -o -pl openam-oauth2,openam-uma test` →
+**whole-reactor build** → grep gates → tests → smoke/curl → record an **As-built** section here (3a
+convention) → mark 3b done in [plan.md](plan.md) and start [phase-3c] from
+[phase-3-research.md](phase-3-research.md).
+
+## Plan review (2026-07-16)
+
+Every load-bearing claim in the pre-review text was checked against the tree on
+`features/restlet-migration` (HEAD `0b389aed4e`). **The plan is sound and executable** — the research was
+accurate on almost every point — but five defects are folded into the sections above. No code was changed
+by this review.
+
+### D1 — `handle(Request, String)` has three callers, not two (compile break)
+
+The pre-review text: *"the only two `handle(Request,String)` callers, `RealmOAuth2ProviderSettings:132` and
+`OAuth2ProviderSettingsFactory:91`, pass `null`"*. There is a **third**:
+
+```
+openam-oauth2/src/main/java/org/forgerock/oauth2/core/RealmOAuth2ProviderSettings.java:132
+openam-oauth2/src/main/java/org/forgerock/oauth2/core/OAuth2ProviderSettingsFactory.java:91
+openam-uma/src/main/java/org/forgerock/openam/uma/UmaSettingsImpl.java:82          ← missed
+```
+
+All three pass literal `null`. Deleting the overload leaves no 2-arg candidate, so `handle(null, message)`
+fails to compile. The miss is in **openam-uma**, a different module — `mvn -pl openam-oauth2` (verification
+step 1) cannot see it. Fixed in work item 5 step 1; gated by `grep -rn "handle(null"` and the
+whole-reactor build.
+
+### D2 — `getQueryParameter` is not the "read companion" to `setQueryParameter`
+
+Work item 1 called it *"read companion to the existing `setQueryParameter`"* while also — correctly —
+requiring `getOriginalRef()`. **The two requirements contradict.** In `RestletOAuth2Request`:
+`setQueryParameter`/`removeQueryParameterValue` (`:197-216`) write **`getResourceRef()`**; `getOriginalRef()`
+is the pre-routing URI and never sees those writes. So on Restlet the pair is **asymmetric**, while on CHF
+it is symmetric (`writeQuery`/`queryForm` both go through `Request.getUri()`) — the same abstraction behaves
+differently per transport. A name collision compounds it: a private `getQueryParameter(Request, String)`
+already exists (`:231`) reading the **opposite** source.
+
+**Resolution:** keep `getOriginalRef()` — parity with `RestletQueryParameterAccessTokenVerifier` outranks
+API tidiness, and the divergence is latent (the only consumer is the query verifier on `/oauth2/tokeninfo`,
+where nothing mutates the query; `alterMaxAge`/`removeLoginPrompt` are `/authorize`-only). Correct the
+javadoc claim, rename the private helper to `getResourceRefQueryParameter`, and pin the asymmetry with a
+test so Phase 5 inherits a documented contract instead of a surprise.
+
+### D3 — The header verifier mutates the request, and falls back to non-Bearer
+
+Two undocumented behaviours in `RestletHeaderAccessTokenVerifier`, both of which a "verbatim" port must
+carry:
+
+1. **`request.setChallengeResponse(result)` (`:85`)** — a write inside the Bearer parse. It reads as a smell
+   and invites deletion, but `OpenAMClientAuthenticationFailureFactory.hasAuthorizationHeader` reads that
+   exact field. (Side note: this makes `hasAuthorizationHeader` **order-dependent** on whether the header
+   verifier ran first — pre-existing, out of scope, worth knowing for Phase 5.)
+2. **Non-Bearer fallback (`:91`)** — a non-`Bearer` scheme (or a non-`HttpRequest`) falls through to
+   `request.getChallengeResponse()`, whose raw value `obtainTokenId` returns. So Restlet's
+   `getAuthorizationBearerToken()` can return a **Basic** credential blob; CHF returns `null`. Keep it: the
+   fallback is the only path that works when a `ChallengeResponse` was set programmatically rather than
+   parsed from a raw header (reachable from openam-uma's directly-constructed `RestletOAuth2Request`s). The
+   divergence is unobservable at the `verify()` boundary — a garbage token id fails `readAccessToken` →
+   `INVALID_TOKEN`, identical to `null` → `INVALID_TOKEN`.
+
+### D4 — Doclint is now fatal, so deletion order matters
+
+Commit `3c45ff8d53` enabled `-Xdoclint:all,-missing` with `failOnWarnings`.
+`OAuthProblemException:303` — inside **`pushException`'s javadoc** (`:299-308`) — contains
+`{@link OAuthProblemException#popException(org.restlet.Request)}`. A dangling `{@link}` is a build **error**.
+Deleting `pushException` and `popException` **together** removes the link along with the javadoc and is safe;
+deleting `popException` alone breaks the build. Separately, `handle(String)`'s javadoc (`:153`) names
+`OAuth2Utils.OAuthProblemExceptionRedirector#getRedirector` — **a class that does not exist** anywhere in the
+repo (the real member is the private `OAuth2Utils.ParameterLocation#getRedirector`). It is `{@code}`, so not
+fatal, but it is wrong today and names deleted code after 3b.
+
+### D5 — Two form readers, one class, different entity semantics
+
+`RestletFormBodyAccessTokenVerifier:57` does `new Form(body)` with **no** `setEntity` — it drains the
+(non-rewindable) entity. `RestletOAuth2Request.getParameter:91-93` does the same read but explicitly
+restores: `request.setEntity(form.getWebRepresentation())` with the comment *"restore the entity body"*.
+Porting the verifier verbatim therefore puts **two form readers with opposite entity semantics in one class**.
+
+**Decided: verbatim, no restore.** 3b's contract is no observable change, and restoring would be a live-path
+behaviour change (later `getParameter` calls on a POST-form userinfo request would newly see a body where
+today they see a drained one — arguably a latent bug fix, but not 3b's to make). Comment the asymmetry;
+revisit in Phase 5.
+
+### Latent issue found, deliberately not fixed
+
+`OAuthProblemException.oAuth2Utils` (`:177`) is assigned **only** inside `if (null != this.request)`
+(`:186`), but `getErrorMessage()` (`:331`) and `getErrorForm()` (`:356,362`) dereference it
+unconditionally — so any exception built via `handle(String)`, `handle(null, msg)`, or either public
+constructor (`:203`, `:213`) **NPEs** on those getters. Harmless today because both getters are dead, which
+is exactly what makes `handle(String)`'s safety argument load-bearing. 3b deletes both getters and the
+field, which removes the hazard, `OAuthProblemException`'s last dependency on `OAuth2Utils`, and the
+`InjectorHolder` static-injection wart — no separate fix needed. **Do not revive either getter without
+fixing field init.**
+
+### Claims verified correct — no action
+
+- `ClientCredentialsReader` is fully de-Restleted: zero `org.restlet` imports, `getBasicAuthCredentials()`
+  at `:68`, `getEndpointType()` at `:111`. No source change in 3b, as planned.
+- The token-location map is accurate, incl. `getOriginalRef()` for the query verifier and the
+  `MediaType.APPLICATION_WWW_FORM.equals` guard for the form verifier.
+- Callerless as claimed: `getRealm(Request)`, `getRealm(HttpServletRequest)`, `getLocale(Request)`,
+  `getRequestParameters`, `getParameters`, `getDeploymentURL`, `ParameterLocation`/`getRedirector`,
+  `handle(Request)`, `pushException`, `popException`, `getErrorMessage`. `getErrorForm`/`getRedirectUri`
+  are reachable only from the dead `getRedirector` (transitively dead). `getScope` is write-only.
+- **No existing test references any of the three `Restlet*AccessTokenVerifier` classes** — the new verifier
+  tests are net-new coverage, not replacements.
+- The six Guice `AccessTokenVerifier` bindings are exactly as described (`:180-183` via `.to()`,
+  `:316/325/334` via `new` with the realm-agnostic `TokenStore`). `:180` is the unqualified default feeding
+  `OpenIdConnectClientRegistrationService`; `REALM_AGNOSTIC_FORM_BODY` is provided but has no consumer.
+- `AccessTokenVerifier`'s sole abstract is `protected abstract String obtainTokenId(OAuth2Request)` (`:98`);
+  `verify()` is concrete and unoverridden. The base is already transport-neutral.
+
+### Cosmetics noted, out of scope
+
+`OAuth2Utils.getParameters` (`:242-249`) has **byte-identical `if`/`else` branches** (both `HTTP_QUERY`) —
+the `Method.GET`/`EmptyRepresentation` test has no effect. Moot: 3b deletes the method.
+`AccessTokenVerifier` has an unused `jakarta.inject.Inject` import (`:25`). The three verifier classes carry
+`@Singleton` **and** are `new`-ed in `@Provides` methods, so each class has two live instances with different
+`TokenStore`s — intentional, but the class-level annotation is misleading. Carry the same shape onto the
+neutral classes to keep 3b's diff behaviour-only.

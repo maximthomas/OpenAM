@@ -25,7 +25,6 @@ import java.util.Set;
 import jakarta.inject.Inject;
 import org.forgerock.oauth2.core.ClientRegistration;
 import org.forgerock.openam.oauth2.OAuth2Constants;
-import org.forgerock.oauth2.core.BasicAuthHeader;
 import org.forgerock.oauth2.core.OAuth2Jwt;
 import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.exceptions.ClientAuthenticationFailureFactory;
@@ -35,6 +34,7 @@ import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.openidconnect.Client;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistration;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistrationStore;
+import org.openidentityplatform.openam.oauth2.core.BasicAuthHeader;
 
 /**
  * Used to extract an OAuth2 client's credentials from its OAuth2 Request.

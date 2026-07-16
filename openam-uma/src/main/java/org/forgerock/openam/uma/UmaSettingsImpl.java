@@ -12,7 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.uma;
@@ -79,7 +79,7 @@ public class UmaSettingsImpl extends OpenAMSettingsImpl implements UmaSettings {
         } catch (Exception e) {
             String message = "Unable to construct ServiceConfigManager: " + e;
             logger.error(message, e);
-            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(null, message);
+            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(message);
         }
     }
 

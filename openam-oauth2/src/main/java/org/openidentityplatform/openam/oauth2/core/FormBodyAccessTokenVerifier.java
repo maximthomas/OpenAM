@@ -11,40 +11,41 @@
  * Header, with the fields enclosed by brackets [] replaced by your own identifying
  * information: "Portions copyright [year] [name of copyright owner]".
  *
- * Copyright 2014-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Copyright 2026 3A Systems LLC.
  */
-package org.forgerock.oauth2.restlet;
-
-import org.forgerock.oauth2.core.AccessTokenVerifier;
-import org.forgerock.openam.oauth2.OAuth2Constants;
-import org.forgerock.oauth2.core.OAuth2Request;
-import org.forgerock.oauth2.core.TokenStore;
-import org.restlet.Request;
+package org.openidentityplatform.openam.oauth2.core;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
+import org.forgerock.oauth2.core.AccessTokenVerifier;
+import org.forgerock.oauth2.core.OAuth2Request;
+import org.forgerock.oauth2.core.TokenStore;
+import org.forgerock.openam.oauth2.OAuth2Constants;
+
 /**
- * Verifies that a OAuth2 request that is made to one of the protected endpoints on the OAuth2 provider,
- * (i.e. tokeninfo, userinfo) contains a valid access token specified in the request query parameter list.
- *
- * @since 12.0.0
+ * Verifies that an OAuth2 request made to one of the protected endpoints on the OAuth2 provider
+ * (i.e. tokeninfo, userinfo) contains a valid access token specified in the request body.
  */
 @Singleton
-public class RestletQueryParameterAccessTokenVerifier extends AccessTokenVerifier {
+public class FormBodyAccessTokenVerifier extends AccessTokenVerifier {
 
     @Inject
-    public RestletQueryParameterAccessTokenVerifier(TokenStore tokenStore) {
+    public FormBodyAccessTokenVerifier(TokenStore tokenStore) {
         super(tokenStore);
     }
 
     /**
      * {@inheritDoc}
      */
+    @Override
     protected String obtainTokenId(OAuth2Request request) {
-        final Request req = request.getRequest();
-        return req.getOriginalRef().getQueryAsForm().getFirstValue(OAuth2Constants.Params.ACCESS_TOKEN);
-    }
+        final String tokenId = request.getFormParameter(OAuth2Constants.Params.ACCESS_TOKEN);
 
+        if (tokenId == null) {
+            logger.debug("Request form is absent or does not contain access_token.");
+        }
+
+        return tokenId;
+    }
 }

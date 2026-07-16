@@ -12,6 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2016 ForgeRock AS.
+ * Portions copyright 2026 3A Systems LLC.
  */
 package org.forgerock.openam.oauth2;
 
@@ -22,7 +23,6 @@ import org.forgerock.json.JsonValue;
 import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.openam.oauth2.OAuth2Constants.ProofOfPossession;
 import org.forgerock.openam.oauth2.validation.ConfirmationKeyValidator;
-import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.testng.annotations.BeforeMethod;
@@ -38,14 +38,12 @@ public final class OAuth2UtilsTest {
     private OAuth2Utils utils;
 
     @Mock
-    private JacksonRepresentationFactory factory;
-    @Mock
     private OAuth2Request request;
 
     @BeforeMethod
     public void setUp() {
         MockitoAnnotations.initMocks(this);
-        utils = new OAuth2Utils(factory);
+        utils = new OAuth2Utils();
     }
 
     @Test

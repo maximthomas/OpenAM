@@ -14,7 +14,7 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-package org.forgerock.oauth2.core;
+package org.openidentityplatform.openam.oauth2.core;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -25,8 +25,6 @@ import java.util.Base64;
  *
  * <p>Instances are transport neutral: they are produced from a Restlet {@code ChallengeResponse}
  * or from the raw CHF {@code Authorization} header.
- *
- * @since 15.2.0
  */
 public final class BasicAuthHeader {
 

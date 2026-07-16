@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.forgerock.openam.oauth2.OAuth2Constants.EndpointType;
 import org.forgerock.openam.rest.service.RestletRealmRouter;
+import org.openidentityplatform.openam.oauth2.core.BasicAuthHeader;
 import org.restlet.Request;
 import org.restlet.data.ChallengeResponse;
 import org.restlet.data.ChallengeScheme;
@@ -110,6 +111,28 @@ public class RestletOAuth2RequestTest {
         assertThat(request.getRequestUrl()).isEqualTo(BASE_URI + "/authorize?max_age=-1&client_id=one");
     }
 
+    /**
+     * {@code getQueryParameter} is deliberately <em>not</em> the read companion to
+     * {@code setQueryParameter}: it reads the original reference while the setter writes the resource
+     * reference, so a write is invisible to it. The counterpart CHF test asserts the opposite, because
+     * both of its operations go through the request URI. The asymmetry is accepted rather than fixed —
+     * reading the original reference is what the query access token verifier has always done — so it is
+     * pinned here to keep it a documented contract rather than a surprise.
+     */
+    @Test
+    public void getQueryParameterDoesNotSeeASetQueryParameterWrite() {
+        String uri = BASE_URI + "/authorize?max_age=30";
+        Request restletRequest = new Request(Method.GET, uri);
+        restletRequest.setResourceRef(new Reference(uri));
+        restletRequest.setOriginalRef(new Reference(uri));
+        RestletOAuth2Request request = new RestletOAuth2Request(null, restletRequest);
+
+        request.setQueryParameter("max_age", "-1");
+
+        assertThat(request.getRequestUrl()).isEqualTo(BASE_URI + "/authorize?max_age=-1");
+        assertThat(request.getQueryParameter("max_age")).isEqualTo("30");
+    }
+
     @Test
     public void removeQueryParameterValueStripsTheValueButKeepsTheParameter() {
         RestletOAuth2Request request = restletRequest(BASE_URI + "/authorize?prompt=login%20consent");
@@ -164,6 +187,25 @@ public class RestletOAuth2RequestTest {
      * Restlet parses a challenge response for every scheme, and the client authentication relies on
      * its presence to detect a request carrying two authentication methods.
      */
+    /**
+     * The transports diverge here, and the divergence is accepted. Restlet falls back to the parsed
+     * challenge response for any non-Bearer scheme, so a Basic header yields its raw credential blob;
+     * the CHF counterpart returns {@code null}. This is unobservable at the {@code verify()} boundary —
+     * a credential blob is not a token id, so it fails token lookup exactly as a {@code null} does —
+     * but it is pinned so that the Phase 5 port does not "unify" the two by accident.
+     */
+    @Test
+    public void aNonBearerSchemeFallsBackToTheChallengeResponseRawValue() {
+        Request restletRequest = new Request(Method.GET, BASE_URI + "/userinfo");
+        ChallengeResponse challengeResponse = new ChallengeResponse(ChallengeScheme.HTTP_BASIC);
+        challengeResponse.setRawValue("dXNlcjpwYXNz");
+        restletRequest.setChallengeResponse(challengeResponse);
+
+        RestletOAuth2Request request = new RestletOAuth2Request(null, restletRequest);
+
+        assertThat(request.getAuthorizationBearerToken()).isEqualTo("dXNlcjpwYXNz");
+    }
+
     @Test
     public void aNonBasicChallengeResponseStillYieldsCredentials() {
         Request restletRequest = new Request(Method.GET, BASE_URI + "/access_token");

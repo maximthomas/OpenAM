@@ -238,7 +238,91 @@ test.describe("OAuth Service test", () => {
       const userInfo = await response.json();
       expect(userInfo.sub).toBe('demo');
       console.log('User Info Claims:', userInfo);
-    
+
+  });
+
+  test("Get user info with access token in POST form body", async ({ request }) => {
+    const response = await request.post(`${OPENAM_BASE}/oauth2/userinfo`, {
+        form: {
+          access_token: accessToken
+        },
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      expect(response.status()).toBe(200);
+
+      const userInfo = await response.json();
+      expect(userInfo.sub).toBe('demo');
+  });
+
+  test("Reject user info request with token in both header and form body", async ({ request }) => {
+    const response = await request.post(`${OPENAM_BASE}/oauth2/userinfo`, {
+        form: {
+          access_token: accessToken
+        },
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      // UserInfoService rejects a token supplied in both locations with server_error
+      expect(response.status()).toBe(400);
+
+      const error = await response.json();
+      expect(error.error).toBe('server_error');
+  });
+
+  test("Get token info with access token in query parameter", async ({ request }) => {
+    const response = await request.get(`${OPENAM_BASE}/oauth2/tokeninfo`, {
+        params: {
+          access_token: accessToken
+        },
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      expect(response.status()).toBe(200);
+
+      const tokenInfo = await response.json();
+      expect(tokenInfo.grant_type).toBe('authorization_code');
+      expect(tokenInfo.scope).toContain(SCOPE);
+  });
+
+  test("Get token info with access token in header", async ({ request }) => {
+    const response = await request.get(`${OPENAM_BASE}/oauth2/tokeninfo`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      expect(response.status()).toBe(200);
+
+      const tokenInfo = await response.json();
+      expect(tokenInfo.grant_type).toBe('authorization_code');
+      expect(tokenInfo.scope).toContain(SCOPE);
+  });
+
+  test("Reject token info request with token in both header and query parameter", async ({ request }) => {
+    const response = await request.get(`${OPENAM_BASE}/oauth2/tokeninfo`, {
+        params: {
+          access_token: accessToken
+        },
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      // TokenInfoService rejects a token supplied in both locations with invalid_request
+      expect(response.status()).toBe(400);
+
+      const error = await response.json();
+      expect(error.error).toBe('invalid_request');
   });
 
 });

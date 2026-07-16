@@ -14,7 +14,7 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-package org.forgerock.oauth2.core;
+package org.openidentityplatform.openam.oauth2.core;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -36,6 +36,7 @@ import org.forgerock.http.protocol.Form;
 import org.forgerock.http.protocol.Request;
 import org.forgerock.http.routing.UriRouterContext;
 import org.forgerock.json.JsonValue;
+import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.openam.oauth2.OAuth2Constants;
 import org.forgerock.openam.rest.RealmContext;
 import org.forgerock.services.context.AttributesContext;
@@ -50,8 +51,6 @@ import org.slf4j.LoggerFactory;
  * <p>Parameter resolution reproduces the Restlet precedence exactly: per-request attribute, then
  * query string, then — for {@code POST} only — an {@code application/x-www-form-urlencoded} body,
  * then a JSON body.
- *
- * @since 15.2.0
  */
 public class ChfOAuth2Request extends OAuth2Request {
 
@@ -60,6 +59,7 @@ public class ChfOAuth2Request extends OAuth2Request {
     private static final String FORM_CONTENT_TYPE = "application/x-www-form-urlencoded";
     private static final String JSON_CONTENT_TYPE = "application/json";
     private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final String BEARER = "Bearer";
 
     private final Logger logger = LoggerFactory.getLogger("OAuth2Provider");
     private final Context context;
@@ -194,6 +194,34 @@ public class ChfOAuth2Request extends OAuth2Request {
     @Override
     public BasicAuthHeader getBasicAuthCredentials() {
         return BasicAuthHeader.parse(request.getHeaders().getFirst(AUTHORIZATION_HEADER));
+    }
+
+    @Override
+    public String getAuthorizationBearerToken() {
+        String authorization = request.getHeaders().getFirst(AUTHORIZATION_HEADER);
+        if (authorization == null) {
+            return null;
+        }
+        int space = authorization.indexOf(' ');
+        if (space < 0 || !BEARER.equalsIgnoreCase(authorization.substring(0, space))) {
+            return null;
+        }
+        return authorization.substring(space + 1);
+    }
+
+    @Override
+    public String getQueryParameter(String name) {
+        return queryForm().getFirst(name);
+    }
+
+    @Override
+    public String getFormParameter(String name) {
+        // formBody() is not itself content-type guarded — its other callers guard it — so a JSON
+        // body would otherwise be parsed as a form string instead of yielding null.
+        if (!isContentType(FORM_CONTENT_TYPE)) {
+            return null;
+        }
+        return formBody().getFirst(name);
     }
 
     @Override

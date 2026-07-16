@@ -29,6 +29,8 @@ import com.google.common.collect.ClassToInstanceMap;
 import com.google.common.collect.MutableClassToInstanceMap;
 import org.forgerock.json.JsonValue;
 import org.forgerock.openam.oauth2.OAuth2Constants.EndpointType;
+import org.openidentityplatform.openam.oauth2.core.BasicAuthHeader;
+import org.openidentityplatform.openam.oauth2.core.ChfOAuth2Request;
 import org.restlet.Request;
 
 /**
@@ -148,6 +150,52 @@ public abstract class OAuth2Request {
      */
     public BasicAuthHeader getBasicAuthCredentials() {
         throw new UnsupportedOperationException("No Authorization header for this OAuth2Request");
+    }
+
+    /**
+     * Gets the bearer token carried by the request's {@code Authorization} header.
+     *
+     * <p>The transports diverge on a non-{@code Bearer} scheme: {@link RestletOAuth2Request} falls
+     * back to the parsed {@code ChallengeResponse} and returns its raw value, so a {@code Basic}
+     * header yields a credential blob, whereas {@link ChfOAuth2Request} returns {@code null}. The
+     * divergence is inherent — CHF has no {@code ChallengeResponse} — and unobservable at the
+     * {@link AccessTokenVerifier#verify} boundary, where a non-token value fails
+     * {@link TokenStore#readAccessToken} exactly as {@code null} does.
+     *
+     * @return The bearer token, or {@code null} if the request carries no bearer token.
+     */
+    public String getAuthorizationBearerToken() {
+        throw new UnsupportedOperationException("No Authorization header for this OAuth2Request");
+    }
+
+    /**
+     * Gets the first value of a parameter in the request's <em>original</em>, pre-routing query
+     * string.
+     *
+     * <p>This is <em>not</em> a read companion to {@link #setQueryParameter}: on
+     * {@link RestletOAuth2Request} that writes the resource reference while this reads the original
+     * reference, so a write is invisible here; on {@link ChfOAuth2Request} both go through the
+     * request URI, so a write is visible. The asymmetry is accepted — parity with the query-parameter
+     * access token verifier it exists to serve outranks API symmetry, and no endpoint both mutates
+     * the query and reads a token from it.
+     *
+     * @param name The parameter name.
+     * @return The first value, or {@code null} if the query string has no such parameter.
+     */
+    public String getQueryParameter(String name) {
+        throw new UnsupportedOperationException("No query parameters for this OAuth2Request");
+    }
+
+    /**
+     * Gets the first value of a parameter in the request's
+     * {@code application/x-www-form-urlencoded} body.
+     *
+     * @param name The parameter name.
+     * @return The first value, or {@code null} if the body is absent, is not form-encoded, or has
+     * no such parameter.
+     */
+    public String getFormParameter(String name) {
+        throw new UnsupportedOperationException("No form body for this OAuth2Request");
     }
 
     /**

@@ -31,14 +31,21 @@ import org.forgerock.json.JsonValue;
 import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.forgerock.openam.rest.service.RestletRealmRouter;
+import org.openidentityplatform.openam.oauth2.core.BasicAuthHeader;
 import org.restlet.Request;
 import org.restlet.Response;
 import org.restlet.data.ChallengeResponse;
+import org.restlet.data.ChallengeScheme;
 import org.restlet.data.Form;
+import org.restlet.data.Header;
 import org.restlet.data.MediaType;
 import org.restlet.data.Method;
 import org.restlet.data.Parameter;
+import org.restlet.engine.adapter.HttpRequest;
+import org.restlet.engine.header.HeaderConstants;
 import org.restlet.ext.jackson.JacksonRepresentation;
+import org.restlet.representation.Representation;
+import org.restlet.util.Series;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -81,8 +88,8 @@ public class RestletOAuth2Request extends OAuth2Request {
         }
 
         //query param priority over body
-        if (getQueryParameter(request, name) != null) {
-            return (T) getQueryParameter(request, name);
+        if (getResourceRefQueryParameter(request, name) != null) {
+            return (T) getResourceRefQueryParameter(request, name);
         }
 
         if (request.getMethod().equals(Method.POST)) {
@@ -179,6 +186,69 @@ public class RestletOAuth2Request extends OAuth2Request {
     }
 
     @Override
+    public String getAuthorizationBearerToken() {
+        ChallengeResponse challengeResponse = bearerChallengeResponse();
+        return challengeResponse == null ? null : challengeResponse.getRawValue();
+    }
+
+    @Override
+    public String getQueryParameter(String name) {
+        return request.getOriginalRef().getQueryAsForm().getFirstValue(name);
+    }
+
+    @Override
+    public String getFormParameter(String name) {
+        Representation body = request.getEntity();
+        if (body == null || !MediaType.APPLICATION_WWW_FORM.equals(body.getMediaType())) {
+            return null;
+        }
+        // Unlike getParameter above, this deliberately does not restore the entity after reading
+        // it. The form body access token verifier this was ported from drains the entity, and
+        // restoring it here would be a live-path behaviour change rather than a port.
+        return new Form(body).getFirstValue(name);
+    }
+
+    /**
+     * Ported from the Restlet header access token verifier. Two behaviours here are load-bearing
+     * rather than incidental, and must survive until the Restlet path is deleted:
+     *
+     * <ul>
+     * <li>the {@code HttpRequest} guard — the raw {@code Authorization} header is reachable only
+     * through Restlet's server adapter, so a request built programmatically rather than dispatched
+     * (as openam-uma builds them) would fail the cast;
+     * <li>the {@code setChallengeResponse} write — a getter that mutates reads as a smell, but
+     * {@code OpenAMClientAuthenticationFailureFactory#hasAuthorizationHeader} reads back that exact
+     * field, so dropping the write would change the client authentication failure path.
+     * </ul>
+     */
+    private ChallengeResponse bearerChallengeResponse() {
+        if (request instanceof HttpRequest) {
+            final Series<Header> headers = ((HttpRequest) request).getHttpCall().getRequestHeaders();
+            final String authorization = headers.getValues(HeaderConstants.HEADER_AUTHORIZATION);
+
+            if (authorization != null) {
+                int space = authorization.indexOf(' ');
+
+                if (space != -1) {
+                    String scheme = authorization.substring(0, space);
+
+                    if (scheme.equalsIgnoreCase("Bearer")) {
+                        ChallengeResponse result = new ChallengeResponse(new ChallengeScheme("HTTP_"
+                                + scheme, scheme));
+                        result.setRawValue(authorization.substring(space + 1));
+                        request.setChallengeResponse(result);
+                        return result;
+                    }
+                }
+            }
+        }
+        // A non-Bearer scheme, or a request that never went through the server adapter, falls back
+        // to whatever ChallengeResponse is already set. For Basic that is a credential blob rather
+        // than a token, which fails token lookup exactly as a null would.
+        return request.getChallengeResponse();
+    }
+
+    @Override
     public Object getAttribute(String name) {
         return request.getAttributes().get(name);
     }
@@ -228,7 +298,12 @@ public class RestletOAuth2Request extends OAuth2Request {
         return remainder;
     }
 
-    private String getQueryParameter(Request request, String name) {
+    /**
+     * Reads the <em>resource</em> reference's query, which is the post-routing URI and reflects
+     * writes made by {@link #setQueryParameter}. Deliberately distinct from the public
+     * {@link #getQueryParameter(String)}, which reads the original, pre-routing reference.
+     */
+    private String getResourceRefQueryParameter(Request request, String name) {
         return request.getResourceRef().getQueryAsForm().getValuesMap().get(name);
     }
 }

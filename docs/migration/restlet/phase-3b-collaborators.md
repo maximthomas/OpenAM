@@ -23,7 +23,7 @@ unchanged: the existing Restlet-path unit suite must stay green (`RestletOAuth2R
 neutral accessor with today's exact Restlet call).
 
 **Outcome:** the three `AccessTokenVerifier` implementations become transport-neutral (in
-`org.forgerock.oauth2.core`, driven only by `OAuth2Request` accessors); the three `Restlet*` verifier
+`org.openidentityplatform.openam.oauth2.core`, driven only by `OAuth2Request` accessors); the three `Restlet*` verifier
 classes are deleted; `OAuth2Utils` is Restlet-free; `OAuthProblemException`'s dead Restlet-request plumbing
 is stripped; `ClientCredentialsReader`'s failure path is fully neutral end-to-end.
 
@@ -151,8 +151,9 @@ for the three new accessors (consistent with 3a; `/oauth2/idtokeninfo` runs thro
 
 ### 2. Three transport-neutral `AccessTokenVerifier`s + Guice rebind
 
-**New** (openam-oauth2, `org.forgerock.oauth2.core`) — each `@Singleton`, `@Inject(TokenStore)`, overriding
-`obtainTokenId(OAuth2Request)`:
+**New** (openam-oauth2, **`org.openidentityplatform.openam.oauth2.core`** — new-class convention, see
+[decisions.md](decisions.md); no ForgeRock copyright, no `@since`) — each `@Singleton`,
+`@Inject(TokenStore)`, overriding `obtainTokenId(OAuth2Request)`:
 - `HeaderAccessTokenVerifier` → `request.getAuthorizationBearerToken()`.
 - `FormBodyAccessTokenVerifier` → `request.getFormParameter(ACCESS_TOKEN)`.
 - `QueryParameterAccessTokenVerifier` → `request.getQueryParameter(ACCESS_TOKEN)`.
@@ -161,8 +162,8 @@ for the three new accessors (consistent with 3a; `/oauth2/idtokeninfo` runs thro
 `RestletQueryParameterAccessTokenVerifier` (`org.forgerock.oauth2.restlet`).
 
 **Modified — `OAuth2GuiceModule.java`** (`org.forgerock.openam.oauth2.guice`) — imports (~lines 87–89) →
-the three new `org.forgerock.oauth2.core` classes, then **seven** binding sites. Consumers unchanged (see
-the token-location map above).
+the three new `org.openidentityplatform.openam.oauth2.core` classes, then **seven** binding sites.
+Consumers unchanged (see the token-location map above).
 
 | Line | Kind | Key | New target |
 |---|---|---|---|
@@ -580,3 +581,49 @@ the `Method.GET`/`EmptyRepresentation` test has no effect. Moot: 3b deletes the 
 `@Singleton` **and** are `new`-ed in `@Provides` methods, so each class has two live instances with different
 `TokenStore`s — intentional, but the class-level annotation is misleading. Carry the same shape onto the
 neutral classes to keep 3b's diff behaviour-only.
+
+## As-built (3b delivered — 2026-07-16)
+
+Delivered as planned — no route flips; `/oauth2` and `/uma` still run on Restlet — with five
+deviations/discoveries worth recording. Gates: openam-oauth2 **716** tests (3a baseline 655),
+openam-uma **192**, whole-reactor `mvn install -DskipTests` BUILD SUCCESS, all grep gates 0,
+e2e **7/7 passed** against a local container built from this tree.
+
+1. **The new classes live in `org.openidentityplatform.openam.oauth2.core`, and 3a's were moved
+   there too.** Convention locked mid-phase (see [decisions.md](decisions.md)): classes *authored*
+   by the migration go under `org.openidentityplatform.openam.<area>` with a
+   `Copyright 2026 3A Systems LLC.` CDDL header and no `@since`; modified-in-place classes keep
+   their package and get a `Portions copyright` bump. `ChfOAuth2Request` and `BasicAuthHeader`
+   (3a) moved alongside 3b's `HeaderAccessTokenVerifier`, `FormBodyAccessTokenVerifier`,
+   `QueryParameterAccessTokenVerifier`. Exception precedent: a test class for a legacy class stays
+   in the legacy package (`OAuthProblemExceptionTest` in `org.forgerock.openam.oauth2`).
+
+2. **`OAuthError#handle(String)`'s real contract differs from what its javadoc implied** —
+   characterization tests written *before* the strip failed 3/4 against the unmodified code.
+   Restlet's `Status(Status, Throwable, String)` constructor overrides the **reason phrase**, so
+   once `description(...)` is set, `getError()` (= `getStatus().getReasonPhrase()`) returns the
+   *description string*, not the enum's OAuth2 error name, while `getStatus().getDescription()`
+   keeps the enum's canned text. Every live `handle(...)` caller passes a message, so every
+   serialized error produced through this path has that shape. Pinned as-is in
+   `OAuthProblemExceptionTest`; Phase 5's CHF error path must either reproduce this or change it
+   consciously.
+
+3. **`OAuth2Utils.ParameterLocation#getRedirector` was deleted in the `OAuthProblemException`
+   step, not the `OAuth2Utils` step.** It was the sole compile-time caller of the deleted
+   `getErrorForm()` and itself callerless; separating the two deletions would have left an
+   intermediate broken build.
+
+4. **`OAuth2Utils` lost its constructor and the `jacksonRepresentationFactory` field entirely**
+   (the plan implied keeping a no-arg `@Inject` ctor). Guice JIT-binds the implicit default
+   constructor, so the three `OAuth2GuiceModule` provider methods injecting `OAuth2Utils` are
+   unchanged. `getRealm(HttpServletRequest)` went too — reachable only via the deleted
+   `getRealm(Request)`.
+
+5. **The e2e leg and the `:180` manual check both ran locally against this tree**, not just in CI:
+   image built from the locally built war (CI `build-docker` IDP recipe, minimal context),
+   OpenDJ + OpenAM containers, configurator, demo user, then `npx playwright test oauth2` →
+   7/7 (2 pre-existing + 5 new token-location cases, including both "token in both locations ⇒
+   error" tests). The unqualified `:180` binding was then exercised live: open dynamic
+   registration enabled, anonymous `POST /oauth2/connect/register`, and
+   `GET /oauth2/connect/register?client_id=…` with the registration access token as Bearer →
+   HTTP 200 through the neutral header verifier.

@@ -129,7 +129,7 @@ public class RealmOAuth2ProviderSettings implements OAuth2ProviderSettings {
         } catch (Exception e) {
             String message = "OAuth2Utils::Unable to construct ServiceConfigManager: " + e;
             logger.error(message, e);
-            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(null, message);
+            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(message);
         }
     }
 

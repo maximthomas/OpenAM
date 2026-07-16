@@ -30,6 +30,7 @@ import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.forgerock.openam.utils.StringUtils;
 import org.forgerock.services.context.AttributesContext;
 import org.forgerock.services.context.Context;
+import org.openidentityplatform.openam.oauth2.core.ChfOAuth2Request;
 import org.restlet.Request;
 import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
 

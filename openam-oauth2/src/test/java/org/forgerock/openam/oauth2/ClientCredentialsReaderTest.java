@@ -24,7 +24,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import static org.forgerock.openidconnect.Client.TokenEndpointAuthMethod.CLIENT_SECRET_BASIC;
+import static org.forgerock.openidconnect.Client.TokenEndpointAuthMethod.CLIENT_SECRET_POST;
+
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 
 import org.forgerock.json.jose.builders.JwtBuilderFactory;
@@ -36,8 +40,10 @@ import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.exceptions.ClientAuthenticationFailureFactory;
 import org.forgerock.oauth2.core.exceptions.InvalidClientException;
 import org.forgerock.oauth2.core.exceptions.InvalidRequestException;
+import org.forgerock.openam.oauth2.OAuth2Constants.EndpointType;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistration;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistrationStore;
+import org.openidentityplatform.openam.oauth2.core.BasicAuthHeader;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -134,7 +140,100 @@ public class ClientCredentialsReaderTest {
                 .get(eq(VICTIM_CLIENT_ID), eq(request));
     }
 
+    // --- basic auth ------------------------------------------------------------------------
+
+    @Test
+    public void basicAuthCredentialsAreReadFromTheAuthorizationHeader() throws Exception {
+        OAuth2Request request = mockBasicAuthRequest("myClient", "secret".toCharArray());
+        givenRegistration("myClient", Collections.<String>emptySet(), CLIENT_SECRET_BASIC.getType());
+
+        ClientCredentials credentials = reader.extractCredentials(request, ENDPOINT);
+
+        assertThat(credentials.getClientId()).isEqualTo("myClient");
+        assertThat(credentials.getClientSecret()).isEqualTo("secret".toCharArray());
+        assertThat(credentials.usesBasicAuth()).isTrue();
+    }
+
+    /**
+     * A request may authenticate one way only: credentials in the {@code Authorization} header and a
+     * {@code client_id} parameter together are a conflict, not a fallback.
+     */
+    @Test
+    public void rejectsARequestCarryingBothBasicAuthAndAClientIdParameter() throws Exception {
+        OAuth2Request request = mockBasicAuthRequest("myClient", "secret".toCharArray());
+        given(request.<String>getParameter(OAuth2Constants.Params.CLIENT_ID)).willReturn("myClient");
+
+        try {
+            reader.extractCredentials(request, ENDPOINT);
+            fail("Expected InvalidRequestException for multiple authentication methods");
+        } catch (InvalidRequestException expected) {
+            assertThat(expected.getMessage()).contains("Client authentication failed");
+        }
+        verify(clientRegistrationStore, never()).get(any(String.class), any(OAuth2Request.class));
+    }
+
+    // --- token endpoint auth method enforcement ----------------------------------------------
+
+    @Test
+    public void tokenEndpointRejectsAnAuthMethodTheClientIsNotRegisteredFor() throws Exception {
+        OAuth2Request request = mockBasicAuthRequest("myClient", "secret".toCharArray());
+        given(request.getEndpointType()).willReturn(EndpointType.TOKEN_ENDPOINT);
+        givenRegistration("myClient", Collections.singleton(OAuth2Constants.Params.OPENID),
+                CLIENT_SECRET_POST.getType());
+
+        try {
+            reader.extractCredentials(request, ENDPOINT);
+            fail("Expected InvalidClientException for a mismatched authentication method");
+        } catch (InvalidClientException expected) {
+            assertThat(expected.getMessage()).contains("Invalid authentication method");
+        }
+    }
+
+    /**
+     * Also pins that basic-auth credentials are attributed to {@code client_secret_basic}: the method
+     * is never returned, so the only way to observe it is a registration that accepts exactly that one.
+     * Were basic auth mis-attributed to {@code client_secret_post}, this would throw.
+     */
+    @Test
+    public void tokenEndpointAcceptsTheAuthMethodTheClientIsRegisteredFor() throws Exception {
+        OAuth2Request request = mockBasicAuthRequest("myClient", "secret".toCharArray());
+        given(request.getEndpointType()).willReturn(EndpointType.TOKEN_ENDPOINT);
+        givenRegistration("myClient", Collections.singleton(OAuth2Constants.Params.OPENID),
+                CLIENT_SECRET_BASIC.getType());
+
+        assertThat(reader.extractCredentials(request, ENDPOINT).getClientId()).isEqualTo("myClient");
+    }
+
+    /**
+     * The enforcement is ANDed <em>after</em> {@code scopes.contains("openid")}, so a client without
+     * that scope skips it even at the token endpoint with a mismatched method. Pinned because it is a
+     * trap for anyone extending this suite: a test that stubs only {@code getEndpointType()} passes
+     * without ever evaluating the branch it appears to cover.
+     */
+    @Test
+    public void endpointTypeCheckIsSkippedForAClientWithoutTheOpenidScope() throws Exception {
+        OAuth2Request request = mockBasicAuthRequest("myClient", "secret".toCharArray());
+        given(request.getEndpointType()).willReturn(EndpointType.TOKEN_ENDPOINT);
+        givenRegistration("myClient", Collections.<String>emptySet(), CLIENT_SECRET_POST.getType());
+
+        assertThat(reader.extractCredentials(request, ENDPOINT).getClientId()).isEqualTo("myClient");
+    }
+
     // --- helpers ---------------------------------------------------------------------------
+
+    private OAuth2Request mockBasicAuthRequest(String clientId, char[] secret) {
+        OAuth2Request request = mock(OAuth2Request.class);
+        given(request.getBasicAuthCredentials()).willReturn(new BasicAuthHeader(clientId, secret));
+        return request;
+    }
+
+    private void givenRegistration(String clientId, java.util.Set<String> allowedScopes, String authMethod)
+            throws Exception {
+        OpenIdConnectClientRegistration registration = mock(OpenIdConnectClientRegistration.class);
+        given(registration.getAllowedScopes()).willReturn(allowedScopes);
+        given(registration.getTokenEndpointAuthMethod()).willReturn(authMethod);
+        given(clientRegistrationStore.get(eq(clientId), any(OAuth2Request.class))).willReturn(registration);
+    }
 
     private OAuth2Request mockOauth2Request(String clientAssertion) {
         OAuth2Request oAuth2Request = mock(OAuth2Request.class);

@@ -30,6 +30,7 @@ import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.forgerock.services.context.AttributesContext;
 import org.forgerock.services.context.RootContext;
 import org.mockito.ArgumentCaptor;
+import org.openidentityplatform.openam.oauth2.core.ChfOAuth2Request;
 import org.restlet.engine.adapter.HttpRequest;
 import org.forgerock.openam.rest.jakarta.servlet.internal.ServletCall;
 import org.testng.annotations.BeforeMethod;

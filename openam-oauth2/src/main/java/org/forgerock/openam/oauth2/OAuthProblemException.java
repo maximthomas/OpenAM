@@ -23,10 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.forgerock.guice.core.InjectorHolder;
 import org.forgerock.openam.oauth2.OAuth2Constants;
-import org.restlet.Request;
-import org.restlet.data.Form;
 import org.restlet.data.Status;
 import org.restlet.resource.ResourceException;
 
@@ -134,32 +131,15 @@ public class OAuthProblemException extends ResourceException {
         }
 
         /**
-         * Create a new exception from the given {@code request} parameter.
-         * 
-         * @param request the OAuth2 request to associate with the exception.
-         * @return new instance of OAuthProblemException
-         */
-        public OAuthProblemException handle(Request request) {
-            return new OAuthProblemException(this, request);
-        }
-
-        public OAuthProblemException handle(Request request, String description) {
-            return new OAuthProblemException(this, request).description(description);
-        }
-
-        /**
-         * Builds the exception without a request. A request would only populate {@code redirect_uri},
-         * {@code state} and {@code scope} on the exception; the sole reader of those fields —
-         * {@code OAuth2Utils.OAuthProblemExceptionRedirector#getRedirector} — has no callers, and the
-         * live error path ({@code ExceptionHandler}) rebuilds a fresh {@code OAuth2RestletException}
-         * from the status code alone. So the {@code SERVER_ERROR} sites that raise this away from a
-         * Restlet call stack can omit the request with no observable effect.
+         * Builds the exception. The {@code redirect_uri}, {@code state} and {@code scope} fields start
+         * unset; the live error path ({@code ExceptionHandler}) rebuilds a fresh
+         * {@code OAuth2RestletException} from the status code alone.
          *
          * @param description The error description.
          * @return The exception.
          */
         public OAuthProblemException handle(String description) {
-            return new OAuthProblemException(this, null).description(description);
+            return new OAuthProblemException(this).description(description);
         }
     }
 
@@ -167,44 +147,27 @@ public class OAuthProblemException extends ResourceException {
     private String errorUri;
     //
     // private Status status;
-    private Request request;
     private URI redirectTargetPattern;
     //
     private String state;
     private String scope;
 
     private Map<String, String> parameters = new HashMap<String, String>();
-    private OAuth2Utils oAuth2Utils;// = InjectorHolder.getInstance(OAuth2Utils.class);
 
     // Constructors
-    private OAuthProblemException(OAuthError error, Request request) {
+    private OAuthProblemException(OAuthError error) {
         super(error.status);
         this.description = null;
         this.errorUri = null;
-        this.request = request;
-        if (null != this.request) {
-        		oAuth2Utils = InjectorHolder.getInstance(OAuth2Utils.class);
-            String redirect =
-                    oAuth2Utils.getRequestParameter(request, OAuth2Constants.Params.REDIRECT_URI,
-                            String.class);
-            this.redirectTargetPattern = null != redirect ? URI.create(redirect) : null;
-            this.state =
-                    oAuth2Utils.getRequestParameter(request, OAuth2Constants.Params.STATE, String.class);
-            this.scope =
-                    oAuth2Utils.getRequestParameter(request, OAuth2Constants.Params.SCOPE, String.class);
-        } else {
-            this.redirectTargetPattern = null;
-            this.state = null;
-            this.scope = null;
-        }
-
+        this.redirectTargetPattern = null;
+        this.state = null;
+        this.scope = null;
     }
 
     public OAuthProblemException(int code, String error, String description, String errorUri) {
         super(new Status(code, error, description, errorUri));
         this.description = null;
         this.errorUri = null;
-        this.request = null;
         this.redirectTargetPattern = null;
         this.state = null;
         this.scope = null;
@@ -215,7 +178,6 @@ public class OAuthProblemException extends ResourceException {
                 cause);
         this.description = null;
         this.errorUri = null;
-        this.request = null;
         this.redirectTargetPattern = null;
         this.state = null;
         this.scope = null;
@@ -296,75 +258,6 @@ public class OAuthProblemException extends ResourceException {
         }
     }
 
-    /**
-     * Save the exception into the request.
-     * <p>
-     * Save the OAuthProblemException into the attributes and the
-     * {@link OAuthProblemException#popException(org.restlet.Request)} method
-     * retreive it.
-     * 
-     * @throws ResourceException
-     *             if the embedded request is null
-     */
-    //public Class<? extends AbstractFlow> pushException() throws ResourceException {
-    public Object pushException() throws ResourceException {
-        if (null != request) {
-            request.getAttributes().put(OAuthProblemException.class.getName(), this);
-        } else {
-            throw new ResourceException(Status.SERVER_ERROR_INTERNAL, "Failed to push Exception",
-                    this);
-        }
-        //return ErrorServerResource.class;
-        return null;
-    }
-
-    /**
-     * Used for formatting error according to chapter 5.2.
-     * 
-     * @see <a
-     *      href="http://tools.ietf.org/html/draft-ietf-oauth-v2-24#section-5.2">5.2.
-     *      Error Response</a>
-     */
-    public Map<String, Object> getErrorMessage() {
-        Map<String, Object> response = new HashMap<String, Object>(3);
-        response.put(OAuth2Constants.Error.ERROR, getError());
-        if (oAuth2Utils.isNotBlank(getDescription())) {
-            response.put(OAuth2Constants.Error.ERROR_DESCRIPTION, getDescription());
-        }
-        if (errorUri != null && errorUri.length() > 0) {
-            response.put(OAuth2Constants.Error.ERROR_URI, getError().toString());
-        }
-        return response;
-    }
-
-    /**
-     * Used for formatting error according to chapter 4.2.2.1.
-     * <p>
-     * Authorization Code (Query) HTTP/1.1 302 Found Location:
-     * https://client.example.com/cb?error=access_denied&amp;state=xyz
-     * <p>
-     * Implicit (Fragment) HTTP/1.1 302 Found Location:
-     * https://client.example.com/cb#error=access_denied&amp;state=xyz
-     * 
-     * @see <a
-     *      href="http://tools.ietf.org/html/draft-ietf-oauth-v2-24#section-4.2.2.1">4.2.2.1.
-     *      Error Response</a>
-     */
-    public Form getErrorForm() {
-        Form response = new Form();
-        response.add(OAuth2Constants.Error.ERROR, getError());
-        if (oAuth2Utils.isNotBlank(getDescription())) {
-            response.add(OAuth2Constants.Error.ERROR_DESCRIPTION, getDescription());
-        }
-        if (errorUri != null && errorUri.length() > 0) {
-            response.add(OAuth2Constants.Error.ERROR_URI, errorUri);
-        }
-        if (oAuth2Utils.isNotBlank(getState())) {
-            response.add(OAuth2Constants.Params.STATE, getState());
-        }
-        return response;
-    }
-
     //
     public static OAuthProblemException error(String error) {
         return new OAuthProblemException(401, error, null, null);
@@ -424,13 +317,5 @@ public class OAuthProblemException extends ResourceException {
             }
         }
         return handleOAuthProblemException(sb.toString().trim());
-    }
-
-    public static OAuthProblemException popException(Request r) {
-        Object o = r.getAttributes().remove(OAuthProblemException.class.getName());
-        if (o instanceof OAuthProblemException) {
-            return (OAuthProblemException) o;
-        }
-        return null;
     }
 }

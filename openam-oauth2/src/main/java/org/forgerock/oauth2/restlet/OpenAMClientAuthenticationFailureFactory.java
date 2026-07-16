@@ -12,7 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 
 package org.forgerock.oauth2.restlet;
@@ -22,7 +22,6 @@ import org.forgerock.openam.oauth2.OAuth2Constants;
 import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.exceptions.ClientAuthenticationFailureFactory;
 import org.forgerock.openam.utils.RealmNormaliser;
-import org.restlet.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +49,7 @@ public class OpenAMClientAuthenticationFailureFactory extends ClientAuthenticati
 
     @Override
     protected boolean hasAuthorizationHeader(OAuth2Request request) {
-        return request.<Request>getRequest().getChallengeResponse() != null;
+        return request.getBasicAuthCredentials() != null;
     }
 
     @Override

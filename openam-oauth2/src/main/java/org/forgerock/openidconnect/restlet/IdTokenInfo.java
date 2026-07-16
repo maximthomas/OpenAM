@@ -32,7 +32,6 @@ import org.forgerock.json.jose.jws.JwsAlgorithm;
 import org.forgerock.json.jose.jws.JwsAlgorithmType;
 import org.forgerock.json.jose.jws.SigningManager;
 import org.forgerock.json.jose.jwt.JwtClaimsSet;
-import org.forgerock.oauth2.core.BasicAuthHeader;
 import org.forgerock.oauth2.core.ClientAuthenticator;
 import org.forgerock.oauth2.core.OAuth2Jwt;
 import org.forgerock.oauth2.core.OAuth2ProviderSettingsFactory;
@@ -54,6 +53,7 @@ import org.forgerock.openidconnect.OpenIdConnectClientRegistration;
 import org.forgerock.openidconnect.OpenIdConnectClientRegistrationStore;
 import org.forgerock.openidconnect.OpenIdConnectToken;
 import org.forgerock.util.annotations.VisibleForTesting;
+import org.openidentityplatform.openam.oauth2.core.BasicAuthHeader;
 import org.restlet.Request;
 import org.restlet.ext.json.JsonRepresentation;
 import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
@@ -304,6 +304,21 @@ public class IdTokenInfo extends ServerResource {
         @Override
         public BasicAuthHeader getBasicAuthCredentials() {
             return delegate.getBasicAuthCredentials();
+        }
+
+        @Override
+        public String getAuthorizationBearerToken() {
+            return delegate.getAuthorizationBearerToken();
+        }
+
+        @Override
+        public String getQueryParameter(String name) {
+            return delegate.getQueryParameter(name);
+        }
+
+        @Override
+        public String getFormParameter(String name) {
+            return delegate.getFormParameter(name);
         }
 
         @Override

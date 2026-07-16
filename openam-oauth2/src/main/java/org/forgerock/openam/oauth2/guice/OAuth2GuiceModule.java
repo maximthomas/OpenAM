@@ -84,9 +84,6 @@ import org.forgerock.oauth2.core.exceptions.ServerException;
 import org.forgerock.oauth2.resources.ResourceSetStore;
 import org.forgerock.oauth2.restlet.AuthorizeRequestHook;
 import org.forgerock.oauth2.restlet.OpenAMClientAuthenticationFailureFactory;
-import org.forgerock.oauth2.restlet.RestletFormBodyAccessTokenVerifier;
-import org.forgerock.oauth2.restlet.RestletHeaderAccessTokenVerifier;
-import org.forgerock.oauth2.restlet.RestletQueryParameterAccessTokenVerifier;
 import org.forgerock.oauth2.restlet.TokenRequestHook;
 import org.forgerock.oauth2.restlet.resources.ResourceSetRegistrationExceptionFilter;
 import org.forgerock.oauth2.restlet.resources.ResourceSetRegistrationHook;
@@ -144,6 +141,9 @@ import org.forgerock.openidconnect.SubjectTypeValidator;
 import org.forgerock.openidconnect.restlet.LoginHintHook;
 import org.forgerock.openidconnect.ssoprovider.OpenIdConnectSSOProvider;
 import org.forgerock.util.thread.ExecutorServiceFactory;
+import org.openidentityplatform.openam.oauth2.core.FormBodyAccessTokenVerifier;
+import org.openidentityplatform.openam.oauth2.core.HeaderAccessTokenVerifier;
+import org.openidentityplatform.openam.oauth2.core.QueryParameterAccessTokenVerifier;
 import org.restlet.Restlet;
 
 import com.google.inject.AbstractModule;
@@ -177,10 +177,10 @@ public class OAuth2GuiceModule extends AbstractModule {
         bind(TokenStore.class).to(OpenAMTokenStore.class);
         bind(OpenIdConnectTokenStore.class).to(OpenAMTokenStore.class);
         bind(ClientAuthenticationFailureFactory.class).to(OpenAMClientAuthenticationFailureFactory.class);
-        bind(AccessTokenVerifier.class).to(RestletHeaderAccessTokenVerifier.class);
-        bind(AccessTokenVerifier.class).annotatedWith(named(HEADER)).to(RestletHeaderAccessTokenVerifier.class);
-        bind(AccessTokenVerifier.class).annotatedWith(named(FORM_BODY)).to(RestletFormBodyAccessTokenVerifier.class);
-        bind(AccessTokenVerifier.class).annotatedWith(named(QUERY_PARAM)).to(RestletQueryParameterAccessTokenVerifier.class);
+        bind(AccessTokenVerifier.class).to(HeaderAccessTokenVerifier.class);
+        bind(AccessTokenVerifier.class).annotatedWith(named(HEADER)).to(HeaderAccessTokenVerifier.class);
+        bind(AccessTokenVerifier.class).annotatedWith(named(FORM_BODY)).to(FormBodyAccessTokenVerifier.class);
+        bind(AccessTokenVerifier.class).annotatedWith(named(QUERY_PARAM)).to(QueryParameterAccessTokenVerifier.class);
         bind(OpenAMSettings.class).toProvider(new Provider<OpenAMSettings>() {
             public OpenAMSettings get() {
                 return new OpenAMSettingsImpl(OAuth2Constants.OAuth2ProviderService.NAME,
@@ -313,7 +313,7 @@ public class OAuth2GuiceModule extends AbstractModule {
     @Singleton
     AccessTokenVerifier getRealmAgnosticHeaderAccessTokenVerifier(
             @Named(REALM_AGNOSTIC_TOKEN_STORE) TokenStore tokenStore) {
-        return new RestletHeaderAccessTokenVerifier(tokenStore);
+        return new HeaderAccessTokenVerifier(tokenStore);
     }
 
     @Inject
@@ -322,7 +322,7 @@ public class OAuth2GuiceModule extends AbstractModule {
     @Singleton
     AccessTokenVerifier getRealmAgnosticFormBodyAccessTokenVerifier(
             @Named(REALM_AGNOSTIC_TOKEN_STORE) TokenStore tokenStore) {
-        return new RestletFormBodyAccessTokenVerifier(tokenStore);
+        return new FormBodyAccessTokenVerifier(tokenStore);
     }
 
     @Inject
@@ -331,7 +331,7 @@ public class OAuth2GuiceModule extends AbstractModule {
     @Singleton
     AccessTokenVerifier getRealmAgnosticQueryParamAccessTokenVerifier(
             @Named(REALM_AGNOSTIC_TOKEN_STORE) TokenStore tokenStore) {
-        return new RestletQueryParameterAccessTokenVerifier(tokenStore);
+        return new QueryParameterAccessTokenVerifier(tokenStore);
     }
 
     @Inject

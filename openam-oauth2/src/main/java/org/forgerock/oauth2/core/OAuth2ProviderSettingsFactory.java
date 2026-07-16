@@ -88,7 +88,7 @@ public class OAuth2ProviderSettingsFactory implements ServiceListener {
         } catch (Exception e) {
             String message = "OAuth2Utils::Unable to construct ServiceConfigManager: " + e;
             logger.error(message, e);
-            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(null, message);
+            throw OAuthProblemException.OAuthError.SERVER_ERROR.handle(message);
         }
     }
 

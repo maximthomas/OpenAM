@@ -14,7 +14,7 @@
  * Copyright 2026 3A Systems LLC.
  */
 
-package org.forgerock.oauth2.core;
+package org.openidentityplatform.openam.oauth2.core;
 
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonMap;
@@ -237,6 +237,23 @@ public class ChfOAuth2RequestTest {
         assertThat(request.getRequestUrl()).isEqualTo(BASE_URI + "/authorize?max_age=-1&client_id=one");
     }
 
+    /**
+     * The counterpart of {@code RestletOAuth2RequestTest#getQueryParameterDoesNotSeeASetQueryParameterWrite},
+     * asserting the opposite: here both the setter and the getter go through the request URI, so a write
+     * <em>is</em> visible. The transports genuinely differ, and both behaviours are pinned so the
+     * divergence stays deliberate.
+     */
+    @Test
+    public void getQueryParameterSeesASetQueryParameterWrite() throws Exception {
+        ChfOAuth2Request request = chfRequest(get("/oauth2/authorize?max_age=30"),
+                endpointContext("authorize", emptyMap()));
+
+        request.setQueryParameter("max_age", "-1");
+
+        assertThat(request.getRequestUrl()).isEqualTo(BASE_URI + "/authorize?max_age=-1");
+        assertThat(request.getQueryParameter("max_age")).isEqualTo("-1");
+    }
+
     @Test
     public void removeQueryParameterValueStripsTheValueButKeepsTheParameter() throws Exception {
         ChfOAuth2Request request = chfRequest(get("/oauth2/authorize?prompt=login%20consent"),
@@ -293,6 +310,22 @@ public class ChfOAuth2RequestTest {
         assertThat(credentials).isNotNull();
         assertThat(credentials.getClientId()).isNull();
         assertThat(credentials.getSecret()).isNull();
+    }
+
+    /**
+     * The counterpart of {@code RestletOAuth2RequestTest#aNonBearerSchemeFallsBackToTheChallengeResponseRawValue},
+     * asserting the opposite: CHF has no parsed challenge response to fall back to, so a non-Bearer
+     * scheme yields {@code null} rather than a raw credential blob. Both are correct at the
+     * {@code verify()} boundary, where either outcome is an invalid token.
+     */
+    @Test
+    public void authorizationBearerTokenIsNullForANonBearerScheme() throws Exception {
+        Request httpRequest = get("/oauth2/userinfo");
+        httpRequest.getHeaders().put("Authorization", "Basic dXNlcjpwYXNz");
+
+        ChfOAuth2Request request = chfRequest(httpRequest, endpointContext("userinfo", emptyMap()));
+
+        assertThat(request.getAuthorizationBearerToken()).isNull();
     }
 
     // --- locale ------------------------------------------------------------------------------

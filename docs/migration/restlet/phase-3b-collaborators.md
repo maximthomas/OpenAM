@@ -5,7 +5,8 @@ Detailed execution plan for **sub-phase 3b** of the Restlet → CHF migration. P
 patterns: [chf-patterns.md](chf-patterns.md); predecessor: [phase-3a-oauth2request.md](phase-3a-oauth2request.md);
 inventory: [inventory.md](inventory.md). Written 2026-07-11; branch `features/restlet-migration`.
 **Verified against the tree 2026-07-16** — the corrections are folded in below and recorded in
-[Plan review](#plan-review-2026-07-16). Execute from this text, not from the pre-review version.
+[Plan review](#plan-review-2026-07-16); the [Integration tests](#integration-tests) section was added by the
+same review. Execute from this text, not from the pre-review version.
 
 ## Context
 
@@ -39,8 +40,13 @@ is stripped; `ClientCredentialsReader`'s failure path is fully neutral end-to-en
 - **`OAuth2Utils`: drop the `jacksonRepresentationFactory` field + ctor param** (decided 2026-07-16). It is
   read only by the code 3b deletes. Sole call site to update: `OAuth2UtilsTest.java:48`.
 
+- **Integration tests: in scope** (decided 2026-07-16). Extend the existing e2e Playwright OAuth2 spec to
+  cover all three token locations, and add a `OAuth2GuiceModuleTest` binding guard. See
+  [Integration tests](#integration-tests).
+
 **~3 new classes** (the neutral verifiers), **~9 modified**, **~4 deleted** (3 Restlet verifiers + net
-method deletions), plus tests. Medium risk — live path, basic-auth ISO-8859-1 charset, and preserving the
+method deletions), plus tests: 4 new Java test classes (3 verifier + `OAuth2GuiceModuleTest`), 3 extended,
+and ~5 new e2e cases. Medium risk — live path, basic-auth ISO-8859-1 charset, and preserving the
 header/form/query token-location distinction.
 
 ## Key research findings (drove this plan)
@@ -121,6 +127,9 @@ path is byte-for-byte unchanged):
   **Keep the `request.setChallengeResponse(result)` write** (`RestletHeaderAccessTokenVerifier:85`) — it
   looks like a smell in a getter, but `OpenAMClientAuthenticationFailureFactory.hasAuthorizationHeader`
   reads that exact field. Comment it. See [review D3](#d3--the-header-verifier-mutates-the-request-and-falls-back-to-non-bearer).
+  **The `instanceof HttpRequest` guard is load-bearing and untestable with a plain `Request`** — it brings
+  `org.restlet.engine.adapter` into this class, and the branch behind it is only reachable under real HTTP
+  dispatch or from `mock(HttpRequest.class)`. See [review D6](#d6--the-bearer-parse-is-unreachable-from-a-plainly-constructed-restlet-request).
 - `getFormParameter(name)` ← `RestletFormBodyAccessTokenVerifier` body: guard
   `MediaType.APPLICATION_WWW_FORM.equals(entity.getMediaType())`, then `new Form(entity).getFirstValue(name)`
   — **no entity re-set**, matching the verifier today and deliberately unlike `getParameter:91-93`.
@@ -151,11 +160,24 @@ for the three new accessors (consistent with 3a; `/oauth2/idtokeninfo` runs thro
 **Deleted:** `RestletHeaderAccessTokenVerifier`, `RestletFormBodyAccessTokenVerifier`,
 `RestletQueryParameterAccessTokenVerifier` (`org.forgerock.oauth2.restlet`).
 
-**Modified — `OAuth2GuiceModule.java`** (`org.forgerock.openam.oauth2.guice`):
-- imports (~lines 87–89) → the three new `org.forgerock.oauth2.core` classes.
-- the four `configure()` binds (~180–183: unqualified default + `@Named(HEADER/FORM_BODY/QUERY_PARAM)`) and
-  the three realm-agnostic `@Provides` (~314, ~319–326, ~328–335) → `new`/`.to()` the neutral classes.
-  Consumers unchanged (see the token-location map above).
+**Modified — `OAuth2GuiceModule.java`** (`org.forgerock.openam.oauth2.guice`) — imports (~lines 87–89) →
+the three new `org.forgerock.oauth2.core` classes, then **seven** binding sites. Consumers unchanged (see
+the token-location map above).
+
+| Line | Kind | Key | New target |
+|---|---|---|---|
+| 180 | `.to()` | `AccessTokenVerifier` (**unqualified default** — `OpenIdConnectClientRegistrationService`) | `HeaderAccessTokenVerifier` |
+| 181 | `.to()` | `@Named(HEADER)` | `HeaderAccessTokenVerifier` |
+| 182 | `.to()` | `@Named(FORM_BODY)` | `FormBodyAccessTokenVerifier` |
+| 183 | `.to()` | `@Named(QUERY_PARAM)` | `QueryParameterAccessTokenVerifier` |
+| 316 | `@Provides` | `@Named(REALM_AGNOSTIC_HEADER)` | `new HeaderAccessTokenVerifier(tokenStore)` |
+| 325 | `@Provides` | `@Named(REALM_AGNOSTIC_FORM_BODY)` | `new FormBodyAccessTokenVerifier(tokenStore)` |
+| 334 | `@Provides` | `@Named(REALM_AGNOSTIC_QUERY_PARAM)` | `new QueryParameterAccessTokenVerifier(tokenStore)` |
+
+> **It is seven, not six** — the pre-review text and the first pass of this review both said "six". A missed
+> site leaves a binding pointing at a deleted class: a `CreationException` **at server start**, not a compile
+> error, so neither the module build nor the whole-reactor build catches it. This is what the
+> [Guice binding guard](#b-guice-binding-guard--oauth2guicemoduletest) exists to prevent.
 
 `AccessTokenVerifier` (the abstract base, `org.forgerock.oauth2.core`) is untouched — only its subclasses
 change package/impl.
@@ -240,6 +262,10 @@ Live callers that pin the KEEP list: `getConfirmationKey` ← `StatefulTokenStor
   `QueryParameterAccessTokenVerifierTest` — construct real `ChfOAuth2Request` **and** `RestletOAuth2Request`
   (per [chf-patterns.md](chf-patterns.md) §5/§11 scaffolding), assert token extraction from the right
   location and `null` from the wrong one (e.g. form verifier ignores a query token).
+  **Exception — the header verifier on Restlet:** a real `RestletOAuth2Request` over a plain
+  `new Request(...)` cannot reach the Bearer parse ([D6](#d6--the-bearer-parse-is-unreachable-from-a-plainly-constructed-restlet-request)).
+  Cover it two ways: `mock(HttpRequest.class)` with a stubbed `getHttpCall().getRequestHeaders()` for the raw-header
+  path, and a plain `Request` with a programmatic `setChallengeResponse(...)` for the fallback path.
 - Extend `ChfOAuth2RequestTest` / `RestletOAuth2RequestTest` for the three new accessors:
   `getAuthorizationBearerToken` (Bearer present / absent / non-Bearer scheme — assert the **divergence**:
   Restlet returns the challenge raw value, CHF returns `null`), `getQueryParameter`, `getFormParameter`
@@ -248,6 +274,10 @@ Live callers that pin the KEEP list: `getConfirmationKey` ← `StatefulTokenStor
   value on Restlet and the **new** value on CHF. Follow the established parallel-naming convention for
   transport-parity pairs (e.g. `ChfOAuth2RequestTest:286` ↔ `RestletOAuth2RequestTest:168`).
   Scaffolding: `ChfOAuth2RequestTest` helpers at `:346-382`; `RestletOAuth2RequestTest` helper at `:181-186`.
+  Note the existing `aNonBasicChallengeResponseStillYieldsCredentials` test already documents the
+  programmatic-`ChallengeResponse` shape — reuse it as the template for the D6 fallback case.
+- **New** `OAuth2GuiceModuleTest` and **new/extended e2e specs** — see
+  [Integration tests](#integration-tests) below.
 - `ClientCredentialsReaderTest` — the two new cases from work item 3 (**note the `getAllowedScopes()` trap**).
 - `OAuth2UtilsTest` — its only two tests cover `getConfirmationKey` (`:52`, `:66`), which 3b keeps, so
   **no cases need removing**; the sole edit is `new OAuth2Utils(factory)` → `new OAuth2Utils()` at `:48`.
@@ -255,6 +285,85 @@ Live callers that pin the KEEP list: `getConfirmationKey` ← `StatefulTokenStor
   (`AgentClientRegistrationTest`, `OpenAMClientRegistrationTest` via `expectedExceptions`) exercises only
   the `handle(String)` path and stays green.
 - **Existing Restlet-path suite stays green unchanged** — the acceptance gate for behaviour parity.
+
+## Integration tests
+
+Added to the plan 2026-07-16. The repo's test layers, runners, CI wiring and gotchas are documented once in
+[docs/test-infrastructure.md](../../test-infrastructure.md) — read it first; only the 3b-specific decisions
+are below. Two gaps make this more than a nice-to-have:
+
+- **Nothing at any level tests five of the seven bindings.** Only the `HEADER` verifier has end-to-end
+  coverage today (via the existing e2e spec). `FORM_BODY`, `QUERY_PARAM` and all three realm-agnostic keys
+  are untested everywhere.
+- **No test in `openam-oauth2` or `openam-uma` wires a Guice injector**, so nothing can catch a broken
+  binding — and 3b rewires seven of them. (Repo-wide, the only injector-wiring test is
+  `openam-rest/src/test/java/org/forgerock/openam/rest/RestRouterIT.java`.)
+
+### A. e2e Playwright — token-location coverage
+
+`e2e/oauth2/oauth2-test.spec.mjs` already drives authorize → `POST /oauth2/access_token` →
+`GET /oauth2/userinfo` with a Bearer header against real Tomcat + OpenDJ in Docker. CI runs it **unqualified**
+in the `build-docker` job (`.github/workflows/build.yml:299`, `npx playwright test`), so additions run
+automatically with no wiring. Extend the existing `test.describe("OAuth Service test")` block, reusing the
+module-scoped `accessToken` from the first test:
+
+| New test | Exercises | Assert |
+|---|---|---|
+| userinfo, token in POST form body | `@Named(FORM_BODY)` | 200, `sub === 'demo'` |
+| userinfo, token in **header + form body** | HEADER vs FORM_BODY distinction | error — `UserInfoService:90` throws `ServerException("Access Token cannot be provided in both form and header")` |
+| `GET /oauth2/tokeninfo?access_token=…` | `@Named(REALM_AGNOSTIC_QUERY_PARAM)` | 200, token fields |
+| `GET /oauth2/tokeninfo` + Bearer header | `@Named(REALM_AGNOSTIC_HEADER)` | 200, token fields |
+| tokeninfo, token in **header + query** | both realm-agnostic keys at once | 400 `invalid_request` — `TokenInfoService:125` |
+
+The **both-locations** rows are the high-value ones. `UserInfoService:84-93` and `TokenInfoService:114-129`
+each call two verifiers and **error when both succeed** — so the load-bearing location distinction is
+observable as pure black-box behaviour, with no knowledge of internals. If a 3b regression let the form
+verifier also read the header, those tests flip from error to 200. Nothing else in the repo can catch that.
+
+Route confirmed: `OAuth2RouterProvider.java:106` attaches `/tokeninfo` → `ValidationServerResource`.
+Helpers from `../common/openam-commons.mjs`: `OPENAM_BASE`, `getAdminToken`, `getAuthToken`, `USERNAME`,
+`PASSWORD`. The existing fixture (`test_client_app`, scope `profile`, public client + PKCE) is reusable as-is
+— no new setup.
+
+This **replaces the manual pre/post curl smoke** in verification step 4 with something repeatable that runs
+on every push, and it is the only coverage of the real `HttpRequest` path ([D6](#d6--the-bearer-parse-is-unreachable-from-a-plainly-constructed-restlet-request)).
+
+### B. Guice binding guard — `OAuth2GuiceModuleTest`
+
+New: `openam-oauth2/src/test/java/org/forgerock/openam/oauth2/guice/OAuth2GuiceModuleTest.java` (new package
+dir). Named `*Test`, so **surefire** runs it under `mvn test` — deliberate; the point is a fast gate on the
+seven-site rebind, not a slow one.
+
+- **The four `.to()` binds** — `Elements.getElements(new OAuth2GuiceModule())` records the binding graph
+  *without creating an injector*: no dependency resolution, no SMS, no eager singletons. Visit for
+  `LinkedKeyBinding` on `Key.get(AccessTokenVerifier.class)` and `Key.get(AccessTokenVerifier.class, named(HEADER))`
+  etc., asserting the linked key is the new neutral class. **Include the unqualified `:180` key** — no
+  `@Named`, easiest to forget, and it is the one feeding `OpenIdConnectClientRegistrationService`.
+- **The three `@Provides`** — they are *package-private*
+  (`AccessTokenVerifier getRealmAgnostic…(TokenStore)`), so a test in the same package calls them directly
+  with a `mock(TokenStore.class)` and asserts `isInstanceOf(...)`. No reflection, no injector.
+
+No new dependency: `mockito-core`, `assertj-core` and `testng` are already test-scoped in
+`openam-oauth2/pom.xml`, and Guice arrives compile-scope via `org.openidentityplatform.commons.guice:core`.
+(`commons.guice:test` is **not** on this module and stays off.)
+
+**Do not use the `RestRouterIT` pattern here.** Guice validates the whole binding graph at `createInjector`,
+and `OAuth2GuiceModule` binds `TokenStore`→`OpenAMTokenStore`, an `OpenAMSettings` provider, multibinders and
+assisted-inject factories — it would need sibling modules plus broad mock scaffolding merely to construct.
+Not worth it for what is, in substance, an assertion about seven lines.
+
+**Honest limitation:** this is a unit test, not an IT. It pins the binding *targets*; it does not prove the
+graph resolves at runtime. (A) is what proves the wiring actually works. Together they cover the seven
+bindings; neither alone does.
+
+### Considered and rejected (recorded so it is not re-litigated)
+
+- **Cargo/Selenium IT in `openam-server`** — the harness is real (`CargoBaseTest`, fresh Tomcat per test
+  method, `mvn verify -P integration-test`, Linux-only in CI) but drives only the installer UI
+  (`IT_Setup`, `IT_SetupWithOpenDJ`). Adding OAuth2 there duplicates (A) at far higher cost and runtime.
+- **In-process Restlet dispatch IT** — would yield a genuine `HttpRequest` in-process and so close D6 without
+  Docker, but there is **no precedent in the repo** (no `Component`, no `restlet.Client`, no restlet test jar
+  anywhere), and Phase 5 deletes the Restlet path outright. (A) covers the same ground via the real server.
 
 ## Verification
 
@@ -270,19 +379,32 @@ Live callers that pin the KEEP list: `getConfirmationKey` ← `StatefulTokenStor
      (`grep -rn "RestletHeaderAccessTokenVerifier\|RestletFormBodyAccessTokenVerifier\|RestletQueryParameterAccessTokenVerifier" --include=*.java .` → 0).
    - `grep -rn "handle(null" --include=*.java . | grep -v /target/` → 0 (**catches D1**).
    - `grep -rn "getCurrent()" openam-oauth2/src/main --include=*.java | grep -v /restlet/ | grep -v RestletOAuth2Request.java` → still 0 (no regressions).
-4. No route flip ⇒ no Cargo IT behaviour change expected. Smoke the token-verifier paths on the live Restlet
-   server: userinfo with the token in the `Authorization` header **and** in a POST form body (both must
-   succeed); tokeninfo/introspect with the token in the header **and** in the query string; dynamic
-   client-registration read (unqualified/default header verifier). Record pre/post curl — must match.
-5. CI (`.github/workflows/build.yml`) — JDK 11–26 × 3 OSes on the `features/**` push.
+4. No route flip ⇒ no Cargo IT behaviour change expected. The token-verifier smoke is now **automated** —
+   the [e2e specs](#a-e2e-playwright--token-location-coverage) cover userinfo (header / form body / both) and
+   tokeninfo (header / query / both). Run `npx playwright test oauth2` against a local container. Keep a
+   **manual** curl check for the one thing e2e does not reach: a dynamic client-registration read, which is
+   the only consumer of the unqualified `:180` default.
+5. CI (`.github/workflows/build.yml`) — `build-maven` runs 9 matrix legs on the `features/**` push (ubuntu ×
+   JDK 11/17/21/25/26, macOS × 11/26, windows × 11/26), then `build-docker` (`needs: build-maven`) runs the
+   e2e specs.
+
+> **`mvn test` vs `mvn verify`.** The root pom binds `maven-failsafe-plugin` **unconditionally** in
+> `<build><plugins>` (`:1843-1856`; goals `integration-test`+`verify`; no profile, no skip), so `*IT.java`
+> runs on `mvn verify` in *every* module but is **invisible to `mvn test`**. CI runs `verify` (`build.yml:61`),
+> adding `-P integration-test` on `ubuntu-latest` only (that profile gates openam-server's Cargo tests, which
+> 3b does not touch). 3b's new Java tests are all `*Test`, so steps 1–2 above cover them. The e2e specs are
+> **not** in the Maven reactor at all — they run only in the `build-docker` job. Full detail:
+> [docs/test-infrastructure.md](../../test-infrastructure.md).
 
 ## Parity checklist
 
 | Item | Guard |
 |---|---|
-| Token-location distinction (header vs form vs query) preserved | 3 verifier tests assert wrong-location returns null; consumers' `@Named` wiring unchanged |
-| Restlet path byte-for-byte unchanged | `RestletOAuth2Request` accessors = verbatim verifier bodies; existing suite green + pre/post curl |
+| Token-location distinction (header vs form vs query) preserved | 3 verifier tests assert wrong-location returns null; consumers' `@Named` wiring unchanged; **e2e "token in both locations" ⇒ error** on userinfo and tokeninfo |
+| Restlet path byte-for-byte unchanged | `RestletOAuth2Request` accessors = verbatim verifier bodies; existing suite green + e2e specs |
 | Bearer parse parity | `getAuthorizationBearerToken` ports `getChallengeResponse` Bearer logic incl. non-Bearer fallback |
+| Bearer parse actually executes (D6) | unit test via `mock(HttpRequest.class)`; **e2e is the only real-`HttpRequest` coverage** |
+| All seven Guice bindings retargeted | `OAuth2GuiceModuleTest` (`Elements` SPI + direct `@Provides` calls) — otherwise a miss surfaces only as a `CreationException` at server start |
 | Form content-type trap (`;charset=UTF-8`) | CHF `getFormParameter` uses the content-type-guarded `formBody()` helper; test with charset param |
 | Query source parity | Restlet uses `getOriginalRef()` (not `getResourceRef()`); asserted |
 | Basic-auth ISO-8859-1 (risk #5) | `ClientCredentialsReaderTest` basic-auth case via `BasicAuthHeader` |
@@ -296,21 +418,35 @@ Live callers that pin the KEEP list: `getConfirmationKey` ← `StatefulTokenStor
 
 new accessors on `OAuth2Request` base (throwing defaults) → impl in `RestletOAuth2Request` (verbatim) +
 `ChfOAuth2Request` (helpers) + delegate in `ValidateIdTokenRequest` → three neutral verifier classes →
-rebind `OAuth2GuiceModule` (**all six** bindings) → delete the three `Restlet*` verifiers →
+rebind `OAuth2GuiceModule` (**all seven** bindings) → delete the three `Restlet*` verifiers →
 failure-factory pull-forward → `OAuthProblemException` enabling edit (**retarget all three
 `handle(null,…)` callers first — incl. `UmaSettingsImpl` in openam-uma**; delete `pushException` +
 `popException` together) → `OAuth2Utils` delete-half (+ `OAuth2UtilsTest:48`) →
 `mvn -o -pl openam-oauth2 install -DskipTests` → `mvn -o -pl openam-oauth2,openam-uma test` →
-**whole-reactor build** → grep gates → tests → smoke/curl → record an **As-built** section here (3a
-convention) → mark 3b done in [plan.md](plan.md) and start [phase-3c] from
+**whole-reactor build** → grep gates → tests (incl. `OAuth2GuiceModuleTest`) → **e2e specs** against a local
+container → manual curl for the `:180` dynamic-client-registration default → record an **As-built** section
+here (3a convention) → mark 3b done in [plan.md](plan.md) and start [phase-3c] from
 [phase-3-research.md](phase-3-research.md).
+
+Write `OAuth2GuiceModuleTest` **in the same step as the rebind**, not after — it is the only gate on the
+seven sites, and a miss is otherwise invisible until a server starts. The e2e specs can be written any time
+after the verifiers land; they need a container, so keep them off the inner loop.
 
 ## Plan review (2026-07-16)
 
 Every load-bearing claim in the pre-review text was checked against the tree on
 `features/restlet-migration` (HEAD `0b389aed4e`). **The plan is sound and executable** — the research was
-accurate on almost every point — but five defects are folded into the sections above. No code was changed
-by this review.
+accurate on almost every point — but six defects (D1–D6) are folded into the sections above, along with a
+new [Integration tests](#integration-tests) section. No code was changed by this review.
+
+D1–D5 came from the first pass. **D6 and the seven-vs-six binding-count correction came from a second pass**
+that asked what could actually be integration-tested; both are cases where the plan's own verification steps
+would not have done what they claim. Two themes worth carrying into 3c/4/5:
+
+- **Restlet's server-adapter internals leak into testability.** D6 is not an isolated quirk — anything reading
+  raw headers on the Restlet side is reachable only under real dispatch or via engine mocks.
+- **Guice binding errors are invisible to the build.** They surface at server start. Any phase that rebinds
+  needs its own guard; the whole-reactor build is not one.
 
 ### D1 — `handle(Request, String)` has three callers, not two (compile break)
 
@@ -407,11 +543,34 @@ fixing field init.**
   are reachable only from the dead `getRedirector` (transitively dead). `getScope` is write-only.
 - **No existing test references any of the three `Restlet*AccessTokenVerifier` classes** — the new verifier
   tests are net-new coverage, not replacements.
-- The six Guice `AccessTokenVerifier` bindings are exactly as described (`:180-183` via `.to()`,
+- The Guice `AccessTokenVerifier` bindings are as described in kind and target (`:180-183` via `.to()`,
   `:316/325/334` via `new` with the realm-agnostic `TokenStore`). `:180` is the unqualified default feeding
   `OpenIdConnectClientRegistrationService`; `REALM_AGNOSTIC_FORM_BODY` is provided but has no consumer.
+  **Count corrected: seven, not six** — see the table in [work item 2](#2-three-transport-neutral-accesstokenverifiers--guice-rebind).
 - `AccessTokenVerifier`'s sole abstract is `protected abstract String obtainTokenId(OAuth2Request)` (`:98`);
   `verify()` is concrete and unoverridden. The base is already transport-neutral.
+
+### D6 — The Bearer parse is unreachable from a plainly-constructed Restlet `Request`
+
+`RestletHeaderAccessTokenVerifier:73` gates the **entire** `Authorization`-header read behind
+`request instanceof org.restlet.engine.adapter.HttpRequest` — a Restlet **server-adapter internal**, present
+only under real HTTP dispatch. Any other `Request` skips the branch and falls through to
+`request.getChallengeResponse()` (the D3 fallback). Two consequences the pre-review text does not account for:
+
+1. **The planned unit test cannot work as written.** "Construct a real `RestletOAuth2Request`" (Tests §1) does
+   not reach the Bearer parse: `RestletOAuth2RequestTest`'s own helper (`:181-186`) builds
+   `new Request(Method.GET, uri)`, which is not an `HttpRequest`. A test that sets a raw `Authorization`
+   header on such a request and asserts `null` **passes while proving nothing**. To exercise the parse you
+   must `mock(HttpRequest.class)` and stub `getHttpCall().getRequestHeaders()` to return a
+   `Series<Header>` — i.e. mock a Restlet engine internal. Do that, and say in the test why.
+2. **The verbatim port pulls `org.restlet.engine.adapter` into `RestletOAuth2Request`**, which today imports
+   only public Restlet API. Accept it (the class dies in Phase 5) but do not "simplify away" the `instanceof`:
+   without it, `((HttpRequest) request).getHttpCall()` would `ClassCastException` on every programmatically
+   built request, including openam-uma's.
+
+This is the reason the [e2e leg](#a-e2e-playwright--token-location-coverage) is not optional: it is the
+**only** test at any level that runs a genuine `HttpRequest`, and therefore the only one that can prove the
+ported Bearer parse works at all.
 
 ### Cosmetics noted, out of scope
 

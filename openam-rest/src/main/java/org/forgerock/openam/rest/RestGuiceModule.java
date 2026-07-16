@@ -89,6 +89,13 @@ public class RestGuiceModule extends AbstractModule {
         bind(Key.get(AsyncServerAuthModule.class, Names.named("OptionalSsoTokenSession")))
                 .to(OptionalSSOTokenSessionModule.class).in(Singleton.class);
 
+        // Unlike OptionalSsoTokenSession, this module rejects a request that carries no token (or an
+        // unusable one) rather than letting it through unauthenticated. For endpoints that have no
+        // anonymous use case, it turns a missing token into a 401 at the framework boundary instead of
+        // an obscure failure further down. See getRequiredAuthenticationFilter.
+        bind(Key.get(AsyncServerAuthModule.class, Names.named("RequiredSsoTokenSession")))
+                .to(LocalSSOTokenSessionModule.class).in(Singleton.class);
+
         bind(String.class)
                 .annotatedWith(Names.named(AuthnRequestUtils.SSOTOKEN_COOKIE_NAME))
                 .toProvider(new Provider<String>() {
@@ -133,6 +140,34 @@ public class RestGuiceModule extends AbstractModule {
     @Singleton
     org.forgerock.http.Filter getAuthenticationFilter(@Named("RestAuthentication") Logger logger,
             AuditApi auditApi, @Named("OptionalSsoTokenSession") AsyncServerAuthModule ssoTokenSessionModule)
+            throws AuthenticationException {
+        return AuthenticationFilter.builder()
+                .logger(logger)
+                .auditApi(auditApi)
+                .sessionModule(configureModule(ssoTokenSessionModule))
+                .build();
+    }
+
+    /**
+     * An authentication filter that requires a valid SSO token, as opposed to the
+     * {@literal AuthenticationFilter} above, which admits unauthenticated requests so that endpoints
+     * such as {@literal /json/authenticate} can be reached without one.
+     *
+     * <p>Intended for endpoints where every caller must already be authenticated, so that a missing or
+     * expired token yields a {@literal 401} from the framework rather than reaching a handler that can
+     * only fail once it tries to use the absent token.</p>
+     *
+     * @param logger The REST authentication logger.
+     * @param auditApi The audit API used by the authentication framework.
+     * @param ssoTokenSessionModule The session module that rejects requests without a usable token.
+     * @return A {@code Filter} that rejects unauthenticated requests.
+     * @throws AuthenticationException If the filter cannot be built.
+     */
+    @Provides
+    @Named("RequiredAuthenticationFilter")
+    @Singleton
+    org.forgerock.http.Filter getRequiredAuthenticationFilter(@Named("RestAuthentication") Logger logger,
+            AuditApi auditApi, @Named("RequiredSsoTokenSession") AsyncServerAuthModule ssoTokenSessionModule)
             throws AuthenticationException {
         return AuthenticationFilter.builder()
                 .logger(logger)

@@ -101,6 +101,7 @@ Two traps here:
 |---|---|
 | `e2e/oauth2/oauth2-test.spec.mjs` | authorize (code + PKCE S256) → `POST /oauth2/access_token` → `GET /oauth2/userinfo` with a **Bearer header**. Creates the OAuth2 service + a public client `test_client_app` (scope `profile`) via `/json/realms/root/realm-config/…` if absent. |
 | `e2e/saml/saml-test.spec.mjs` | SAML IdP↔SP flow |
+| `e2e/xacml/xacml-test.spec.mjs` | `/xacml` export/import: headers, realm styles, `?filter=`, import round-trip into a sub realm, and the auth paths (`401`/`403`) that no other layer covers. Creates realm `xacmltest` and policy `xacml-e2e-policy` (via `/json` v1) if absent. Paired with `openam-entitlements`' `XacmlRouterIT`, which covers route composition below the auth filter. |
 | `e2e/xui/xui-httponly.spec.mjs` | XUI cookie flags |
 | `e2e/common/openam-commons.mjs` | shared helpers: `OPENAM_BASE`, `ADMIN_USER`/`ADMIN_PASS`, `USERNAME`/`PASSWORD`, `getAdminToken(request)`, `getAuthToken(request, user, pass)` — all env-overridable |
 
@@ -141,13 +142,23 @@ Other workflows run **no** tests: `deploy.yml` uses `package`/`deploy`, `release
 | Module | Has `commons.guice:test`? | Uses it? |
 |---|---|---|
 | `openam-rest` | yes (`pom.xml:145-149` — the declaration to copy) | yes — `RestRouterIT`, `NotificationsWebSocketFilterTest`, `JSONRestStatusServiceTest` |
+| `openam-entitlements` | yes (`pom.xml:122-126`) | yes — `XacmlRouterIT` |
 | `openam-uma` | yes (`pom.xml:79-83`) | **no** — declared but unused |
 | `openam-oauth2` | **no** | n/a |
 
-**`RestRouterIT` is the only test in the repo that wires a real Guice injector.** Consequence:
-`OAuth2GuiceModule`, `OAuth2RestGuiceModule` and `LabelsGuiceModule` have **zero** test coverage, so **no
-test can currently catch a broken OAuth2/UMA Guice binding** — it surfaces as a `CreationException` when a
-server starts.
+**`RestRouterIT` is the only test that wires the real module graph** (`@GuiceModules({HttpGuiceModule,
+RestGuiceModule})`). Consequence: `OAuth2GuiceModule`, `OAuth2RestGuiceModule` and `LabelsGuiceModule` have
+**zero** test coverage, so **no test can currently catch a broken OAuth2/UMA Guice binding** — it surfaces
+as a `CreationException` when a server starts.
+
+`XacmlRouterIT` is the second real-injector test but takes the opposite approach: a **minimal injector**
+that binds only what the class under test needs, with `InjectorConfiguration.setGuiceModuleLoader(→ empty
+set)` to kill classpath scanning. Prefer this when you want to assert one provider's route composition —
+it is far easier to construct, and it does not drag in every `HttpRouteProvider` on the test classpath via
+`ServiceLoader`. The trade-off is that it proves nothing about the real bindings or the `META-INF/services`
+registration. Note that `Modules.override` **cannot** be used to patch `HttpGuiceModule`: it is a
+`PrivateModule`, and the override only descends into private bindings when the base is a single
+`PrivateElements`.
 
 Cheaper alternative when you only need to assert *binding targets*, without paying for an injector: Guice's
 `Elements.getElements(new SomeModule())` records the binding graph with **no** dependency resolution, no eager
@@ -176,6 +187,9 @@ Recorded so they're not rediscovered:
   `UmaWellKnownConfigurationEndpointTest`, `PermissionRequestEndpointTest`, `AuthorizeResourceTest`. Restlet
   routing, `Finder`, and Guice are all bypassed. Copy `RestRouterIT` instead if you need real dispatch.
 - **Container ITs cover only the installer** (layer 3) — every protocol-level assertion lives in layer 4.
+  Layer 4 is Linux-only and runs on one JDK, so anything it alone covers (for `/xacml`: the `401`/`403`
+  auth paths) has **no cross-JDK/cross-OS guard**. Pair a layer-4 spec with a layer-2 IT where the
+  behaviour can be asserted without a container; `e2e/xacml` + `XacmlRouterIT` split on exactly that line.
 - `openam-oauth2/src/test/.../OpenAMClientRegistrationJwksUriIntegrationTest.java` is named "Integration" but
   ends in `Test`, so it is a **surefire unit test**. Naming here is not a reliable signal of layer.
 

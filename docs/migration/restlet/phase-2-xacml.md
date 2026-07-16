@@ -11,8 +11,9 @@ smallest URL area — `/xacml/*` (policy export/import) — off Restlet onto For
 XACML is the ideal first cut: it has **no `OAuth2Request` coupling**, it is the only Restlet
 area already fronted by a CHF→Restlet CAF-auth bridge (so the auth chain is proven), and it
 is a single POST/GET resource. Landing it proves the end-to-end CHF pattern
-(HttpRouteProvider + `Endpoints.from` handler + realm routing + version matching + CAF auth +
-XML error rendering) that phases 3–8 reuse.
+(HttpRouteProvider + `Endpoints.from` handler + realm routing + CAF auth + XML error rendering)
+that phases 3–8 reuse. Version matching is deliberately **not** part of the pattern proven here —
+see the API version item under Design, which records why `/xacml` must stay unversioned.
 
 **Outcome:** `/xacml/*` served natively by the `OpenAM` `HttpFrameworkServlet` via a new
 `HttpRouteProvider`; the Restlet XACML classes and the CHF→Restlet bridge for `/xacml`
@@ -50,12 +51,22 @@ XML `<error>` form reproduces the old `XMLRestStatusService` for **every** error
   (`openam-rest/.../forgerockrest/utils/XMLResourceExceptionHandler.java`), `Content-Type:
   application/xml` — matching today's `XMLRestStatusService` (`DomRepresentation(APPLICATION_XML, …)`),
   including the 405/500 fallbacks.
-- **Auth caller — faithful, from `AttributesContext`.** After the CAF
-  `@Named("AuthenticationFilter")` runs, the auth map is on `AttributesContext` under key
+- **Auth caller — from `AttributesContext`, behind a filter that requires a token.** After the CAF
+  authentication filter runs, the auth map is on `AttributesContext` under key
   `org.forgerock.authentication.context` (constant
   `AuthenticationFramework.ATTRIBUTE_AUTH_CONTEXT`). Handler reads `tokenId` from it and
   `SSOTokenManager.getInstance().createSSOToken(tokenId)` — identical to today, minus the
   servlet-attribute copy. No `SecurityContext`/`HttpContextFilter` introduced.
+
+  **Corrected 2026-07-16.** This route uses `@Named("RequiredAuthenticationFilter")`, *not* the
+  `@Named("AuthenticationFilter")` that `/json` uses. The latter is built on
+  `OptionalSSOTokenSessionModule`, which admits a request carrying no token so that endpoints like
+  `/json/authenticate` are reachable; the handler would then read a null `tokenId` and report the
+  missing credential as a `500` from `createSSOToken(null)`. Restlet had the identical defect — this
+  is not a migration regression — but it was fixed here rather than carried forward, so a missing or
+  expired token is now a `401` from the framework. See
+  [phase-2-integration-tests.md](phase-2-integration-tests.md#the-401-that-was-a-500). The `/json`,
+  OAuth2 and STS routes still use the optional filter and are unchanged.
 - **Realm — `RealmContext`, superset routing.** Handler reads
   `context.asContext(RealmContext.class).getRealm().asPath()` (replaces
   `RestletRealmRouter.getRealmFromRequest`). Route mirrors `RestGuiceModule.getChfRootRouter()`:
@@ -70,9 +81,24 @@ XML `<error>` form reproduces the old `XMLRestStatusService` for **every** error
   action, actions, emptyMap)` and `evaluator.isAllowed(...)` are ported **verbatim**. Audit
   component string preserved as `"org.forgerock.openam.xacml.v3.rest.XacmlService"` (constant,
   not `getClass().getName()`) so `RestLog` events don't drift.
-- **API version.** `@Named("ResourceApiVersionFilter")` (`resourceApiVersionContextFilter`)
-  in the chain; endpoint router matches `policies` with
-  `RouteMatchers.requestResourceApiVersionMatcher(version(1))` → `Endpoints.from(XacmlServiceHandler)`.
+- **API version — no gate (corrected 2026-07-16).** The endpoint router routes `policies` straight
+  to `Endpoints.from(XacmlServiceHandler)` with **no** version matcher and **no**
+  `@Named("ResourceApiVersionFilter")` in the chain. Any `Accept-API-Version` value is ignored, as
+  under Restlet.
+
+  This bullet originally specified `requestResourceApiVersionMatcher(version(1))` plus the shared
+  version filter, and that is what shipped in `191b3ed346`. It was **wrong**, and
+  `XacmlRouterIT` caught it. `/json` routes get a v1 gate by default
+  (`Routers.ServiceRoute.toService()` → `forVersion(1)`), which makes them subject to the global
+  *REST APIs → Default Version* setting (`RestApis.xml`, `openam-rest-apis-default-version`;
+  Latest/Oldest/**None**, default Latest). Restlet's `/xacml` had no version gate and so was never
+  subject to it. Under `None`, `ResourceApiVersionRouteMatcher.evaluate` returns no match for an
+  unversioned request → **404 for every legacy XACML client** (ssoadm and the CLI-era exporters,
+  none of which send the header). Fixed by removing the gate; see the comment in
+  `XacmlHttpRouteProvider.get()` and the version cases in `XacmlRouterIT`.
+
+  Note the gate is inert without the filter: absent an `ApiVersionRouterContext`, the matcher falls
+  back to a hardcoded `LATEST`. Both must be present to reintroduce the bug, and both are guarded.
 - **Locale.** Derive from `request.getHeaders().get(AcceptLanguageHeader.class)` →
   `getLocales().getPreferredLocale()`, default `Locale.getDefault()` (idiom from
   `AuthenticationServiceV1`). Used only for `EntitlementException.getLocalizedMessage(locale)`.
@@ -163,8 +189,14 @@ Reference check confirms no other production references to these classes. `RestS
 - **`XacmlXmlErrorFilterTest`** (new) — a `403`/`400`/`405`/`500` CREST-error-map response →
   XML `<error>` with `code`/`reason`/`message` + `Content-Type: application/xml` (absorbs
   `XMLRestStatusServiceTest` assertions).
-- Route wiring is exercised by the Cargo IT smoke (below), matching how existing providers
-  are covered (`RestRouterIT`-style).
+- **`XacmlRouterIT`** (new, layer 2) — dispatches through the real `XacmlHttpRouteProvider`
+  composition: root/legacy-path/`realms/root` realm styles, the absence of version routing, the
+  `405` → XML fallback, `404` for unknown endpoints, and the `InvalidRealmNames` registration.
+  See [phase-2-integration-tests.md](phase-2-integration-tests.md).
+- Route wiring is **not** exercised by the Cargo IT smoke, contrary to this plan's original claim:
+  the only container ITs are `IT_Setup`/`IT_SetupWithOpenDJ`, which drive the installer UI through
+  Selenium and never call `/xacml`. That run proves the WAR boots (a broken Guice binding would fail
+  startup) and nothing more.
 
 ### Research artifact (reusable for later phases)
 
@@ -181,15 +213,14 @@ reference line to it from [plan.md](plan.md)'s Phase 3+ sections.
 2. `mvn install -DskipTests` (whole reactor; confirms web.xml/WAR + no dangling refs).
 3. Cargo IT (Linux; needs `127.0.0.1 openam.local` in `/etc/hosts`):
    `mvn -pl openam-server verify -P integration-test`.
-4. Manual smoke against a running WAR (record pre-change curl, diff after):
-   - `GET /openam/xacml/policies` — admin cookie → `200` XACML XML + `Content-Type:
-     application/xacml+xml; version=3.0` + `Content-Disposition: attachment; filename=realm-policies.xml`;
-     no cookie → CAF `401`.
-   - `GET /openam/xacml/realms/root/policies` and legacy `/openam/xacml/<subrealm>/policies`
-     and `?realm=` override — realm parity.
-   - `POST /openam/xacml/policies` import round-trip (+ `?dryrun=true`), empty doc → `400` XML.
-   - `?filter=` (multi-valued) export.
-   - Error → XML `<error>` body (e.g. non-admin READ → `403`; `PUT` → `405` XML).
+4. **Automated, replacing the manual curl matrix this step used to list** — see
+   [phase-2-integration-tests.md](phase-2-integration-tests.md):
+   - `mvn -pl openam-entitlements verify` → `XacmlRouterIT` (13 cases): route composition, realm
+     styles, the unversioned contract, `405` → XML. Runs on all 9 CI legs. Note `mvn test` will
+     **not** run it — failsafe is bound at the root pom.
+   - `cd e2e && npx playwright test xacml` → `xacml-test.spec.mjs` (15 cases): the same surface over
+     the wire plus real auth (`401`/`403`), real XML serialization, and the import round-trip.
+     Needs a running WAR; CI's `build-docker` job runs it unqualified.
 5. CI (`.github/workflows/build.yml`) runs JDK 11–26 × 3 OSes on the `features/**` push.
 
 ## Phase-2 parity checklist (subset of [plan.md](plan.md) risk register)
@@ -199,7 +230,7 @@ reference line to it from [plan.md](plan.md)'s Phase 3+ sections.
 | XML error bodies (incl. 405/500) | `XacmlXmlErrorFilter` + `XacmlXmlErrorFilterTest` |
 | `application/xacml+xml; version=3.0` + `Content-Disposition` | explicit headers + handler test asserts |
 | Delegation permission identity (`realm`,`rest`,`1.0`,`policies`) | verbatim port; audit component string pinned |
-| Auth caller (`tokenId` → SSOToken) from CAF context | read `AttributesContext` auth map; no-cookie → 401 smoke |
+| Auth caller (`tokenId` → SSOToken) from CAF context | read `AttributesContext` auth map; `RequiredAuthenticationFilter` makes no-token a real `401` (was `500` under Restlet *and* as first shipped) — `e2e/xacml` asserts it |
 | Realm styles (root / `realms/{id}` / legacy path / alias / `?realm=`) | mirror `getChfRootRouter()`; per-style smoke |
 | Version routing (`version(1)` on `policies`) | `requestResourceApiVersionMatcher` |
 | Locale for localized messages | `AcceptLanguageHeader`; smoke-verify vs `getLocale()` |

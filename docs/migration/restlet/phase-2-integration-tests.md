@@ -39,17 +39,73 @@ automated guard at all, and the risk register's items 6, 7 and 9 are unenforced 
 **Outcome of this plan:** the Phase-2 parity checklist becomes executable in CI, and the resulting
 Playwright spec becomes the regression net that Phases 4–5 inherit for their own flips.
 
-## A parity risk that no existing test can see
+## A parity risk that no existing test can see — CONFIRMED AS A BUG, FIXED
 
-Phase 2 put `requestResourceApiVersionMatcher(version(1))` in front of `policies`
-(`XacmlHttpRouteProvider.java:94-98`). **Restlet had no version gate at all.** So the behaviour of a request
-carrying no `Accept-API-Version` header — which is every existing XACML client, including the
-`ssoadm`/CLI-era consumers — now depends on `ResourceApiVersionBehaviourManager`'s default rather than on
-nothing. A wrong default turns every legacy XACML client into a 404 or 406.
+**Status: found by `XacmlRouterIT`, fixed 2026-07-16.** This section's hypothesis was right, and the
+mechanism turned out to be slightly different from what is described below. Kept for the record.
 
-This is invisible to both unit tests (they bypass the router entirely) and to the Cargo IT (it never calls
-`/xacml`). It is the single strongest argument for the work below, and it gets a dedicated case in **both**
-deliverables.
+Phase 2 put `requestResourceApiVersionMatcher(version(1))` in front of `policies`, plus the shared
+`@Named("ResourceApiVersionFilter")` in the chain. **Restlet had no version gate at all.** So an
+unversioned request — which is every existing XACML client, including the `ssoadm`/CLI-era consumers —
+became subject to the deployment-wide *REST APIs → Default Version* setting.
+
+What the investigation established:
+
+1. **The gate is the house default, not an XACML invention.** `Routers.ServiceRoute.toService()`
+   (`Routers.java:109-112`) routes every unversioned `/json` service through `forVersion(1)` — the same
+   matcher. So this was Phase 2 following house style.
+2. **`None` is one click away.** `openam-rest-apis-default-version` (`RestApis.xml:35-50`) is a global
+   single-choice admin setting: Latest / Oldest / **None**, default Latest. Under `None`,
+   `ResourceApiVersionRouteMatcher.evaluate` returns no match for an unversioned request → 404.
+3. **So the regression is narrow but real:** `/xacml` lost its Restlet exemption from that setting. Its
+   clients cannot be changed to send the header, so under `None` they would 404 with no recourse.
+   Stock installs (Latest) were unaffected, which is why nothing else caught it.
+4. **The gate was inert without the filter.** Absent an `ApiVersionRouterContext`, the matcher falls back
+   to a hardcoded `LATEST` — CHF even carries a `//TODO should this blow up if ApiVersionRouterContext
+   not present` at that spot. Deleting the filter alone changed no observable behaviour, which is how the
+   first version of `XacmlRouterIT` passed while blind to it. Fixed by asserting `Content-API-Version`.
+
+**Fix:** the version gate and the version filter are removed from `XacmlHttpRouteProvider`; `/xacml`
+ignores `Accept-API-Version` entirely, as under Restlet. Consequences accepted deliberately:
+`resource=2.0` now returns `200` (served v1, Restlet behaviour) rather than `404`, and no
+`Content-API-Version` response header is sent. `/xacml` cannot be versioned later without a breaking
+change — acceptable for a legacy endpoint being kept alive rather than evolved.
+
+## The 401 that was a 500
+
+**Status: found while writing deliverable 1, fixed 2026-07-16.** The case table below used to expect
+`401` for an unauthenticated export. It does not, and did not, return `401`. Tracing it before writing
+the assertion:
+
+1. `/xacml` used `@Named("AuthenticationFilter")` (`RestGuiceModule:139`), which is built on
+   `@Named("OptionalSsoTokenSession")` → `OptionalSSOTokenSessionModule`. That module exists to let
+   `/json/authenticate` be reached without a token: it overrides `getInvalidSSOTokenAuthStatus()` to
+   return `SUCCESS` where the base `LocalSSOTokenSessionModule` returns `SEND_FAILURE`.
+2. So CAF admits the request and seeds `AttributesContext` with an **empty** auth map
+   (`AuthenticationFramework:191-196`) — the module only fills it on the valid-token path.
+3. `XacmlServiceHandler.checkPermission` reads `authContext.get("tokenId")` → `null` (no NPE), and
+   `createSSOToken(null)` throws `SSOException` → `EntitlementException(INTERNAL_ERROR)` → **`500`**.
+4. **Restlet did exactly the same.** `git show 191b3ed346^:.../XacmlService.java` reads the same
+   `FORGEROCK_AUTH_CONTEXT` map, the same `tokenId`, the same `createSSOToken`, and maps
+   `EntitlementException` to `INTERNAL_ERROR`. This was a pre-existing defect, **not** a migration
+   regression, so the parity-only framing would have preserved it.
+
+**Fix:** a new `@Named("RequiredAuthenticationFilter")` (`RestGuiceModule`), identical to the
+existing one but built on a new `@Named("RequiredSsoTokenSession")` → `LocalSSOTokenSessionModule`,
+which rejects a request with no usable token. `XacmlHttpRouteProvider` injects it. A missing or
+expired token is now a framework `401`, rendered as XML by `XacmlXmlErrorFilter` (CAF's
+`JsonResponseWriter` writes a `Map` entity, which is exactly what the filter rewrites).
+
+Deliberately **not** applied to `/json`, OAuth2 or the two STS route providers, which still use the
+optional filter: `/json` genuinely needs anonymous access, and the others are out of Phase 2's scope.
+They are likely to have the same wart — worth a look, but not here.
+
+Consequences: an unauthenticated (or expired-token) caller now gets `401` where it got `500`, and
+`/xacml/<anything>` is `401` rather than `404` for such a caller, which also stops endpoint probing.
+
+**Also settled:** the "`iPlanetDirectoryPro` header not accepted" risk below is a non-risk.
+`LocalSSOTokenSessionModule:207-210` reads the cookie and **falls back to the header of the same
+name**, so header auth works and no cookie fallback is needed.
 
 ## Layer decision
 
@@ -89,11 +145,18 @@ produced (below). It is both fixture-free and a stronger parity assertion. Only 
 2. `ensureSubRealmExists("xacmltest")` — `POST /json/realms?_action=create`, `Accept-API-Version:
    resource=1.0`, body `{ name, parentPath: "/", active: true }`; tolerate an existing realm (409/400).
    Needed for the realm-style cases and for a non-root `Content-Disposition` filename.
-3. `ensurePolicyExists()` — `PUT /json/realms/root/policies/<name>` with `Accept-API-Version:
-   resource=2.1` (route registered at `EntitlementsRestRouteProvider.java:38-47`; v2.1 is
-   `PolicyResourceWithCopyMoveSupport`). A fresh install's root realm has no privileges, so **export would
-   otherwise return an empty `PolicySet`** and the round-trip and `filter` cases would prove nothing. This
-   fixture is what makes them deterministic.
+3. `ensurePolicyExists()` — `PUT /json/realms/root/policies/<name>`. A fresh install's root realm has no
+   privileges, so **export would otherwise return an empty `PolicySet`** and the round-trip and `filter`
+   cases would prove nothing. This fixture is what makes them deterministic.
+
+   **Use `Accept-API-Version: resource=1.0`, not `2.1`.** v2+ requires `resourceTypeUuid` — a per-realm
+   generated id the spec would have to query for. `PolicyV1Filter.retrieveResourceType`
+   (`PolicyV1Filter.java:186-206`) derives it from `applicationName` instead, and the default
+   `iPlanetAMWebAgentService` application has exactly one resource type (`entitlement.xml:552-556`),
+   which is the single-resource-type precondition that filter enforces. The v1 body is flat
+   (`name`, `active`, `applicationName`, `actionValues`, `resources`, `subject`) because `JsonPolicy`
+   marks the entitlement `@JsonUnwrapped`. Create with `If-None-Match: *`; a bare `PUT` is a CREST
+   update and 404s on a missing policy.
 
 Auth is passed as the `iPlanetDirectoryPro` **header**, as the oauth2 spec does against `/oauth2/authorize`.
 `/xacml` sits behind the same CAF `@Named("AuthenticationFilter")` as `/json`, so the header should be
@@ -106,17 +169,17 @@ Each row maps to a Phase-2 parity-checklist row or a risk-register item.
 | # | Request | Expect | Guards |
 |---|---|---|---|
 | 1 | `GET /xacml/policies` + admin | `200`; `Content-Type: application/xacml+xml; version=3.0`; `Content-Disposition: attachment; filename=realm-policies.xml`; body parses as XML, root `PolicySet` | Content types (risk 6); export headers |
-| 2 | `GET /xacml/policies`, **no token** | `401` | Auth caller; CAF wiring |
+| 2 | `GET /xacml/policies`, **no token** | `401` + XML `<error>` **only after the fix above** — was `500` | Auth caller; CAF wiring |
 | 3 | `GET /xacml/policies` + **demo** token | `403`; `Content-Type: application/xml`; body `<error>` with `code` `403` | Delegation identity; XML errors (risk 7) |
-| 4 | `PUT /xacml/policies` + admin | `405`; XML `<error>` body | `Endpoints.from` 405 fallback → XML, end-to-end |
-| 5 | `GET /xacml/policies` **no `Accept-API-Version`** | `200` | **The version-gate regression above** |
-| 6 | `GET /xacml/policies` + `Accept-API-Version: resource=1.0` | `200` | Version routing |
-| 7 | `GET /xacml/policies` + `Accept-API-Version: resource=2.0` | non-2xx, XML error | Version routing is real, not inert |
+| 4 | `PUT /xacml/policies` + admin | `405`; XML `<error>` whose embedded `<code>` is **`501`**, not `405` | `Endpoints.from` 405 fallback → XML, end-to-end |
+| 5 | `GET /xacml/policies` **no `Accept-API-Version`** | `200` | **The version-gate regression above**, over the wire |
+| 6 | `GET /xacml/policies` + `Accept-API-Version: resource=1.0` | `200`; **no** `Content-API-Version` response header | Header is ignored, not routed on |
+| 7 | `GET /xacml/policies` + `Accept-API-Version: resource=2.0` | `200` — **not** a non-2xx | The route is unversioned; a 404 here means the gate is back |
 | 8 | `GET /xacml/realms/root/policies` + admin | `200`, filename `realm-policies.xml` | Modern realm style (new in Phase 2) |
 | 9 | `GET /xacml/xacmltest/policies` + admin | `200`, filename `xacmltest-realm-policies.xml` | **Legacy** path realm — the Restlet-compat style |
 | 10 | `GET /xacml/policies?realm=/xacmltest` + admin | `200`, filename `xacmltest-realm-policies.xml` | `?realm=` override (risk 9) |
 | 11 | `GET /xacml/policies?filter=name=<policy>` + admin | `200`; exported `PolicySet` contains only that policy | `filter` param |
-| 12 | `GET /xacml/policies?filter=…&filter=…` | `200`; multi-valued filter honoured | `Form.fromRequestQuery` list semantics |
+| 12 | `GET /xacml/policies?filter=name=<policy>&filter=name=<none>` | `200`; **empty** `PolicySet` | `Form.fromRequestQuery` list semantics — filters are ANDed (`PrivilegeManager.search` passes `boolAnd=true`), so an unsatisfiable second filter must empty the result; if only the first were read the policy would still be exported |
 | 13 | `POST /xacml/policies` + admin, body = **case-1 export**, `?dryrun=true` | `200`; JSON array of `{status,name,type}`; **and** a follow-up export is unchanged | Import + dryrun non-persistence |
 | 14 | `POST /xacml/policies?realm=/xacmltest` + admin, body = case-1 export | `200`; JSON array; follow-up export of `xacmltest` contains the policy | **Round-trip** — the real proof |
 | 15 | `POST /xacml/policies` + admin, empty body | `400`; XML `<error>` | Empty-doc path |
@@ -129,10 +192,17 @@ but only these confirm it is actually *mounted* on the route.
 
 ### Assertion helper
 
-Add one local helper to the spec (not to `openam-commons.mjs` — it is XACML-specific):
-`expectXmlError(response, code)` — asserts `Content-Type: application/xml`, parses the body, and checks the
-`<error>/<code>` text. Cases 3, 4, 7 and 15 all use it. Parse with a regex or a tiny DOM parse; do **not**
-add an XML-library dependency to `e2e/package.json` for four assertions.
+Two local helpers in the spec (not in `openam-commons.mjs` — both are XACML-specific):
+
+- `expectXmlError(response, embeddedCode)` — asserts `Content-Type: application/xml` and the
+  `<error>/<code>` text. Used by cases 2, 3, 4 and 15 (case 7 no longer errors — the route is
+  unversioned). The parameter is the **embedded** code, which is not always the HTTP status: case 4 is
+  `405` with `<code>501</code>`.
+- `policyIds(xml)` — every `PolicyId="…"`, which `XACMLPrivilegeUtils.privilegeNameToPolicyId` returns
+  as the privilege name verbatim. Anchor the match (`\bPolicyId=`) so `PolicySetId` does not match.
+
+Parse with a regex; do **not** add an XML-library dependency to `e2e/package.json` for these. Node has
+no global `DOMParser`, so a "tiny DOM parse" is not actually available without one.
 
 ---
 
@@ -147,6 +217,33 @@ and the designated template.
 (`pom.xml:122-126`). Note this contradicts the module table in
 [test-infrastructure.md § Guice testing](../../test-infrastructure.md#guice-testing), which lists only
 `openam-rest`/`openam-uma`/`openam-oauth2` — **update that table** when this lands.
+
+### Correction: the `configureOverrideBindings` design below does not work
+
+**The shape sketched in this section was not buildable, and the shipped test does not use it.** It called
+for overriding `Iterable<HttpRouteProvider>` in `configureOverrideBindings` with
+`@GuiceModules({HttpGuiceModule.class, RestGuiceModule.class})` installed, citing
+`HttpRouterProviderTest.java:84` as the proven seam. That test has **no `@GuiceModules`** and never
+installs `HttpGuiceModule`. `HttpGuiceModule` is a `PrivateModule`, and `Modules.override` only descends
+into private bindings when the base is a single `PrivateElements` element — so the override never binds.
+
+The shipped `XacmlRouterIT` instead builds a **minimal injector**: no `HttpGuiceModule`, no
+`RestGuiceModule`, `InjectorConfiguration.setGuiceModuleLoader(→ empty set)` to kill classpath scanning,
+and `configure()` binds only what `XacmlHttpRouteProvider` actually needs. It then builds the router from
+`InjectorHolder.getInstance(XacmlHttpRouteProvider.class).get()` directly rather than via
+`HttpApplication.start()`. This also sidesteps the `ServiceLoader` problem in fact 1 below — no
+`ServiceLoader` runs at all.
+
+Tradeoff accepted: the test covers neither the `META-INF/services` registration nor the real module
+graph's bindings. Both surface at server startup and in the e2e spec.
+
+Two further test-only notes:
+
+- `HttpRoute`'s `getMode()`/`getUriTemplate()`/`getHandler()` are package-private, so the test needs the
+  `org.forgerock.openam.http.HttpRouteAccessor` shim (test tree, no production change).
+- The test lives in `org.forgerock.openam.xacml.v3.rest`, not next to `XacmlHttpRouteProvider`, so it can
+  override the package-private `XacmlServiceHandler.checkPermission` (whose real implementation reaches
+  for the `SSOTokenManager` singleton).
 
 ### Two wiring facts that dictate the design
 
@@ -199,13 +296,19 @@ drifts, this test breaks. Real CAF auth stays with layer 4.
 | 1 | `GET /xacml/policies` | reaches the handler; `RealmContext` realm is root |
 | 2 | `GET /xacml/subrealm/policies` | legacy path realm resolves (mock the realm via `RealmTestHelper` + `CoreWrapper`, per `RestRouterIT.mockRealm`) |
 | 3 | `GET /xacml/realms/root/policies` | modern realm route resolves |
-| 4 | `GET /xacml/policies` **no `Accept-API-Version`** | `200` — the version-gate regression, pinned cross-JDK |
-| 5 | `GET /xacml/policies` + `resource=2.0` | non-2xx |
+| 4 | `GET /xacml/policies` with `Accept-API-Version` absent / `1.0` / `2.0` / unparseable | `200` for all four — the route is unversioned; pinned cross-JDK |
+| 5 | `GET /xacml/policies`, behaviour manager = `NONE` | `200` — the regression guard; fails if the gate **and** filter return |
+| 5b | `GET /xacml/policies` | no `Content-API-Version` response header — fails if the filter returns |
 | 6 | `PUT /xacml/policies` | `405` **and** `Content-Type: application/xml` — proves the error filter is mounted |
 | 7 | `GET /xacml/nonsense` | `404` |
 | 8 | provider `get()` | `"policies"` was added to the injected `InvalidRealmNames` set (`XacmlHttpRouteProvider.java:92`) |
 
-Case 8 is cheap and guards a subtle one: without it, `/xacml/policies` could be parsed as realm `policies`.
+Case 8's original rationale ("without it, `/xacml/policies` could be parsed as realm `policies`") is
+**wrong**. The set is write-only at the routing layer: providers register their own first path segment,
+exactly as `Routers.ServiceRouterImpl.route` does. Its sole reader is
+`OrganizationConfigManager.validateOrgName` (`OrganizationConfigManager.java:522`), reached from
+`createSubOrganization`, which rejects creating a realm whose name clashes with an endpoint. So the case
+guards **realm creation**, not request routing. The assertion is still worth keeping; the reason was not.
 
 ---
 
@@ -226,12 +329,24 @@ Case 8 is cheap and guards a subtle one: without it, `/xacml/policies` could be 
 
 ## Execution order
 
-1. Write the layer-4 spec (deliverable 1) — highest value, no Java, no pom, no CI wiring.
-2. Run it against a local WAR; **record any case where the shipped behaviour differs from the table** — cases
-   5 and 7 (version gate) and 2 (header vs cookie auth) are the ones most likely to surprise. A mismatch
-   here is a Phase-2 bug found, not a test to bend: fix the code or amend
-   [phase-2-xacml.md](phase-2-xacml.md)'s parity claim, and say which.
-3. Write the layer-2 IT (deliverable 2).
+**Amended:** steps 1–3 were swapped. There is no local OpenAM server (nothing listening, no containers),
+so the layer-4 spec cannot be run locally at all — only CI can exercise it. The layer-2 IT went first
+because it is the part that can actually be verified on this machine, and it is what found the version-gate
+bug.
+
+1. ~~Write the layer-4 spec~~ → **Write the layer-2 IT (deliverable 2).** ✅ Done: 13 cases, green.
+   Found and fixed the version-gate bug above.
+2. ✅ **Done: layer-4 spec written** (deliverable 1), 15 cases. As predicted, case 2 was the surprise,
+   though not in the way expected: the header works fine, and the `401` was a `500`. That mismatch was
+   neither "a Phase-2 bug" nor "a test to bend" — it was a **pre-existing** defect the migration
+   faithfully carried over (see [above](#the-401-that-was-a-500)), fixed rather than pinned.
+
+   The spec is **unverified**: there is no local OpenAM server, so only CI has ever run it. The
+   assertions are derived from source, not from observed responses; treat the first CI run as the real
+   verification. `npx playwright test xacml --list` (15 tests) and node-level checks of the two regex
+   helpers are all that could be confirmed locally.
+3. Note cases 5–7 in the deliverable-1 table now assert the **unversioned** contract: `200` for a missing
+   header, `200` for `resource=1.0`, and `200` (not a non-2xx) for `resource=2.0`.
 4. Update [test-infrastructure.md](../../test-infrastructure.md): the Guice-test module table
    (openam-entitlements has `commons.guice:test`), and the "container ITs cover only the installer" gap now
    that layer 4 covers `/xacml`.
@@ -260,7 +375,9 @@ unqualified `npx playwright test` picks up `xacml-test.spec.mjs`.
 | Risk | Mitigation |
 |---|---|
 | Layer-2 IT drags in `RestGuiceModule`'s full graph and won't construct | Copy `RestRouterIT`'s mock scaffold **verbatim** — it is a proven-resolvable set. If it still fails, the override of `Iterable<HttpRouteProvider>` is the first thing to check. |
-| `iPlanetDirectoryPro` header not accepted on `/xacml` | Confirm on first run; fall back to a cookie. Either way case 2 (`401`) still holds. |
-| Export returns an empty `PolicySet` on a fresh install | The `ensurePolicyExists` fixture exists precisely for this; if the round-trip is empty, the fixture failed silently — assert it is non-empty in case 1. |
-| Sub-realm creation API version differs from `resource=1.0` | Confirm against `/json/realms` on first run; the realm cases (9, 10, 14) depend on it. |
+| ~~`iPlanetDirectoryPro` header not accepted on `/xacml`~~ | **Resolved, not a risk.** `LocalSSOTokenSessionModule:207-210` reads the cookie then falls back to the same-named header. |
+| Export returns an empty `PolicySet` on a fresh install | The `ensurePolicyExists` fixture exists precisely for this; if the round-trip is empty, the fixture failed silently — case 1 asserts the fixture policy is in the export. |
+| ~~Sub-realm creation API version differs from `resource=1.0`~~ | **Confirmed** `resource=1.0`: `SmsRestRouteProvider:68` registers `realms` via `toCollection`, which defaults to v1; `active` is a boolean (`SmsRealmProvider:208`). |
+| **Sub-realm import (case 14) may fail on resource types, not on Phase 2** | The imported privilege must resolve a resource type in `xacmltest`. If case 14 alone fails on the first CI run, suspect the fixture/realm setup before suspecting the migration. |
+| **Layer-2 IT cannot see the auth fix** | `XacmlRouterIT` stubs the auth filter, so the `401` has no cross-JDK guard — only `e2e` covers it. The IT does bind the stub under `RequiredAuthenticationFilter` **only**, so reverting the provider to the optional filter fails every case with a missing-binding error. |
 | Doclint is fatal on JDK 11/26 | No `{@link}` to anything not imported in the new IT. |

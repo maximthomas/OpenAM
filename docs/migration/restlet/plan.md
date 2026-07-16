@@ -29,7 +29,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Migration docs (this folder) | done |
-| 2 | XACML `/xacml` → CHF | done |
+| 2 | XACML `/xacml` → CHF | done (integration tests pending — [phase-2-integration-tests.md](phase-2-integration-tests.md)) |
 | 3a | `OAuth2Request` abstraction + consumer re-plumb | done ([phase-3a-oauth2request.md](phase-3a-oauth2request.md)) |
 | 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | pending ([phase-3b-collaborators.md](phase-3b-collaborators.md)) |
 | 3c | Response/HTML/exception layer (`org.forgerock.oauth2.http`) | pending |
@@ -44,7 +44,9 @@ Written 2026-07-08; branch `features/restlet-migration`.
 
 ## Phase 2 — XACML `/xacml` → CHF
 
-Detailed execution plan: [phase-2-xacml.md](phase-2-xacml.md).
+Detailed execution plan: [phase-2-xacml.md](phase-2-xacml.md). Integration-test plan:
+[phase-2-integration-tests.md](phase-2-integration-tests.md) — the route wiring shipped with unit
+coverage only; the Cargo IT that phase-2 named as its guard only drives the installer UI.
 
 No `OAuth2Request` coupling; the existing CHF→Restlet bridge for CAF auth
 (`RestEndpointServlet.RestletAuthnHttpApplication`) already proves the filter chain.

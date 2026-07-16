@@ -61,7 +61,7 @@ public abstract class OAuth2Request {
 
     /**
      * Gets the specified parameter from the request.
-     * <br/>
+     * <br>
      * It is up to the implementation to determine how and where it gets the parameter from on the request, i.e.
      * query parameters, request attributes, etc.
      *
@@ -88,10 +88,10 @@ public abstract class OAuth2Request {
 
     /**
      * Gets the body of the request.
-     * <br/>
+     * <br>
      * Note: reading of the body maybe a one time only operation, so the implementation needs to cache the content
      * of the body so multiple calls to this method do not behave differently.
-     * <br/>
+     * <br>
      * This method should only ever be called for access and refresh token request and requests to the userinfo and
      * tokeninfo endpoints.
      *

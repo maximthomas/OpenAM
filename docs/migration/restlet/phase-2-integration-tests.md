@@ -141,10 +141,21 @@ produced (below). It is both fixture-free and a stronger parity assertion. Only 
 
 ### Setup (`beforeAll`, idempotent)
 
-1. `getAdminToken(request)`; skip the suite if absent (same guard as the oauth2 spec).
-2. `ensureSubRealmExists("xacmltest")` — `POST /json/realms?_action=create`, `Accept-API-Version:
-   resource=1.0`, body `{ name, parentPath: "/", active: true }`; tolerate an existing realm (409/400).
+1. Authenticate admin **and** demo, each in a throwaway `apiRequest.newContext()` — see
+   "The cookie that outranks the header" below. Skip the suite if the admin token is absent (same
+   guard as the oauth2 spec).
+2. `ensureSubRealmExists("xacmltest")` — `POST /json/global-config/realms?_action=create`,
+   `Accept-API-Version: protocol=1.0,resource=1.0`, body
+   `{ name, parentPath: "/", active: true, aliases: [] }`; tolerate an existing realm (**409 only**).
    Needed for the realm-style cases and for a non-root `Content-Disposition` filename.
+
+   **Not `/json/realms/root/realms`.** That is the `@Deprecated` `RealmResource`, which takes the name
+   in a `realm` field, not `name`, and answers `No realm name provided` for this body. `SmsRealmProvider`
+   is bound under `global-config` only (`SmsRequestHandler.addRealmHandler`, `SchemaType.GLOBAL`), and
+   `global-config` is what the XUI console (`RealmsService.js`) and `openam-mcp-server` both use.
+   `aliases` is required — `SmsRealmProvider.validateRealmAliases` rejects a body without it with `400`.
+   Tolerate `409` and nothing else: `sms-organization_already_exists1` → `ConflictException` is the only
+   "already there" answer, and tolerating `400` silently swallows a malformed body.
 3. `ensurePolicyExists()` — `PUT /json/realms/root/policies/<name>`. A fresh install's root realm has no
    privileges, so **export would otherwise return an empty `PolicySet`** and the round-trip and `filter`
    cases would prove nothing. This fixture is what makes them deterministic.
@@ -159,8 +170,38 @@ produced (below). It is both fixture-free and a stronger parity assertion. Only 
    update and 404s on a missing policy.
 
 Auth is passed as the `iPlanetDirectoryPro` **header**, as the oauth2 spec does against `/oauth2/authorize`.
-`/xacml` sits behind the same CAF `@Named("AuthenticationFilter")` as `/json`, so the header should be
-accepted — **confirm on the first run**; fall back to a cookie if not.
+Confirmed against a live server: the header is accepted, and all 15 cases pass.
+
+### The cookie that outranks the header
+
+The first CI run (29491413497) failed every case with `403 The user has insufficient privileges`, raised
+from `PrivilegeAuthzModule:153` while creating the sub-realm. The cause is not the endpoint and not
+delegation:
+
+`POST /json/authenticate` **sets an `iPlanetDirectoryPro` cookie**, and Playwright's `request` fixture
+keeps a cookie jar for the whole file. `LocalSSOTokenSessionModule.validate` reads the **cookie first**
+(`getRequestUtils().getTokenId(request)`) and only falls back to the header of the same name. So
+authenticating demo on the shared fixture — as `beforeAll` did, right after authenticating admin —
+replaced the admin cookie with a demo one, and every subsequent `iPlanetDirectoryPro: <adminToken>`
+header was silently outranked. The realm create ran as **demo**, which is exactly the reported 403.
+
+Proven by curl against a live server, same body, same admin header, cookie the only variable:
+
+| Request | Result |
+|---|---|
+| admin header, no cookie | `201 Created` |
+| admin header + demo cookie | `403 The user has insufficient privileges` |
+
+Two consequences worth keeping in mind for any e2e spec here:
+
+- **The oauth2 spec is not a counter-example.** It survives only because it never authenticates a
+  second, weaker identity — its admin login is the last one to touch the jar.
+- **It silently breaks the negative cases too.** With a cookie in the jar, the "no token" case (2) is
+  not unauthenticated at all, and the demo case (3) is not necessarily demo. Both would have asserted
+  the right status for the wrong reason.
+
+Fix: authenticate inside a disposable `apiRequest.newContext()` and dispose it, so no session cookie ever
+reaches the shared fixture and each request carries exactly the identity named in its header.
 
 ### Cases
 
@@ -171,7 +212,7 @@ Each row maps to a Phase-2 parity-checklist row or a risk-register item.
 | 1 | `GET /xacml/policies` + admin | `200`; `Content-Type: application/xacml+xml; version=3.0`; `Content-Disposition: attachment; filename=realm-policies.xml`; body parses as XML, root `PolicySet` | Content types (risk 6); export headers |
 | 2 | `GET /xacml/policies`, **no token** | `401` + XML `<error>` **only after the fix above** — was `500` | Auth caller; CAF wiring |
 | 3 | `GET /xacml/policies` + **demo** token | `403`; `Content-Type: application/xml`; body `<error>` with `code` `403` | Delegation identity; XML errors (risk 7) |
-| 4 | `PUT /xacml/policies` + admin | `405`; XML `<error>` whose embedded `<code>` is **`501`**, not `405` | `Endpoints.from` 405 fallback → XML, end-to-end |
+| 4 | `PUT /xacml/policies` + admin | `405`; XML `<error>` with embedded `<code>405</code>` | `Endpoints.from` 405 fallback → XML, end-to-end |
 | 5 | `GET /xacml/policies` **no `Accept-API-Version`** | `200` | **The version-gate regression above**, over the wire |
 | 6 | `GET /xacml/policies` + `Accept-API-Version: resource=1.0` | `200`; **no** `Content-API-Version` response header | Header is ignored, not routed on |
 | 7 | `GET /xacml/policies` + `Accept-API-Version: resource=2.0` | `200` — **not** a non-2xx | The route is unversioned; a 404 here means the gate is back |
@@ -196,8 +237,11 @@ Two local helpers in the spec (not in `openam-commons.mjs` — both are XACML-sp
 
 - `expectXmlError(response, embeddedCode)` — asserts `Content-Type: application/xml` and the
   `<error>/<code>` text. Used by cases 2, 3, 4 and 15 (case 7 no longer errors — the route is
-  unversioned). The parameter is the **embedded** code, which is not always the HTTP status: case 4 is
-  `405` with `<code>501</code>`.
+  unversioned). The parameter is the **embedded** code, which the filter rewrites independently of the
+  HTTP status. Predicted ahead of the first live run that case 4 would be `405` with `<code>501</code>`,
+  generalising `XacmlXmlErrorFilterTest`'s note about `Endpoints.from` embedding a bare
+  `NotSupportedException`; against a real server it is `<code>405</code>`, agreeing with the status.
+  The two have agreed at every point this spec looks, so the parameter is now belt-and-braces.
 - `policyIds(xml)` — every `PolicyId="…"`, which `XACMLPrivilegeUtils.privilegeNameToPolicyId` returns
   as the privilege name verbatim. Anchor the match (`\bPolicyId=`) so `PolicySetId` does not match.
 
@@ -341,10 +385,13 @@ bug.
    neither "a Phase-2 bug" nor "a test to bend" — it was a **pre-existing** defect the migration
    faithfully carried over (see [above](#the-401-that-was-a-500)), fixed rather than pinned.
 
-   The spec is **unverified**: there is no local OpenAM server, so only CI has ever run it. The
-   assertions are derived from source, not from observed responses; treat the first CI run as the real
-   verification. `npx playwright test xacml --list` (15 tests) and node-level checks of the two regex
-   helpers are all that could be confirmed locally.
+   ✅ **Verified against a live server** (local Docker mirroring `build.yml`'s IDP: external OpenDJ
+   user store, embedded config store, WAR built from this branch): **15/15 pass**, from a clean fixture
+   state (realm and policy created, not merely found) and again on re-run (409/exists path). Two
+   source-derived assumptions did not survive contact with a real server — the `beforeAll` auth order
+   (see [the cookie above](#the-cookie-that-outranks-the-header)) and case 4's embedded `501`, which is
+   really `405`. Both are corrected above. The lesson is the obvious one: assertions reasoned out of
+   source are hypotheses until something runs them.
 3. Note cases 5–7 in the deliverable-1 table now assert the **unversioned** contract: `200` for a missing
    header, `200` for `resource=1.0`, and `200` (not a non-2xx) for `resource=2.0`.
 4. Update [test-infrastructure.md](../../test-infrastructure.md): the Guice-test module table
@@ -375,9 +422,9 @@ unqualified `npx playwright test` picks up `xacml-test.spec.mjs`.
 | Risk | Mitigation |
 |---|---|
 | Layer-2 IT drags in `RestGuiceModule`'s full graph and won't construct | Copy `RestRouterIT`'s mock scaffold **verbatim** — it is a proven-resolvable set. If it still fails, the override of `Iterable<HttpRouteProvider>` is the first thing to check. |
-| ~~`iPlanetDirectoryPro` header not accepted on `/xacml`~~ | **Resolved, not a risk.** `LocalSSOTokenSessionModule:207-210` reads the cookie then falls back to the same-named header. |
-| Export returns an empty `PolicySet` on a fresh install | The `ensurePolicyExists` fixture exists precisely for this; if the round-trip is empty, the fixture failed silently — case 1 asserts the fixture policy is in the export. |
-| ~~Sub-realm creation API version differs from `resource=1.0`~~ | **Confirmed** `resource=1.0`: `SmsRestRouteProvider:68` registers `realms` via `toCollection`, which defaults to v1; `active` is a boolean (`SmsRealmProvider:208`). |
-| **Sub-realm import (case 14) may fail on resource types, not on Phase 2** | The imported privilege must resolve a resource type in `xacmltest`. If case 14 alone fails on the first CI run, suspect the fixture/realm setup before suspecting the migration. |
+| ~~`iPlanetDirectoryPro` header not accepted on `/xacml`~~ | **Resolved, and the reason matters.** `LocalSSOTokenSessionModule:207-210` reads the cookie *then* falls back to the same-named header — so the header works, but any cookie in the jar beats it. That precedence is what broke the first CI run; see [the cookie above](#the-cookie-that-outranks-the-header). |
+| ~~Export returns an empty `PolicySet` on a fresh install~~ | **Resolved.** The `ensurePolicyExists` fixture covers it, and case 1 asserts the fixture policy is in the export. Verified live from a clean realm. |
+| ~~Sub-realm creation API version differs from `resource=1.0`~~ | **Superseded.** The realm is not created through `/json/realms/root/realms` at all — that route is `@Deprecated` and takes a `realm` field. `global-config` + `protocol=1.0,resource=1.0` + `aliases: []`, verified live (`201`, then `409`). |
+| ~~**Sub-realm import (case 14) may fail on resource types, not on Phase 2**~~ | **Resolved.** Case 14 passes live: the round-trip export→import into `xacmltest` resolves its resource type from `applicationName` via the v1 filter, as designed. |
 | **Layer-2 IT cannot see the auth fix** | `XacmlRouterIT` stubs the auth filter, so the `401` has no cross-JDK guard — only `e2e` covers it. The IT does bind the stub under `RequiredAuthenticationFilter` **only**, so reverting the provider to the optional filter fails every case with a missing-binding error. |
 | Doclint is fatal on JDK 11/26 | No `{@link}` to anything not imported in the new IT. |

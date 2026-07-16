@@ -220,7 +220,8 @@ reference line to it from [plan.md](plan.md)'s Phase 3+ sections.
      **not** run it — failsafe is bound at the root pom.
    - `cd e2e && npx playwright test xacml` → `xacml-test.spec.mjs` (15 cases): the same surface over
      the wire plus real auth (`401`/`403`), real XML serialization, and the import round-trip.
-     Needs a running WAR; CI's `build-docker` job runs it unqualified.
+     Needs a running WAR; CI's `build-docker` job runs it unqualified. **15/15 verified against a
+     live server** (local Docker mirroring `build.yml`'s IDP), including the `401` this phase fixed.
 5. CI (`.github/workflows/build.yml`) runs JDK 11–26 × 3 OSes on the `features/**` push.
 
 ## Phase-2 parity checklist (subset of [plan.md](plan.md) risk register)

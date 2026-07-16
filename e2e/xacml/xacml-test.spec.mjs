@@ -21,8 +21,8 @@
  * owns the 401/403 paths; the in-process XacmlRouterIT owns route composition below the auth filter.
  */
 
-import { test, expect } from "@playwright/test";
-import { OPENAM_BASE, getAdminToken, getAuthToken, PASSWORD, USERNAME } from "../common/openam-commons.mjs";
+import { test, expect, request as apiRequest } from "@playwright/test";
+import { OPENAM_BASE, ADMIN_PASS, ADMIN_USER, getAuthToken, PASSWORD, USERNAME } from "../common/openam-commons.mjs";
 
 const SUB_REALM = "xacmltest";
 const POLICY_NAME = "xacml-e2e-policy";
@@ -33,6 +33,25 @@ let adminToken;
 let demoToken;
 
 /**
+ * Authenticates in a throwaway context so the session cookie dies with it.
+ *
+ * /json/authenticate sets an iPlanetDirectoryPro cookie, and LocalSSOTokenSessionModule reads the
+ * cookie before falling back to the header of the same name. Authenticating on the shared `request`
+ * fixture would therefore leave a cookie that silently outranks every explicit token header this
+ * spec sends: logging in as demo would downgrade the admin calls to demo (403), and any cookie at
+ * all would stop the unauthenticated case from being unauthenticated. Every request below is
+ * expected to carry exactly the identity named in its header, so the jar has to stay empty.
+ */
+async function tokenFor(username, password) {
+  const context = await apiRequest.newContext();
+  try {
+    return await getAuthToken(context, username, password);
+  } finally {
+    await context.dispose();
+  }
+}
+
+/**
  * Every PolicyId in an exported PolicySet. XACMLPrivilegeUtils.privilegeNameToPolicyId returns the
  * privilege name unchanged, so these are the policy names. Anchored so PolicySetId does not match.
  */
@@ -41,9 +60,10 @@ function policyIds(xml) {
 }
 
 /**
- * Asserts the XacmlXmlErrorFilter rendered a CREST error as XML. The embedded code is not always the
- * HTTP status: Endpoints.from's 405 fallback embeds a bare NotSupportedException (501), a split that
- * XacmlXmlErrorFilterTest pins at the unit level too.
+ * Asserts the XacmlXmlErrorFilter rendered a CREST error as XML. The embedded code is passed in
+ * rather than taken from the response: XacmlXmlErrorFilterTest shows the filter rewrites only the
+ * body, so an embedded code that disagrees with the HTTP status is possible in principle. Against a
+ * real server the two have agreed everywhere this spec looks.
  */
 async function expectXmlError(response, expectedEmbeddedCode) {
   expect(response.headers()["content-type"]).toContain("application/xml");
@@ -79,23 +99,32 @@ function importPolicies(request, body, params) {
 /**
  * Needed by the realm-style cases, and gives the non-root Content-Disposition filename something to
  * be derived from. Tolerates an existing realm so the suite can be re-run against a live server.
+ *
+ * Realms are created through global-config, not through /json/realms/{realm}/realms: the latter is
+ * the deprecated RealmResource, which takes the name in a "realm" field and rejects this body with
+ * "No realm name provided". global-config is what the XUI console itself uses, and is where
+ * SmsRealmProvider is actually bound (SmsRequestHandler.addRealmHandler, SchemaType.GLOBAL).
+ *
+ * aliases is not optional: SmsRealmProvider.validateRealmAliases rejects a body without it.
  */
 async function ensureSubRealmExists(request) {
-  const response = await request.post(`${OPENAM_BASE}/json/realms/root/realms?_action=create`, {
+  const response = await request.post(`${OPENAM_BASE}/json/global-config/realms?_action=create`, {
     headers: {
       "iPlanetDirectoryPro": adminToken,
       "Content-Type": "application/json",
-      "Accept-API-Version": "resource=1.0",
+      "Accept-API-Version": "protocol=1.0,resource=1.0",
     },
-    data: { name: SUB_REALM, parentPath: "/", active: true },
+    data: { name: SUB_REALM, parentPath: "/", active: true, aliases: [] },
   });
 
   if (response.ok()) {
     console.log(`Realm "${SUB_REALM}" created`);
     return;
   }
-  if (response.status() === 409 || response.status() === 400) {
-    console.log(`Realm "${SUB_REALM}" already exists (${response.status()})`);
+  // Only a conflict means "already there"; anything else, including the 400 that a malformed body
+  // earns, has to fail loudly rather than be mistaken for an existing realm.
+  if (response.status() === 409) {
+    console.log(`Realm "${SUB_REALM}" already exists`);
     return;
   }
   throw new Error(`Failed to create realm "${SUB_REALM}": ${response.status()} ${await response.text()}`);
@@ -145,10 +174,10 @@ async function ensurePolicyExists(request) {
 }
 
 test.beforeAll(async ({ request }) => {
-  adminToken = await getAdminToken(request);
+  adminToken = await tokenFor(ADMIN_USER, ADMIN_PASS);
   test.skip(!adminToken, "admin token not available");
 
-  demoToken = await getAuthToken(request, USERNAME, PASSWORD);
+  demoToken = await tokenFor(USERNAME, PASSWORD);
 
   await ensureSubRealmExists(request);
   await ensurePolicyExists(request);
@@ -192,7 +221,7 @@ test.describe("XACML policy export", () => {
     });
 
     expect(response.status()).toBe(405);
-    await expectXmlError(response, 501);
+    await expectXmlError(response, 405);
   });
 });
 

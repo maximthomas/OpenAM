@@ -101,7 +101,7 @@ Two traps here:
 |---|---|
 | `e2e/oauth2/oauth2-test.spec.mjs` | authorize (code + PKCE S256) → `POST /oauth2/access_token` → `GET /oauth2/userinfo` with a **Bearer header**. Creates the OAuth2 service + a public client `test_client_app` (scope `profile`) via `/json/realms/root/realm-config/…` if absent. |
 | `e2e/saml/saml-test.spec.mjs` | SAML IdP↔SP flow |
-| `e2e/xacml/xacml-test.spec.mjs` | `/xacml` export/import: headers, realm styles, `?filter=`, import round-trip into a sub realm, and the auth paths (`401`/`403`) that no other layer covers. Creates realm `xacmltest` and policy `xacml-e2e-policy` (via `/json` v1) if absent. Paired with `openam-entitlements`' `XacmlRouterIT`, which covers route composition below the auth filter. |
+| `e2e/xacml/xacml-test.spec.mjs` | `/xacml` export/import: headers, realm styles, `?filter=`, import round-trip into a sub realm, and the auth paths (`401`/`403`) that no other layer covers. Creates realm `xacmltest` (via `/json/global-config/realms` — **not** the deprecated `/json/realms/root/realms`) and policy `xacml-e2e-policy` (via `/json` v1) if absent. Authenticates in disposable request contexts; see the cookie gotcha below. Paired with `openam-entitlements`' `XacmlRouterIT`, which covers route composition below the auth filter. |
 | `e2e/xui/xui-httponly.spec.mjs` | XUI cookie flags |
 | `e2e/common/openam-commons.mjs` | shared helpers: `OPENAM_BASE`, `ADMIN_USER`/`ADMIN_PASS`, `USERNAME`/`PASSWORD`, `getAdminToken(request)`, `getAuthToken(request, user, pass)` — all env-overridable |
 
@@ -213,6 +213,17 @@ Recorded so they're not rediscovered:
   [D6](migration/restlet/phase-3b-collaborators.md#d6--the-bearer-parse-is-unreachable-from-a-plainly-constructed-restlet-request).
 - **Guice binding errors are invisible to every build.** Nothing fails until a server starts. If you rebind,
   bring your own guard.
+- **In `e2e`, a session cookie silently outranks the `iPlanetDirectoryPro` header.**
+  `POST /json/authenticate` sets an `iPlanetDirectoryPro` **cookie**, and Playwright's `request` fixture keeps
+  a cookie jar for the whole spec file. `LocalSSOTokenSessionModule.validate:207-210` reads the cookie
+  *first* and only then falls back to the same-named header. So a second `getAuthToken(request, …)` for a
+  weaker user replaces the jar's session and downgrades every later "admin" call — the header is still sent,
+  and still ignored. This failed the whole `xacml` suite on its first CI run with a `403` that looks exactly
+  like a delegation problem. It also quietly breaks negative cases: with a cookie present, a "no token"
+  request is not unauthenticated. `e2e/oauth2` survives only because it never authenticates a second
+  identity. **Authenticate in a disposable `apiRequest.newContext()` and dispose it**, as `e2e/xacml` does,
+  so the shared fixture's jar stays empty and each request carries the identity in its header. See
+  [the write-up](migration/restlet/phase-2-integration-tests.md#the-cookie-that-outranks-the-header).
 
 ## Choosing a layer
 

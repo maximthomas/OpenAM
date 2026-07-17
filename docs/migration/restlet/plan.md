@@ -32,7 +32,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | 2 | XACML `/xacml` → CHF | done (integration tests pending — [phase-2-integration-tests.md](phase-2-integration-tests.md)) |
 | 3a | `OAuth2Request` abstraction + consumer re-plumb | done ([phase-3a-oauth2request.md](phase-3a-oauth2request.md)) |
 | 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | done ([phase-3b-collaborators.md](phase-3b-collaborators.md)) |
-| 3c-1 | FreeMarker template renderer (`org.openidentityplatform.openam.oauth2.http`) | planned ([phase-3c-1-renderer.md](phase-3c-1-renderer.md)) |
+| 3c-1 | FreeMarker template renderer (`org.openidentityplatform.openam.oauth2.http`) | done ([phase-3c-1-renderer.md](phase-3c-1-renderer.md)) |
 | 3c-2 | Error layer — `OAuth2Error`, `RedirectUris`, error factory + filter | planned ([phase-3c-2-error-layer.md](phase-3c-2-error-layer.md)) |
 | 3d | CHF audit filters + `HttpBodyAuditor` | pending |
 | 4 | UMA `/uma` → CHF | pending |

@@ -636,7 +636,77 @@ Steps 3 and 5 are the spine: **the oracle exists before the code, and the code i
 | **R-3c.2** | **The oracle expires** | `RestletRendererParityTest` dies in 5d/8; a golden regenerated after that is unfalsifiable | Goldens generated **only** while the Restlet leg lives; post-5d the test degrades to `golden == CHF` by deleting one assert. Never regenerate after 5d without re-deriving from git history |
 | **R-3c.3** | **chf-patterns §2/§6 are wrong** and every later phase reads them | Findings 3 and 9. 3d/4/5 will build filters and set entities on these premises | Fix both sections in this commit (step 6). Highest-leverage doc change in the phase |
 | **R-3c.4** | **Silent ISO-8859-1 HTML** | `setEntity(String)` without a prior `Content-Type` mangles non-ASCII (finding 3). All templates are ASCII, so **unit tests with ASCII data models will not catch it** | Mandate `getBytes(UTF_8)`; renderer test asserts bytes with a **non-ASCII data-model value** (not a non-ASCII template) |
-| **R-3c.7** | **FreeMarker ii bump smuggled in** | `new Configuration(VERSION_2_3_31)` looks like a harmless modernisation; it changes the ObjectWrapper (finding 4) | `VERSION_2_3_0` pinned **with a comment naming the ObjectWrapper branch**; goldens would catch it |
+| **R-3c.7** | **FreeMarker ii bump smuggled in** | `new Configuration(VERSION_2_3_31)` looks like a harmless modernisation; it changes the ObjectWrapper (finding 4) | `VERSION_2_3_0` pinned **with a comment naming the ObjectWrapper branch**; **the config assert in `FreemarkerTemplateRendererTest` is the only guard**. ⚠ **Corrected as-built:** this row previously said "goldens would catch it" — **they do not**. Verified by mutation: bumping ii to `VERSION_2_3_31` leaves **all 11 goldens byte-identical**, because the ObjectWrapper swap is only observable for data models that exercise it (beans, arrays, `?api`) and every producer-derived model is a plain `Map` of `String`/`Boolean`/`Map`. See [as-built #2](#as-built) |
 | **R-3c.10** | **Per-request `Configuration`** | Hanging it on `AttributesContext` (per-request) rebuilds the loader and voids the template cache every request | `@Singleton` + ctor-built `Configuration`; the trap is called out in the javadoc |
 | **R-3c.11** | **Fictional golden data models** — the one error the parity leg *cannot* catch | Both legs get the **same** model, so `Restlet == CHF` passes even when the model is a shape production never emits. The golden then guards nothing in its post-5d regression role, and R-3c.2 makes that unfalsifiable. Three keys invite it: `display_scopes`/`display_claims` are JSON **text**, `valid_session` is a **String** (finding 8) | [D12](#d12--golden-data-models-are-derived-from-the-producers): derive every model from its producer; types recorded in finding 8; execution step 2 does this **before** the goldens are written |
-| **R-3c.12** | **Goldens flap on CI via unpinned file I/O** | Finding 5 pins how FreeMarker *reads templates*, not how the test reads/writes `golden/*.html`. Default-charset I/O resolves against `file.encoding` — the exact JDK 11–26 × 3-OS variable this phase eliminates — and R-3c.4 puts non-ASCII **in the goldens** | Explicit `UTF_8` on golden read **and** write (§C) |
+| **R-3c.12** | **Goldens flap on CI via unpinned file I/O** | Finding 5 pins how FreeMarker *reads templates*, not how the test reads/writes `golden/*.html`. Default-charset I/O resolves against `file.encoding` — the exact JDK 11–26 × 3-OS variable this phase eliminates — and R-3c.4 puts non-ASCII **in the goldens** | Explicit `UTF_8` on golden read **and** write (§C). **As-built: load-bearing, not theoretical — 6 of the 11 goldens really are non-ASCII** |
+
+<a id="as-built"></a>
+
+## As-built (3c-1 delivered — 2026-07-17)
+
+Delivered as planned — **one** new main class, wired to no route, so `/oauth2` still renders through
+Restlet and nothing is observable. Gates: openam-oauth2 **743** tests (3b baseline 716; **+27** = 11
+parity + 16 renderer), openam-uma **192** unchanged (additive, as required), whole-reactor
+`mvn install -DskipTests` BUILD SUCCESS, `javadoc:javadoc` clean under `-Xdoclint:all,-missing` +
+`failOnWarnings`, all grep gates 0. **The parity leg was green on first run**, exactly as §B predicted —
+so the premise held and no discovery cost was paid at this step.
+
+Six deviations and discoveries worth recording.
+
+1. **Eleven goldens, not ten.** §C said "10 templates × 1 data model each"; §B separately noted that popup
+   composition needs its own scaffold. Composition is a distinct output no single-template golden can
+   express, so it became an 11th golden (`golden/composed/popup-authorize.html`) — the Restlet leg drives
+   the real `OAuth2Representation`, the CHF leg drives `renderForDisplay`. It asks for `authorize.ftl`
+   deliberately: that is the one template name where [D5](#d5--popup-hardcoding-authorizeftl-fix) is a
+   no-op (the legacy hardcode names the same file), so a genuine 3-way assert holds. The D5 divergence is
+   proven separately against a synthetic `StringTemplateLoader` pair.
+
+2. **⚠ R-3c.7's stated guard was wrong: the goldens do *not* catch a FreeMarker ii bump.** The risk table
+   credited "goldens would catch it". Mutation-tested against the delivered code: bumping
+   `VERSION_2_3_0` → `VERSION_2_3_31` leaves **all 11 goldens byte-identical** and the parity suite fully
+   green. The ObjectWrapper swap (finding 4) is only observable for data models that exercise it — beans,
+   arrays, `?api` — and every producer-derived model here is a plain `Map` of `String`/`Boolean`/`Map`.
+   **The `Configuration` assert is the sole guard**, which is precisely the argument
+   [D10](#d10) already made for `RETHROW_HANDLER` — it generalises to *every* inert config pin, and the
+   plan applied it to only one of them. Row corrected above.
+
+3. **⚠ R-3c.4's `byte[]`-vs-`String` choice is unobservable by any test, under correct ordering.**
+   Mutation-tested: weakening `setEntity(html.getBytes(UTF_8))` to `setEntity(html)` while the
+   `Content-Type` is still set **first** keeps every test green — necessarily, because `Entity.setString`
+   then reads `charset=UTF-8` off the header and emits byte-for-byte the same result. The tests do catch
+   the two shapes that matter (verified): setting the entity **before** the header, and dropping the
+   header entirely. So the `byte[]` form is defence-in-depth against a future reordering and is guarded by
+   **the grep gate, not by a test** — the plan's verification step 3 is load-bearing and must not be
+   retired on the belief that a test covers it. Recorded in the test javadoc.
+
+4. **The render error contract is checked: `throws IOException, TemplateException`.** The plan mandated
+   "render or throw" but left checked-vs-unchecked open, and its API sketch implied unchecked. Checked was
+   chosen: it forces 3c-2 and 5b to handle failure at compile time, which directly mitigates
+   [chf-patterns](chf-patterns.md) §2's trap (a thrown exception inside `Endpoints.from` becomes an
+   *empty* 500). It also yields a coherent split — unchecked `IllegalArgumentException` = the client's
+   fault (`?display=bogus` → 5b maps to `invalid_request`/400); checked = our fault (missing or broken
+   template) → 500. Costs no new class, and leaking FreeMarker types from a class named
+   `FreemarkerTemplateRenderer` is mild.
+
+5. **D12 was vindicated concretely — three facts a hand-written fixture would have got wrong.** All three
+   were discovered *by the oracle*, not by reasoning: (a) `JsonValue.toString()` emits **spaced** JSON
+   (`[ { "name": "..." } ]`), so a hand-copied compact string would have baked a lie into the golden;
+   (b) `?js_string` escapes `/` as `\/`, so `realm` renders `"\/"`; (c) those compound in
+   `CodeThanks.ftl:33`'s `/XUI` bug to produce the genuinely mangled `realm : "\//XUI"`, now pinned. The
+   fixtures build `display_scopes`/`display_claims` by running the producer's own `JsonValue` calls —
+   including `ConsentRequiredResource:119,123`'s add-then-put ordering, which relies on `getObject()`
+   returning the live map — rather than by transcribing expected text.
+
+6. **The non-ASCII marker had to go in `user_name`, not `display_name`.** R-3c.4 wants non-ASCII in the
+   data model, but `ConsentRequiredResource:88-89` pushes `display_name`/`display_description` through
+   `ESAPI.encoder().encodeForHTML`, which folds any high character back to an ASCII entity and would have
+   silently defeated the byte assertions. `user_name` (`:91`) is stored raw and `?js_string` does not
+   touch non-ASCII, so it survives to the bytes. The fixtures carry ESAPI's *output* for the encoded keys
+   (`"Demo &amp; Co"`), which is what production actually emits. Net: **6 of 11 goldens are non-ASCII**,
+   making R-3c.12's UTF-8 pinning genuinely tested rather than decorative.
+
+*Minor:* a package-private `@VisibleForTesting Configuration configuration()` accessor was added — per
+#2 it is the only guard for four inert pins, so the test needs the object itself.
+`org.forgerock.util.annotations.VisibleForTesting` was chosen over Guava's (repo-wide 44 vs 10; both are
+on this module's classpath).

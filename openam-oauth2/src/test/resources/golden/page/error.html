@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<!--
+  ~ DO NOT REMOVE COPYRIGHT NOTICES OR THIS HEADER.
+  ~
+  ~ Copyright 2012-2015 ForgeRock AS.
+  ~
+  ~ The contents of this file are subject to the terms
+  ~ of the Common Development and Distribution License
+  ~ (the License). You may not use this file except in
+  ~ compliance with the License.
+  ~
+  ~ You can obtain a copy of the License at
+  ~ http://forgerock.org/license/CDDLv1.0.html
+  ~ See the License for the specific language governing
+  ~ permission and limitations under the License.
+  ~
+  ~ When distributing Covered Code, include this CDDL
+  ~ Header Notice in each file and include the License file
+  ~ at http://forgerock.org/license/CDDLv1.0.html
+  ~ If applicable, add the following below the CDDL Header,
+  ~ with the fields enclosed by brackets [] replaced by
+  ~ your own identifying information:
+  ~ "Portions Copyrighted [year] [name of copyright owner]"
+  ~
+  ~ Portions Copyrighted 2014 Nomura Research Institute, Ltd
+  -->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="OAuth2 Error">
+    <title>OAuth2 Error Page</title>
+</head>
+
+<body style="display:none">
+    <div id="wrapper">Loading...</div>
+    <footer id="footer" class="footer"></footer>
+    <script type="text/javascript">
+                    pageData = {
+                realm : "\/",
+                baseUrl: "https://openam.example.com:8443/openam/XUI",
+                error: {
+                    uri: "https://openam.example.com/docs/errors#invalid_request",
+                    description: "Paramètre requis manquant : redirect_uri",
+                    message: "invalid_request"
+                }
+            }
+    </script>
+    <script data-main="https://openam.example.com:8443/openam/XUI/main-authorize" src="https://openam.example.com:8443/openam/XUI/libs/requirejs-2.3.7-min.js"></script>
+</body>
+</html>

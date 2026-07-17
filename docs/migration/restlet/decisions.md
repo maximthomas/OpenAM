@@ -65,7 +65,7 @@ behaviour 3c reproduces. Full rationale: [phase-3c-1-renderer.md](phase-3c-1-ren
   call** when it ports `CheckSessionHandler`.
 - **D6 — the no-redirect policy becomes an explicit table, unified to the safe union.** Today it is
   emergent from catch ordering + which `OAuth2RestletException` constructor each catch picks — no flag,
-  no predicate. `AuthorizeResource`'s GET (`:120-149`) and POST (`:186-208`) lists have **drifted**:
+  no predicate. `AuthorizeResource`'s GET (`:120-149`) and POST (`:187-206`) lists have **drifted**:
   `OAuth2ProviderNotFoundException` does **not** redirect on GET but **does** on POST, via the generic
   catch that passes the **unvalidated** `request.getParameter("redirect_uri")`. With no provider the
   redirect URI was never validated — an **open redirect**. `OAuth2Error.isRedirectable` encodes the
@@ -80,6 +80,17 @@ behaviour 3c reproduces. Full rationale: [phase-3c-1-renderer.md](phase-3c-1-ren
 - **D11 — the `Location` header is set verbatim.** Restlet's `Redirector` runs the redirect URI through
   a Restlet `Template`, so `{...}` sequences are variable-substituted — on a URI that the generic catch
   supplies **unvalidated**. Reproducing that would reproduce a URI-injection vector.
+
+### Considered and explicitly *not* changed (so it is not re-litigated)
+
+- **`wap/authorize.ftl` keeps `Content-Type: text/html`** (decided 2026-07-17, during 3c-1 review). The
+  template is WML (`<?xml?>` + `<!DOCTYPE wml>`), yet Restlet serves it as `text/html; charset=UTF-8` like every
+  other page, because the media type is fixed at `TemplateRepresentation(template, MediaType.TEXT_HTML)` and
+  never varies by display. 3c-1 **reproduces** this: `toHtmlResponse` is the single HTML exit and gives WAP the
+  same header. Serving it as `text/vnd.wap.wml` would be a behaviour change with no caller asking for it, and
+  3c-1's charter is reproduction. **Revisit in Phase 5b** when `AuthorizeHandler` is ported and the display
+  types are on the table anyway. (An earlier 3c-1 draft's parity checklist said WAP must "not [be] given
+  `text/html` blindly", contradicting its own finding 5 — that row is corrected.)
 
 ## Cutover lever
 

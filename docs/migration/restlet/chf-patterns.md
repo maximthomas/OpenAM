@@ -363,10 +363,43 @@ assertThat(chfOutput).isEqualTo(golden);       // proves the new code matches it
 - **After 5d** delete the Restlet leg (one line). It degrades gracefully to `golden == CHF` — a
   durable regression guard that still encodes Restlet's truth after Restlet is gone.
 
+**Driving legacy Restlet code in-process — use a `Component` context, never `new Context()`.** Any phase that
+characterizes Restlet code from a unit test hits this (verified 2026-07-17 resolving 3c-1's §B):
+
+```java
+Component comp = new Component();                       // real client dispatcher, no CLAP client registered
+Context ctx = comp.getContext().createChildContext();   // == RestEndpointServlet's shape
+```
+
+- **`new org.restlet.Context()` has a null `clientDispatcher`** (the field is returned unguarded, no lazy
+  init). Anything dispatching through the context — `ContextTemplateLoader` (`clap:///`), RIAP, any client
+  protocol — throws `NullPointerException: ... the return value of
+  "org.restlet.Context.getClientDispatcher()" is null`.
+- **An NPE skips the framework's graceful-degradation paths.** Restlet/FreeMarker turn "not found" into `null`
+  via `catch (IOException)` (`MultiTemplateLoader` fall-through; `TemplateRepresentation.getTemplate`) — an NPE
+  sails past both. Expect this shape wherever a legacy `null` is really an `IOException` catch.
+- A `Component` context degrades exactly as production does: no connector for the scheme → dispatcher returns
+  an error status → the caller's `null`/fallback path runs.
+
 **Rules.**
 - Generate goldens **only** while the Restlet leg lives (a `-Dgolden.regenerate=true` mode). A golden
   regenerated after 5d is unfalsifiable — it just records whatever the new code does. If one must
   change post-5d, re-derive it from git history and say so in the commit.
+- **Drive the real legacy object, never a hand-rebuilt equivalent.** If the behaviour lives in a collaborator
+  (3c-1: popup composition is in `OAuth2Representation`, not `TemplateFactory`), scaffold that object — passing
+  `null` for collaborators it does not use on the path under test — instead of reproducing its logic in the
+  test. A leg that reimplements the legacy asserts "my copy == my new code": the post-5d golden trap, arriving
+  early.
+- **Derive fixtures from the real producers, not from the API's apparent shape.** Both legs get the same
+  fixture, so a *fictional* one still passes parity while silently voiding the golden's post-migration value.
+  3c-1 found three keys whose natural-looking types are wrong — see
+  [phase-3c-1 D12](phase-3c-1-renderer.md#d12--golden-data-models-are-derived-from-the-producers).
+- **Pin the golden files' own I/O charset** (`UTF_8` on read *and* write). Pinning the renderer's encoding says
+  nothing about how the test reads its fixtures; default-charset I/O reintroduces `file.encoding` dependence
+  across the JDK 11–26 × 3-OS matrix (JEP 400 flipped the default at 18).
+- **Hardening that is inert today needs a config assert, not a behavioural test.** 3c-1's `RETHROW_HANDLER` is
+  observationally identical to FreeMarker's default under eager render-to-`String` (`DEBUG_HANDLER` prints
+  *and rethrows*), so "does it throw?" passes with the line deleted. Assert the setting itself.
 - **Do not edit the inputs the golden depends on** (for 3c-1: the 10 `.ftl` templates). Editing them
   destroys the golden's meaning as a legacy oracle — even to fix an obvious bug. File the bug; defer.
 - Goldens are for **large structural output** (HTML). For 2–4-field maps and one-line URLs, inline

@@ -7,6 +7,25 @@ patterns: [chf-patterns.md](chf-patterns.md); predecessors: [phase-3a-oauth2requ
 test layers: [docs/test-infrastructure.md](../../test-infrastructure.md). Written 2026-07-17; branch
 `features/restlet-migration`. All facts below were verified against the tree and jar bytecode on 2026-07-17.
 
+> **Reviewed 2026-07-17 (same day).** Claims re-verified against the tree, jar **sources** and by **executing**
+> both renderers in one JVM. Corrections folded in, most-material first:
+> 1. **§B's open unknown is resolved, and both its guesses were wrong.** `new org.restlet.Context()` **NPEs**;
+>    `MultiTemplateLoader` does **not** fall through (an NPE is not an `IOException`); and the proposed
+>    "ClassTemplateLoader-only Restlet leg" fallback is **rejected** — it would swap the oracle for a
+>    reimplementation. Recipe: `new Component().getContext().createChildContext()`.
+> 2. **The premise is proven**: all 10 templates render **byte-identical** between the real `TemplateFactory`
+>    and this plan's `Configuration` (§B).
+> 3. **New [D12](#d12--golden-data-models-are-derived-from-the-producers)** — golden data models are derived
+>    from the producers. Three keys have counter-intuitive types (finding 8); guessing them throws on 4/10
+>    templates, and a wrong-but-renderable model is the one error the parity leg cannot catch (R-3c.11).
+> 4. **[D10](#d10)'s RETHROW rationale was wrong** — `DEBUG_HANDLER` *also* rethrows, so RETHROW is inert under
+>    eager render-to-`String`. Eager rendering is the real fix; the RETHROW test was vacuous → config assert.
+> 5. Finding 5's *"`new Configuration()` sets no default encoding"* is **false** (it sets `file.encoding`); the
+>    conclusion survives, the mechanism is now stated correctly.
+> 6. Smaller: empty-string `display` must resolve to `page`; §B needs a second scaffold for popup composition;
+>    golden file I/O must pin UTF-8 (R-3c.12); WAP `text/html` contradiction resolved to **reproduce**;
+>    `@Singleton`+`@Inject` no-arg ctor has no precedent in this module.
+
 ## Context
 
 3a delivered the neutral `OAuth2Request`; 3b delivered the neutral collaborators. **3c is the first purely
@@ -75,6 +94,13 @@ is the sole effective loader** and reads `templates/...` straight from the opena
 ⇒ Dropping `MultiTemplateLoader` + `ContextTemplateLoader` is **behaviour-preserving for `/oauth2/*`**, and it
 removes the last reason the renderer would need a Restlet `Context`.
 
+> **Confirmed empirically (2026-07-17), and the argument is stronger than the web.xml one.** Driving the real
+> `TemplateFactory` twice in-process — once against a `Component` with **no** CLAP client (production's shape)
+> and once with `Component.getClients().add(Protocol.CLAP)` — produces **byte-identical output**. So the CLAP
+> leg is not merely unregistered: even when it *is* registered it resolves `clap:///templates/...` to the same
+> classpath resource `ClassTemplateLoader` reads. Dropping it is behaviour-preserving **either way**, which
+> does not depend on reading web.xml correctly.
+
 ### 3. ⚠ `Content-Type: text/html; charset=UTF-8` is implicit today — and CHF's default is ISO-8859-1
 
 Restlet never sets the charset in OAuth2 code. `TemplateRepresentation(Template, MediaType)` →
@@ -113,8 +139,13 @@ Bytecode-verified in freemarker 2.3.31:
 - `getDefaultObjectWrapper(Version)` branches at `VERSION_INT_2_3_21`: below → legacy
   `ObjectWrapper.DEFAULT_WRAPPER`; at/above → `DefaultObjectWrapperBuilder(version).build()`. **Bumping ii
   changes the ObjectWrapper** — i.e. how every data-model `Map`/`String`/bean is exposed to the templates.
-- `getDefaultTemplateExceptionHandler(Version)` returns `DEBUG_HANDLER` **unconditionally** ⇒ today the
-  renderer writes **FreeMarker stack traces into the HTML response** on any render failure.
+- `getDefaultTemplateExceptionHandler(Version)` returns `DEBUG_HANDLER` **unconditionally** (`:1097-1099`) ⇒
+  today the renderer writes **FreeMarker stack traces into the HTML response** on any render failure.
+  ⚠ Note **`DEBUG_HANDLER` prints *and then rethrows*** (`TemplateExceptionHandler.java:88-96`: stack trace →
+  `pw.flush(); // To commit the HTTP response` → `throw te`). The leak is therefore **not** caused by the
+  handler swallowing the error — it is caused by Restlet **streaming** the template straight into the response
+  entity, so the bytes are already on the wire when the throw happens. That distinction matters: see
+  [D10](#d10).
 
 ⇒ Write `new Configuration(Configuration.VERSION_2_3_0)` — provably identical to today, no deprecation
 warning, choice explicit. Bumping ii is a separate, golden-guarded change.
@@ -124,7 +155,20 @@ warning, choice explicit. Bumping ii is a separate, golden-guarded change.
 `file(1)` + a byte scan (`perl -ne '/[^\x00-\x7f]/'`) over all 10: **0 high bytes**. That is what makes
 `setDefaultEncoding("UTF-8")` provably behaviour-neutral *today*, and it is why pinning it is worth doing:
 it removes a **`file.encoding`-dependent** behaviour across the JDK 11–26 CI matrix (JEP 400 flipped the
-platform default at JDK 18). `new Configuration()` sets **no** default encoding.
+platform default at JDK 18).
+
+**Where the `file.encoding` dependence actually comes from** (corrected 2026-07-17 — an earlier draft said
+"`new Configuration()` sets **no** default encoding", which is false and would mislead anyone re-deriving this):
+`Configuration.java:583` initialises `defaultEncoding = getDefaultDefaultEncoding()` → `getJVMDefaultEncoding()`
+→ `SecurityUtilities.getSystemProperty("file.encoding", "utf-8")` (`:2959-2965`). So today's config **does**
+have a default encoding — the platform's. Observed live: FreeMarker's own cache key logs as
+`("ru_RU", UTF-8, parsed)`, i.e. locale = `Locale.getDefault()`, encoding = `file.encoding`.
+
+> ⚠ **`setDefaultEncoding` is not the whole story.** `getEncoding(Locale)` consults `localeToCharsetMap`
+> **first** and only falls back to `defaultEncoding` when that map is empty (bytecode-verified). It is empty
+> here **only because `loadBuiltInEncodingMap()` is never called** — not by the ctor, not by OpenAM. Anyone who
+> later calls it (it maps e.g. `en` → `ISO-8859-1`) silently re-introduces locale-dependent template decoding
+> that `setDefaultEncoding("UTF-8")` will **not** override. Do not call it.
 
 No template uses `?new` / `?api` / `?eval` ⇒ `TemplateClassResolver.SAFER_RESOLVER` is a **no-op today** ⇒
 free hardening. Precedent in this module: `RealmOAuth2ProviderSettings.java:969`.
@@ -144,7 +188,8 @@ if (display != null && display.equalsIgnoreCase("popup")) {
 }
 ```
 
-Four callers of `getRepresentation` total:
+Four **external** callers of `getRepresentation` (7 call sites in total — `OAuth2Representation` also delegates
+to its own package-private overload at `:80`, `:89`, `:91`):
 
 | Caller | Template | `display=popup` effect |
 |---|---|---|
@@ -179,6 +224,24 @@ All under `openam-oauth2/src/main/resources/templates/`. These are the only `.ft
 | `FormPostResponse.ftl` | `redirectUri?html`, `formValues` (`?keys` + `formValues[key]?html`) |
 | `CodeVerificationForm.ftl` | `locale`, `errorCode`, `realm`, `baseUrl` |
 | `CodeThanks.ftl` | `locale`, `baseUrl`, `realm`; **`:33` appends `/XUI` to realm** ([D8](#d8--template-bugs-defer-do-not-touch)) |
+
+**⚠ Three keys have counter-intuitive types — the natural guess makes the template throw.** The table above
+lists *keys*; the **types** are not inferable from the names, and every golden's data model must come from the
+**real producer**, never from a plausible-looking invention ([D12](#d12--golden-data-models-are-derived-from-the-producers)):
+
+| Key | Actual type | Producer | Template use |
+|---|---|---|---|
+| `display_scopes` | **`String`** — `JsonValue.toString()`, i.e. JSON *text* | `ConsentRequiredResource:139` (`scopes` is `json(array())`) | `page/authorize.ftl:60` `displayScopes: ${display_scopes}` — JSON injected raw into a JS array literal |
+| `display_claims` | **`String`** — JSON text | `ConsentRequiredResource:152` | `page/authorize.ftl:61` |
+| `valid_session` | **`String`** (`"true"`/`"false"`) | `OpenIDConnectCheckSessionEndpoint:116` `validSession.toString()` | `page/checkSession.ftl:56` `${valid_session?js_string}` |
+| `saveConsentEnabled` | **`Boolean`** (a real `boolean`) | `AuthorizationService:205` | `page/authorize.ftl:59` `<#if saveConsentEnabled >` |
+
+Passing a `List` for `display_scopes`/`display_claims` fails with *"Expected a string … but this has evaluated
+to a sequence"*; passing a `Boolean` for `valid_session` fails with *"Can't convert boolean to string
+automatically"* (`?js_string` needs a string, and ii = 2.3.0's `boolean_format` is the legacy
+`true,false` default). **Verified by hitting all three during plan review** — they fail loudly, which is
+survivable; the real hazard is the opposite one, a wrong-but-renderable model that bakes fiction into a golden
+that R-3c.2 makes unfalsifiable after 5d.
 
 **`error.ftl` requires `baseUrl` unconditionally.** `${realm?js_string}` and `${baseUrl?js_string}` sit inside
 `<#if error??>`, but the final script tag dereferences `${baseUrl?html}` **outside** any guard. FreeMarker
@@ -217,8 +280,16 @@ per-request.** Hanging the `Configuration` there would rebuild the loader and bl
 
 ⇒ **`@Singleton` + `@Inject` no-arg constructor**, `Configuration` built once in the ctor. Guice JIT-binds it
 (concrete class, `@Inject` ctor) ⇒ **no `OAuth2GuiceModule` change** ⇒ 3b's binding-guard concern does not
-recur. Same shape as 3b's verifiers. Add a `@VisibleForTesting` ctor taking a `TemplateLoader` so tests can
-inject a `StringTemplateLoader` for negative cases.
+recur. Add a `@VisibleForTesting` ctor taking a `TemplateLoader` so tests can inject a `StringTemplateLoader`
+for negative cases (and to prove [D5](#d5--popup-hardcoding-authorizeftl-fix) — see Tests §A).
+
+- **Use `jakarta.inject.{Inject,Singleton}`** — the module's settled convention (83 `jakarta.inject.Inject` vs
+  **0** `javax.inject.*`; the 2 `com.google.inject.Inject` are outliers).
+- *Precedent note, corrected:* this is **not** "the same shape as 3b's verifiers" — `HeaderAccessTokenVerifier`
+  is `@Singleton` + `@Inject` on an **arg-taking** ctor (`TokenStore`). openam-oauth2 has **no** existing
+  `@Singleton` + `@Inject` *no-arg* ctor (the one `@Inject` no-arg ctor, `OAuth2AuditLogger:52`, is not
+  `@Singleton`). The combination is still correct and JIT-binds fine — it is simply new here, so do not expect
+  to find a template to copy.
 
 ```java
 Configuration cfg = new Configuration(Configuration.VERSION_2_3_0);          // finding 4 — pin; a bump swaps the ObjectWrapper
@@ -246,6 +317,12 @@ public static Response toHtmlResponse(Status status, String html);              
   transport coupling and trivially unit-testable. The caller does `request.getParameter("display")`.
 - Path resolution mirrors `OAuth2Representation:113`; `FormPostResponse.ftl` goes through the plain
   `render("templates/FormPostResponse.ftl", …)`, mirroring `:181`.
+- ⚠ **`isEmpty(display) → PAGE` *before* `Enum.valueOf`** — `null` **and `""` both mean `page`**. This rule
+  lives at `OAuth2Representation:72-76` (`Utils.isEmpty` = `s == null || s.isEmpty()`), **not** at `:113` — and
+  `:113`'s own `display != null ? display : "page"` guard is dead, because the 4-arg overload only ever receives
+  `displayType.getFolder()`. An implementer who mirrors `:113` alone and writes
+  `Enum.valueOf(DisplayType.class, display.toUpperCase())` turns **`?display=`** (empty value — reachable in a
+  real URL, `getParameter` returns `""`) from a rendered page into a 400. Reproduce the empty case as `page`.
 - Popup composition: render `templates/popup/<templateName>` → String → `model.put("htmlCode", …)` → render
   `templates/popup/popup.ftl`. **`templateName` is passed through** — the [D5](#d5--popup-hardcoding-authorizeftl-fix) fix.
 - Unknown display → `IllegalArgumentException`, verbatim ([D7](#d7--unknown-display--illegalargumentexception-reproduce)).
@@ -284,14 +361,53 @@ consent page. Reproduce; Phase 5b must map IAE → `invalid_request`.
 3c-1 does not own the templates. Both renderers render them identically, so they are **parity-neutral**. More
 importantly, **editing them destroys the golden files' role as a Restlet oracle**. File as separate issues.
 
+<a id="d12--golden-data-models-are-derived-from-the-producers"></a>
+### D12 — Golden data models are **derived from the producers**, not invented (decided 2026-07-17)
+
+Each golden's data model is built from the code that actually populates it today —
+`ConsentRequiredResource.getDataModel` (`:139`, `:152`), `OpenIDConnectCheckSessionEndpoint:116`,
+`AuthorizationService:205`, `ExceptionHandler:137`, `DeviceCodeVerificationResource` — with the **types**
+recorded in finding 8, not with plausible-looking hand-written fixtures.
+
+Why this is a decision and not a detail: a hand-authored model still proves `Restlet == CHF` (both legs get the
+same model), so the parity leg cannot detect that the model is fictional. But the golden's **second** job is to
+be the durable regression guard that outlives Restlet (§C, R-3c.2) — and a golden built from a data shape
+production never emits is a guard against nothing, permanently, and **unfalsifiable after 5d**. The cost of
+deriving is one read of each producer; the cost of inventing is discovered years later.
+
+Three keys make this concrete rather than theoretical: `display_scopes`/`display_claims` are JSON **text**, and
+`valid_session` is a **String** — see finding 8. Guessing the intuitive types makes 4 of the 10 templates
+throw.
+
+*Note:* Phase 5b re-ports `ConsentRequiredResource.getDataModel` for real (`AuthorizeHandler`). 3c-1 only reads
+it to build fixtures — it does **not** port it, and must not be tempted to.
+
 <a id="d10"></a>
 ### D10 — `RETHROW_HANDLER` + `SAFER_RESOLVER` + `setDefaultEncoding("UTF-8")` + pin `VERSION_2_3_0`
 
-`RETHROW` **fixes** an information disclosure (finding 4) with no contract behind it — nobody depends on
-receiving a FreeMarker stack trace. `SAFER_RESOLVER` and UTF-8 are **provably no-ops today** (finding 5) —
-pure hardening; UTF-8 additionally removes a `file.encoding`-dependent behaviour across the JDK 11–26 matrix.
-`VERSION_2_3_0` **reproduces** today exactly (finding 4); bumping ii changes the ObjectWrapper and is a
-separate, golden-guarded change.
+`SAFER_RESOLVER` and UTF-8 are **provably no-ops today** (finding 5) — pure hardening; UTF-8 additionally
+removes a `file.encoding`-dependent behaviour across the JDK 11–26 matrix. `VERSION_2_3_0` **reproduces** today
+exactly (finding 4); bumping ii changes the ObjectWrapper and is a separate, golden-guarded change.
+
+**`RETHROW_HANDLER` — corrected rationale (2026-07-17).** An earlier draft credited RETHROW with *fixing* the
+finding-4 information disclosure. **It does not, and cannot.** `DEBUG_HANDLER` already rethrows (finding 4), and
+this renderer **renders eagerly to a `String` and only builds the `Response` on success** — so when a render
+fails, the partial output (stack trace and all) is **discarded before any byte reaches a `Response`, whichever
+handler is set**. RETHROW and DEBUG are *observationally identical* under this design.
+
+⇒ **What actually fixes the disclosure is `render()` returning a `String`** — i.e. render-then-set-entity
+instead of Restlet's stream-into-the-entity. That is an architectural property of the API in work item 1, not a
+config flag, and it is why the fix is real even though the flag is inert.
+
+⇒ **Keep `RETHROW_HANDLER` anyway**, for three reasons that are honest about its size: it is the correct
+production setting; it skips pointless stack-trace formatting on the failure path; and it is the guard that
+keeps the disclosure fixed **if anyone later makes the renderer stream** (the one change that would resurrect
+finding 4). It is defence-in-depth, **not** the fix.
+
+⚠ **Consequence for tests.** A test asserting "render failure throws instead of emitting a stack trace into the
+body" **passes with `DEBUG_HANDLER` too** — it cannot fail if the `setTemplateExceptionHandler` line is
+deleted, so it guards nothing. The only assertion that discriminates is on the `Configuration` itself; see
+[Tests §A](#a-freemarkertemplaterenderertest-unit).
 
 ## Tests
 
@@ -302,14 +418,26 @@ touches `Realm`.
 
 - Each display folder resolves (`page`/`popup`/`touch`/`wap` × `authorize.ftl`).
 - Popup composition: `htmlCode` is injected and appears in the output; **`templateName` is honoured**
-  ([D5](#d5--popup-hardcoding-authorizeftl-fix)).
+  ([D5](#d5--popup-hardcoding-authorizeftl-fix)). Needs the `@VisibleForTesting` `StringTemplateLoader` ctor —
+  `popup/` ships only `authorize.ftl` + `popup.ftl`, so there is no *real* second template to prove
+  pass-through with.
 - Unknown display → `IllegalArgumentException` ([D7](#d7--unknown-display--illegalargumentexception-reproduce)).
+- **`display` of `null` *and* `""` → `page`** (not IAE) — the `isEmpty` rule in work item 1. `?display=` is
+  reachable, so this is a regression guard, not a curiosity.
 - Template miss → throws (not `null`).
 - `toHtmlResponse` sets `Content-Type: text/html; charset=UTF-8` **and the entity bytes are UTF-8** —
   asserted with a **non-ASCII data-model value** (e.g. a client name `Ünïcode`). **The templates are ASCII
   (finding 5), so an ASCII data model would pass even with the ISO-8859-1 bug** — this is R-3c.4 and the test
   must be written to catch it.
-- Render failure propagates (`RETHROW_HANDLER`), rather than emitting a stack trace into the body.
+- Render failure **propagates** and **no partial output escapes** — assert the throw *and* that no `Response`
+  is produced. Note this asserts the **eager-render** property (what actually fixes finding 4), and it passes
+  under either exception handler.
+- **`RETHROW_HANDLER` is pinned** — assert it on the `Configuration` directly:
+  `assertThat(cfg.getTemplateExceptionHandler()).isSameAs(TemplateExceptionHandler.RETHROW_HANDLER)`.
+  ⚠ This is the **only** assertion that fails if the `setTemplateExceptionHandler` line is deleted; a
+  behavioural "does it throw?" test does not ([D10](#d10)). Same reasoning for the other three inert config
+  pins — assert `VERSION_2_3_0` (via `cfg.getIncompatibleImprovements()`), the `SAFER_RESOLVER` and
+  `"UTF-8"` defaults. They are no-ops **today**, so only a config assert can stop them silently regressing.
 
 ### B. `RestletRendererParityTest` — the oracle (**highest value**)
 
@@ -321,18 +449,73 @@ the strip "failed **3/4** against the unmodified code", because the author's bel
 contract was wrong. Every parity claim in this document is, until executed, a *belief*. This test is the only
 instrument that converts beliefs into facts mechanically.
 
-Restlet-side scaffolding (in-process, no server, no connector):
+Restlet-side scaffolding (in-process, no server, no HTTP connector):
 
 ```java
-TemplateFactory.newInstance(new org.restlet.Context())
+Component comp = new Component();                                // NOT `new Context()` — see below
+TemplateFactory.newInstance(comp.getContext().createChildContext())
         .getTemplateRepresentation("templates/page/error.ftl")   // → TemplateRepresentation
         .setDataModel(model);                                    // then .getText() → String
 ```
 
-> **One unknown to resolve first (10 minutes).** Does `ContextTemplateLoader(new Context(), "clap:///")`
-> construct/look up cleanly with no CLAP connector, or throw? `MultiTemplateLoader` *should* fall through to
-> `ClassTemplateLoader`. If it throws, build the Restlet leg with a `ClassTemplateLoader`-only `Configuration`
-> and record the deviation. This is the one place this plan may need a local edit.
+> **✅ The §B unknown is RESOLVED (2026-07-17) — and the original answer was wrong in both directions.**
+>
+> **`new org.restlet.Context()` does not work.** It constructs fine and `TemplateFactory.newInstance` succeeds,
+> but the first `getTemplateRepresentation` throws:
+> ```
+> NullPointerException: Cannot invoke "org.restlet.Restlet.handle(org.restlet.Request)"
+>   because the return value of "org.restlet.Context.getClientDispatcher()" is null
+> ```
+> A bare `Context` has a **null `clientDispatcher`** (the field is returned unguarded, no lazy init), and
+> `ContextTemplateLoader.findTemplateSource` calls `.handle()` on it.
+>
+> **`MultiTemplateLoader` does *not* fall through, contrary to this plan's original guess.** An NPE is not an
+> `IOException`, so neither `MultiTemplateLoader` nor `TemplateRepresentation.getTemplate`'s `catch (IOException)`
+> (which is what turns a miss into `null`) intercepts it. It propagates straight out.
+>
+> **The proposed fallback would have destroyed the oracle.** "Build the Restlet leg with a
+> `ClassTemplateLoader`-only `Configuration`" means the Restlet leg no longer drives `TemplateFactory` at all —
+> it drives a *reimplementation* of it, and `Restlet == golden` degenerates into "my hand-built config equals my
+> new config", proving nothing about legacy behaviour. That is precisely the failure
+> [chf-patterns §13](chf-patterns.md#13-the-3-way-golden-oracle-phase-3c--how-parity-survives-restlets-deletion)
+> exists to prevent. **Do not take it.**
+>
+> **Use a `Component` context instead** (recipe above). `Component.getContext().createChildContext()` supplies a
+> real client dispatcher with **no CLAP client registered** — which is exactly `RestEndpointServlet`'s shape
+> (finding 2) — so `ContextTemplateLoader` returns `null` gracefully and `MultiTemplateLoader` falls through to
+> `ClassTemplateLoader` as production does. **Verified: renders all 10 templates.**
+
+**Popup composition needs a second scaffold — `TemplateFactory` alone cannot express it.** Composition lives in
+`OAuth2Representation.getRepresentation(Context, OAuth2Request, String, Map)` (`:79-92`), not in
+`TemplateFactory`, so the snippet above can only characterize *single-template* renders. Hand-composing
+`htmlCode` in the test would again be asserting against a reimplementation. Drive the real object:
+
+```java
+OAuth2Representation rep = new OAuth2Representation(null);        // requestFactory is only used by
+                                                                  // toRepresentation(), never by getRepresentation()
+OAuth2Request req = mock(OAuth2Request.class);
+given(req.getParameter("display")).willReturn("popup");
+rep.getRepresentation(comp.getContext().createChildContext(), req, "authorize.ftl", model);  // → Representation
+```
+
+**✅ The premise is already proven (2026-07-17, plan review).** A throwaway harness ran exactly this comparison
+— the real `TemplateFactory` (Component context) vs. the work-item-1 `Configuration` verbatim — over **all 10
+templates**, with a non-ASCII data model and producer-accurate types:
+
+```
+IDENTICAL templates/page/authorize.ftl (2837)   IDENTICAL templates/page/error.ftl (1932)
+IDENTICAL templates/popup/authorize.ftl (2789)  IDENTICAL templates/page/checkSession.ftl (2160)
+IDENTICAL templates/touch/authorize.ftl (2788)  IDENTICAL templates/FormPostResponse.ftl (1366)
+IDENTICAL templates/wap/authorize.ftl (2802)    IDENTICAL templates/CodeVerificationForm.ftl (1521)
+IDENTICAL templates/popup/popup.ftl (1425)      IDENTICAL templates/CodeThanks.ftl (1503)
+==== identical=10  different=0  errors=0 ====
+```
+
+So `VERSION_2_3_0` + `ClassTemplateLoader`-only + `UTF-8` + `SAFER_RESOLVER` + `RETHROW` is **byte-identical to
+today on every shipping path**. This does **not** discharge §B — a throwaway probe is not a committed
+regression guard, and it did not cover popup composition through `OAuth2Representation` — but it means the test
+is expected to go green on first run, and **a red §B is now a genuine signal, not the routine cost of
+discovery**. If it goes red, distrust the new code, not the plan.
 
 **Honest limitation: this test dies in 5d/8.** It is a development-time instrument — which is exactly why it
 must write down what it learns → §C.
@@ -347,8 +530,18 @@ them — **3c-1 is simply the last moment the oracle is alive to generate them t
 `openam-oauth2/src/test/resources/` currently holds only two groovy scripts, so this is a new subtree:
 `openam-oauth2/src/test/resources/golden/<display>/<name>.html`.
 
-10 templates × 1 canonical data model each. The output is large and structural; there is no readable way to
-assert it inline.
+10 templates × 1 data model each, **each model derived from that template's real producer**, never invented
+([D12](#d12--golden-data-models-are-derived-from-the-producers)). The output is large and structural; there is
+no readable way to assert it inline.
+
+> ⚠ **Pin the golden files' own I/O charset to UTF-8 — explicitly, on both read and write.** Finding 5's
+> `setDefaultEncoding("UTF-8")` pins how FreeMarker **reads `.ftl` templates**; it says nothing about how the
+> *test* reads and writes `golden/*.html`. `new String(bytes)` / `Files.readString` / `FileWriter` without an
+> explicit `Charset` resolve against `file.encoding`, which is exactly the JDK 11–26 × 3-OS variable this phase
+> is trying to eliminate (JEP 400 flipped it at 18). Left unpinned, the goldens are stable on the author's
+> machine and flap on CI — and R-3c.4 deliberately puts **non-ASCII in the data model**, so the golden bytes
+> *are* non-ASCII and this bites for real. Use `Files.readString(path, UTF_8)` / `Files.write(path,
+> s.getBytes(UTF_8))` (or read the classpath resource through an explicit `InputStreamReader(in, UTF_8)`).
 
 **Design — fuse B and C into one 3-way assert.** `RestletRendererParityTest` reads the golden and asserts
 **Restlet == golden == CHF**:
@@ -402,31 +595,38 @@ re-deriving it from git history (R-3c.2).
 | Popup ignores `templateName` | **fix** ([D5](#d5--popup-hardcoding-authorizeftl-fix)) | renderer test; checkSession consequence recorded for 5b |
 | Unknown `display` → IAE | reproduce ([D7](#d7--unknown-display--illegalargumentexception-reproduce)) | renderer test |
 | Template miss → `null` | **fix → throw** | renderer test |
-| `wap/authorize.ftl` is WML, not HTML | note | not given `text/html` blindly; goldens pin it |
+| `wap/authorize.ftl` is WML, but served as `text/html` | **reproduce** (decided 2026-07-17) | `toHtmlResponse` gives it `text/html; charset=UTF-8` like every other page; goldens pin the body. **Revisit in 5b** |
 | Template typos (`isplayName`, `/XUI`, `display_scope`) | **defer** ([D8](#d8--template-bugs-defer-do-not-touch)) | goldens pin current output |
 | `clap:///` loader | **drop** (dead) | finding 2; goldens prove equivalence |
-| DEBUG_HANDLER stack traces into HTML | **fix → RETHROW** ([D10](#d10)) | renderer test asserts throw |
+| DEBUG_HANDLER stack traces into HTML | **fix — via eager render-to-`String`**, *not* via RETHROW ([D10](#d10)) | renderer test asserts throw **and** that no partial `Response` escapes |
+| `RETHROW_HANDLER` pinned (inert today; guards a future streaming refactor) | hardening ([D10](#d10)) | **config assert** — `getTemplateExceptionHandler()` is `RETHROW_HANDLER`; a behavioural test cannot catch its removal |
 | `SAFER_RESOLVER`, `setDefaultEncoding("UTF-8")` | **fix** (no-ops today) | finding 5; goldens |
 | Per-request `Configuration` | **must not happen** | `@Singleton` + ctor-built; javadoc names the trap |
 
 ## Execution order
 
-1. **Resolve the §B unknown**: does `ContextTemplateLoader(new Context(), "clap:///")` construct cleanly with
-   no CLAP connector?
-2. **`RestletRendererParityTest`, Restlet leg only** — drive `TemplateFactory` and **write the goldens**
-   (`-Dgolden.regenerate=true`). ***Before any new main code exists.*** This is 3b's as-built #2 lesson
-   applied: characterize first, and let the oracle correct you. Commit the goldens.
-3. `FreemarkerTemplateRenderer` + `FreemarkerTemplateRendererTest`.
-4. **Close `RestletRendererParityTest`'s CHF leg** → the 3-way assert goes green (or tells you something true).
-5. `mvn -o -pl openam-oauth2 install -DskipTests` → `test` → whole-reactor build → grep gates.
-6. Correct [chf-patterns.md](chf-patterns.md) **§6** (finding 3: the `String` branch + ISO-8859-1 fallback)
-   and **§2** (finding 9: the return-type contract) — both are wrong today and every later phase reads them.
-   Add **§13** (the golden 3-way oracle pattern).
-7. Update [plan.md](plan.md) (3c → 3c-1/3c-2 rows; package correction) and [decisions.md](decisions.md)
+1. ~~**Resolve the §B unknown**~~ — **done during plan review (2026-07-17)**. Answer: `new Context()` NPEs;
+   use `new Component().getContext().createChildContext()`; `MultiTemplateLoader` does **not** fall through on
+   an NPE; the "ClassTemplateLoader-only Restlet leg" fallback is rejected as oracle-destroying. See §B.
+2. **Read the producers first** ([D12](#d12--golden-data-models-are-derived-from-the-producers)) — build the 10
+   data models from `ConsentRequiredResource.getDataModel`, `OpenIDConnectCheckSessionEndpoint:116`,
+   `AuthorizationService:205`, `ExceptionHandler:137`, `DeviceCodeVerificationResource`. Mind the three
+   counter-intuitive types in finding 8. Getting this wrong is the one error the parity leg **cannot** detect.
+3. **`RestletRendererParityTest`, Restlet leg only** — drive `TemplateFactory` and **write the goldens**
+   (`-Dgolden.regenerate=true`, UTF-8 pinned on golden I/O per §C). ***Before any new main code exists.*** This
+   is 3b's as-built #2 lesson applied: characterize first, and let the oracle correct you. Commit the goldens.
+4. `FreemarkerTemplateRenderer` + `FreemarkerTemplateRendererTest`.
+5. **Close `RestletRendererParityTest`'s CHF leg** → the 3-way assert goes green (or tells you something true).
+   Expected green on first run — the premise was proven during review (§B) — so **red means the code is wrong**.
+6. `mvn -o -pl openam-oauth2 install -DskipTests` → `test` → whole-reactor build → grep gates.
+7. ~~Correct [chf-patterns.md](chf-patterns.md) §6/§2 and add §13~~ — **done during 3c planning**; §2, §6 and
+   §13 already carry their corrections and inline `Corrected 2026-07-17` notes. Plan review added the
+   Component-context recipe to §13. Nothing left here.
+8. Update [plan.md](plan.md) (3c → 3c-1/3c-2 rows; package correction) and [decisions.md](decisions.md)
    (D5). Record an **As-built** section here (3a/3b convention), then start
    [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md).
 
-Steps 2 and 4 are the spine: **the oracle exists before the code, and the code is measured against it.**
+Steps 3 and 5 are the spine: **the oracle exists before the code, and the code is measured against it.**
 
 ## Risks (extends [plan.md](plan.md)'s register)
 
@@ -438,3 +638,5 @@ Steps 2 and 4 are the spine: **the oracle exists before the code, and the code i
 | **R-3c.4** | **Silent ISO-8859-1 HTML** | `setEntity(String)` without a prior `Content-Type` mangles non-ASCII (finding 3). All templates are ASCII, so **unit tests with ASCII data models will not catch it** | Mandate `getBytes(UTF_8)`; renderer test asserts bytes with a **non-ASCII data-model value** (not a non-ASCII template) |
 | **R-3c.7** | **FreeMarker ii bump smuggled in** | `new Configuration(VERSION_2_3_31)` looks like a harmless modernisation; it changes the ObjectWrapper (finding 4) | `VERSION_2_3_0` pinned **with a comment naming the ObjectWrapper branch**; goldens would catch it |
 | **R-3c.10** | **Per-request `Configuration`** | Hanging it on `AttributesContext` (per-request) rebuilds the loader and voids the template cache every request | `@Singleton` + ctor-built `Configuration`; the trap is called out in the javadoc |
+| **R-3c.11** | **Fictional golden data models** — the one error the parity leg *cannot* catch | Both legs get the **same** model, so `Restlet == CHF` passes even when the model is a shape production never emits. The golden then guards nothing in its post-5d regression role, and R-3c.2 makes that unfalsifiable. Three keys invite it: `display_scopes`/`display_claims` are JSON **text**, `valid_session` is a **String** (finding 8) | [D12](#d12--golden-data-models-are-derived-from-the-producers): derive every model from its producer; types recorded in finding 8; execution step 2 does this **before** the goldens are written |
+| **R-3c.12** | **Goldens flap on CI via unpinned file I/O** | Finding 5 pins how FreeMarker *reads templates*, not how the test reads/writes `golden/*.html`. Default-charset I/O resolves against `file.encoding` — the exact JDK 11–26 × 3-OS variable this phase eliminates — and R-3c.4 puts non-ASCII **in the goldens** | Explicit `UTF_8` on golden read **and** write (§C) |

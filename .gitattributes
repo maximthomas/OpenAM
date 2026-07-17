@@ -1,3 +1,9 @@
 # Keep HTML checked out with LF on all platforms so javadoc doclint
 # (JDK 25/26) does not treat CR (from CRLF) as part of a multi-line tag name.
 *.html text eol=lf
+
+# FreeMarker templates copy their static text into the rendered response
+# verbatim, so their checked-out line endings become response bytes. Pin them
+# to LF to match the goldens above, which the renderer parity tests compare
+# byte for byte.
+*.ftl text eol=lf

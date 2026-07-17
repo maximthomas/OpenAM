@@ -163,7 +163,7 @@ not migrated until Phase 5 can keep it.)
 |---|---|---|---|---|---|
 | **3a** `OAuth2Request` abstraction | make `OAuth2Request` abstract; `RestletOAuth2Request` (verbatim impl); `ChfOAuth2Request` (4-tier precedence, body re-read, param-count, locale, endpoint-type, servlet req/resp from `AttributesContext`); `BasicAuthHeader`; `OAuth2RequestFactory.create(Context,Request)` + cache on `AttributesContext`; migrate the §2a consumers to neutral accessors; fix the §2a-bis compile breaks | 3 | ~18 | 0 | **High** — live Restlet path runs through this; parameter precedence, body re-read, **and the `alterMaxAge`/`removeLoginPrompt` goto-URL contract** |
 | **3b** neutral collaborators | 3× `Header/FormBody/QueryParameter AccessTokenVerifier` + rebind in `OAuth2GuiceModule`; `ClientCredentialsReader` (basic-auth + endpoint-type); `OAuth2Utils` split (delete Restlet half) | 3 | ~4 | 3 | **Med** — live path; basic-auth ISO-8859-1 charset |
-| **3c** response/HTML/exception | new pkg `org.forgerock.oauth2.http`: `FreemarkerTemplateRenderer`, `OAuth2ErrorResponseFactory`, `OAuth2ErrorFilter` | 3 | 0 | 0 | **Med** — build-ahead (not wired until Phase 5b); 301/302 semantics, fragment vs query, `asMap()` order, golden renders |
+| **3c** response/HTML/exception | new pkg `org.openidentityplatform.openam.oauth2.http`: `FreemarkerTemplateRenderer` (3c-1); `OAuth2Error`, `RedirectUris`, `OAuth2ErrorResponseFactory`, `OAuth2ErrorFilter` (3c-2) | 5 | 0 | 0 | **Med** — build-ahead (not wired until Phase 5b); 301/302 semantics, fragment vs query, golden renders |
 | **3d** audit | `OAuth2HttpAccessAuditFilter`, `UMAHttpAccessAuditFilter`, `HttpBodyAuditor` (CHF `AbstractHttpAccessAuditFilter` subclasses) | 3 | 0 | 0 | **Med** — build-ahead (wired in Phase 4/5); userId/trackingIds/body-detail parity |
 
 **Total: ~11 new + ~20 modified classes + tests.** That is 3–4 normal PRs, not one.
@@ -185,8 +185,10 @@ Four shippable green commits, each its own detailed plan doc, in order:
    type, ISO-8859-1 basic auth).
 2. **3b — neutral collaborators** (verifiers, `ClientCredentialsReader`, `OAuth2Utils`).
    Depends on 3a's accessors.
-3. **3c — response/HTML/exception layer** (`org.forgerock.oauth2.http`). Depends on 3a
-   (`ChfOAuth2Request`) for context; independent of 3b/3d.
+3. **3c — response/HTML/exception layer** (`org.openidentityplatform.openam.oauth2.http`). Depends on 3a
+   (`ChfOAuth2Request`) for context; independent of 3b/3d. **Split 2026-07-17 into 3c-1 (renderer) →
+   3c-2 (error layer)**; detailed plans: [phase-3c-1-renderer.md](phase-3c-1-renderer.md),
+   [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md).
 4. **3d — audit filters.** Depends on 3a; independent of 3b/3c.
 
 3c and 3d can be reordered or parallelised after 3a lands. 3b should follow 3a directly

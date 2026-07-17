@@ -10,7 +10,14 @@ the first area moved off Restlet. Every later phase (3–8) reuses this shape. P
 derivation — verified while delivering [Phase 3a](phase-3a-oauth2request.md)
 (`ChfOAuth2Request`).** Phases 3b/3c/4/5 read requests through the `OAuth2Request` neutral
 API, but any new CHF handler parsing a raw `org.forgerock.http.protocol.Request` hits the
-same traps.
+same traps. **§13 is the build-ahead testing pattern** (Phase 3c).
+
+> **⚠ §2 and §6 were corrected on 2026-07-17 during Phase 3c planning.** Both were wrong in ways that
+> matter to anyone writing a CHF `Filter` or setting a response entity — §2 about what an
+> `Endpoints.from` handler's thrown exception actually produces (an **empty** 500, not a CREST error
+> map) and how many 405 bodies exist (**two**); §6 about `setEntity`'s dispatch (**four** branches,
+> and `String` silently encodes **ISO-8859-1**). Both corrections are bytecode/source-verified and
+> carry inline notes. If you read this doc before that date, re-read those two sections.
 
 ## 1. HttpRouteProvider SPI
 
@@ -31,22 +38,54 @@ same traps.
 
 `org.forgerock.openam.http.annotations.Endpoints.from(Class)` / `AnnotatedMethod`
 (`openam-http/.../http/annotations/`) turn `@Get`/`@Post`/`@Put`/`@Delete` annotated methods into a
-`Handler`. Two behaviors are **easy to miss and load-bearing**:
+`Handler`.
 
-- **A thrown exception does NOT become a business error response.** `AnnotatedMethod.invoke` only
-  catches `IllegalAccessException`/`InvocationTargetException` from the *reflective call itself*, and
-  `Endpoints.from`'s wrapping `Handler.handle` catches `Throwable` generically → bare
-  `500 Internal Server Error` with `new InternalServerErrorException(t).toJsonValue().getObject()`. A
-  thrown `ResourceException`'s real status/reason is **lost**. **Handler methods must catch
-  everything internally and return `Response` objects for every error path.**
-- **The framework's own fallbacks already use CREST error-map JSON bodies**: unmapped HTTP method →
-  `405` + `new NotSupportedException().toJsonValue().getObject()`; uncaught `Throwable` → `500` +
-  `new InternalServerErrorException(t).toJsonValue().getObject()`. **Quirk found in Phase 2**: the
-  embedded map's own `code` field is `NotSupportedException`'s fixed value (`501`), not the `405`
-  actually set on the `Response` — the outer HTTP status and the JSON body's `code` field can
-  legitimately disagree. This is shared framework code (`AnnotatedMethod`/`Endpoints`, used by every
-  `Endpoints.from` consumer, e.g. `AuthenticationServiceV1`/`V2`), not something a later phase should
-  patch per-endpoint; if it needs fixing, fix it once in `openam-http`.
+> **Corrected 2026-07-17 (Phase 3c).** The original text of the first two bullets was **wrong** about
+> the 500 path and about the 405 body, and every later phase reads this section to build filters. The
+> corrected facts are below, verified by reading `AnnotatedMethod.java` / `Endpoints.java`. See
+> [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md) finding 7.
+
+- **A thrown exception does NOT become a business error response — it becomes an EMPTY 500.** A
+  handler method that *throws* is caught by `AnnotatedMethod.invoke` (`:90-94`), which returns
+  `new Response(Status.INTERNAL_SERVER_ERROR).setCause(new IllegalStateException("Exception from
+  invocation should be handled by promise", e))` — **no `setEntity`**. So: 500, **empty body**, cause
+  set. A thrown `ResourceException`'s real status/reason is **lost**.
+  ⇒ **Handler methods must catch everything internally and return `Response` objects for every error
+  path.** ⇒ **A filter that reads `response.getEntity().getJson()` sees an empty entity and gets an
+  `IOException`** — so the usual `catch (IOException) → return response` lets a bare, bodiless 500
+  through. Handle the empty-entity case explicitly (`getCause() != null` identifies it).
+- **The CREST error-map path is narrower than it looks.** `Endpoints.java:73-76`'s
+  `catch (Throwable t)` → `500` + `new InternalServerErrorException(t).toJsonValue().getObject()`
+  fires **only** for throwables escaping `AnnotatedMethod.invoke` itself — i.e.
+  `parameter.getContext(context)` (`:80-82`, *before* the try) or `responseAdapter.apply` (`:85`,
+  inside the try but not among the two caught types). Not for a throwing handler method.
+- **There are TWO framework 405 bodies, not one:**
+
+  | Trigger | Status | Body `code` |
+  |---|---|---|
+  | Verb not in the `{GET,POST,PUT,DELETE}` map (HEAD/OPTIONS/PATCH) — `Endpoints.java:66-67` | 405 | **501** (`NotSupportedException`) |
+  | Verb *is* mapped but no annotated method — `AnnotatedMethod.java:71-75` | 405 | **405** (`ResourceException.getException(405, …)`) |
+
+  `findMethod` never returns `null` (`:120` returns a sentinel with `method == null`), so
+  GET/POST/PUT/DELETE always take the second path. The Phase-2 "body says 501" quirk is real but
+  applies **only** to the first row — the outer HTTP status and the JSON `code` legitimately disagree
+  there. This is shared framework code (used by every `Endpoints.from` consumer, e.g.
+  `AuthenticationServiceV1`/`V2`), not something a later phase should patch per-endpoint; if it needs
+  fixing, fix it once in `openam-http`.
+- **Annotated-method return types are constrained, and `String` is a trap.** Verified in
+  `AnnotatedMethod.checkMethod:138-152`. Permitted: **`Response`** (`:141-147`), `String` / `Void` /
+  `byte[]` / `JsonValue` (`ResponseCreator.forType:182-191`). A **`Promise`** return reaches
+  `PromisedResponseCreator.apply:202` → `throw new UnsupportedOperationException("to be implemented")`
+  — **unimplemented**, despite `checkMethod:139-140` appearing to support it. Any other type →
+  `IllegalArgumentException("Unsupported response type: …")` (`:192`), thrown at **`Endpoints.from`
+  construction time** (route-provider wiring), not per-request.
+  A `String`-returning method goes to `ResponseCreator.apply:171` →
+  `new Response(OK).setEntity(content)` → §6's **ISO-8859-1 path, with no `Content-Type`**.
+  ⇒ **Return `Response`** from handler methods.
+- **`@ExceptionHandler` (`openam-http/.../annotations/ExceptionHandler.java`) is dead code** — no
+  `@Retention` (so it defaults to `CLASS` and is invisible to reflection), no `@Target`, **zero
+  usages**, and neither `Endpoints` nor `AnnotatedMethod` ever looks for it. It cannot be used to turn
+  exceptions into responses. A `Filter` is the only lever. Worth deleting in Phase 8's sweep.
 - A single `Filter` that rewrites any `≥400` response whose entity is a CREST error map into another
   form (XML, in Phase 2's case) therefore covers **every** error path — business errors returned by
   the handler *and* the framework's own 405/500 fallbacks — for free. See
@@ -126,13 +165,38 @@ root.setDefaultRoute(Handlers.chainOf(innerChain, realmContextFilter));
 
 ## 6. Header/entity gotchas (CHF `Response`)
 
-- `Response.setEntity(Object)` (`MessageImpl.setEntity0`) dispatches on runtime type:
-  `byte[]` → `Entity.setBytes` (only touches `Content-Length`); anything else → `Entity.setJson`
-  (**overwrites `Content-Type` to `application/json; charset=UTF-8`, unconditionally**). Set a custom
-  `Content-Type` header *before* `setEntity(...)` only matters if the entity is `byte[]`/`String`/
-  `BranchingInputStream` — for a POJO/Map entity, any manually-set `Content-Type` is clobbered by
-  `setJson`. (Existing house style, e.g. `AuthenticationServiceV1.createResponse`, sets it anyway for
-  documentation purposes even though it's redundant — harmless, matches convention.)
+> **Corrected 2026-07-17 (Phase 3c).** The original first bullet said `setEntity(Object)` sends
+> "anything not `byte[]`" to `setJson`. **There are four branches, and the `String` branch silently
+> encodes ISO-8859-1.** Verified at bytecode level against `core-3.1.1.jar`. See
+> [phase-3c-1-renderer.md](phase-3c-1-renderer.md) finding 3.
+
+- **`Response.setEntity(Object)` (`MessageImpl.setEntity0`) dispatches on runtime type — four
+  branches:**
+
+  | Runtime type | Routes to | Effect on `Content-Type` |
+  |---|---|---|
+  | `BranchingInputStream` | `Entity.setRawContentInputStream` | untouched |
+  | `byte[]` | `Entity.setBytes` | untouched (only `Content-Length`) |
+  | **`String`** | **`Entity.setString`** | **untouched — and see below** |
+  | anything else (POJO/Map/…) | `Entity.setJson` | **overwritten to `application/json; charset=UTF-8`, unconditionally** |
+
+- **⚠ `setEntity(String)` encodes ISO-8859-1 unless `Content-Type` already carries a charset.**
+  `Entity.setString(v)` → `setBytes(v.getBytes(cs(null)))`, and `cs(null)` reads the message's current
+  `Content-Type` charset, **falling back to `StandardCharsets.ISO_8859_1`** (RFC 2616). `setString`
+  never sets `Content-Type` itself. So `response.setEntity(html)` on a fresh `Response` mangles every
+  non-ASCII character in the body — and **ASCII-only test fixtures will not catch it**.
+  **Mandated recipe for any text body** (order-independent, no reliance on `cs()`):
+  ```java
+  response.getHeaders().put(ContentTypeHeader.NAME, "text/html; charset=UTF-8");
+  response.setEntity(html.getBytes(StandardCharsets.UTF_8));   // byte[] → setBytes, Content-Type untouched
+  ```
+  This also applies to `Endpoints.from` handler methods that **return `String`** — they go through
+  `ResponseCreator.apply:171` → `new Response(OK).setEntity(content)` and hit the same path with no
+  `Content-Type` at all. See §2: **return `Response`**.
+- For a POJO/Map entity, any manually-set `Content-Type` is clobbered by `setJson`. (Existing house
+  style, e.g. `AuthenticationServiceV1.createResponse`, sets it anyway for documentation purposes even
+  though it's redundant — harmless, matches convention.) This is why an OAuth2 JSON error body wants
+  `setEntity(map)`: `setJson` supplies `application/json; charset=UTF-8` for free.
 - `Entity.getJson()` returns the **cached original object** (no re-parse) if the entity was populated
   via `setJson`/`setEntity(Object)` — useful in filters/tests that need to inspect a body that was
   just set programmatically in the same process.
@@ -274,3 +338,50 @@ outside a `/restlet/` package must be eliminated before its area flips.
 `org.openidentityplatform.commons:util:3.1.1` (resolved via `mvn -o dependency:tree` against
 `openam-http`; API signatures in this doc were confirmed against these jars' sources, not assumed
 from call-site inference).
+
+## 13. The 3-way golden oracle (Phase 3c) — how parity survives Restlet's deletion
+
+Introduced by [phase-3c-1-renderer.md](phase-3c-1-renderer.md). Applies to any **build-ahead** class
+(one wired to no route until a later phase), where the usual guardrail — "the existing Restlet suite
+must stay green" — does not exist because the new code is not on any path yet.
+
+**The problem.** Phases 3c/3d ship classes that encode a *contract* which only becomes observable at
+the Phase-5d flip, potentially months later. Nothing tests them against reality. Worse, the only
+oracle for "what does OpenAM actually do today" is the Restlet code itself — which Phase 5d/8
+**deletes**. Write the parity test late and there is nothing left to compare against.
+
+**The pattern.** While Restlet is still on the classpath, drive **both** implementations in one JVM
+and assert against a committed golden file:
+
+```
+assertThat(restletOutput).isEqualTo(golden);   // proves the golden IS Restlet's real output
+assertThat(chfOutput).isEqualTo(golden);       // proves the new code matches it
+```
+
+- **Today** it gives maximal confidence: the golden is *proven* to be the legacy behaviour, not
+  someone's belief about it, and the new code is measured against it.
+- **After 5d** delete the Restlet leg (one line). It degrades gracefully to `golden == CHF` — a
+  durable regression guard that still encodes Restlet's truth after Restlet is gone.
+
+**Rules.**
+- Generate goldens **only** while the Restlet leg lives (a `-Dgolden.regenerate=true` mode). A golden
+  regenerated after 5d is unfalsifiable — it just records whatever the new code does. If one must
+  change post-5d, re-derive it from git history and say so in the commit.
+- **Do not edit the inputs the golden depends on** (for 3c-1: the 10 `.ftl` templates). Editing them
+  destroys the golden's meaning as a legacy oracle — even to fix an obvious bug. File the bug; defer.
+- Goldens are for **large structural output** (HTML). For 2–4-field maps and one-line URLs, inline
+  asserts (`containsExactly(entry(...), …)`) are more precise, more readable and self-documenting —
+  a file containing `{"error":"x"}` is pure ceremony. See
+  [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md) §B.
+
+**Precedent.** This is the repo's first golden-file infrastructure — there are no `*.golden` files and
+no `expected/` dirs. The nearest relative is
+`openam-rest/src/test/java/org/forgerock/openam/rest/fluent/JsonUtils.java`'s
+`assertJsonValue(JsonValue, resourcePath)` (compares `toString()` against a classpath resource;
+duplicated in openam-audit-core). [plan.md](plan.md) risk #14 and Phase 5d both already call for
+golden render tests — 3c is simply the last moment the oracle is alive to generate them truthfully.
+
+**Why it earns its keep:** [phase-3b-collaborators.md](phase-3b-collaborators.md)'s as-built #2 —
+characterization tests written *before* a strip **failed 3/4 against the unmodified code**, because
+the author's belief about the legacy contract was wrong. Every parity claim in a migration plan is a
+belief until executed. This is the instrument that converts beliefs into facts mechanically.

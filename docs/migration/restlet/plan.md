@@ -32,7 +32,8 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | 2 | XACML `/xacml` → CHF | done (integration tests pending — [phase-2-integration-tests.md](phase-2-integration-tests.md)) |
 | 3a | `OAuth2Request` abstraction + consumer re-plumb | done ([phase-3a-oauth2request.md](phase-3a-oauth2request.md)) |
 | 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | done ([phase-3b-collaborators.md](phase-3b-collaborators.md)) |
-| 3c | Response/HTML/exception layer (`org.forgerock.oauth2.http`) | pending |
+| 3c-1 | FreeMarker template renderer (`org.openidentityplatform.openam.oauth2.http`) | planned ([phase-3c-1-renderer.md](phase-3c-1-renderer.md)) |
+| 3c-2 | Error layer — `OAuth2Error`, `RedirectUris`, error factory + filter | planned ([phase-3c-2-error-layer.md](phase-3c-2-error-layer.md)) |
 | 3d | CHF audit filters + `HttpBodyAuditor` | pending |
 | 4 | UMA `/uma` → CHF | pending |
 | 5a–5d | OAuth2/OIDC `/oauth2` → CHF (flip in 5d) | pending |
@@ -147,19 +148,35 @@ captured in [chf-patterns.md](chf-patterns.md) during Phase 2 — every phase be
   → `getBasicAuthCredentials() != null`, so `ClientCredentialsReader`'s failure path is neutral
   end-to-end (de-risks the Phase 5 CHF token endpoint).
 
-**3c. Response/HTML/exception layer (new package `org.forgerock.oauth2.http`)**
-- `FreemarkerTemplateRenderer` — direct FreeMarker 2.3.31 (already a dependency);
-  singleton `Configuration` + `ClassTemplateLoader`, same
+**3c. Response/HTML/exception layer (new package `org.openidentityplatform.openam.oauth2.http`)**
+
+> **Split into two commits (2026-07-17).** Detailed plans:
+> [phase-3c-1-renderer.md](phase-3c-1-renderer.md) → [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md)
+> (3c-2 depends on 3c-1: the error factory's HTML branch renders `page/error.ftl`). **5 new classes**,
+> not 3. Both sub-phases are purely additive — wired to no route until Phase 5 — so they carry **no
+> live guard**; the golden 3-way oracle ([chf-patterns.md](chf-patterns.md) §13) is the substitute.
+
+- **3c-1 — `FreemarkerTemplateRenderer`** — direct FreeMarker 2.3.31 (already a *direct* dep of
+  openam-oauth2; **no pom change**); `@Singleton` `Configuration` pinned to `VERSION_2_3_0` +
+  `ClassTemplateLoader` **only** (the `clap:///` loader is dead at runtime), same
   `templates/{display}/{name}.ftl` resolution incl. popup composition (`authorize.ftl`
   embedded as `htmlCode` in `popup.ftl`) and `FormPostResponse.ftl`; renders to CHF
-  `Response` with `Content-Type: text/html; charset=UTF-8`.
-- `OAuth2ErrorResponseFactory` — replaces `ExceptionHandler` + `OAuth2RestletException`:
-  (a) auth-required → **301** `Location: <login url>`; (b) errors with `redirect_uri` →
-  **302** with error map in fragment (`UrlLocation.FRAGMENT`) or query, duplicate-free;
-  (c) JSON `{error, error_description, state?}` with the exception's status; (d)
-  rendered `page/error.ftl` for the authorize UI flow. Preserves `asMap()` field order.
-- `OAuth2ErrorFilter` — CHF `Filter` converting uncaught exceptions to JSON (parity with
-  `doCatch` + `JSONRestStatusService`).
+  `Response` with `Content-Type: text/html; charset=UTF-8` (implicit today via Restlet's
+  `CharacterRepresentation` — **must be explicit**, and the body must be set as
+  `getBytes(UTF_8)`, never `setEntity(String)`). The real port target is `TemplateFactory`,
+  not `OAuth2Representation`.
+- **3c-2 — `OAuth2Error`** (neutral carrier replacing `OAuth2RestletException`; a **value type, not a
+  `Throwable`** — CHF handlers return, never throw) + **`RedirectUris`** (shared fragment-vs-query
+  composition, reused by Phase 5b's **success** path).
+- **3c-2 — `OAuth2ErrorResponseFactory`** — replaces `ExceptionHandler`:
+  (a) auth-required (307) → **301** `Location: <login url>`, no error params; (b) errors with
+  `redirect_uri` → **302** with the error map in fragment (`UrlLocation.FRAGMENT`, **replaces**) or
+  query (**appends**); (c) JSON `{error, error_description, state?}` with the exception's status; (d)
+  rendered `page/error.ftl` for the authorize UI flow.
+- **3c-2 — `OAuth2ErrorFilter`** — CHF `Filter` unifying the provider's **two** error shapes
+  (OAuth2 `{error,…}` when handled; CREST `{code,…}` via `JSONRestStatusService` when not). It
+  **cannot catch** — `Endpoints.from` swallows a thrown exception into an *empty* 500 — so it rewrites
+  responses, guarding on `Content-Type` before parsing so it cannot eat the HTML error page.
 
 **3d. Audit**
 - `OAuth2HttpAccessAuditFilter` / `UMAHttpAccessAuditFilter` — extend
@@ -202,9 +219,14 @@ stay green.
 Sub-phases 5a–5c land as shippable commits while Restlet still serves `/oauth2`; 5d is
 the atomic flip (a path prefix moves whole in web.xml).
 
-**5a. JSON endpoints** — handlers in `org.forgerock.oauth2.http` /
-`org.forgerock.openidconnect.http`, each `Endpoints`-annotated, using
-`OAuth2RequestFactory.create(context, request)` + `OAuth2ErrorFilter` + audit wrappers:
+**5a. JSON endpoints** — handlers in `org.openidentityplatform.openam.oauth2.http` /
+`org.openidentityplatform.openam.openidconnect.http`, each `Endpoints`-annotated, using
+`OAuth2RequestFactory.create(context, request)` + `OAuth2ErrorFilter` + audit wrappers.
+**Handler methods must return `Response`** and catch everything internally — a thrown exception
+becomes an *empty* 500 ([chf-patterns.md](chf-patterns.md) §2), and a `String` return silently
+encodes ISO-8859-1 (§6). `OAuth2Filter`'s "write an error entity then CONTINUE anyway" behaviour
+(`:58-80`) must **not** be reproduced — return; do reproduce its
+`Cache-Control: no-store` + `Pragma: no-cache`:
 - `TokenEndpointHandler` (`/access_token`, POST-only): method/content-type validation
   (405 `method_not_allowed`; non-form → `invalid_request`), `grant_type` dispatch
   replacing `AccessTokenFlowFinder`/`OAuth2FlowFinder`/`TokenEndpointResource`/`ErrorResource`
@@ -339,6 +361,10 @@ the atomic flip (a path prefix moves whole in web.xml).
 | 16 | Scripting client behavior | Redirect-following / cookie defaults differ between Restlet client and java.net.http | `followRedirects(NEVER)`; script integration test |
 | 17 | goto-URL query mutation | `alterMaxAge`/`removeLoginPrompt` rewrite the request URL's query; the result becomes the login redirect's `goto`. An attribute write cannot replace it — infinite re-auth loop | Neutral `setQueryParameter`/`removeQueryParameterValue`; `getRequestUrl()` asserts; browser smoke of `max_age` + `prompt=login` |
 | 18 | `Content-Type` parameters | CHF `Form.fromRequestEntity` exact-matches the whole header; `;charset=UTF-8` silently yields an empty form. Restlet compares the parsed `MediaType` | Parse via `ContentTypeHeader.valueOf`; form/JSON tests with a charset parameter |
+| 19 | **Build-ahead has no live guard** (3c/3d) | 3c/3d classes are wired to no route until Phase 4/5, so the "Restlet suite stays green" guardrail does not apply and a wrong contract is invisible until the flip. No existing test asserts rendered HTML, charset or popup composition | The **golden 3-way oracle** ([chf-patterns.md](chf-patterns.md) §13): `Restlet == golden == CHF` in one JVM while Restlet is still on the classpath; degrades to `golden == CHF` at 5d |
+| 20 | **The oracle expires at 5d** | Phase 5d/8 deletes the Restlet code that is the only oracle for "what does OpenAM do today". A golden regenerated after that is unfalsifiable | Generate goldens **only** while the Restlet leg lives; never regenerate post-5d without re-deriving from git history |
+| 21 | **`setEntity(String)` → ISO-8859-1** | CHF falls back to ISO-8859-1 when `Content-Type` carries no charset ([chf-patterns.md](chf-patterns.md) §6). All 10 templates are ASCII, so **ASCII test fixtures will not catch it** | Header first, then `setEntity(html.getBytes(UTF_8))`; assert bytes with a **non-ASCII data-model value** |
+| 22 | **Open redirect via catch-ordering drift** | The no-redirect policy is emergent from catch ordering; `AuthorizeResource` GET and POST disagree, and POST redirects `OAuth2ProviderNotFoundException` to an **unvalidated** `redirect_uri` | Explicit `OAuth2Error.isRedirectable` table unified to the safe union ([phase-3c-2](phase-3c-2-error-layer.md#d6--isredirectable-unified-to-the-safe-union-fix)); test enumerates all ~30 subclasses |
 
 ## Verification workflow (every phase)
 

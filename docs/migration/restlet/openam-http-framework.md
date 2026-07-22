@@ -6,6 +6,14 @@ because 3c-2's design depends on the outcome. Parent tracker: [plan.md](plan.md)
 [chf-patterns.md](chf-patterns.md); test layers: [docs/test-infrastructure.md](../../test-infrastructure.md).
 Written 2026-07-21; branch `features/restlet-migration`. All facts verified against the tree on 2026-07-21.
 
+> **Execution schedule added 2026-07-22.** Scope confirmed: **all four fixes in one phase**, in the order
+> below, landing as six commits ([Commit sequence](#commit-sequence)). [D-F1](#d-f1--f1s-body-shape-crest-matching-endpointss-own-catch)
+> confirmed as written — the 500 body carries the throwable's own message. Findings 7–11 were added in the
+> same pass, re-verified against the tree and against the commons sources (`../commons`, i.e. the
+> [OpenIdentityPlatform/commons](https://github.com/OpenIdentityPlatform/commons) checkout — **use that repo
+> for CHF source analysis, not decompiled `~/.m2` jars**). Two of them change work items: finding 8 simplifies
+> F4, finding 10 empties R-F.6's blast radius.
+
 ## Context
 
 Phase 3c-2's research turned up three framework defects and, per the plan's own instincts, designed **around**
@@ -191,6 +199,66 @@ Annotated handler classes: `AuthenticationServiceV1`/`V2`, `ApiService`, `ApiDoc
 ⇒ F1 changes a response body on **`/json/authenticate`** and **`/xacml`** — on the bug path only, but really.
 See [D-F1](#d-f1--f1s-body-shape-crest-matching-endpointss-own-catch) and Verification.
 
+### 7. F1's CREST body is self-describing — `setEntity(Map)` writes the `Content-Type`
+
+`Response.setEntity(Object)` → `MessageImpl.setEntity0:77-87`: a `String` goes to `setString`, a `byte[]` to
+`setBytes`, **anything else to `setJson`** — and `Entity.setJson:403-406` puts
+`Content-Type: application/json; charset=UTF-8` on the message before writing the bytes. So F1's
+`setEntity(new InternalServerErrorException(t).toJsonValue().getObject())` (a `LinkedHashMap`) gets a correct
+`Content-Type` for free, with no extra header code. That is also **why the pre-fix 500 has no `Content-Type`
+at all** — it never calls `setEntity` (finding 2).
+
+### 8. F4 needs no manual `getBytes` — `Entity` already reads the header (⇒ work item simplified)
+
+`Entity.cs(null):466-473` resolves the charset in this order: explicit argument → **the message's own
+`Content-Type` charset** (`ContentTypeHeader.valueOf(message).getCharset()`) → ISO-8859-1. So setting the
+header *before* `setEntity(String)` is sufficient; `setString`'s `getBytes(cs(null))` then picks up the
+declared charset. The `((String) content).getBytes(charsetOf(contentType))` in F4's original sketch is
+redundant — [the work item is rewritten accordingly](#f4--honour-produces-and-encode-text-bodies-explicitly).
+
+⚠ `ContentTypeHeader.getCharset():150` is `Charset.forName(charset)`, which throws
+`UnsupportedCharsetException`/`IllegalCharsetNameException` for a bad name. A typo'd
+`@Produces("text/plain; charset=utf8x")` would therefore detonate at *request* time inside `setString` —
+exactly the deferred-failure pattern findings 4 and 8 exist to stop. **Validate the `@Produces` value once at
+wiring time** and rethrow as `IllegalArgumentException` from `Endpoints.from`.
+
+### 9. `toJsonValue()` HTML-escapes `message`
+
+`ResourceException.toJsonValue():600-618` builds a `LinkedHashMap` of `{code, reason, message}` and passes the
+message through `HtmlEscapers.htmlEscaper()`; `detail` appears only when non-null and `cause` only when
+`includeCause` is true (**default false** — no stack trace reaches the client, as
+[D-F1](#d-f1--f1s-body-shape-crest-matching-endpointss-own-catch) states). `message` itself is
+`ResourceException.message(code, message, cause):424-431` — the explicit message, else the cause's message,
+else the reason phrase.
+
+⇒ **F1 tests asserting a message containing `<`, `>` or `&` must expect the escaped form.**
+
+### 10. Every mounted annotated handler returns `Response` (⇒ R-F.6's blast radius is empty)
+
+Return types of all five classes from finding 6, checked 2026-07-22:
+
+| Class | Annotated method | Return |
+|---|---|---|
+| `AuthenticationServiceV1` (`.../authn/http/`) | `@Post authenticate` | `Response` |
+| `AuthenticationServiceV2` | inherits V1's `@Post` | `Response` |
+| `ApiService:84` | `@Get handle` | `Response` (declares `throws` — finding 2) |
+| `ApiDocsService:136` | `@Get handle` | `Response` (route commented out, `CoreRestRouteProvider:166`) |
+| `XacmlServiceHandler:126,158` | `@Get`/`@Post` | `Response` |
+
+**No in-tree handler returns `String`, `byte[]`, `Void` or `JsonValue`.** So F4 changes nothing observable
+today — it removes the trap for future handlers (Phase 5a/5b) rather than altering a live response.
+[R-F.6](#risks) is downgraded to "no in-tree consumer".
+
+### 11. Build gates: checkstyle is inert here, doclint is fatal
+
+`openam-http/pom.xml:31-33` sets `checkstyleFailOnError=true`, but the root pom declares
+`maven-checkstyle-plugin` **only under `<reporting>`** (`pom.xml:2466-2468`) and has no parent pom, so nothing
+binds checkstyle to the build. It is **not** a gate.
+
+Doclint **is**: `pom.xml:140` `-Xdoclint:all,-missing` with `<failOnWarnings>true</failOnWarnings>`
+(`pom.xml:1958-1959`). Every javadoc these commits add must be well-formed with complete
+`@param`/`@return`/`@throws`.
+
 ## Work items
 
 ### F1 — a thrown exception gets a body
@@ -216,6 +284,9 @@ Promise<Response, NeverThrowsException> invoke(Context context, Request request)
 }
 ```
 
+The null-method early return **must stay before** the try: the sentinel `findMethod:120` returns has
+`contextParameters == null`.
+
 Two deliberate changes beyond adding a body:
 
 - **`parameter.getContext(context)` moves inside the try.** Today a missing context throws *before* the try and
@@ -224,6 +295,19 @@ Two deliberate changes beyond adding a body:
 - **`catch (Throwable)`** replaces `catch (IllegalAccessException)`, which also covers `responseAdapter.apply`
   failures. `Endpoints.java:71-78`'s outer catch **stays** as a last-resort net (it still guards
   `methods.get`/`getMethod`), but should now be unreachable from handler code.
+
+**What is actually observable — narrower than the restructure looks** (added 2026-07-22; state this in review,
+because a reviewer reading the diff will over-estimate the change):
+
+- The two bullets above are **body-shape neutral**. Both failures already escape to `Endpoints.java:73-78`,
+  which builds the *identical* `new InternalServerErrorException(t).toJsonValue()` map. Only the log line
+  moves — `DEBUG.error("Endpoints :: …")` → `DEBUG.warning`.
+- **The one observable change is the `InvocationTargetException` path**: a handler that throws goes from a
+  bodiless 500 with no `Content-Type` to a CREST 500 with `application/json; charset=UTF-8` (finding 7). That
+  is precisely what F1 exists to do, and precisely the row the characterization suite deletes-and-replaces.
+- The response's `cause` changes from the wrapping
+  `IllegalStateException("Exception from invocation should be handled by promise", e)` to the **unwrapped**
+  original. Internal only — `Response.getCause()` is never serialised.
 
 `handleException` without F2 is: log at `DEBUG.warning`, then
 
@@ -262,15 +346,25 @@ public Response onOAuth2Error(OAuth2Exception e, @Contextual Request request) { 
 **Discovery and matching:**
 
 - Scanned **once**, in `Endpoints.from(Object)`, alongside the four `findMethod` calls — never per request.
-  The resolved table is passed into each `AnnotatedMethod`.
+  The resolved table is passed into each `AnnotatedMethod`: `findMethod(obj, Get.class, table)`.
+- **Where the table lives** (decided 2026-07-22): a **package-private static nested class of
+  `AnnotatedMethod`**, holding `{Class<? extends Throwable> type, AnnotatedMethod target}` entries. It needs
+  package-private access to `checkMethod`, so it cannot move to `org.openidentityplatform.openam.*`; making it
+  a nested class rather than a new top-level file sidesteps the new-class convention in
+  [decisions.md](decisions.md) entirely (that convention governs new *classes*; this is an edit to an existing
+  ForgeRock-origin file). Build each entry with a sibling of `checkMethod` that also records the
+  exception-parameter index; add an `int exceptionParameter` field and an
+  `invokeExceptionHandler(Context, Request, Throwable)` entry point that **never** re-enters `handleException`.
 - Dispatch picks the **most specific assignable** parameter type for the thrown exception. Assignability, not
   identity — the same rule as 3c-2's `NEVER_REDIRECT`, and for the same reason (`InvalidClientAuthZHeaderException`
   extends `InvalidClientException`; `OAuth2ProviderNotFoundException` extends `NotFoundException`).
-- **Ambiguity is a wiring-time error.** Two `@ExceptionHandler` methods with types neither of which is a
-  subtype of the other, both matching, cannot be ordered ⇒ throw `IllegalArgumentException` from
-  `Endpoints.from`, matching `ResponseCreator.forType:192`'s convention (finding 4). Detect what is
-  detectable statically (duplicate parameter types) at wiring time; detect the genuinely ambiguous pair at
-  dispatch time and fail the request as a 500 rather than guessing.
+- **Ambiguity: statically detectable ⇒ wiring-time error; the rest ⇒ 500 at dispatch.** Two
+  `@ExceptionHandler` methods declaring the **same** exception type cannot be ordered and are detectable from
+  the class alone ⇒ throw `IllegalArgumentException` from `Endpoints.from`, matching
+  `ResponseCreator.forType:192`'s convention (finding 4). A pair that is merely *potentially* ambiguous —
+  types neither of which is a subtype of the other, but which some future thrown class implements both of
+  (reachable when one is an interface) — is not knowable at wiring time; detect it at dispatch, log it, and
+  fall through to F1's 500 rather than guessing.
 - **No match ⇒ F1's default 500.** An endpoint annotating only `OAuth2Exception` keeps sane behaviour for a
   stray `NullPointerException`.
 
@@ -297,30 +391,44 @@ public Promise<Response, NeverThrowsException> apply(Object o) {
 
 The `null` case mirrors `ResponseCreator.apply:171`'s `content == null → NO_CONTENT`.
 
+<a id="f4--honour-produces-and-encode-text-bodies-explicitly"></a>
 ### F4 — honour `@Produces`, and encode text bodies explicitly
 
 In `checkMethod`, read `@Produces` off the method (falling back to a default per return type) and hand it to
-`ResponseCreator`, which then:
+`ResponseCreator`, which then sets the header **before** the entity:
 
 ```java
 String contentType = producesValue != null ? producesValue : defaultFor(returnType);  // text/plain; charset=UTF-8
 response.getHeaders().put(ContentTypeHeader.NAME, contentType);
-response.setEntity(content instanceof String
-        ? ((String) content).getBytes(charsetOf(contentType))       // never the cs(null) fallback
-        : content);
+response.setEntity(content);   // Entity.cs(null) now resolves the charset from that header — finding 8
 ```
 
+> **Simplified 2026-07-22 (finding 8).** An earlier draft encoded by hand —
+> `((String) content).getBytes(charsetOf(contentType))`. Unnecessary: `Entity.cs(null):466-473` already
+> consults the message's own `Content-Type` before falling back to ISO-8859-1, so header-first plus a plain
+> `setEntity` is correct and has one fewer place to get the charset wrong. **Header order is still
+> load-bearing** — set the entity first and `cs(null)` sees no header and returns ISO-8859-1.
+
 - **`String` returns**: `Content-Type` set, body encoded with the charset that header actually declares —
-  the same header-then-`getBytes` discipline `chf-patterns.md` §6 mandates for hand-built responses.
-- **Default when `@Produces` is absent**: `text/plain; charset=UTF-8`. Today the answer is "no header at all,
-  ISO-8859-1 bytes", so any explicit default is an improvement; UTF-8 matches the rest of the stack, and
-  `@Produces("text/html; charset=UTF-8")` is available when a handler means HTML.
+  the same header-then-entity discipline `chf-patterns.md` §6 mandates for hand-built responses.
+- **Default when `@Produces` is absent — `String` returns only**: `text/plain; charset=UTF-8`. Today the
+  answer is "no header at all, ISO-8859-1 bytes", so any explicit default is an improvement; UTF-8 matches the
+  rest of the stack, and `@Produces("text/html; charset=UTF-8")` is available when a handler means HTML. The
+  default does **not** extend to `byte[]`/`Void`/`JsonValue` (see the two bullets below).
+- **Skip the header entirely when `content == null`.** `ResponseCreator.apply:171` turns a null return into
+  `NO_CONTENT` with a null entity — including from a `String`-returning method. Stamping
+  `Content-Type: text/plain` onto a bodiless 204 would be a new (small) wrong. Set the header only on the
+  `Status.OK` branch.
 - **`JsonValue`/POJO returns are untouched** — `setJson` already writes
   `application/json; charset=UTF-8` and would clobber anything set first. If `@Produces` is present *and*
   disagrees with `application/json`, that is a wiring-time `IllegalArgumentException`: better to reject the
   contradiction than to let `setJson` silently win.
 - **`byte[]`/`Void` returns**: honour `@Produces` if present, otherwise leave the response alone (no charset
   question arises).
+- **Validate the `@Produces` value at wiring time** (finding 8): parse it with `ContentTypeHeader.valueOf(v)`
+  and call `getCharset()` once inside `checkMethod`, rethrowing `UnsupportedCharsetException` /
+  `IllegalCharsetNameException` as `IllegalArgumentException`. A typo'd charset then fails at `Endpoints.from`
+  like every other wiring error, instead of detonating on the first request.
 
 `Consumes.java` is left alone. It is equally unread, but request-side negotiation has no consumer asking for
 it and inventing one is not this commit's job — noted in the as-built as a known dead annotation.
@@ -335,9 +443,13 @@ it and inventing one is not this commit's job — noted in the as-built as a kno
 two. It also means `XacmlXmlErrorFilter` and 3c-2's `OAuth2ErrorFilter` already know how to rewrite it, with
 no new discrimination rule.
 
-*Disclosure note:* `ResourceException.toJsonValue()` emits `{code, reason, message}`, and `message` is
-`t.getMessage()`. That is unchanged exposure, not new — `Endpoints:76` has always done it for the outer path,
-and `setIncludeCause` stays **false**, so no stack trace reaches the client.
+*Disclosure note, corrected 2026-07-22:* `ResourceException.toJsonValue()` emits `{code, reason, message}`,
+where `message` is `t.getMessage()` when non-null, else the reason phrase (finding 9). An earlier draft called
+this "unchanged exposure, not new". **That is only true of the outer path** — `Endpoints:76` has always emitted
+it for throwables escaping `AnnotatedMethod.invoke`, but the `InvocationTargetException` path (a handler that
+throws) emits *nothing* today, so F1 **is** new disclosure there. Confirmed and accepted 2026-07-22; tracked as
+[R-F.1b](#risks). `setIncludeCause` stays **false**, so no stack trace reaches the client, and the message is
+HTML-escaped on the way out (finding 9).
 
 <a id="d-f2--the-annotation-is-fixed-not-replaced"></a>
 ### D-F2 — Fix the annotation rather than invent a new one
@@ -374,7 +486,7 @@ is the control that matters.
 ### A. Characterization first — `EndpointsTest` / `AnnotatedMethodTest`
 
 `openam-http/src/test/java/org/forgerock/openam/http/annotations/`. **Written and committed against unmodified
-code**, pinning today's behaviour including the parts F1–F3 change. TestNG + AssertJ, no Guice
+code**, pinning today's behaviour including the parts F1–F4 change. TestNG + AssertJ, no Guice
 (`Endpoints.from(Object)` takes a plain instance), no container:
 
 ```java
@@ -389,30 +501,45 @@ Rows, all currently unguarded:
 - **the two distinct 405 bodies** — unmapped verb (`HEAD`/`OPTIONS`/`PATCH`) → `Endpoints:66-67` →
   `code: 501`; mapped verb with no annotated method → `AnnotatedMethod:71-75` → `code: 405`.
   `findMethod:120` never returns null, which is what makes both reachable.
+- **the name-based fallback** (`findMethod:110-119`): a method literally named `get`/`post`/`put`/`delete` is
+  bound **even without an annotation**. Undocumented, and directly in the path of F2's `findMethod` refactor
+  ([R-F.8](#risks)).
 - every supported return type: `Response`, `String`, `byte[]`, `Void`, `JsonValue`, and `null → NO_CONTENT`.
+- **`void` is not `Void`**: a `void`-returning method yields `void.class`, which `ResponseCreator.forType:182`
+  does not match ⇒ `IllegalArgumentException("Unsupported response type: void")` at `Endpoints.from`, while a
+  `Void`-returning method works. Pin both — F4 touches this dispatch.
 - unsupported return type → `IllegalArgumentException` at `Endpoints.from`, **not** at request time.
 - **the F1 baseline: a throwing handler yields 500, empty entity, `getCause() != null`, no `Content-Type`.**
   This row is deleted-and-replaced by F1's row — that diff *is* the change under review.
+- **the F3 baseline**: a `Promise`-returning handler *mounts*, then throws `UnsupportedOperationException` at
+  request time, escaping to `Endpoints:73-78` → CREST 500 (finding 4's deferred detonation, pinned).
+- **the F4 baseline**: a `String`-returning handler with a **non-ASCII** body comes back ISO-8859-1-mangled
+  with no `Content-Type`. ⚠ An ASCII fixture passes under the bug — see [R-F.7](#risks).
 - `@Contextual Context` / `Request` injection, and a missing context today escaping to `Endpoints:73-78`.
 
 ### B. The fixes
 
-- **F1** — throwing handler → 500 with `{code: 500, reason, message}`, `Content-Type: application/json`,
-  cause still set. Checked *and* unchecked throwables. A handler whose `@Contextual` context is missing now
-  produces the **same** shape (the moved `getContext` call).
+- **F1** — throwing handler → 500 with `{code: 500, reason, message}`,
+  `Content-Type: application/json; charset=UTF-8` (finding 7), cause still set. Checked *and* unchecked
+  throwables. A handler whose `@Contextual` context is missing now produces the **same** shape (the moved
+  `getContext` call). A message containing `<` or `&` comes back **HTML-escaped** (finding 9).
 - **F2** — matched handler wins; **most-specific** wins when two could match; unmatched throwable falls back
   to F1's 500; `@Contextual` params inject into the exception handler; every supported return type works from
   an exception handler; **the exception handler itself throwing yields F1's 500 and does not recurse**
   (assert exactly one dispatch via a counter). Also: the annotation is `RUNTIME`-retained —
   `assertThat(ExceptionHandler.class.getAnnotation(Retention.class).value()).isEqualTo(RUNTIME)`, the one
   assertion that fails if someone drops the meta-annotation and silently re-inerts the feature.
+- **F2** (cont.) — a genuinely **incomparable** pair (two handler types, neither a subtype of the other, both
+  assignable from the thrown class — reachable when one is an interface) falls back to F1's 500 **and logs**.
 - **F4** — a `String`-returning handler with a **non-ASCII** body round-trips as UTF-8 and carries a
   `Content-Type` (⚠ an ASCII fixture passes under the bug — this is 3c-1's R-3c.4 in the framework, and the
   test must use a non-ASCII value to mean anything); `@Produces("text/html; charset=UTF-8")` is honoured;
-  `@Produces` contradicting a `JsonValue` return → `IllegalArgumentException` at `Endpoints.from`.
+  `@Produces` contradicting a `JsonValue` return → `IllegalArgumentException` at `Endpoints.from`;
+  `@Produces` naming an **unknown charset** → `IllegalArgumentException` at `Endpoints.from`, not at request
+  time (finding 8).
 - **F3** — a `Promise`-returning handler works end to end; `Promise<Response, SomeOtherException>` →
   `IllegalArgumentException` **at `Endpoints.from`**; a `Promise` handler that throws synchronously routes to
-  F2/F1.
+  F2/F1; a `null` promise → `NO_CONTENT`.
 
 ### C. Consumer regression — the existing suites are the guard
 
@@ -429,20 +556,44 @@ what they observe, the change is inspected rather than accommodated.
   (tier 2). **F4 removes the `Endpoints.from` route into it**, which is the only path this migration touches;
   the direct-caller defect remains real for other consumers and is worth an upstream fix plus release
   ([framework-ownership.md](../../framework-ownership.md#upstreaming-to-commons)) — **filed, not blocking**,
-  since `getBytes(UTF_8)` + an explicit header is correct under either version.
+  since `getBytes(UTF_8)` + an explicit header is correct under either version. (That remains the recipe for
+  **hand-built** responses, `chf-patterns.md` §6. F4 itself does not need it — finding 8.)
+
+<a id="commit-sequence"></a>
+## Commit sequence
+
+Six commits, each independently green and shippable. This is the [execution order](#execution-order) below
+expressed as the reviewable units.
+
+| # | Commit | Contents |
+|---|---|---|
+| 1 | `test(openam-http): characterize the annotation endpoint framework` | Tests §A, **against unmodified main code** |
+| 2 | `fix(openam-http): F3 — implement the Promise return type` | F3 work item + Tests §B's F3 rows |
+| 3 | `fix(openam-http): F1 — a thrown handler exception gets a CREST body` | F1 work item; commit 1's F1 baseline row is **replaced, not accommodated** |
+| 4 | `feat(openam-http): F2 — make @ExceptionHandler real` | F2 work item + Tests §B's F2 rows |
+| 5 | `fix(openam-http): F4 — honour @Produces and encode text bodies explicitly` | F4 work item + Tests §B's F4 rows |
+| 6 | `docs(restlet-migration): openam-http framework fixes as-built` | Execution-order steps 7–8 — `chf-patterns.md` §2 rewrite, `phase-3c-2-error-layer.md` revision, As-built section here |
+
+Commit 1 is the only one that establishes what the framework *actually* does (finding 1); commits 2–5 each
+show their behaviour change as a test diff. F4 is last for convenience only — [R-F.6](#risks)'s blast radius
+turned out empty (finding 10), so nothing depends on the ordering.
 
 ## Verification
 
 1. `mvn -o -pl openam-http test` — the package's first tests; record the new baseline (openam-http has
    **no** prior annotations coverage, so this number starts from whatever the four existing suites report).
-2. `mvn -o -pl openam-http install -DskipTests` → `mvn -o -pl openam-rest,openam-core-rest,openam-entitlements test`
-   — the three consumers from finding 5. **`openam-entitlements` must stay green including `XacmlRouterIT`**;
-   run `verify`, not `test`, or the IT is skipped ([test-infrastructure.md](../../test-infrastructure.md)'s
+2. `mvn -o -pl openam-http install -DskipTests` → `mvn -o -pl openam-rest,openam-core-rest,openam-entitlements verify`
+   — the three consumers from finding 6. **`openam-entitlements` must stay green including `XacmlRouterIT`**
+   (`openam-entitlements/src/test/java/org/forgerock/openam/xacml/v3/rest/XacmlRouterIT.java`); run `verify`,
+   not `test`, or the IT is silently skipped ([test-infrastructure.md](../../test-infrastructure.md)'s
    failsafe trap).
-3. `mvn install -DskipTests` (whole reactor). **Doclint is fatal** (`-Xdoclint:all,-missing` +
-   `failOnWarnings`, commit `3c45ff8d53`) and this commit adds javadoc to a framework class.
+3. `mvn install -DskipTests` (whole reactor). **Doclint is fatal** (finding 11: `-Xdoclint:all,-missing` +
+   `failOnWarnings`, commit `3c45ff8d53`) and these commits add javadoc to framework classes. Checkstyle,
+   despite `openam-http/pom.xml`'s `checkstyleFailOnError=true`, is **not** a gate (finding 11).
 4. Grep gate: `grep -rn "to be implemented" openam-http/src/main` → **0**.
 5. CI: `build-maven`'s 9 legs run `verify`.
+
+> Build with `-am` if `.m2` may hold a same-version SNAPSHOT of a sibling module from another branch.
 
 ## Effect on phase 3c-2
 
@@ -460,19 +611,26 @@ what they observe, the change is inspected rather than accommodated.
 | chf-patterns §2 "handlers must return `Response`, never `String`" | demoted likewise — **F4** makes a `String` return safe. Returning `Response` stays the house style for anything that needs a status or headers |
 | Phase 5b's per-endpoint catch blocks | collapse into one `@ExceptionHandler` per handler class |
 
+<a id="risks"></a>
 ## Risks
 
 | # | Risk | Detail | Mitigation |
 |---|---|---|---|
 | **R-F.1** | **F1 regresses a consumer that depends on the empty body** | `/json/authenticate` and `/xacml` see a body where there was none. A client asserting `content-length: 0` on a 500 would break — but so would any client relying on an unhandled server bug | Characterization tests first (finding 1); consumer suites in Verification step 2; the path is by definition an unhandled exception |
+| **R-F.1b** | **F1 is new disclosure on the `InvocationTargetException` path** | [D-F1](#d-f1--f1s-body-shape-crest-matching-endpointss-own-catch)'s "unchanged exposure" holds for the *outer* path (`Endpoints:76`) but **not** for a throwing handler, which today emits nothing. After F1 the throwable's message reaches the client — on `/json/authenticate`, a **pre-authentication** endpoint. Confirmed and accepted 2026-07-22 | `includeCause` stays false so no stack trace ships (finding 9); the message is HTML-escaped (finding 9); the as-built enumerates what the five mounted handlers (finding 10) can actually throw |
 | **R-F.2** | **`@ExceptionHandler` dispatch becomes a second routing system** | Type-based dispatch invites scope creep — ordering, inheritance, per-verb overrides, wildcards | Deliberately minimal: one exception parameter, most-specific-assignable, no ordering annotations. Anything more is a later decision with its own plan |
 | **R-F.3** | **The exception handler faults on the error path** | An `@ExceptionHandler` that throws could recurse or mask the original failure | Hard recursion guard (work item F2); test asserts exactly one dispatch and that **both** throwables are logged |
 | **R-F.4** | **The `RUNTIME` retention is silently dropped again** | The feature re-inerts with no test failure — exactly how it got into this state | Explicit meta-annotation assertion (Tests §B), not a behavioural test |
-| **R-F.6** | **F4 changes an existing endpoint's `Content-Type`** | Any current `String`-returning handler starts sending `text/plain; charset=UTF-8` where it sent no header. A client sniffing the body could behave differently | Enumerate `String`-returning handlers in the characterization pass and check each; `@Produces` gives any of them an explicit opt-out |
+| **R-F.6** | ~~**F4 changes an existing endpoint's `Content-Type`**~~ — **blast radius empty**, downgraded 2026-07-22 | All five mounted annotated handlers return `Response` (finding 10), so **no** in-tree endpoint takes the `ResponseCreator` path at all. F4 removes the trap for Phase 5a/5b handlers rather than changing a live response | Finding 10's enumeration is the check; `@Produces` remains the explicit opt-out for any future `String`-returning handler |
 | **R-F.7** | **F4's charset fix is asserted with ASCII fixtures** | Every template and most test data in this repo is ASCII, and ISO-8859-1 and UTF-8 agree on ASCII — so the test passes with the bug intact | Mandate a non-ASCII body in the F4 tests, as [3c-1 R-3c.4](phase-3c-1-renderer.md#risks-extends-planmds-register) had to |
 | **R-F.5** | **Phase 5 over-adopts `throw`** | Handlers throwing for ordinary control flow (consent required, redirects) rather than for errors | 5b guidance: throw for *errors*; `ResourceOwnerConsentRequired` stays a returned response, as it is a control-flow signal, not an error ([3c-2 finding 5](phase-3c-2-error-layer.md#5-the-oauth2exception-hierarchy--status--error-name-phase-5-reference)) |
+| **R-F.8** | **F2's `findMethod` refactor silently drops the name-based fallback** | `findMethod:110-119` binds a method literally *named* `get`/`post`/`put`/`delete` even with no annotation. Undocumented, untested, and F2 changes that method's signature | Pinned by a Tests §A characterization row before F2 touches it |
 
+<a id="execution-order"></a>
 ## Execution order
+
+Renumbered 2026-07-22 (the earlier list had a `4b`); each of steps 1–5 is one row of the
+[commit sequence](#commit-sequence).
 
 1. **`EndpointsTest` + `AnnotatedMethodTest` against unmodified code** (Tests §A). Commit them first, green.
    The package has no tests; this is the only step that establishes what the framework actually does.
@@ -480,11 +638,13 @@ what they observe, the change is inspected rather than accommodated.
 3. **F1** — restructure `invoke`, move `getContext` inside the try, add the CREST body.
 4. **F2** — retention/target on the annotation, discovery in `Endpoints.from`, dispatch + recursion guard in
    `handleException`.
-4b. **F4** — read `@Produces` in `checkMethod`, set the header and encode explicitly in `ResponseCreator`.
-   Independent of F1/F2; ordered last because its blast radius (R-F.6) wants the characterization suite
-   complete first.
-5. Verification steps 1–5, including the consumer suites and `XacmlRouterIT` under `verify`.
-6. Correct [chf-patterns.md](chf-patterns.md) **§2** to describe the fixed framework (one 500 shape;
+5. **F4** — read `@Produces` in `checkMethod`, set the header before the entity in `ResponseCreator`.
+   Independent of F1/F2. Ordered last on the original blast-radius argument (R-F.6); finding 10 has since
+   shown that radius to be **empty**, so the ordering is now only a convenience — do it last anyway so the
+   characterization suite is complete, but it is no longer a constraint.
+6. Verification steps 1–5, including the consumer suites and `XacmlRouterIT` under `verify`.
+7. Correct [chf-patterns.md](chf-patterns.md) **§2** to describe the fixed framework (one 500 shape;
    `@ExceptionHandler` live; `Promise` returns supported), and revise
-   [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md) per the table above.
-7. Record an **As-built** section here, then resume 3c-2.
+   [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md) per the table above. ([plan.md](plan.md)'s tracker
+   row and [decisions.md](decisions.md) were already updated to F1–F4 on 2026-07-22.)
+8. Record an **As-built** section here, then resume 3c-2.

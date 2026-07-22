@@ -97,7 +97,9 @@ behaviour 3c reproduces. Full rationale: [phase-3c-1-renderer.md](phase-3c-1-ren
   defects are fixed as a prerequisite to 3c-2 rather than worked around:
   [openam-http-framework.md](openam-http-framework.md) — **F1** a handler-thrown exception gets a response
   body, **F2** `@ExceptionHandler` becomes real (`@Retention(RUNTIME)` + discovery + dispatch), **F3** the
-  `Promise` return type is implemented. Consequences for 3c-2: `OAuth2ErrorFilter` loses its synthesize rule,
+  `Promise` return type is implemented, **F4** the module's own unread `@Produces` is honoured so a `String`
+  return stops being silently ISO-8859-1. Scheduled 2026-07-22 as one phase in six commits
+  ([commit sequence](openam-http-framework.md#commit-sequence)). Consequences for 3c-2: `OAuth2ErrorFilter` loses its synthesize rule,
   R-3c.9/R-3c.14 are retired, and 5b's handlers may `throw` the existing `OAuth2Exception` hierarchy into one
   `@ExceptionHandler` per endpoint class instead of hand-returning `Response`s per verb. `OAuth2Error` stays a
   value type — it is what that method *builds*.

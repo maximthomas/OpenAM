@@ -7,6 +7,40 @@ patterns: [chf-patterns.md](chf-patterns.md); predecessors: [phase-3a-oauth2requ
 test layers: [docs/test-infrastructure.md](../../test-infrastructure.md). Written 2026-07-17; branch
 `features/restlet-migration`. All facts below were verified against the tree and jar bytecode on 2026-07-17.
 
+> ### ⚠ Prerequisite added 2026-07-21 — [openam-http-framework.md](openam-http-framework.md)
+>
+> This plan originally designed **around** three defects in `openam-http`'s endpoint framework. That was the
+> wrong call: **`openam-http` is in-tree and we maintain it** (`openam-http/src/main/java/org/forgerock/openam/http/annotations/`),
+> so the defects get fixed. **F1** gives a handler-thrown exception a response body; **F2** makes the
+> long-dead `@ExceptionHandler` annotation real; **F3** implements the `Promise` return type. They land
+> **before** this sub-phase.
+>
+> What that changes here, in one line each: `OAuth2ErrorFilter` loses its synthesize rule (F1 guarantees a
+> body); R-3c.9 and R-3c.14 are retired; and 5b's handlers may `throw` the existing `OAuth2Exception`s into an
+> `@ExceptionHandler` method instead of returning `Response`s by hand. **`OAuth2Error` itself is unchanged** —
+> it is what that method builds. See the effect table in
+> [openam-http-framework.md](openam-http-framework.md#effect-on-phase-3c-2). Sections below are annotated
+> **F1**/**F2**/**F3** where the prerequisite changed them.
+
+> **Reviewed 2026-07-21.** Findings 1–5, 7 and 10 re-verified line-for-line against the tree and jar bytecode;
+> the 31-class hierarchy table (finding 5) was independently re-enumerated and is complete. Six corrections
+> folded in, most-material first:
+> 1. **⛔ The work-item-1 collapse snippet emitted a 301 to the *client's* `redirect_uri`** for
+>    `ResourceOwnerAuthenticationRequired` — an open redirect at an unauthenticated entry point, and the loss
+>    of the login redirect. Fixed by [D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out): the login URI is
+>    carried by `OAuth2Error.of`, and RoAR joins the never-redirect set so the generic opt-in cannot overwrite it.
+> 2. **⚠ The filter's rule order defeated its own headline fix.** `Entity.setJson` is what writes
+>    `Content-Type: application/json; charset=UTF-8` (bytecode-verified), so the finding-7 empty-body 500 —
+>    which never calls `setEntity` — has **no `Content-Type` at all** and was swallowed by the Content-Type
+>    guard the plan placed first. The empty-entity rule now runs **before** the guard (work item 4).
+> 3. **New [D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase)** — `WWW-Authenticate` was frozen in the §E e2e lock with nothing in 3c-2's API able to
+>    reproduce it. It is now carried on `OAuth2Error` and asserted at **every** layer: unit, IT, e2e (finding 12).
+> 4. Finding 4 under-described `AuthorizeResource:120-126`: the `IllegalArgumentException` catch has **two**
+>    branches, and the non-`client_id` one redirects with the unvalidated `redirect_uri`.
+> 5. `isRedirectable` named two different questions (instance = state, static = policy) →
+>    `hasRedirectUri()` / `mayRedirect(OAuth2Exception)`.
+> 6. Verification's test baseline was stale (716 is 3b's; **3c-1 as-built is 743**).
+
 ## Context
 
 **Depends on 3c-1** — the error factory's HTML branch renders `page/error.ftl` through
@@ -19,7 +53,14 @@ Wired to no route until Phase 5.
 
 ## Scope & sizing (decided)
 
-**Four new classes + five test classes + one e2e spec.** ~450 LOC main, ~1000 LOC test.
+**Four new classes + six test classes + one e2e spec.** ~450 LOC main, ~1000 LOC test. (Six: four unit suites,
+`RestletErrorParityTest`, and `OAuth2ErrorRouteCompositionIT` — the first draft's "five" omitted the IT.)
+
+**Where the filter mounts is Phase 5's wiring, but its blast radius is decided here.** `OAuth2ErrorFilter`
+is scoped to the whole `/oauth2` application — the same surface `OAuth2ServiceEndpointApplication:36`
+installs `JSONRestStatusService` across today (the `OAuth2Router`), which is what makes finding 6's "two
+shapes on the same endpoints" true and [D4](#d4--error-shape-unification-fix)'s unification meaningful. It is **not** to be reused for the
+`/json` CREST endpoints, where the CREST shape *is* the contract.
 
 - **Package `org.openidentityplatform.openam.oauth2.http`** per [decisions.md](decisions.md) — CDDL header,
   `Copyright 2026 3A Systems LLC.`, **no `@since`**.
@@ -52,6 +93,12 @@ if (exception.getStatus().equals(Status.REDIRECTION_TEMPORARY)) {
   **So a 307 exception emits 301 on the wire.** Sole producer: `ResourceOwnerAuthenticationRequired` (307,
   `redirection_temporary`) → the login-page redirect is emitted as a cacheable 301.
 - `asMap()` is **not** applied — no error params, no `state`. The target is the raw redirect URI.
+- ⚠ **The redirect URI on this branch comes from the *exception*, not the request.**
+  `ResourceOwnerAuthenticationRequired:28,45` carries its own `URI redirectUri` — the **login page** — and
+  `AuthorizeResource:127-129` / `:187-189` have a dedicated catch for exactly that reason:
+  `new OAuth2RestletException(…, e.getRedirectUri().toString(), null)`. Any design that feeds this branch the
+  request's `redirect_uri` 301s the user agent to a **client-supplied, unvalidated** URI instead of the login
+  page. See [D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out).
 
 **(b) redirectUri present → 302, `:119-132`**
 ```java
@@ -120,7 +167,7 @@ if (!isEmpty(getState()))            { map.put("state", getState()); }
 implemented *purely* by which `OAuth2RestletException` constructor each catch block picks — and therefore by
 **catch-clause ordering**.
 
-`AuthorizeResource` GET (`:120-149`) catches: `IllegalArgumentException`(msg `.contains("client_id")`),
+`AuthorizeResource` GET (`:120-149`) catches: `IllegalArgumentException`,
 `ResourceOwnerAuthenticationRequired`, `ResourceOwnerConsentRequired`, `InvalidClientException`,
 `RedirectUriMismatchException`, `DuplicateRequestParameterException`, **`OAuth2ProviderNotFoundException`**,
 then generic `OAuth2Exception`.
@@ -137,9 +184,31 @@ The generic branch passes the **unvalidated, client-supplied** `request.getParam
 }
 ```
 
+⚠ **The `IllegalArgumentException` catch has *two* branches, and only one of them is the `client_id` case**
+(`AuthorizeResource:120-126`, corrected 2026-07-21 — an earlier draft wrote the catch as if it were guarded by
+`.contains("client_id")`):
+
+```java
+} catch (IllegalArgumentException e) {
+    if (e.getMessage().contains("client_id")) {
+        throw new OAuth2RestletException(400, "invalid_request", e.getMessage(),
+                request.<String>getParameter("state"));                              // no redirect
+    }
+    throw new OAuth2RestletException(400, "invalid_request", e.getMessage(),
+            request.<String>getParameter("redirect_uri"), request.<String>getParameter("state"));  // REDIRECTS
+}
+```
+
+The `else` branch is a **second open redirect** of the same shape as the generic one below, and it is the path
+`?display=bogus` actually takes today ([3c-1 D7](phase-3c-1-renderer.md#d7--unknown-display--illegalargumentexception-reproduce)'s raw IAE from
+`Enum.valueOf`) — so `?display=bogus` is a **302 to an unvalidated URI**, not an error page. `IllegalArgumentException`
+is not an `OAuth2Exception`, so `mayRedirect` cannot police it; **5b must port both branches deliberately** and
+decide whether to keep the second. `TokenEndpointResource:98-100` carries the identical pattern on the token
+endpoint. Recorded here so 5b does not change it by accident in either direction.
+
 ⇒ **`OAuth2ProviderNotFoundException` does not redirect on GET but does on POST.** That is not a designed
 contract; it is two independently-maintained catch lists that drifted. And it is an **open redirect**: no
-provider ⇒ `redirect_uri` was never validated. This is the concrete case that makes `isRedirectable` worth
+provider ⇒ `redirect_uri` was never validated. This is the concrete case that makes `mayRedirect` worth
 having.
 
 > **Correction to an earlier draft.** `RelativeRedirectUriException` and `InvalidRedirectUri` were believed to
@@ -215,6 +284,12 @@ caught. Unifying them is `OAuth2ErrorFilter`'s purpose ([D4](#d4--error-shape-un
 
 ### 7. ⚠ The filter cannot catch — and `Endpoints.from`'s 500 has an **empty body**
 
+> **Superseded by [F1+F2](openam-http-framework.md) (2026-07-21).** Everything below is a correct description
+> of the framework *as this plan found it*, and it is why the prerequisite exists — the finding is preserved
+> verbatim because the fix is measured against it. After F1 a handler-thrown exception yields a **CREST 500
+> with a body**; after F2 it is first offered to the endpoint's own `@ExceptionHandler`. The two 405 bodies
+> are **unchanged** by the prerequisite and remain live for the filter and the IT.
+
 [chf-patterns.md](chf-patterns.md) §2 said an uncaught `Throwable` yields `500 + InternalServerErrorException`
 map. **That is only true for exceptions thrown *outside* the reflective call.** A handler method that *throws*
 takes `AnnotatedMethod.java:90-94`:
@@ -232,9 +307,27 @@ map fires only for throwables escaping `AnnotatedMethod.invoke` itself — `para
 (`:80-82`, *before* the try) or `responseAdapter.apply` (`:85`, inside the try but not among the two caught
 types).
 
+The sibling `catch (IllegalAccessException)` (`:86-89`) produces the **same** shape — 500, empty body,
+`setCause(IllegalStateException)` — so any rule keyed on "empty entity + cause" covers both.
+
 Consequence: `Entity.getJson()` on an empty entity **throws IOException**, so `XacmlXmlErrorFilter`'s
 `catch (IOException) → return response` means an empty-bodied 500 **passes through unrewritten**. A filter
 modelled naively on Phase 2 leaks a bare, bodiless 500.
+
+⚠ **And a filter that guards on `Content-Type` first leaks it too** (corrected 2026-07-21). `Entity.setJson`
+is what writes the header — bytecode, first three instructions:
+
+```
+getHeaders(); ldc "Content-Type"; ldc "application/json; charset=UTF-8"; Headers.put
+```
+
+So the CREST 405/500 fallbacks *do* carry `application/json; charset=UTF-8` (they reach `setEntity(Map)` →
+`setJson`), but the `AnnotatedMethod:90-94` response never calls `setEntity` at all and therefore has **no
+`Content-Type` header whatsoever**. A Content-Type guard placed ahead of the empty-entity rule classifies it as
+"not JSON → untouched" and the synthesize row never fires — silently deleting the one behaviour
+[§C's IT](#c-oauth2errorroutecompositionit--in-process-composition-second-highest-value) exists to prove. **Order the rules: empty entity first, Content-Type guard second**
+(work item 4). Use `response.getEntity().isDecodedContentEmpty()` — it exists on `Entity` in core 3.1.1 and does
+not rely on `getJson()` throwing.
 
 **Two framework 405 bodies, not one:**
 
@@ -248,7 +341,14 @@ always take the second path. Both must be in the filter's test matrix.
 
 **`@ExceptionHandler` (openam-http) is dead code** — no `@Retention` (defaults to `CLASS`, invisible to
 reflection), no `@Target`, **zero usages** (grep-confirmed), and neither `Endpoints` nor `AnnotatedMethod`
-ever looks for it. It cannot solve 3c-2's problem. The Filter is the only lever. Flag for deletion in Phase 8.
+ever looks for it. ~~It cannot solve 3c-2's problem. The Filter is the only lever. Flag for deletion in Phase 8.~~
+
+> **Reversed 2026-07-21 — this is now [F2](openam-http-framework.md), and it *is* the lever.** The annotation
+> is dead, but it is dead in **our own in-tree module**, and its javadoc already states exactly the contract
+> 3c-2 and Phase 5 need: *"Mark a method that handles exceptions thrown by a service method and turns them
+> into a response."* Deleting it in Phase 8 would have thrown away a working name for a feature the migration
+> then hand-rolls per endpoint. The three-line fix is `@Retention(RUNTIME)` + `@Target(METHOD)` + discovery in
+> `Endpoints.from`. **The Filter is no longer the only lever, and no longer the primary one.**
 
 ### 8. ⚠ `BaseURLProvider`'s CHF-looking overload is unreachable from a filter
 
@@ -280,64 +380,145 @@ reproducing a URI-injection vector.** Diverge ([D11](#d11--redirectors--substitu
 `Reference`/`Form` encoding. **This is [plan.md](plan.md) risk #3**, and it is exactly what
 [`RestletErrorParityTest`](#b-restleterrorparitytest--the-oracle) exists to pin.
 
+### 11. ⚠ `WWW-Authenticate` is emitted by the *resources*, not by `ExceptionHandler`
+
+(Added 2026-07-21. The §E e2e lock froze this header as a "reproduce" row while nothing in 3c-2's API could
+produce it — see [D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase).)
+
+`ExceptionHandler` never touches `WWW-Authenticate`. The challenge is set on the Restlet `Response`
+**before the throw**, by each resource that authenticates a client — `TokenEndpointResource:101-108`,
+`RefreshTokenResource:93`, `TokenRevocationResource:139`:
+
+```java
+} catch (InvalidClientAuthZHeaderException e) {
+    getResponse().setChallengeRequests(singletonList(new ChallengeRequest(
+            ChallengeScheme.valueOf(SUPPORTED_RESTLET_CHALLENGE_SCHEMES.get(e.getChallengeScheme())),
+            e.getChallengeRealm())));
+    throw new OAuth2RestletException(e.getStatusCode(), e.getError(), e.getMessage(), … state);
+}
+```
+
+Values are fully determined: `ClientAuthenticationFailureFactory:56` builds
+`new InvalidClientAuthZHeaderException(message, "Basic", getRealm(request))`, and
+`RestletConstants:32-33` maps technical name `"Basic"` → `ChallengeScheme.HTTP_BASIC`. Restlet then serialises
+`Basic realm="<realm>"`. **Confirm the exact spelling by observation in the e2e lock, not from this paragraph.**
+
+⇒ There is exactly one `OAuth2Exception` subclass that implies a response header, it is a **401** (the only
+one in finding 5's table), and the header is part of the RFC 6749 §5.2 contract for `invalid_client`. In CHF
+there is no `getResponse()` to decorate before throwing — the factory builds the whole `Response`, so the
+challenge must ride on `OAuth2Error`.
+
 ## Work items
 
 ### 1. `OAuth2Error` — the neutral carrier
 
-Replaces `OAuth2RestletException`. **A value type, not a `Throwable`.** `OAuth2RestletException extends
-Exception` only because Restlet's `doCatch` required *throwing*; CHF handlers must **return** `Response`
-objects — a thrown exception is swallowed into a bodiless 500 (finding 7). Making it a value type also kills
-the ctor trap (finding 2).
+Replaces `OAuth2RestletException`. **A value type, not a `Throwable`** — and it stays one, though the reason
+has changed (**F2**, 2026-07-21).
+
+*Original rationale, now obsolete:* "CHF handlers must **return** `Response` objects — a thrown exception is
+swallowed into a bodiless 500 (finding 7)." With [F1+F2](openam-http-framework.md) a throw is no longer
+swallowed, so this argument no longer holds.
+
+*Current rationale:* the thing worth throwing is the **existing `OAuth2Exception` hierarchy**, which 5b's
+handlers already have in hand and which an `@ExceptionHandler` method matches on directly. `OAuth2Error` is
+what that method *builds* on the way to a `Response` — the carrier that holds `redirectUri`, `state`,
+`parameterLocation` and the challenge, none of which the core exceptions carry. It was never the thing that
+needed throwing. Keeping it a value type still kills the ctor trap (finding 2), and adding no second throwable
+type means no second way to be wrong.
 
 ```java
 public final class OAuth2Error {
-    // fields: statusCode, error, description, redirectUri, state, errorUri, parameterLocation
-    public static OAuth2Error of(OAuth2Exception e);          // status/error/description/parameterLocation from e
+    // fields: statusCode, error, description, redirectUri, state, errorUri, parameterLocation,
+    //         challengeScheme, challengeRealm
+    public static OAuth2Error of(OAuth2Exception e);          // status/error/description/parameterLocation from e,
+                                                              // + the D13 and D14 carve-outs
     public static OAuth2Error of(int statusCode, String error, String description);
     public OAuth2Error withState(String state);
     public OAuth2Error withErrorUri(String errorUri);
+    public OAuth2Error withChallenge(String scheme, String realm);               // D14 — WWW-Authenticate
     public OAuth2Error redirectingTo(String redirectUri, UrlLocation location);  // explicit opt-in
-    public boolean isRedirectable();                          // redirectUri != null && !isEmpty
+    public boolean hasRedirectUri();                          // state:  redirectUri != null && !isEmpty
+    public static boolean mayRedirect(OAuth2Exception e);     // policy: the never-redirect table
     public Map<String, String> asMap();                       // LinkedHashMap, canonical order
-    public static boolean isRedirectable(OAuth2Exception e);  // the policy table
-    // getters: getStatusCode/getError/getDescription/getRedirectUri/getState/getErrorUri/getParameterLocation
+    // getters: getStatusCode/getError/getDescription/getRedirectUri/getState/getErrorUri/
+    //          getParameterLocation/getChallengeScheme/getChallengeRealm
 }
 ```
+
+> **Naming (2026-07-21).** An earlier draft called both the instance predicate and the static policy check
+> `isRedirectable`. They answer different questions — *"does this error carry a redirect target?"* versus
+> *"is redirecting permitted for this exception type?"* — and one name for both invites writing the state
+> check where the policy check belongs, in the very class whose purpose is to make redirecting deliberate.
+> `hasRedirectUri()` / `mayRedirect(…)`.
 
 - `asMap()` — **`LinkedHashMap`**, canonical order `error`, `error_description`, `error_uri`, `state`; the
   three optional keys emitted only when `!isEmpty` (the identical predicate to `OAuth2RestletException.asMap()`,
   via `org.forgerock.oauth2.core.Utils.isEmpty`). Keep `errorUri` in the shape but ship **no populator**
   (finding 2). See [D1](#d1--asmap-field-order-fix).
-- **`static boolean isRedirectable(OAuth2Exception)`** — the [D6](#d6--isredirectable-unified-to-the-safe-union-fix)
+- **`static boolean mayRedirect(OAuth2Exception)`** — the [D6](#d6--isredirectable-unified-to-the-safe-union-fix)
   fix. Encode as **data** what is today emergent from catch ordering:
 
   ```java
   private static final Set<Class<? extends OAuth2Exception>> NEVER_REDIRECT = Set.of(
       RedirectUriMismatchException.class, InvalidClientException.class,
       OAuth2ProviderNotFoundException.class, DuplicateRequestParameterException.class,
-      CsrfException.class);
+      CsrfException.class,
+      ResourceOwnerAuthenticationRequired.class);        // D13 — carries its own login URI; never the client's
   ```
   **Unified to the union of GET's and POST's sets** (the safe side of finding 4). Must match on
   **assignability**, not identity, so `InvalidClientAuthZHeaderException` (extends `InvalidClientException`)
-  and `OAuth2ProviderNotFoundException` (extends `NotFoundException`) resolve correctly. Every one of the ~30
+  and `OAuth2ProviderNotFoundException` (extends `NotFoundException`) resolve correctly. Every one of the 31
   subclasses in finding 5 gets an explicit verdict in `OAuth2ErrorTest`, so **adding a subclass without
   deciding is a test failure** (R-3c.6).
 
-  The `IllegalArgumentException`-`.contains("client_id")` case is *not* an `OAuth2Exception`; it stays a 5b
-  handler concern.
+  The `IllegalArgumentException` cases are *not* `OAuth2Exception`s; **both branches** of
+  `AuthorizeResource:120-126` (finding 4) stay a 5b handler concern.
 
-This collapses `AuthorizeResource`'s 7 catch blocks into one in 5b:
+- **Two carve-outs inside `of(OAuth2Exception)`** — both are cases where the exception carries information the
+  request cannot supply, so a generic mapper that reads only `statusCode`/`error`/`getMessage()` loses it:
+
+  ```java
+  if (e instanceof ResourceOwnerAuthenticationRequired) {                                   // D13
+      err = err.redirectingTo(((ResourceOwnerAuthenticationRequired) e).getRedirectUri().toString(),
+                              UrlLocation.QUERY);       // the LOGIN page, per finding 1a
+  } else if (e instanceof InvalidClientAuthZHeaderException) {                               // D14
+      InvalidClientAuthZHeaderException a = (InvalidClientAuthZHeaderException) e;
+      err = err.withChallenge(a.getChallengeScheme(), a.getChallengeRealm());               // finding 11
+  }
+  ```
+  Both are **assignability** checks for the same reason as `NEVER_REDIRECT`.
+
+This collapses `AuthorizeResource`'s 7 catch blocks into one in 5b — and with **F2** it leaves the handler
+method entirely, becoming the endpoint's `@ExceptionHandler`:
+
 ```java
-catch (OAuth2Exception e) {
-    OAuth2Error err = OAuth2Error.of(e).withState(request.getParameter("state"));
-    if (OAuth2Error.isRedirectable(e) && redirectUri != null) {
+@ExceptionHandler
+public Response onOAuth2Error(OAuth2Exception e, @Contextual Request request) {
+    OAuth2Request oauth2Request = requestFactory.create(request);
+    OAuth2Error err = OAuth2Error.of(e).withState(oauth2Request.getParameter("state"));
+    String redirectUri = oauth2Request.getParameter("redirect_uri");
+    if (OAuth2Error.mayRedirect(e) && redirectUri != null) {
         err = err.redirectingTo(redirectUri, e.getParameterLocation());
     }
-    return errorResponseFactory.toResponse(request, err);
+    return errorResponseFactory.toResponse(oauth2Request, err);
 }
 ```
+
+The `@Contextual Request` parameter is what makes this work: the mapper reads `state` and `redirect_uri` from
+the request itself, so the thrown `OAuth2Exception` does not have to carry them and the handler method does not
+have to catch anything. Without **F2** the same body sits in a `catch` block inside each handler method — the
+design still functions, it just gets copied per verb, which is precisely how GET and POST drifted apart in the
+first place (finding 4).
 `redirectingTo` being an **explicit opt-in** is the point: redirecting becomes something you *do*, not
 something that happens because you picked the wrong constructor.
+
+⚠ **Why the D13 carve-out is load-bearing and not tidiness.** Without it this snippet is *wrong in the
+dangerous direction*: `ResourceOwnerAuthenticationRequired` is an `OAuth2Exception` (`:26`) with status **307**,
+so `mayRedirect` returns true by default, `redirectingTo` overwrites the login URI with the request's
+`redirect_uri`, and `toResponse` branch 1 then emits **301 → a client-supplied, unvalidated URI** — the login
+redirect silently replaced by an open redirect at the one endpoint that is reachable **unauthenticated**. It is
+the same defect class D6 exists to remove, reintroduced by the mechanism advertised as the fix. Belt and
+braces: `of` supplies the right URI, and membership in `NEVER_REDIRECT` stops any caller overwriting it.
 
 ### 2. `RedirectUris` — shared fragment-vs-query composition
 
@@ -380,8 +561,9 @@ public class OAuth2ErrorResponseFactory {
 
 `toResponse` mirrors finding 1's three **ordered** branches exactly:
 1. `error.getStatusCode() == 307` → `toLoginRedirectResponse(error.getRedirectUri())` → **301 + `Location`**,
-   no error params, no state.
-2. `error.isRedirectable()` → `toRedirectResponse` → **302** + `Location: RedirectUris.compose(...)`.
+   no error params, no state. Per [D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out) that URI is the **login page**, placed there by
+   `OAuth2Error.of` — never the request's `redirect_uri`.
+2. `error.hasRedirectUri()` → `toRedirectResponse` → **302** + `Location: RedirectUris.compose(...)`.
    Do not reproduce the dead `:119` status write.
 3. else → `toHtmlErrorResponse` with status = `error.getStatusCode()`, rendering `templates/page/error.ftl`
    (display hardcoded `"page"`, per finding 1c).
@@ -391,6 +573,13 @@ public class OAuth2ErrorResponseFactory {
   **`HttpServletRequest`** overload, never `HttpContext` (finding 8). **Guard `getHttpServletRequest() == null`.**
 - JSON: `response.setEntity(error.asMap())` → `setJson` sets `application/json; charset=UTF-8` natively ⇒
   **`JacksonRepresentationFactory` dies here**.
+- **`WWW-Authenticate`** ([D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase)): whenever `error.getChallengeScheme() != null`, every branch of
+  `toResponse` **and** `toJsonResponse` emits
+  `response.getHeaders().put("WWW-Authenticate", scheme + " realm=\"" + realm + "\"")`. Put it in one private
+  helper applied at the end, not per branch — today's producers (finding 11) set the challenge on the response
+  *before* choosing an error shape, so it is orthogonal to the 3-branch dispatch. In practice only the JSON
+  401 path fires (`InvalidClientAuthZHeaderException` is the sole carrier), but a header that depends on which
+  branch ran is exactly how it goes missing in 5a.
 - HTML: via `FreemarkerTemplateRenderer.toHtmlResponse` — the
   [3c-1 finding-3 recipe](phase-3c-1-renderer.md#3--content-type-texthtml-charsetutf-8-is-implicit-today--and-chfs-default-is-iso-8859-1)
   (header first, then `getBytes(UTF_8)`).
@@ -410,11 +599,21 @@ public class OAuth2ErrorResponseFactory {
 
 | Input (status ≥ 400) | Action | Rationale |
 |---|---|---|
-| `Content-Type` not JSON (incl. **HTML**) | **untouched** | 5b's `page/error.ftl` 400 must survive. Guard on Content-Type **before** parsing |
+| `Content-Type` not JSON (incl. **HTML**, and **absent**) | **untouched** | 5b's `page/error.ftl` 400 must survive. Guard on Content-Type **before** parsing |
 | JSON map containing key `error` | **untouched** | already OAuth2-shaped → idempotent |
-| JSON map containing key `code` (CREST) | rewrite → `{error, error_description}` | the framework 405/500 fallbacks (finding 7) |
-| entity empty **and** `getCause() != null` | synthesize `{error: "server_error", error_description: …}` | the finding-7 gap; `getCause() != null` targets it precisely without clobbering a deliberate empty-body 4xx |
+| JSON map containing key `code` (CREST) | rewrite → `{error, error_description}` | the framework 405/501 fallbacks (finding 7) |
 | anything else | untouched | unknown shape |
+
+> **F1 deleted a rule.** An earlier draft carried a fourth rule — *"entity empty **and** `getCause() != null` →
+> synthesize `{error: "server_error", …}`"* — and it had to run **first**, because the bodiless 500 from
+> `AnnotatedMethod:90-94` has no `Content-Type` and the guard above would otherwise drop it. That ordering
+> constraint was subtle, silent when violated, and unobservable to any canned-response unit test (R-3c.14).
+> [F1](openam-http-framework.md) removes the response that made it necessary: a handler-thrown exception now
+> arrives here as a well-formed CREST map and is handled by the `code` rule like every other framework error.
+> **The rules are no longer order-sensitive** — no input matches two of them.
+>
+> `OAuth2ErrorRouteCompositionIT` keeps asserting that a throwing handler produces a rewritten OAuth2-shaped
+> 500; it is now verifying the fixed framework rather than compensating for the broken one.
 
 **Discriminating CREST from OAuth2 (both are `Map`s):** a CREST map is `{code, reason, message, detail?, cause?}`
 and never has `error`; an OAuth2 map is `{error, error_description?, error_uri?, state?}` and never has `code`.
@@ -423,8 +622,10 @@ Check **`error` first** (idempotency), then `code`.
 **Improvement over the Phase-2 model — guard on `Content-Type` before parsing.** `XacmlXmlErrorFilter` relies
 on `getJson()` throwing `IOException` on a non-JSON body to fall through. That works, but only *by accident*,
 and for 3c-2 the accident is load-bearing: it is the only thing standing between the filter and a destroyed
-consent-error page. Make it explicit and cheap (`ContentTypeHeader.valueOf(response).getType()`), and test the
-HTML case directly (R-3c.5).
+consent-error page. Make it explicit and cheap (`ContentTypeHeader.valueOf(response).getType()` — verified
+present in http-framework core 3.1.1), and test the HTML case directly (R-3c.5). **`valueOf` on a message with
+no `Content-Type` yields a null type** ⇒ untouched, which is now unambiguously right: after
+[F1](openam-http-framework.md) no framework response reaches this filter without a `Content-Type`.
 
 CREST → OAuth2 mapping: `500 → server_error`, `405 → invalid_request`, other 4xx → `invalid_request`;
 `error_description` ← the map's `message`.
@@ -474,6 +675,11 @@ Finding 4: the policy is emergent from catch ordering, and GET/POST disagree —
 not design, and the POST side is an **open redirect** (no provider ⇒ `redirect_uri` was never validated).
 Unify to the union; encode as data; enumerate every subclass in the test.
 
+`ResourceOwnerAuthenticationRequired` joins `NEVER_REDIRECT` for a **different** reason — not "this error must
+not reach the client's URI" but "this error already knows its own URI". See
+[D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out); keep the two rationales distinct in the test's comments, because a later
+reader pruning the set on RFC grounds would otherwise remove the security guard with it.
+
 ⚠ **It changes POST behaviour** at the 5d flip: `POST /oauth2/authorize` against a realm with no OAuth2
 provider will render the error page instead of redirecting. **Do not assert the current behaviour in the e2e
 lock.**
@@ -496,21 +702,71 @@ disclosure; D9 closes the trigger.
 Finding 9. Reproducing it would reproduce a URI-injection vector on an unvalidated `redirect_uri`. Set
 `Location` verbatim; document it in the parity test.
 
+<a id="d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out"></a>
+### D13 — `ResourceOwnerAuthenticationRequired` carries its own redirect URI: **carve-out** (decided 2026-07-21)
+
+**Reproduce** the behaviour; the decision is *how*, and the null option was a security regression.
+
+RoAR is the sole producer of the 307 branch (finding 1a) and the only `OAuth2Exception` whose redirect target
+comes from the **exception** (`:28,45` — the login page) rather than from the request. Under D6's data-driven
+policy it would default to redirectable, and 5b's one-line collapse would then overwrite the login URI with the
+client's `redirect_uri`, emitting **301 → unvalidated client URI** on unauthenticated `GET /oauth2/authorize`.
+
+Two mechanisms, deliberately redundant because the failure is silent and security-relevant:
+1. `OAuth2Error.of` populates `redirectUri` from `e.getRedirectUri()` for RoAR — the carrier knows the truth.
+2. RoAR is in `NEVER_REDIRECT`, so `mayRedirect` is false and no caller can overwrite it.
+
+`OAuth2ErrorTest` asserts both, including the adversarial case: `of(roar).redirectingTo("https://evil/", QUERY)`
+must still yield the login URI, and the resulting response must be a **301 to the login page**. This is the
+one row of the e2e lock ([§E](#e-e2e-error-contract-lock)) that would have gone from pass to *silently
+wrong-but-still-301* at the 5d flip.
+
+<a id="d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase"></a>
+### D14 — `WWW-Authenticate` carried on `OAuth2Error`, and tested in every phase (decided 2026-07-21)
+
+Finding 11: the header is set by the resources, not by `ExceptionHandler`, so nothing in 3c-2's original API
+could emit it — while [§E](#e-e2e-error-contract-lock) already froze it as a "reproduce" row. Deferring it
+wholly to 5a was the alternative and is rejected: in CHF the factory owns the entire `Response`, so 5a would
+have to reach around the factory to add a header, which is precisely the shape that goes missing.
+
+`OAuth2Error` gains `challengeScheme`/`challengeRealm`, `of` populates them from
+`InvalidClientAuthZHeaderException`, and the factory emits the header on every branch.
+
+**Tested at every layer, per phase:**
+
+| Phase | Layer | Assertion |
+|---|---|---|
+| 3c-2 | `OAuth2ErrorTest` | `of(InvalidClientAuthZHeaderException)` carries scheme `Basic` + the realm; every other subclass carries neither |
+| 3c-2 | `OAuth2ErrorResponseFactoryTest` | `toJsonResponse` on a challenge-bearing 401 emits `WWW-Authenticate: Basic realm="…"`; a non-challenge error emits **no** such header |
+| 3c-2 | `RestletErrorParityTest` | A/B against Restlet's `ChallengeRequest` serialisation — this is the row that pins the exact spelling, and it is a *belief* until executed |
+| 3c-2 | e2e lock (§E) | bad client secret on `/oauth2/access_token` → 401 + the header, recorded **against live Restlet** |
+| 5a | `TokenEndpointHandler` tests | the ported handler passes the exception through `OAuth2Error.of` rather than re-deriving the header |
+| 5d | smoke matrix | the header survives the route flip |
+
+The parity row is the load-bearing one: `Basic realm="…"` is what Restlet is *expected* to emit, not what has
+been observed. If the parity leg disagrees, **the parity leg is right**.
+
 ## Tests
 
 ### A. Unit tests per class — table stakes
 
 - **`OAuth2ErrorTest`** — `asMap()` order and omission (`error_uri` never emitted; optional keys gated on
-  `isEmpty`); **`isRedirectable` enumerating all ~30 subclasses** of finding 5 (R-3c.6), incl. the
-  assignability cases `InvalidClientAuthZHeaderException` and `OAuth2ProviderNotFoundException`.
+  `isEmpty`); **`mayRedirect` enumerating all 31 subclasses** of finding 5 (R-3c.6), incl. the
+  assignability cases `InvalidClientAuthZHeaderException` and `OAuth2ProviderNotFoundException`; the two
+  `of` carve-outs — RoAR keeps the **login** URI even against an adversarial `redirectingTo`
+  ([D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out)), and the challenge fields ([D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase)).
 - **`RedirectUrisTest`** — fragment **replaces** / query **appends** / existing query preserved / special
   chars.
 - **`OAuth2ErrorResponseFactoryTest`** — all four modes; exact **301** / **302** / 4xx; null realm → `"/"`
-  ([D9](#d9--null-realm--fix)); **null `HttpServletRequest`** guarded.
+  ([D9](#d9--null-realm--fix)); **null `HttpServletRequest`** guarded; `WWW-Authenticate` emitted exactly when
+  the error carries a challenge ([D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase)); the 307 branch targets the login URI, not any
+  `redirect_uri` on the error ([D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out)).
 - **`OAuth2ErrorFilterTest`** — **`XacmlXmlErrorFilterTest` verbatim as the scaffold**: TestNG + AssertJ, no
   Mockito, no Guice, no `@BeforeMethod`; `Handler next = (ctx, req) -> Promises.newResultPromise(canned);` +
   `filter.filter(context, request, next).getOrThrowUninterruptibly()`. Cover every row of the contract table,
-  especially **HTML untouched** and **idempotent on an OAuth2-shaped body**.
+  especially **HTML untouched** and **idempotent on an OAuth2-shaped body**. A header-less 500 must be left
+  **untouched** — post-[F1](openam-http-framework.md) the framework no longer emits one, and a filter that
+  invents a body for a response it cannot classify is guessing.
 
 ### B. `RestletErrorParityTest` — the oracle
 
@@ -529,6 +785,7 @@ Scope it **tightly** — A/B only where a claim is a *belief*, not an observatio
 | fragment vs query | incl. a `redirect_uri` that **already has** a query and/or a fragment |
 | **error-param encoding** (risk #3) | space, `+`, `&`, `=`, unicode in `state`/`error_description`. Restlet `Reference`/`Form` vs CHF `Uris.urlEncodeQueryParameterNameOrValue` **genuinely differ** — the row most likely to fail |
 | `{}` in the redirect URI | documents the [D11](#d11--redirectors--substitution-diverge) divergence |
+| **`WWW-Authenticate` spelling** ([D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase)) | Restlet `ChallengeRequest(HTTP_BASIC, realm)` serialised vs the factory's `Basic realm="…"`. Finding 11's expected value is a **belief**; this row is what makes it a fact. ⚠ `Response.setChallengeRequests` stores objects — the header only materialises in the **connector**, so a plain unit `Response` has no `WWW-Authenticate` to read. Serialise it in-process with `AuthenticatorUtils.formatRequest(ChallengeRequest, Response, Series<Header>)` (verified present, `org.restlet.engine.security`) |
 
 `ExceptionHandler` needs 4 mockable collaborators; `ServletUtils.getRequest(plainRequest)` returns **null**,
 so stub `baseURLProviderFactory.get(realm).getRootURL(null)`.
@@ -578,9 +835,13 @@ expires**.
 has to *edit* the lock, at which point it was never a lock (R-3c.8).
 
 **Assert** (frozen rows only): JSON error shape on `/oauth2/access_token` (bad `grant_type`; bad client secret
-→ incl. `WWW-Authenticate: Basic`); **301 + `Location`** on unauthenticated `/oauth2/authorize`; **302** +
-query-vs-fragment error composition on a valid `redirect_uri`; the HTML error page's
-`Content-Type: text/html;charset=UTF-8`.
+→ incl. `WWW-Authenticate: Basic`, per [D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase)); **301 + `Location`** on unauthenticated
+`/oauth2/authorize` — assert the `Location` **is the login page**, not merely that a `Location` exists
+([D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out): a bare "301 with some `Location`" would have passed while pointing at the client's URI);
+**302** + query-vs-fragment error composition on a valid `redirect_uri`; the HTML error page's
+`Content-Type: text/html;charset=UTF-8` (reach it with an unknown `client_id` → `InvalidClientException` →
+no-redirect ctor → the error page; **not** via `?display=bogus`, which finding 4's second IAE branch turns
+into a 302).
 
 **Do not assert:** the uncaught-500 status ([D3](#d3--uncaught-bug-path-400-vs-500-diverge--keep-500)); POST's
 redirecting `OAuth2ProviderNotFoundException` ([D6](#d6--isredirectable-unified-to-the-safe-union-fix));
@@ -606,17 +867,24 @@ whole xacml suite on its first CI run.
 - **A Guice binding guard** (3b's `OAuth2GuiceModuleTest` pattern) — **not applicable**: 3c-2 adds **no**
   bindings (both singletons JIT-bind).
 - **Unwrapping `response.getCause()`** in the filter to recover the thrown exception (finding 7) —
-  **rejected**. Technically possible and tempting, but it builds on an implementation detail of shared
-  framework code whose own message calls the situation a bug ("Exception from invocation should be handled by
-  promise"). The contract is that handlers catch their own exceptions; the filter is a **net, not a
-  mechanism**. If `Endpoints.from`'s swallowing needs fixing, [chf-patterns.md](chf-patterns.md) §2 is right
-  that it should be fixed **once in openam-http**, not worked around per-area.
+  **rejected, and the rejection aged well**. It builds on an implementation detail of shared framework code
+  whose own message calls the situation a bug ("Exception from invocation should be handled by promise"). The
+  closing argument was: *"if `Endpoints.from`'s swallowing needs fixing, it should be fixed **once in
+  openam-http**, not worked around per-area."*
+  **That is now [F1](openam-http-framework.md), decided 2026-07-21.** The right conclusion was already on the
+  page; what was missing was noticing that "should be fixed once in openam-http" describes a module in this
+  repository that we maintain, not an upstream we petition. The filter is a **net, not a mechanism** — it just
+  now has less to net.
 
 ## Verification
 
+0. **[F1–F3](openam-http-framework.md) are already merged and green** — including
+   `mvn -o -pl openam-rest,openam-core-rest,openam-entitlements verify`. 3c-2 must not be the commit that
+   discovers a framework regression.
 1. `mvn -o -pl openam-oauth2 install -DskipTests` → `mvn -o -pl openam-oauth2,openam-uma test`.
-   **Baseline (3b as-built): openam-oauth2 716, openam-uma 192**, 0 failures/errors/skips. 3c is additive ⇒
-   openam-uma must stay **exactly 192**.
+   **Baseline (3c-1 as-built): openam-oauth2 743, openam-uma 192**, 0 failures/errors/skips. 3c-2 is additive ⇒
+   openam-uma must stay **exactly 192**, and openam-oauth2 grows from **743** (not 716 — that is 3b's number,
+   before 3c-1's +27; corrected 2026-07-21).
 1b. **`mvn -o -pl openam-oauth2 verify`** — **the only step that runs `OAuth2ErrorRouteCompositionIT`.**
    Step 1 cannot see it (failsafe is bound unconditionally at the root pom, `:1843-1856`; `mvn test` skips
    `*IT.java`).
@@ -655,7 +923,11 @@ whole xacml suite on its first CI run.
 | Filter must **not** clobber HTML 400 | new guard | `OAuth2ErrorFilterTest` + IT; Content-Type guard before parse |
 | Filter idempotent on OAuth2-shaped bodies | new guard | `OAuth2ErrorFilterTest` |
 | Two error shapes on one app | **fix → unify** ([D4](#d4--error-shape-unification-fix)) | `OAuth2ErrorFilterTest` |
-| No-redirect policy | **fix → explicit union** ([D6](#d6--isredirectable-unified-to-the-safe-union-fix)) | `OAuth2ErrorTest` enumerates **all ~30** subclasses |
+| No-redirect policy | **fix → explicit union** ([D6](#d6--isredirectable-unified-to-the-safe-union-fix)) | `OAuth2ErrorTest` enumerates **all 31** subclasses |
+| 307 branch targets the **login** URI, never the request's `redirect_uri` | reproduce ([D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out)) | `OAuth2ErrorTest` (incl. adversarial `redirectingTo`); factory test; e2e asserts the `Location` **value** |
+| `WWW-Authenticate: Basic realm="…"` on the 401 | reproduce ([D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase)) | every layer — unit, factory, parity (spelling), e2e, 5a, 5d |
+| Handler-thrown exception → CREST 500 → rewritten to OAuth2 shape | **fix**, via [F1](openam-http-framework.md) | `OAuth2ErrorRouteCompositionIT` |
+| `IllegalArgumentException`'s two branches (`?display=bogus` → 302 to unvalidated URI) | **defer to 5b, recorded** | finding 4; not asserted in the e2e lock |
 | `Redirector` `{}` substitution | **diverge** ([D11](#d11--redirectors--substitution-diverge)) | parity test documents it |
 | Null realm | **fix → `"/"`** ([D9](#d9--null-realm--fix)) | factory test |
 | WARN on every 4xx | fix → 5xx warn / 4xx debug | not client-observable |
@@ -666,6 +938,11 @@ whole xacml suite on its first CI run.
 output overwrites the error. 3c ships no equivalent; **5a's `TokenEndpointHandler` must return, not continue**.
 It also adds `Cache-Control: no-store` + `Pragma: no-cache` (`:76-77`), which 5a must reproduce.
 
+**Also for 5a:** the three token-family resources decorate the response with a `ChallengeRequest` *before*
+throwing (finding 11). The ported handlers must **not** re-derive that header — they route the exception
+through `OAuth2Error.of`, which carries it ([D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase)), and let the factory emit it. `RestletConstants` and
+its `SUPPORTED_RESTLET_CHALLENGE_SCHEMES` map die with the resources in Phase 5a.
+
 **Recorded for Phase 5b:** `ConsentRequiredResource.getDataModel:75-108` seeds its map from
 `new HashMap<>(getRequest().getAttributes())` (`:79`) then `putAll(getQuery().getValuesMap())` (`:80`) —
 `realm`/`redirect_uri`/`scope`/`state`/`nonce`/`acr`/`response_type`/`client_id`/`ui_locales` arrive
@@ -674,27 +951,36 @@ goes false and the consent page renders with a broken `pageData`.
 
 ## Execution order
 
-1. `OAuth2Error` + `OAuth2ErrorTest` (incl. the all-subclasses `isRedirectable` enumeration).
+0. **[openam-http-framework.md](openam-http-framework.md) F1–F3 land first**, as their own commit with their
+   own tests — a shared-framework change must not ride inside a migration commit ([D2](#d2--serverexception--400-on-the-contract-path-reproduce)'s argument,
+   applied consistently). 3c-2 is written against the fixed framework.
+1. `OAuth2Error` + `OAuth2ErrorTest` (incl. the all-31-subclasses `mayRedirect` enumeration and both
+   [D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out)/[D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase) carve-outs).
 2. `RedirectUris` + `RedirectUrisTest`.
-3. `RestletErrorParityTest` — **the Restlet leg first**, so the encoding row (risk #3) tells you the truth
-   before the CHF side is written to a belief.
+3. `RestletErrorParityTest` — **the Restlet leg first**, so the encoding row (risk #3) and the
+   `WWW-Authenticate` spelling row ([D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase)) tell you the truth before the CHF side is written to a
+   belief.
 4. `OAuth2ErrorResponseFactory` + test → close the parity test's CHF leg.
-5. `OAuth2ErrorFilter` + `OAuth2ErrorFilterTest` (`XacmlXmlErrorFilterTest` as the scaffold).
+5. `OAuth2ErrorFilter` + `OAuth2ErrorFilterTest` (`XacmlXmlErrorFilterTest` as the scaffold) — four rules
+   now, not five ([F1](openam-http-framework.md) deleted the synthesize rule).
 6. **`OAuth2ErrorRouteCompositionIT` — write it in the same step as the filter**, not after. It is the only
    gate on the framework-composition beliefs, and finding 7 proves those beliefs are wrong more often than not.
 7. `mvn -o -pl openam-oauth2 install -DskipTests` → `test` → **`verify`** → whole-reactor build → grep gates.
 8. e2e lock spec → run against a local container **built from unmodified `/oauth2`**.
 9. Correct [chf-patterns.md](chf-patterns.md) **§2** (finding 7: empty-body 500 + `setCause`; two 405 bodies;
-   `Promise` return unimplemented; `@ExceptionHandler` dead) — wrong today, and every later phase reads it.
+   `Promise` return unimplemented; `@ExceptionHandler` dead; **`setJson` is what writes `Content-Type`, so a
+   handler-thrown 500 has none** — finding 7) — wrong today, and every later phase reads it.
    Update [plan.md](plan.md) (drop "Preserves `asMap()` field order"; risk rows) and
-   [decisions.md](decisions.md) (D3, D6). Mark 3c done and record an **As-built** section here.
+   [decisions.md](decisions.md) (D3, D6, **D13, D14**). Mark 3c done and record an **As-built** section here.
 
 ## Risks (extends [plan.md](plan.md)'s register; shares R-3c.1/.2/.3 with [3c-1](phase-3c-1-renderer.md#risks-extends-planmds-register))
 
 | # | Risk | Detail | Mitigation |
 |---|---|---|---|
 | **R-3c.5** | **Filter destroys the HTML error page** | 5b returns a 400 with an HTML body; a Phase-2-shaped filter survives only by `getJson()` *accidentally* throwing | Explicit Content-Type guard **before** parsing; direct test + IT row |
-| **R-3c.6** | **`isRedirectable` drift** | A new `OAuth2Exception` subclass silently defaults to redirectable | `OAuth2ErrorTest` enumerates all ~30 subclasses ⇒ adding one without a verdict fails the build |
+| **R-3c.6** | **`mayRedirect` drift** | A new `OAuth2Exception` subclass silently defaults to redirectable | `OAuth2ErrorTest` enumerates all 31 subclasses ⇒ adding one without a verdict fails the build |
 | **R-3c.8** | **The e2e lock locks the wrong thing** | Asserting a quirk 3c/5b intends to fix means 5d must edit the lock — at which point it was never a lock | Rule: every e2e assertion maps to a "reproduce" row in the parity checklist. Write by observation, not prediction |
-| **R-3c.9** | **`OAuth2Error` re-grows a `Throwable`** | 5b may be tempted to `throw` it to a filter, re-importing the swallowing problem (finding 7) | `final` value type, no `Throwable` in the hierarchy; javadoc states the return-don't-throw contract |
+| ~~**R-3c.9**~~ | ~~**`OAuth2Error` re-grows a `Throwable`**~~ | **Retired 2026-07-21.** The risk was that 5b would throw `OAuth2Error` into a filter and hit the swallowing problem. [F1+F2](openam-http-framework.md) remove the swallowing, and the thing 5b throws is the **existing** `OAuth2Exception`, not `OAuth2Error` — which stays a `final` value type with no `Throwable` in its hierarchy | — |
 | **R-3c.11** | **D3/D6 land silently at the 5d flip** | Both are invisible until the route moves, months later | Recorded in [decisions.md](decisions.md); excluded from the e2e lock **by design**, and listed in 5d's smoke matrix |
+| **R-3c.13** | **The login redirect degrades into an open redirect** | RoAR is an `OAuth2Exception` with a 307 and its *own* URI. Any generic mapper that reads only status/error/message and takes the redirect target from the request 301s an **unauthenticated** user agent to a client-supplied URI — and the response still looks right (301 + a `Location`), so a shape-only test passes | [D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out)'s two redundant mechanisms; `OAuth2ErrorTest`'s adversarial `redirectingTo` case; the e2e lock asserts the `Location` **value**, not its presence |
+| ~~**R-3c.14**~~ | ~~**The filter's rule order regresses silently**~~ | **Retired 2026-07-21** with the rule it guarded. [F1](openam-http-framework.md) means no input matches two rules, so the filter is no longer order-sensitive | — |

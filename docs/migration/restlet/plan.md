@@ -33,6 +33,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | 3a | `OAuth2Request` abstraction + consumer re-plumb | done ([phase-3a-oauth2request.md](phase-3a-oauth2request.md)) |
 | 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | done ([phase-3b-collaborators.md](phase-3b-collaborators.md)) |
 | 3c-1 | FreeMarker template renderer (`org.openidentityplatform.openam.oauth2.http`) | done ([phase-3c-1-renderer.md](phase-3c-1-renderer.md)) |
+| **F1–F3** | **openam-http framework fixes** — handler-thrown exceptions get a body; `@ExceptionHandler` made real; `Promise` returns implemented. **Prerequisite to 3c-2** | planned ([openam-http-framework.md](openam-http-framework.md)) |
 | 3c-2 | Error layer — `OAuth2Error`, `RedirectUris`, error factory + filter | planned ([phase-3c-2-error-layer.md](phase-3c-2-error-layer.md)) |
 | 3d | CHF audit filters + `HttpBodyAuditor` | pending |
 | 4 | UMA `/uma` → CHF | pending |
@@ -166,7 +167,8 @@ captured in [chf-patterns.md](chf-patterns.md) during Phase 2 — every phase be
   `getBytes(UTF_8)`, never `setEntity(String)`). The real port target is `TemplateFactory`,
   not `OAuth2Representation`.
 - **3c-2 — `OAuth2Error`** (neutral carrier replacing `OAuth2RestletException`; a **value type, not a
-  `Throwable`** — CHF handlers return, never throw) + **`RedirectUris`** (shared fragment-vs-query
+  `Throwable`** — it is what an `@ExceptionHandler` method *builds*, while the thing handlers **throw** stays
+  the existing `OAuth2Exception` hierarchy) + **`RedirectUris`** (shared fragment-vs-query
   composition, reused by Phase 5b's **success** path).
 - **3c-2 — `OAuth2ErrorResponseFactory`** — replaces `ExceptionHandler`:
   (a) auth-required (307) → **301** `Location: <login url>`, no error params; (b) errors with
@@ -175,8 +177,9 @@ captured in [chf-patterns.md](chf-patterns.md) during Phase 2 — every phase be
   rendered `page/error.ftl` for the authorize UI flow.
 - **3c-2 — `OAuth2ErrorFilter`** — CHF `Filter` unifying the provider's **two** error shapes
   (OAuth2 `{error,…}` when handled; CREST `{code,…}` via `JSONRestStatusService` when not). It
-  **cannot catch** — `Endpoints.from` swallows a thrown exception into an *empty* 500 — so it rewrites
-  responses, guarding on `Content-Type` before parsing so it cannot eat the HTML error page.
+  **cannot catch** — it rewrites responses, guarding on `Content-Type` before parsing so it cannot eat the
+  HTML error page. *(Its fifth rule, synthesising a body for `Endpoints.from`'s empty 500, was deleted by
+  [F1](openam-http-framework.md) — the framework now emits a body.)*
 
 **3d. Audit**
 - `OAuth2HttpAccessAuditFilter` / `UMAHttpAccessAuditFilter` — extend
@@ -364,7 +367,7 @@ encodes ISO-8859-1 (§6). `OAuth2Filter`'s "write an error entity then CONTINUE 
 | 19 | **Build-ahead has no live guard** (3c/3d) | 3c/3d classes are wired to no route until Phase 4/5, so the "Restlet suite stays green" guardrail does not apply and a wrong contract is invisible until the flip. No existing test asserts rendered HTML, charset or popup composition | The **golden 3-way oracle** ([chf-patterns.md](chf-patterns.md) §13): `Restlet == golden == CHF` in one JVM while Restlet is still on the classpath; degrades to `golden == CHF` at 5d |
 | 20 | **The oracle expires at 5d** | Phase 5d/8 deletes the Restlet code that is the only oracle for "what does OpenAM do today". A golden regenerated after that is unfalsifiable | Generate goldens **only** while the Restlet leg lives; never regenerate post-5d without re-deriving from git history |
 | 21 | **`setEntity(String)` → ISO-8859-1** | CHF falls back to ISO-8859-1 when `Content-Type` carries no charset ([chf-patterns.md](chf-patterns.md) §6). All 10 templates are ASCII, so **ASCII test fixtures will not catch it** | Header first, then `setEntity(html.getBytes(UTF_8))`; assert bytes with a **non-ASCII data-model value** |
-| 22 | **Open redirect via catch-ordering drift** | The no-redirect policy is emergent from catch ordering; `AuthorizeResource` GET and POST disagree, and POST redirects `OAuth2ProviderNotFoundException` to an **unvalidated** `redirect_uri` | Explicit `OAuth2Error.isRedirectable` table unified to the safe union ([phase-3c-2](phase-3c-2-error-layer.md#d6--isredirectable-unified-to-the-safe-union-fix)); test enumerates all ~30 subclasses |
+| 22 | **Open redirect via catch-ordering drift** | The no-redirect policy is emergent from catch ordering; `AuthorizeResource` GET and POST disagree, and POST redirects `OAuth2ProviderNotFoundException` to an **unvalidated** `redirect_uri` | Explicit `OAuth2Error.mayRedirect` table unified to the safe union ([phase-3c-2](phase-3c-2-error-layer.md#d6--isredirectable-unified-to-the-safe-union-fix)); test enumerates all 31 subclasses, and `ResourceOwnerAuthenticationRequired` is carved out so the login redirect can never be retargeted ([D13](phase-3c-2-error-layer.md#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out)) |
 
 ## Verification workflow (every phase)
 

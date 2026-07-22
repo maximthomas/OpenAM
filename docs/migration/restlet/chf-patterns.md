@@ -193,6 +193,11 @@ root.setDefaultRoute(Handlers.chainOf(innerChain, realmContextFilter));
   This also applies to `Endpoints.from` handler methods that **return `String`** — they go through
   `ResponseCreator.apply:171` → `new Response(OK).setEntity(content)` and hit the same path with no
   `Content-Type` at all. See §2: **return `Response`**.
+  > **Being fixed in-tree (F4).** That second path is `openam-http`'s, not commons' — the module owns a
+  > `@Produces` annotation it never reads. [openam-http-framework.md](openam-http-framework.md) F4 sets the
+  > header and encodes to the declared charset, after which a `String` return is safe and "return `Response`"
+  > is house style rather than a trap. The commons-side default (`Entity.setString` with no `Content-Type`)
+  > is filed for an upstream fix; the recipe above is correct either way.
 - For a POJO/Map entity, any manually-set `Content-Type` is clobbered by `setJson`. (Existing house
   style, e.g. `AuthenticationServiceV1.createResponse`, sets it anyway for documentation purposes even
   though it's redundant — harmless, matches convention.) This is why an OAuth2 JSON error body wants
@@ -418,3 +423,39 @@ golden render tests — 3c is simply the last moment the oracle is alive to gene
 characterization tests written *before* a strip **failed 3/4 against the unmodified code**, because
 the author's belief about the legacy contract was wrong. Every parity claim in a migration plan is a
 belief until executed. This is the instrument that converts beliefs into facts mechanically.
+
+## 14. Framework defects: fix them, don't pattern around them (2026-07-21)
+
+**Before designing a workaround for CHF or endpoint-framework behaviour, check which tier of the stack owns
+it** — the full ownership map and decision procedure live in
+[docs/framework-ownership.md](../../framework-ownership.md).
+
+The short version, because it changes plans:
+
+- **`openam-http` is in this repo.** `org.forgerock.openam.http.annotations` (`Endpoints`, `AnnotatedMethod`,
+  `@ExceptionHandler`) is module `openam-http`, not a vendored dependency. **A `org.forgerock.*` package name
+  is not evidence of foreign ownership** — most of this codebase carries ForgeRock package names and is
+  maintained here.
+- **Commons `http-framework` (`Entity`, `ContentTypeHeader`, `Status`) is ours but released**, and its version
+  is not even pinned in this pom — it arrives through the imported `opendj-parent` BOM. When the fix is
+  general, **fix commons, cut a release, and consume it** (a direct `dependencyManagement` entry here
+  overrides the BOM without waiting on an OpenDJ release); work around only when the defect is specific to
+  how we call the API.
+- **Check the cheap tier first.** Of three defects the Restlet migration filed under commons, **two were
+  tier 1 all along** — the `String`-return charset trap (this module never sets a `Content-Type`, and owns an
+  unread `@Produces` annotation that says what it should be → F4) and `BaseURLProvider`'s CHF-unreachable
+  overload (`openam-core`).
+- Land tier-1 framework fixes as **their own commit with their own tests**, never inside a migration commit.
+
+Phase 3c-2 initially designed around three `openam-http` defects — a filter rule synthesising a body the
+framework should have written, a "handlers must catch everything" rule, and a value type justified by "a
+thrown exception is swallowed into a bodiless 500". All three dissolved once the framework was fixed instead:
+see [openam-http-framework.md](openam-http-framework.md). §2 above describes the framework **as fixed by
+F1–F3**; the pre-fix behaviour is preserved in
+[phase-3c-2-error-layer.md](phase-3c-2-error-layer.md#7--the-filter-cannot-catch--and-endpointsfroms-500-has-an-empty-body)
+as the baseline the fix is measured against.
+
+**Smell test.** You are working around something you own if the plan contains: a wrapper synthesising what the
+framework should emit; a rule saying "every handler must remember to X"; a behaviour that survives only
+because some call *accidentally* throws; a declared-but-unimplemented annotation or return type; or the
+sentence *"if this needs fixing, it should be fixed once in \<module\>"*.

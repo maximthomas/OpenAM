@@ -12,12 +12,13 @@ derivation — verified while delivering [Phase 3a](phase-3a-oauth2request.md)
 API, but any new CHF handler parsing a raw `org.forgerock.http.protocol.Request` hits the
 same traps. **§13 is the build-ahead testing pattern** (Phase 3c).
 
-> **⚠ §2 and §6 were corrected on 2026-07-17 during Phase 3c planning.** Both were wrong in ways that
-> matter to anyone writing a CHF `Filter` or setting a response entity — §2 about what an
-> `Endpoints.from` handler's thrown exception actually produces (an **empty** 500, not a CREST error
-> map) and how many 405 bodies exist (**two**); §6 about `setEntity`'s dispatch (**four** branches,
-> and `String` silently encodes **ISO-8859-1**). Both corrections are bytecode/source-verified and
-> carry inline notes. If you read this doc before that date, re-read those two sections.
+> **⚠ §2 describes a framework that was fixed on 2026-07-22 — re-read it if you read this doc earlier.**
+> `openam-http`'s annotation framework had four defects (empty-bodied 500s, a dead `@ExceptionHandler`, an
+> unimplemented `Promise` return, ignored `@Produces`); all four are fixed in-tree, and §2 now describes the
+> result. See [openam-http-framework.md](openam-http-framework.md#as-built). **§6 still stands as corrected on
+> 2026-07-17**: `setEntity`'s dispatch has **four** branches and `setEntity(String)` on a `Response` you built
+> yourself still silently encodes **ISO-8859-1** — F4 fixed the framework's `String`-return path, not commons'
+> `Entity`. Both sections are source-verified and carry inline notes.
 
 ## 1. HttpRouteProvider SPI
 
@@ -40,52 +41,87 @@ same traps. **§13 is the build-ahead testing pattern** (Phase 3c).
 (`openam-http/.../http/annotations/`) turn `@Get`/`@Post`/`@Put`/`@Delete` annotated methods into a
 `Handler`.
 
-> **Corrected 2026-07-17 (Phase 3c).** The original text of the first two bullets was **wrong** about
-> the 500 path and about the 405 body, and every later phase reads this section to build filters. The
-> corrected facts are below, verified by reading `AnnotatedMethod.java` / `Endpoints.java`. See
-> [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md) finding 7.
+> **Rewritten 2026-07-22 (F1–F4).** This section previously described a framework in which a thrown
+> exception vanished into an **empty** 500, `@ExceptionHandler` was dead, a `Promise` return detonated,
+> and a `String` return was ISO-8859-1. All four are **fixed in-tree** — see
+> [openam-http-framework.md](openam-http-framework.md) and its
+> [As-built](openam-http-framework.md#as-built). The pre-fix behaviour is preserved as the baseline in
+> [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md#7--the-filter-cannot-catch--and-endpointsfroms-500-has-an-empty-body).
+> An earlier correction (2026-07-17) fixed this section's account of the 405 bodies; that part still stands.
 
-- **A thrown exception does NOT become a business error response — it becomes an EMPTY 500.** A
-  handler method that *throws* is caught by `AnnotatedMethod.invoke` (`:90-94`), which returns
-  `new Response(Status.INTERNAL_SERVER_ERROR).setCause(new IllegalStateException("Exception from
-  invocation should be handled by promise", e))` — **no `setEntity`**. So: 500, **empty body**, cause
-  set. A thrown `ResourceException`'s real status/reason is **lost**.
-  ⇒ **Handler methods must catch everything internally and return `Response` objects for every error
-  path.** ⇒ **A filter that reads `response.getEntity().getJson()` sees an empty entity and gets an
-  `IOException`** — so the usual `catch (IOException) → return response` lets a bare, bodiless 500
-  through. Handle the empty-entity case explicitly (`getCause() != null` identifies it).
-- **The CREST error-map path is narrower than it looks.** `Endpoints.java:73-76`'s
-  `catch (Throwable t)` → `500` + `new InternalServerErrorException(t).toJsonValue().getObject()`
-  fires **only** for throwables escaping `AnnotatedMethod.invoke` itself — i.e.
-  `parameter.getContext(context)` (`:80-82`, *before* the try) or `responseAdapter.apply` (`:85`,
-  inside the try but not among the two caught types). Not for a throwing handler method.
+- **A thrown exception becomes a response — one shape, whatever failed.** `AnnotatedMethod.invoke`
+  catches everything a handler method can throw and produces a CREST error:
+  `500` + `new InternalServerErrorException(t).toJsonValue().getObject()`, i.e.
+  `{code: 500, reason: "Internal Server Error", message: <the throwable's message>}` with
+  `Content-Type: application/json; charset=UTF-8` (written for free by `setJson` — §6). `Response.getCause()`
+  is still set for debugging; it is never serialised.
+  ⇒ **Every failure response the framework itself generates now has a CREST body** — this 500 and both
+  405s below. The empty-entity special case filters used to need for the 500 is gone. (A *handler* can
+  still return a bodiless `≥400` of its own; that is its choice, not the framework's.)
+  ⇒ **`message` carries the throwable's own message**, so a handler should not put anything in an
+  exception message it would not send to a client. No stack trace ships (`includeCause` is false), and
+  the message is HTML-escaped by `toJsonValue()`.
+- **An endpoint can map its own exceptions — `@ExceptionHandler` is live** (see below). Failing that,
+  the CREST 500 above is the answer. Handler methods may therefore `throw`; catching everything
+  internally is house style for endpoints that want a *specific* status, not a framework requirement.
+- **The framework's own failures are not offered to `@ExceptionHandler`.** Only what the annotated
+  method itself threw (the `InvocationTargetException` path) reaches the endpoint's mapper; a failure of
+  the framework's plumbing — an unresolvable `@Contextual` context, say — goes straight to the default
+  500. Otherwise an endpoint mapping `IllegalArgumentException` could turn a wiring error into a 200 and
+  mask it indefinitely.
 - **There are TWO framework 405 bodies, not one:**
 
   | Trigger | Status | Body `code` |
   |---|---|---|
-  | Verb not in the `{GET,POST,PUT,DELETE}` map (HEAD/OPTIONS/PATCH) — `Endpoints.java:66-67` | 405 | **501** (`NotSupportedException`) |
-  | Verb *is* mapped but no annotated method — `AnnotatedMethod.java:71-75` | 405 | **405** (`ResourceException.getException(405, …)`) |
+  | Verb not in the `{GET,POST,PUT,DELETE}` map (HEAD/OPTIONS/PATCH) — `Endpoints.java:68-71` | 405 | **501** (`NotSupportedException`) |
+  | Verb *is* mapped but no annotated method — `AnnotatedMethod.java:94-98` | 405 | **405** (`ResourceException.getException(405, …)`) |
 
-  `findMethod` never returns `null` (`:120` returns a sentinel with `method == null`), so
+  `findMethod` never returns `null` (`:201` returns a sentinel with `method == null`), so
   GET/POST/PUT/DELETE always take the second path. The Phase-2 "body says 501" quirk is real but
   applies **only** to the first row — the outer HTTP status and the JSON `code` legitimately disagree
-  there. This is shared framework code (used by every `Endpoints.from` consumer, e.g.
-  `AuthenticationServiceV1`/`V2`), not something a later phase should patch per-endpoint; if it needs
-  fixing, fix it once in `openam-http`.
-- **Annotated-method return types are constrained, and `String` is a trap.** Verified in
-  `AnnotatedMethod.checkMethod:138-152`. Permitted: **`Response`** (`:141-147`), `String` / `Void` /
-  `byte[]` / `JsonValue` (`ResponseCreator.forType:182-191`). A **`Promise`** return reaches
-  `PromisedResponseCreator.apply:202` → `throw new UnsupportedOperationException("to be implemented")`
-  — **unimplemented**, despite `checkMethod:139-140` appearing to support it. Any other type →
-  `IllegalArgumentException("Unsupported response type: …")` (`:192`), thrown at **`Endpoints.from`
-  construction time** (route-provider wiring), not per-request.
-  A `String`-returning method goes to `ResponseCreator.apply:171` →
-  `new Response(OK).setEntity(content)` → §6's **ISO-8859-1 path, with no `Content-Type`**.
-  ⇒ **Return `Response`** from handler methods.
-- **`@ExceptionHandler` (`openam-http/.../annotations/ExceptionHandler.java`) is dead code** — no
-  `@Retention` (so it defaults to `CLASS` and is invisible to reflection), no `@Target`, **zero
-  usages**, and neither `Endpoints` nor `AnnotatedMethod` ever looks for it. It cannot be used to turn
-  exceptions into responses. A `Filter` is the only lever. Worth deleting in Phase 8's sweep.
+  there. Unchanged by F1–F4, and pinned by `EndpointsTest`.
+- **Annotated-method return types are constrained, and each has one meaning.** Decided in
+  `AnnotatedMethod.checkMethod` at **`Endpoints.from` construction time** (route-provider wiring), not
+  per request — an unsupported type is `IllegalArgumentException("Unsupported response type: …")` while
+  there is still someone to tell.
+
+  | Return | Result |
+  |---|---|
+  | `Response` | sent as built — the method owns its status and headers |
+  | `Promise<Response, NeverThrowsException>` | passed through; **exactly** those two type arguments, checked against the *generic* return type at wiring time |
+  | `String` | `200` + `text/plain; charset=UTF-8`, or whatever `@Produces` declares |
+  | `byte[]` | `200`, no `Content-Type` unless `@Produces` says one |
+  | `JsonValue` | `200` + `application/json; charset=UTF-8` (`setJson` writes it) |
+  | `Void` | `204`, empty and untyped |
+  | `void` (primitive) | **rejected** at wiring time — `void` is not `Void` |
+
+  **Returning `null`** gives `204` from a `String`, `byte[]` or `Promise` method, as `Void` always does.
+  Two exceptions, both pre-existing and both pinned by tests rather than fixed: a `JsonValue` method
+  returning null yields a **500** (the converter dereferences first), and a `Response` method returning
+  null yields a **null `Response`** that fails downstream in CHF.
+
+  **A `String` return is now safe**: F4 sets the `Content-Type` *before* the entity, so `Entity` encodes
+  with the declared charset instead of §6's ISO-8859-1 fallback. Returning `Response` remains the house
+  style when a method needs a specific status or extra headers — it is no longer a trap to do otherwise.
+- **`@Produces("…")` declares the content type** for a `String`/`byte[]`/`JsonValue` return. It is
+  **rejected at wiring time** where it cannot be honoured: on a method returning `Response` or `Promise`
+  (which owns its own headers), on `Void` (no content to describe), when it contradicts a `JsonValue`'s
+  `application/json`, when empty, and when the charset is unknown. A type with no charset gets
+  `; charset=UTF-8` completed onto it for `String` returns — writing `@Produces("text/html")` must not
+  quietly reinstate ISO-8859-1.
+- **`@ExceptionHandler` turns an exception into a response** — the endpoint's own `doCatch`:
+
+  ```java
+  @ExceptionHandler
+  public Response onOAuth2Error(OAuth2Exception e, @Contextual Request request) { … }
+  ```
+
+  Exactly one unannotated parameter assignable to `Throwable`; optional `@Contextual` `Context`/`Request`;
+  the same return types as a verb method, `@Produces` included. Dispatch is **most-specific assignable**,
+  so a handler for a supertype catches the subtype thrown. One method per exception type (duplicates are
+  a wiring error); an unmatched throwable falls back to the CREST 500; and a mapper that itself throws
+  logs both throwables and falls back rather than recursing. **Java does not inherit annotations onto an
+  override** — a subclass that overrides an `@ExceptionHandler` method must re-annotate it.
 - A single `Filter` that rewrites any `≥400` response whose entity is a CREST error map into another
   form (XML, in Phase 2's case) therefore covers **every** error path — business errors returned by
   the handler *and* the framework's own 405/500 fallbacks — for free. See
@@ -190,14 +226,12 @@ root.setDefaultRoute(Handlers.chainOf(innerChain, realmContextFilter));
   response.getHeaders().put(ContentTypeHeader.NAME, "text/html; charset=UTF-8");
   response.setEntity(html.getBytes(StandardCharsets.UTF_8));   // byte[] → setBytes, Content-Type untouched
   ```
-  This also applies to `Endpoints.from` handler methods that **return `String`** — they go through
-  `ResponseCreator.apply:171` → `new Response(OK).setEntity(content)` and hit the same path with no
-  `Content-Type` at all. See §2: **return `Response`**.
-  > **Being fixed in-tree (F4).** That second path is `openam-http`'s, not commons' — the module owns a
-  > `@Produces` annotation it never reads. [openam-http-framework.md](openam-http-framework.md) F4 sets the
-  > header and encodes to the declared charset, after which a `String` return is safe and "return `Response`"
-  > is house style rather than a trap. The commons-side default (`Entity.setString` with no `Content-Type`)
-  > is filed for an upstream fix; the recipe above is correct either way.
+  > **No longer applies to `Endpoints.from` handler methods that return `String`** (fixed 2026-07-22, F4).
+  > That path was `openam-http`'s, not commons': the module owned a `@Produces` annotation it never read.
+  > `ResponseCreator` now puts the `Content-Type` on the response **before** the entity, so `cs(null)`
+  > resolves the declared charset — default `text/plain; charset=UTF-8`. A `String` return is safe; see §2.
+  > The recipe above remains mandatory for any `Response` you build yourself, because the commons-side
+  > default (`Entity.setString` with no `Content-Type`) is unchanged and is filed for an upstream fix.
 - For a POJO/Map entity, any manually-set `Content-Type` is clobbered by `setJson`. (Existing house
   style, e.g. `AuthenticationServiceV1.createResponse`, sets it anyway for documentation purposes even
   though it's redundant — harmless, matches convention.) This is why an OAuth2 JSON error body wants
@@ -451,7 +485,8 @@ Phase 3c-2 initially designed around three `openam-http` defects — a filter ru
 framework should have written, a "handlers must catch everything" rule, and a value type justified by "a
 thrown exception is swallowed into a bodiless 500". All three dissolved once the framework was fixed instead:
 see [openam-http-framework.md](openam-http-framework.md). §2 above describes the framework **as fixed by
-F1–F3**; the pre-fix behaviour is preserved in
+F1–F4** (landed 2026-07-22, 64 new tests in a package that had none); the pre-fix behaviour is
+preserved in
 [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md#7--the-filter-cannot-catch--and-endpointsfroms-500-has-an-empty-body)
 as the baseline the fix is measured against.
 

@@ -33,7 +33,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | 3a | `OAuth2Request` abstraction + consumer re-plumb | done ([phase-3a-oauth2request.md](phase-3a-oauth2request.md)) |
 | 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | done ([phase-3b-collaborators.md](phase-3b-collaborators.md)) |
 | 3c-1 | FreeMarker template renderer (`org.openidentityplatform.openam.oauth2.http`) | done ([phase-3c-1-renderer.md](phase-3c-1-renderer.md)) |
-| **F1–F4** | **openam-http framework fixes** — handler-thrown exceptions get a body (F1); `@ExceptionHandler` made real (F2); `Promise` returns implemented (F3); `@Produces` honoured so `String` returns stop being ISO-8859-1 (F4). **Prerequisite to 3c-2** | planned, 6 commits ([openam-http-framework.md](openam-http-framework.md#commit-sequence)) |
+| **F1–F4** | **openam-http framework fixes** — handler-thrown exceptions get a body (F1); `@ExceptionHandler` made real (F2); `Promise` returns implemented (F3); `@Produces` honoured so `String` returns stop being ISO-8859-1 (F4). **Prerequisite to 3c-2** | **done** 2026-07-22 — 64 new tests in a package that had **none** ([as-built](openam-http-framework.md#as-built)). Also unblocks **5b**: per-endpoint catch blocks collapse into one `@ExceptionHandler` per handler class |
 | 3c-2 | Error layer — `OAuth2Error`, `RedirectUris`, error factory + filter | planned ([phase-3c-2-error-layer.md](phase-3c-2-error-layer.md)) |
 | 3d | CHF audit filters + `HttpBodyAuditor` | pending |
 | 4 | UMA `/uma` → CHF | pending |

@@ -6,6 +6,13 @@ because 3c-2's design depends on the outcome. Parent tracker: [plan.md](plan.md)
 [chf-patterns.md](chf-patterns.md); test layers: [docs/test-infrastructure.md](../../test-infrastructure.md).
 Written 2026-07-21; branch `features/restlet-migration`. All facts verified against the tree on 2026-07-21.
 
+> ## ✅ Shipped 2026-07-22 — read the [**As-built**](#as-built) first
+>
+> All four fixes landed with **64 new tests** in a package that had none. Everything above the As-built section is the plan **as written beforehand**, including its research
+> findings, which describe the framework *before* the fix — the As-built records where the plan was wrong,
+> what the tests found that the plan did not anticipate, and the closing of R-F.1b. For current behaviour see
+> [chf-patterns.md](chf-patterns.md) §2.
+
 > **Execution schedule added 2026-07-22.** Scope confirmed: **all four fixes in one phase**, in the order
 > below, landing as six commits ([Commit sequence](#commit-sequence)). [D-F1](#d-f1--f1s-body-shape-crest-matching-endpointss-own-catch)
 > confirmed as written — the 500 body carries the throwable's own message. Findings 7–11 were added in the
@@ -648,3 +655,183 @@ Renumbered 2026-07-22 (the earlier list had a `4b`); each of steps 1–5 is one 
    [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md) per the table above. ([plan.md](plan.md)'s tracker
    row and [decisions.md](decisions.md) were already updated to F1–F4 on 2026-07-22.)
 8. Record an **As-built** section here, then resume 3c-2.
+
+<a id="as-built"></a>
+## As-built (2026-07-22)
+
+**All four fixes landed.** `org.forgerock.openam.http.annotations` went from **0 tests to 64**
+(module total 73; the four pre-existing `openam-http` suites contribute 9). Every commit was verified
+against the three consumers under `verify` — `openam-rest` 275 + `RestRouterIT` 8, `openam-entitlements`
+579 + `XacmlRouterIT` 13, `openam-core-rest` 414 — with no test *accommodated* to a new behaviour.
+
+**History: the plan's six commits were developed as four and then squashed into one.** The
+[commit sequence](#commit-sequence) above describes how the work was *built* — characterization first,
+green against unmodified code, then one fix at a time, each verified against the consumers before the
+next began — and that sequence is why the deltas below could be identified at all. It is not how the work
+is *recorded*. Two consequences worth knowing when reading this section: the per-fix "the test diff shows
+the behaviour change" property lived in the intermediate commits and is not recoverable from history, and
+no commit hashes are cited here because none survived the squash.
+
+| Fix | Contents | Deviation from the plan |
+|---|---|---|
+| Characterization | Tests §A, written and run green against unmodified code | none — but see the two defects it surfaced, below |
+| F3 | `PromisedResponseCreator` + `checkPromiseType` | the generic check was the substantive half, not `apply` |
+| F1 | `invoke` restructure + CREST body | `setCause(Exception)` forces an `Error` to be wrapped |
+| F2 | annotation retention, discovery, dispatch + `ExceptionHandlerTest` | the dispatch split, below — the one real design change |
+| F4 | `@Produces` in `checkMethod`/`ResponseCreator` | four extra wiring-time rejections, below |
+
+Test files: `AnnotatedMethodTest` (37 methods), `ExceptionHandlerTest` (16), `EndpointsTest` (5 methods /
+11 cases), plus package-private `EndpointTestSupport`. **They live in
+`org.forgerock.openam.http.annotations`, not a mirror package** — F2's tests call `Endpoints.from` and
+assert on package-private wiring, and `EndpointTestSupport` was renamed from `TestEndpoints` because
+surefire's default `Test*.java` include pattern would have run the helper as a suite.
+
+### Deltas from the plan as written
+
+**F1.**
+
+- **`Response.setCause` takes `Exception`, not `Throwable`** (`commons/.../protocol/Response.java:128`).
+  Widening the catch to `Throwable` therefore makes `response.setCause(t)` — the plan's own snippet — not
+  compile. An `Error` can only be kept by wrapping:
+  `response.setCause(t instanceof Exception ? (Exception) t : new IllegalStateException(t))`.
+- The plan routed **both** catch arms through `handleException`. As built they diverge, for F2's sake —
+  see below.
+
+**F2 — the dispatch split (the substantive design change).**
+
+The plan had every failure reach the endpoint's `@ExceptionHandler`. As built, **only what the annotated
+method itself threw is offered to the mapper**; a failure of the framework's own plumbing goes straight to
+the default 500:
+
+```java
+} catch (InvocationTargetException e) {
+    return handleException(context, request, e.getCause());  // the endpoint's throw — it may map this
+} catch (Throwable t) {
+    return defaultErrorResponse(t);                          // the framework's own failure — it may not
+}
+```
+
+Without the split, an endpoint declaring `@ExceptionHandler onError(IllegalArgumentException e)` would
+silently convert *the framework's* missing-`@Contextual`-context failure into a 200, masking a wiring
+error indefinitely. Pinned by `aFrameworkFailureIsNotOfferedToTheExceptionHandler`.
+
+- **The "genuinely incomparable matches" branch was dropped — it is unreachable.** The plan justified it
+  with "reachable when one is an interface", but `findExceptionHandlers` requires the exception parameter
+  to be assignable to `Throwable`, which excludes interfaces; every candidate is then a class on the thrown
+  object's superclass chain, and that chain is linear. `mostSpecificExceptionHandler` is a plain
+  most-specific scan with no ambiguity case and no log line.
+- **The table is a `Map<Class<? extends Throwable>, AnnotatedMethod>`**, not the planned nested value
+  class — the map key *is* the exception type, so the class had one field and no behaviour. Duplicate
+  types are caught by `Map.put` returning non-null.
+- **No `invokeExceptionHandler` entry point.** The recursion guard is that `handleException` calls the
+  mapper through the private `call(...)` rather than `invoke(...)`, so a mapper that throws cannot
+  re-enter dispatch by construction rather than by a flag. Both throwables are logged; the response
+  describes the request's *original* failure.
+- `checkMethod` gained an `exceptionParameter` index — the first unannotated parameter assignable to
+  `Throwable`, `-1` when there is none, which is every real verb method. It is computed for **all**
+  methods, not just handlers: a verb method with such a parameter simply receives `null` there, which is
+  the pre-existing "stray unannotated parameter" behaviour rather than a new rule. Only a *second* one on
+  an `@ExceptionHandler` is an error. `AnnotatedMethod` therefore has two constructors, the 7-arg one
+  delegating to a 9-arg one.
+
+**F3.** The plan's `apply` implementation was the trivial half; the **wiring-time generic check**
+(`checkPromiseType`) is what stops `Promise<Response, ResourceException>` from mounting and
+`ClassCastException`-ing on every request.
+
+**F4 — four wiring-time rejections the plan did not anticipate.**
+
+The plan specified only the `JsonValue`-contradiction and bad-charset rejections. As built,
+`@Produces` is also rejected on a method returning `Response` or `Promise` (it builds its own message and
+owns its headers — the annotation would be silently ignored), on `Void` (there is never content to
+describe), and when the value parses to an empty type. **The rule is: if the annotation cannot be
+honoured, say so at wiring time.**
+
+- **⚠ The charset-completion rule — found in review, and the trap F4 nearly reopened.**
+  `@Produces("text/html")` written the obvious way sets a header with no charset;
+  `ContentTypeHeader.getCharset()` returns **null** for that (`ContentTypeHeader.java:150`), and
+  `Entity.cs(null)` then falls back to ISO-8859-1 (finding 8). So the annotation added to fix the encoding
+  was the one reliable way to reinstate the bug. A `String` return whose declared type carries no charset
+  now gets `; charset=UTF-8` appended. **My first round of F4 tests all specified a charset explicitly** —
+  [R-F.7](#risks)'s fixture bias, reproduced in the fix after being guarded against in the baseline.
+- Media types are compared through the **parsed header**, case-insensitively. A `startsWith` on the raw
+  string rejected `"Application/JSON"` while accepting `"application/json; charset=ISO-8859-1"`.
+- The default for a `String` return with no `@Produces` is `text/plain; charset=UTF-8` as planned.
+  `byte[]` gets **no** default — the framework cannot say what arbitrary bytes are.
+
+### Two pre-existing defects the characterization suite surfaced
+
+Neither is in the plan; both were found by a test written to pin behaviour, which is the case for
+writing them first.
+
+1. **Every 204 carried a JSON body.** A handler returning `null` reached
+   `new Response(NO_CONTENT).setEntity(null)`, and `setEntity(null)` routes to `Entity.setJson` — so the
+   response carried `Content-Type: application/json; charset=UTF-8` and a 4-byte `null` entity. Fixed in
+   F4 by not calling `setEntity` at all on the no-content branch
+   (`aNoContentResponseIsEmptyAndUntyped`).
+2. **A `JsonValue`-returning method returning `null` yields a 500, not a 204.** The converter dereferences
+   before the null check. Pinned as-is (`nullJsonValueReturnGivesA500NotNoContent`) rather than fixed —
+   changing it is a behaviour decision, not a defect fix, and no mounted handler returns `JsonValue`. The
+   test asserts only `code: 500`, not the message: the NPE message is null on JDK 11 and a helpful-NPE
+   sentence on JDK 15+, and CI runs JDK 11–26.
+
+### R-F.1b — what the mounted handlers can actually throw
+
+[R-F.1b](#risks) obliged this enumeration before F1's new disclosure could be considered accepted. All
+five classes from finding 10, read at their annotated methods:
+
+| Handler | Route | Declared `throws` | What escapes after its own catches |
+|---|---|---|---|
+| `AuthenticationServiceV1.authenticate` `@Post` | `/json/authenticate` (**pre-auth**) | none | catches `RestAuthResponseException`, `RestAuthException`, `SSOException`, `IOException`, `RealmLookupException` → unchecked only |
+| `AuthenticationServiceV2` | `/json/authenticate` v2 | none | **inherits** V1's annotated method; overrides only `handleErrorResponse`. Same set |
+| `ApiService.handle` `@Get` | `/json/api` (behind `HttpPrivilegeAuthzModule`) | `URISyntaxException`, `MalformedHeaderException` | the only handler where a **checked** exception escapes |
+| `ApiDocsService.handle` `@Get` | — | none | **not mounted** (`CoreRestRouteProvider:161-166` commented out) |
+| `XacmlServiceHandler.exportXACML`/`importXACML` | `/xacml/policies` (authz-gated) | none | catches `EntitlementException` and localises it → unchecked only |
+
+**Conclusion: no mounted handler can echo a client-supplied string through the new 500 body.**
+
+- `MalformedHeaderException`'s message is the **constant** `"Header value(s) are not well formed"`
+  (`Headers.java:99`) — the offending header value is not interpolated.
+- `URISyntaxException` here can only come from `new Request().setUri(ROOT_URI)`, a compile-time constant.
+- What remains is unchecked exceptions — `NullPointerException` (message JDK-generated),
+  `IllegalArgumentException` from `Status.valueOf(code)` on an out-of-range code, and whatever the auth
+  chain throws unchecked — server-internal strings, not request data. **This is genuinely new
+  disclosure** on this path: pre-F1 a handler's own throw produced an empty body. What is not new is the
+  *shape or the risk class* — `Endpoints.from`'s outer catch already emitted the identical CREST map,
+  carrying the identical kind of message, for every framework-side failure.
+
+The two mitigations D-F1 was conditioned on both hold: `setIncludeCause` is never called, so **no stack
+trace ships**, and `ResourceException.toJsonValue()` HTML-escapes `message` (finding 9, pinned by
+`aThrownExceptionsMessageIsHtmlEscaped`). **R-F.1b is closed.**
+
+### Known limitations, deliberately left
+
+Each is a decision rather than an oversight, and each is cheap to revisit if a consumer needs it.
+
+- **Bridge methods are not skipped** when scanning for `@ExceptionHandler`. A generic endpoint base class
+  (`class Base<E extends Throwable> { @ExceptionHandler Response on(E e) }`) would register the erased
+  bound — a handler broader than the source says. No in-tree endpoint is generic; a `isBridge()` skip is a
+  two-line fix if one appears.
+- **An override that does not re-annotate drops the mapping.** Java does not inherit method annotations
+  onto an override. Now documented on `@ExceptionHandler` itself rather than left to be rediscovered —
+  and note `AuthenticationServiceV2` depends on the *opposite* case (inheriting, not overriding,
+  `authenticate`), pinned by `annotatedMethodInheritedFromASuperclassIsFound`.
+- **A `Response`-returning method that returns `null` still produces a null `Response`** and NPEs
+  downstream in CHF. Pre-existing; surfaced twice in review; deliberately kept out of F4 because it is a
+  fifth fix, not part of `@Produces`.
+- **`Consumes.java` remains dead** — as unread as `@Produces` was, but nothing on the request side is
+  asking for it. Recorded here as the plan required; deleting it belongs to Phase 8's sweep.
+- `findMethod`'s `if (checked != null)` guards a method that cannot return null. Pre-existing, untouched —
+  it is not in these commits' blast radius.
+
+### Risk register outcome
+
+| Risk | Outcome |
+|---|---|
+| R-F.1 | **Not realised.** All three consumer suites green, unchanged, at every step |
+| R-F.1b | **Closed** by the enumeration above |
+| R-F.2 | **Held.** One exception parameter, most-specific-assignable, no ordering annotations |
+| R-F.3 | **Guarded structurally** (`call` not `invoke`), asserted with a dispatch counter |
+| R-F.4 | **Guarded** by `theAnnotationIsVisibleToReflectionAndAppliesToMethods` — a meta-assertion on the retention, not a behavioural test |
+| R-F.6 | **Empty as predicted** (finding 10) — no live `Content-Type` changed |
+| R-F.7 | **Realised, and caught in review.** The charset-completion bug above is exactly this risk, in the fix rather than the baseline |
+| R-F.8 | **Not realised** — the name-based fallback survived F2's signature change, pinned by `methodNamedAfterTheVerbIsBoundWithoutAnAnnotation` |

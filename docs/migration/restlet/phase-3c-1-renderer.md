@@ -255,6 +255,13 @@ because `ExceptionHandler:137` hardcodes `"page"` — **preserve that hardcoding
 
 ### 9. `Endpoints.from` handlers must return `Response` — a `String` return is the ISO-8859-1 trap
 
+> **Superseded 2026-07-22 by [F1–F4](openam-http-framework.md#as-built).** A `Promise` return is implemented,
+> and a `String` return now carries `text/plain; charset=UTF-8` (or whatever `@Produces` declares) and is
+> encoded accordingly — the trap is gone, and "must return `Response`" is house style, not a rule. **3c-1's
+> own conclusion is unaffected**: `toHtmlResponse` returns a `Response` because it sets `text/html` and a
+> status, which is still the right shape. See [chf-patterns.md](chf-patterns.md) §2 for current behaviour;
+> the text below is the framework as 3c-1 found it.
+
 Verified in `AnnotatedMethod.checkMethod:138-152`. Supported return types: **`Response`** (`:141-147`),
 `String` / `Void` / `byte[]` / `JsonValue` (`ResponseCreator.forType:182-191`). A **`Promise`** return hits
 `PromisedResponseCreator.apply:202` → `throw new UnsupportedOperationException("to be implemented")` —

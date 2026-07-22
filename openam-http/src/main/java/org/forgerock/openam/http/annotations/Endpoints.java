@@ -12,6 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
+ * Portions copyright 2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.http.annotations;
@@ -53,11 +54,13 @@ public final class Endpoints {
      * @return A new {@code Handler}.
      */
     public static Handler from(final Object obj) {
+        final Map<Class<? extends Throwable>, AnnotatedMethod> exceptionHandlers =
+                AnnotatedMethod.findExceptionHandlers(obj);
         final Map<String, AnnotatedMethod> methods = new HashMap<>();
-        methods.put("DELETE", AnnotatedMethod.findMethod(obj, Delete.class));
-        methods.put("GET", AnnotatedMethod.findMethod(obj, Get.class));
-        methods.put("POST", AnnotatedMethod.findMethod(obj, Post.class));
-        methods.put("PUT", AnnotatedMethod.findMethod(obj, Put.class));
+        methods.put("DELETE", AnnotatedMethod.findMethod(obj, Delete.class, exceptionHandlers));
+        methods.put("GET", AnnotatedMethod.findMethod(obj, Get.class, exceptionHandlers));
+        methods.put("POST", AnnotatedMethod.findMethod(obj, Post.class, exceptionHandlers));
+        methods.put("PUT", AnnotatedMethod.findMethod(obj, Put.class, exceptionHandlers));
         return new Handler() {
             @Override
             public Promise<Response, NeverThrowsException> handle(Context context, Request request) {

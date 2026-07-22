@@ -7,13 +7,14 @@ patterns: [chf-patterns.md](chf-patterns.md); predecessors: [phase-3a-oauth2requ
 test layers: [docs/test-infrastructure.md](../../test-infrastructure.md). Written 2026-07-17; branch
 `features/restlet-migration`. All facts below were verified against the tree and jar bytecode on 2026-07-17.
 
-> ### ⚠ Prerequisite added 2026-07-21 — [openam-http-framework.md](openam-http-framework.md)
+> ### ✅ Prerequisite **landed 2026-07-22** — [openam-http-framework.md](openam-http-framework.md#as-built)
 >
 > This plan originally designed **around** three defects in `openam-http`'s endpoint framework. That was the
 > wrong call: **`openam-http` is in-tree and we maintain it** (`openam-http/src/main/java/org/forgerock/openam/http/annotations/`),
-> so the defects get fixed. **F1** gives a handler-thrown exception a response body; **F2** makes the
-> long-dead `@ExceptionHandler` annotation real; **F3** implements the `Promise` return type. They land
-> **before** this sub-phase.
+> so the defects got fixed — all four, with 64 new tests in a package that had none.
+> **F1** gives a handler-thrown exception a CREST response body; **F2** makes the long-dead
+> `@ExceptionHandler` annotation real; **F3** implements the `Promise` return type; **F4** honours `@Produces`
+> and makes a `String` return safe to encode.
 >
 > What that changes here, in one line each: `OAuth2ErrorFilter` loses its synthesize rule (F1 guarantees a
 > body); R-3c.9 and R-3c.14 are retired; and 5b's handlers may `throw` the existing `OAuth2Exception`s into an
@@ -21,6 +22,12 @@ test layers: [docs/test-infrastructure.md](../../test-infrastructure.md). Writte
 > it is what that method builds. See the effect table in
 > [openam-http-framework.md](openam-http-framework.md#effect-on-phase-3c-2). Sections below are annotated
 > **F1**/**F2**/**F3** where the prerequisite changed them.
+>
+> **One as-built caveat worth carrying into 3c-2's design:** the framework's *own* failures are **not** offered
+> to `@ExceptionHandler` — only what the annotated method itself threw. An `@ExceptionHandler(OAuth2Exception)`
+> on an OAuth2 handler will therefore never see a context-resolution or plumbing failure, and those still
+> arrive as the CREST 500 the filter's rules 2–5 handle. That is deliberate; see the
+> [As-built](openam-http-framework.md#as-built).
 
 > **Reviewed 2026-07-21.** Findings 1–5, 7 and 10 re-verified line-for-line against the tree and jar bytecode;
 > the 31-class hierarchy table (finding 5) was independently re-enumerated and is complete. Six corrections
@@ -284,11 +291,13 @@ caught. Unifying them is `OAuth2ErrorFilter`'s purpose ([D4](#d4--error-shape-un
 
 ### 7. ⚠ The filter cannot catch — and `Endpoints.from`'s 500 has an **empty body**
 
-> **Superseded by [F1+F2](openam-http-framework.md) (2026-07-21).** Everything below is a correct description
-> of the framework *as this plan found it*, and it is why the prerequisite exists — the finding is preserved
-> verbatim because the fix is measured against it. After F1 a handler-thrown exception yields a **CREST 500
-> with a body**; after F2 it is first offered to the endpoint's own `@ExceptionHandler`. The two 405 bodies
-> are **unchanged** by the prerequisite and remain live for the filter and the IT.
+> **Superseded — the framework was fixed on 2026-07-22 ([F1–F4](openam-http-framework.md#as-built)).**
+> Everything below is a correct description of the framework *as this plan found it*, and it is why the
+> prerequisite existed — the finding is preserved verbatim because the fix is measured against it. As
+> shipped: a handler-thrown exception yields a **CREST 500 with a body** (F1), first offered to the
+> endpoint's own `@ExceptionHandler` (F2). The two 405 bodies are **unchanged** and remain live for the
+> filter and the IT. Read [chf-patterns.md](chf-patterns.md) §2 for the current behaviour; read this only
+> for the before-picture.
 
 [chf-patterns.md](chf-patterns.md) §2 said an uncaught `Throwable` yields `500 + InternalServerErrorException`
 map. **That is only true for exceptions thrown *outside* the reflective call.** A handler method that *throws*
@@ -967,9 +976,9 @@ goes false and the consent page renders with a broken `pageData`.
    gate on the framework-composition beliefs, and finding 7 proves those beliefs are wrong more often than not.
 7. `mvn -o -pl openam-oauth2 install -DskipTests` → `test` → **`verify`** → whole-reactor build → grep gates.
 8. e2e lock spec → run against a local container **built from unmodified `/oauth2`**.
-9. Correct [chf-patterns.md](chf-patterns.md) **§2** (finding 7: empty-body 500 + `setCause`; two 405 bodies;
-   `Promise` return unimplemented; `@ExceptionHandler` dead; **`setJson` is what writes `Content-Type`, so a
-   handler-thrown 500 has none** — finding 7) — wrong today, and every later phase reads it.
+9. ~~Correct [chf-patterns.md](chf-patterns.md) **§2**~~ — **done 2026-07-22 by the F1–F4 docs commit**, which
+   rewrote §2 to describe the *fixed* framework rather than correcting its account of the broken one. Nothing
+   left here beyond re-reading §2 before writing the filter.
    Update [plan.md](plan.md) (drop "Preserves `asMap()` field order"; risk rows) and
    [decisions.md](decisions.md) (D3, D6, **D13, D14**). Mark 3c done and record an **As-built** section here.
 

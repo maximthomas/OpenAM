@@ -142,9 +142,9 @@ public class OAuth2ErrorRouteCompositionIT {
     }
 
     /**
-     * A verb that is not in the framework's map at all: {@code Endpoints}' fallback, whose body carries
-     * {@code code: 501} against a 405 status. Both 405 paths must collapse to one client-visible shape,
-     * which is only true because the filter derives the error from the wire status.
+     * A verb that is not in the framework's map at all: {@code Endpoints}' fallback, a 405 whose CREST body is
+     * now 405-coded (it once carried {@code code: 501} against the 405 status). Both 405 paths collapse to one
+     * client-visible shape because the filter derives the error from the wire status.
      */
     @Test
     public void anUnmappedVerbBecomesTheSameInvalidRequest() throws Exception {

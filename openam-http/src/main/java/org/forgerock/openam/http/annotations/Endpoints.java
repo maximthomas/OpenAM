@@ -29,7 +29,7 @@ import org.forgerock.http.protocol.Request;
 import org.forgerock.http.protocol.Response;
 import org.forgerock.http.protocol.Status;
 import org.forgerock.json.resource.InternalServerErrorException;
-import org.forgerock.json.resource.NotSupportedException;
+import org.forgerock.json.resource.ResourceException;
 import org.forgerock.services.context.Context;
 import org.forgerock.util.promise.NeverThrowsException;
 import org.forgerock.util.promise.Promise;
@@ -66,8 +66,13 @@ public final class Endpoints {
             public Promise<Response, NeverThrowsException> handle(Context context, Request request) {
                 AnnotatedMethod method = methods.get(getMethod(request));
                 if (method == null) {
+                    // An unmapped HTTP verb (e.g. PATCH) yields a 405, with a body whose code
+                    // matches the 405 status line. This mirrors AnnotatedMethod's mapped-verb-with-
+                    // no-method sentinel, so both "method not allowed" paths render one shape rather
+                    // than the status-line-405/body-code-501 mismatch a NotSupportedException gave.
                     Response response = new Response(Status.METHOD_NOT_ALLOWED);
-                    response.setEntity(AnnotatedMethod.crestBody(new NotSupportedException()));
+                    response.setEntity(AnnotatedMethod.crestBody(ResourceException.getException(
+                            Status.METHOD_NOT_ALLOWED.getCode(), Status.METHOD_NOT_ALLOWED.getReasonPhrase())));
                     return newResultPromise(response);
                 }
 

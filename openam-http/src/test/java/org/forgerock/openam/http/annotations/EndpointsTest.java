@@ -100,23 +100,26 @@ public class EndpointsTest {
     }
 
     /**
-     * A verb the framework does not map at all never reaches an AnnotatedMethod: Endpoints
-     * answers 405 with a NotSupportedException body, whose {@code code} is 501.
+     * A verb the framework does not map at all never reaches an AnnotatedMethod. Endpoints
+     * answers 405 with a body whose {@code code} matches the 405 status line — the same shape
+     * as the mapped-verb-with-no-method case below. (Previously this path emitted a
+     * NotSupportedException body whose {@code code} was 501, contradicting the 405 status; that
+     * status-line/body-code mismatch is now fixed.)
      */
     @Test
-    public void unmappedVerbGives405WithA501Body() throws IOException {
+    public void unmappedVerbGives405WithA405Body() throws IOException {
         Response response = handle(new AllVerbsHandler(), new Request().setMethod("PATCH"));
 
         assertThat(response.getStatus()).isEqualTo(Status.METHOD_NOT_ALLOWED);
         assertThat(jsonBody(response))
-                .containsEntry("code", 501)
-                .containsEntry("reason", "Not Implemented")
-                .containsEntry("message", "Not Implemented");
+                .containsEntry("code", 405)
+                .containsEntry("reason", "Method Not Allowed")
+                .containsEntry("message", "Method Not Allowed");
     }
 
     /**
      * A mapped verb with no matching method resolves to findMethod's sentinel, which answers
-     * 405 with a matching 405 body — a different shape from the unmapped-verb case above.
+     * 405 with a matching 405 body — the same shape as the unmapped-verb case above.
      */
     @Test
     public void mappedVerbWithNoMethodGives405WithA405Body() throws IOException {

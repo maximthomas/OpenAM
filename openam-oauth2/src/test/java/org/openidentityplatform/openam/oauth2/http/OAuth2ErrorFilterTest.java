@@ -74,10 +74,10 @@ public class OAuth2ErrorFilterTest {
     }
 
     /**
-     * The framework emits two distinct 405 bodies -- an unmapped verb carries a {@code NotSupportedException}
-     * whose {@code code} is 501, while a mapped verb with no annotated method carries a real 405. Both are
-     * 405 on the wire, and the OAuth2 error is derived from the wire status rather than from the body's
-     * {@code code}, so the two collapse to one client-visible shape.
+     * The OAuth2 error is derived from the wire status, not the body's {@code code}, so a 405 collapses to one
+     * client-visible shape however its CREST body is coded. Both inputs here are 405 on the wire: one carries a
+     * mismatched {@code code} of 501 (as the framework's unmapped-verb fallback once emitted, before it was
+     * fixed to a 405-coded body), the other a matching 405 -- both must become {@code invalid_request}.
      */
     @Test
     public void bothFrameworkMethodNotAllowedBodiesBecomeInvalidRequest() throws Exception {

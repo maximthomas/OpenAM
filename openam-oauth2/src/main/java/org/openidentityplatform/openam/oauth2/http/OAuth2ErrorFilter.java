@@ -87,9 +87,12 @@ public class OAuth2ErrorFilter implements Filter {
     }
 
     /**
-     * Derived from the wire status rather than the body's {@code code}, because the two disagree: the
-     * framework's unmapped-verb fallback is a 405 response carrying a {@code NotSupportedException} whose
-     * {@code code} is 501. The status is what the client acted on.
+     * Derived from the wire status rather than the body's {@code code}. The status is the field the client
+     * acted on, and keying off it keeps the filter correct for any {@code >= 400} CREST body whose
+     * {@code code} might not match its status line. (The framework's unmapped-verb fallback historically
+     * carried a {@code NotSupportedException} whose {@code code} was 501 against a 405 status; {@code Endpoints}
+     * has since been fixed to emit a 405-coded body there, but deriving from the status remains the robust
+     * choice.)
      * <p>
      * The whole point of this filter is to hand the client the field it dispatches on, so the statuses RFC
      * 6749 and RFC 6750 give a specific code to must get that code rather than the catch-all. A client told

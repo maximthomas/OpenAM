@@ -159,6 +159,16 @@ routed around in-phase and fixed here only when a phase actually requires the co
   (`Form.fromRequestQuery` for query-only detail, `new Form().fromFormString(...)` for the body auditors), so
   nothing in 3d/4/5 needs it yet. Do it when a phase must read a charset-suffixed form body via `getForm()`.
 
+- **`AMAccessAuditEventBuilder.forRequest` builds `http/request/path` with `uri.getPort()`**
+  (`AMAccessAuditEventBuilder.java:122`), which is **-1** when the request URI carries no explicit port (default
+  80/443, e.g. behind a TLS-terminating load balancer), yielding audited paths like
+  `http://host:-1/oauth2/access_token`. Found 2026-07-23 during Phase 3d-1 review. **In-tree (openam-audit-core,
+  ours) — not commons**, so unlike the item above it costs no release cycle. **Pre-existing** and identical on
+  `/json` audit today, so left out of the 3d-1 live-path commit to keep its blast radius minimal. **Proposed
+  fix:** omit the `:port` segment when `getPort() < 0` (or emit the scheme default). **Status: deferred** — record
+  in 5d's audit smoke (the pre/post-flip `http/request/path` diff surfaces it); fix in its own openam-audit-core
+  commit with a test.
+
 ## Cutover lever
 
 The `OpenAM` `HttpFrameworkServlet` in

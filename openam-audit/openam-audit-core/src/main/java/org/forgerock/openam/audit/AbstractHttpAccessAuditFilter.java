@@ -12,6 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package org.forgerock.openam.audit;
 
@@ -29,17 +30,21 @@ import static org.forgerock.openam.utils.Time.*;
 
 import java.util.Set;
 
+import org.forgerock.audit.AuditException;
 import org.forgerock.json.JsonValue;
 import org.forgerock.services.context.Context;
 import org.forgerock.http.Filter;
 import org.forgerock.http.Handler;
 import org.forgerock.http.protocol.Request;
 import org.forgerock.http.protocol.Response;
+import org.forgerock.http.protocol.Status;
 import org.forgerock.openam.audit.context.AuditRequestContext;
 import org.forgerock.services.context.RequestAuditContext;
 import org.forgerock.util.Function;
 import org.forgerock.util.promise.NeverThrowsException;
 import org.forgerock.util.promise.Promise;
+
+import com.sun.identity.shared.debug.Debug;
 
 /**
  * Responsible for logging access audit events for CHF requests.
@@ -47,6 +52,8 @@ import org.forgerock.util.promise.Promise;
  * @since 13.0.0
  */
 public abstract class AbstractHttpAccessAuditFilter implements Filter {
+
+    private final Debug debug = Debug.getInstance("amAudit");
 
     private final AuditEventPublisher auditEventPublisher;
     private final AuditEventFactory auditEventFactory;
@@ -73,10 +80,12 @@ public abstract class AbstractHttpAccessAuditFilter implements Filter {
         return next.handle(context, request).then(new Function<Response, Response, NeverThrowsException>() {
             @Override
             public Response apply(Response response) {
-                if (response.getStatus().isSuccessful()) {
-                    auditAccessSuccess(request, context, response);
-                } else {
+                // D2: only 4xx/5xx are failures (Restlet parity). 3xx (e.g. OAuth2 authorize's 302) is a success.
+                Status status = response.getStatus();
+                if (status.isClientError() || status.isServerError()) {
                     auditAccessFailure(request, context, response);
+                } else {
+                    auditAccessSuccess(request, context, response);
                 }
                 return response;
             }
@@ -92,11 +101,20 @@ public abstract class AbstractHttpAccessAuditFilter implements Filter {
                     .transactionId(AuditRequestContext.getTransactionIdValue())
                     .eventName(EventName.AM_ACCESS_ATTEMPT)
                     .component(component)
-                    .userId(getUserIdForAccessAttempt(request))
-                    .trackingIds(getTrackingIdsForAccessAttempt(request))
+                    .userId(getUserIdForAccessAttempt(context, request))
+                    .trackingIds(getTrackingIdsForAccessAttempt(context, request))
                     .forRequest(request, context);
 
-            auditEventPublisher.tryPublish(AuditConstants.ACCESS_TOPIC, builder.toEvent());
+            try {
+                JsonValue detail = getRequestDetail(context, request);
+                if (detail != null) {
+                    builder.requestDetail(detail);
+                }
+                // tryPublish inside the try: a request-body parse failure skips the whole attempt event.
+                auditEventPublisher.tryPublish(AuditConstants.ACCESS_TOPIC, builder.toEvent());
+            } catch (AuditException e) {
+                debug.error("Unable to create request detail for access attempt audit event", e);
+            }
         }
     }
 
@@ -112,10 +130,22 @@ public abstract class AbstractHttpAccessAuditFilter implements Filter {
                     .transactionId(AuditRequestContext.getTransactionIdValue())
                     .eventName(EventName.AM_ACCESS_OUTCOME)
                     .component(component)
-                    .userId(getUserIdForAccessOutcome(response))
-                    .trackingIds(getTrackingIdsForAccessOutcome(response))
-                    .response(SUCCESSFUL, "", elapsedTime, MILLISECONDS)
+                    .userId(getUserIdForAccessOutcome(context, request, response))
+                    .trackingIds(getTrackingIdsForAccessOutcome(context, request, response))
                     .forRequest(request, context);
+
+            try {
+                JsonValue detail = getResponseDetail(context, request, response);
+                if (detail != null) {
+                    builder.responseWithDetail(SUCCESSFUL, "", elapsedTime, MILLISECONDS, detail);
+                } else {
+                    builder.response(SUCCESSFUL, "", elapsedTime, MILLISECONDS);
+                }
+            } catch (AuditException e) {
+                // Restlet parity: a response-body parse failure is swallowed; publish the outcome without detail.
+                debug.warning("Unable to create response detail for access outcome audit event", e);
+                builder.response(SUCCESSFUL, "", elapsedTime, MILLISECONDS);
+            }
 
             auditEventPublisher.tryPublish(AuditConstants.ACCESS_TOPIC, builder.toEvent());
         }
@@ -136,8 +166,8 @@ public abstract class AbstractHttpAccessAuditFilter implements Filter {
                     .transactionId(AuditRequestContext.getTransactionIdValue())
                     .eventName(EventName.AM_ACCESS_OUTCOME)
                     .component(component)
-                    .userId(getUserIdForAccessOutcome(response))
-                    .trackingIds(getTrackingIdsForAccessOutcome(response))
+                    .userId(getUserIdForAccessOutcome(context, request, response))
+                    .trackingIds(getTrackingIdsForAccessOutcome(context, request, response))
                     .responseWithDetail(FAILED, responseCode, elapsedTime, MILLISECONDS, responseDetail)
                     .forRequest(request, context);
 
@@ -185,6 +215,39 @@ public abstract class AbstractHttpAccessAuditFilter implements Filter {
      */
     protected Set<String> getTrackingIdsForAccessOutcome(Response response) {
         return getAllAvailableTrackingIds();
+    }
+
+    /**
+     * Context-bearing hooks. The base calls these; the defaults delegate to the request-only signatures so
+     * existing subclasses keep working unchanged. Subclasses needing the context/request (e.g. OAuth2) override these.
+     */
+    protected String getUserIdForAccessAttempt(Context context, Request request) {
+        return getUserIdForAccessAttempt(request);
+    }
+
+    protected Set<String> getTrackingIdsForAccessAttempt(Context context, Request request) {
+        return getTrackingIdsForAccessAttempt(request);
+    }
+
+    protected String getUserIdForAccessOutcome(Context context, Request request, Response response) {
+        return getUserIdForAccessOutcome(response);
+    }
+
+    protected Set<String> getTrackingIdsForAccessOutcome(Context context, Request request, Response response) {
+        return getTrackingIdsForAccessOutcome(response);
+    }
+
+    /**
+     * Body-detail hooks. Default to no detail. Both declare {@code AuditException} so the base owns Restlet's two
+     * divergent policies (see {@link #filter}): a request-detail failure skips the whole attempt event, a
+     * response-detail failure is swallowed to no-detail.
+     */
+    protected JsonValue getRequestDetail(Context context, Request request) throws AuditException {
+        return null;
+    }
+
+    protected JsonValue getResponseDetail(Context context, Request request, Response response) throws AuditException {
+        return null;
     }
 
     /**

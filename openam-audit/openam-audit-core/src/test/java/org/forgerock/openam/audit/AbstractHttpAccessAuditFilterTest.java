@@ -12,10 +12,14 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package org.forgerock.openam.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.forgerock.json.JsonValue.field;
+import static org.forgerock.json.JsonValue.json;
+import static org.forgerock.json.JsonValue.object;
 import static org.forgerock.json.test.assertj.AssertJJsonValueAssert.assertThat;
 import static org.forgerock.openam.audit.AuditConstants.Component.AUTHENTICATION;
 import static org.forgerock.openam.audit.AuditConstants.TrackingIdKey.SESSION;
@@ -162,6 +166,122 @@ public class AbstractHttpAccessAuditFilterTest {
         assertThat(userId).isEmpty();
     }
 
+    // ---- 3d-1 additions -------------------------------------------------------------------------
+
+    @Test
+    public void redirect302AuditsSuccessful() throws AuditException {
+        // D2: 3xx is a success (Restlet parity), not a failure — OAuth2 authorize success is a 302.
+        Context context = new RequestAuditContext(mockContext());
+        Request request = new Request().setMethod("GET").setUri(URI.create("http://example.com"));
+        enableAccessTopicAuditing();
+        Handler handler = mockHandler(context, request, Status.FOUND);
+
+        auditFilter.filter(context, request, handler);
+
+        JsonValue outcome = capturedEvents(2).get(1);
+        assertThat(outcome).stringAt("eventName").isEqualTo(AM_ACCESS_OUTCOME.toString());
+        assertThat(outcome).stringAt("response/status").isEqualTo("SUCCESSFUL");
+    }
+
+    @Test
+    public void recordsRequestAndResponseDetailWhenHooksReturnDetail() throws AuditException {
+        JsonValue requestDetail = json(object(field("client_id", "myClient")));
+        JsonValue responseDetail = json(object(field("scope", "read")));
+        DetailAccessAuditFilter filter =
+                new DetailAccessAuditFilter(requestDetail, responseDetail, false, false);
+
+        Context context = new RequestAuditContext(mockContext());
+        Request request = new Request().setMethod("POST").setUri(URI.create("http://example.com"));
+        enableAccessTopicAuditing();
+        Handler handler = mockHandler(context, request, Status.OK);
+
+        filter.filter(context, request, handler);
+
+        java.util.List<JsonValue> events = capturedEvents(2);
+        assertThat(events.get(0)).stringAt("request/detail/client_id").isEqualTo("myClient");
+        assertThat(events.get(1)).stringAt("response/detail/scope").isEqualTo("read");
+    }
+
+    @Test
+    public void narrowAttemptOverrideStillHonouredThroughContextDefault() throws AuditException {
+        // (c) A subclass overriding only the narrow signature is still consulted via the new overload's default.
+        AbstractHttpAccessAuditFilter filter = new MockAccessAuditFilter(eventPublisher, new AuditEventFactory()) {
+            @Override
+            protected String getUserIdForAccessAttempt(Request request) {
+                return "NARROW_USER";
+            }
+        };
+        Context context = new RequestAuditContext(mockContext());
+        Request request = new Request().setMethod("GET").setUri(URI.create("http://example.com"));
+        enableAccessTopicAuditing();
+        Handler handler = mockHandler(context, request, Status.OK);
+
+        filter.filter(context, request, handler);
+
+        assertThat(capturedEvents(2).get(0)).stringAt("userId").isEqualTo("NARROW_USER");
+    }
+
+    @Test
+    public void contextBearingOutcomeHookIsUsed() throws AuditException {
+        // The base must route the outcome through the context-bearing overload (3d-2 OAuth2 relies on this).
+        AbstractHttpAccessAuditFilter filter = new MockAccessAuditFilter(eventPublisher, new AuditEventFactory()) {
+            @Override
+            protected String getUserIdForAccessOutcome(Context context, Request request, Response response) {
+                return "CTX_USER";
+            }
+        };
+        Context context = new RequestAuditContext(mockContext());
+        Request request = new Request().setMethod("GET").setUri(URI.create("http://example.com"));
+        enableAccessTopicAuditing();
+        Handler handler = mockHandler(context, request, Status.OK);
+
+        filter.filter(context, request, handler);
+
+        assertThat(capturedEvents(2).get(1)).stringAt("userId").isEqualTo("CTX_USER");
+    }
+
+    @Test
+    public void requestDetailAuditExceptionSkipsAttemptEvent() throws AuditException {
+        // A request-body parse failure skips the whole attempt event, not just its detail (Restlet parity).
+        DetailAccessAuditFilter filter = new DetailAccessAuditFilter(null, null, true, false);
+        Context context = new RequestAuditContext(mockContext());
+        Request request = new Request().setMethod("POST").setUri(URI.create("http://example.com"));
+        enableAccessTopicAuditing();
+        Handler handler = mockHandler(context, request, Status.OK);
+
+        filter.filter(context, request, handler);
+
+        // Only the OUTCOME is published; the attempt event was skipped.
+        JsonValue onlyEvent = capturedEvents(1).get(0);
+        assertThat(onlyEvent).stringAt("eventName").isEqualTo(AM_ACCESS_OUTCOME.toString());
+    }
+
+    @Test
+    public void responseDetailAuditExceptionPublishesOutcomeWithoutDetail() throws AuditException {
+        // A response-body parse failure is swallowed — the outcome is still published, just without detail.
+        DetailAccessAuditFilter filter = new DetailAccessAuditFilter(null, null, false, true);
+        Context context = new RequestAuditContext(mockContext());
+        Request request = new Request().setMethod("GET").setUri(URI.create("http://example.com"));
+        enableAccessTopicAuditing();
+        Handler handler = mockHandler(context, request, Status.OK);
+
+        filter.filter(context, request, handler);
+
+        JsonValue outcome = capturedEvents(2).get(1);
+        assertThat(outcome).stringAt("response/status").isEqualTo("SUCCESSFUL");
+        assertThat(outcome.get("response").isDefined("detail")).isFalse();
+    }
+
+    private java.util.List<JsonValue> capturedEvents(int expectedCount) {
+        ArgumentCaptor<AuditEvent> captor = ArgumentCaptor.forClass(AuditEvent.class);
+        verify(eventPublisher, times(expectedCount)).tryPublish(eq(AuditConstants.ACCESS_TOPIC), captor.capture());
+        java.util.List<JsonValue> values = new java.util.ArrayList<>();
+        for (AuditEvent event : captor.getAllValues()) {
+            values.add(event.getValue());
+        }
+        return values;
+    }
+
     private Context mockContext() {
         return new AttributesContext(new SessionContext(
                 ClientContext.buildExternalClientContext(new RootContext())
@@ -241,6 +361,45 @@ public class AbstractHttpAccessAuditFilterTest {
         @Override
         protected String getRealm(Context context) {
             return realm;
+        }
+    }
+
+    /** Filter whose body-detail hooks return configured detail, or throw to exercise the two failure policies. */
+    private class DetailAccessAuditFilter extends AbstractHttpAccessAuditFilter {
+        private final JsonValue requestDetail;
+        private final JsonValue responseDetail;
+        private final boolean throwOnRequestDetail;
+        private final boolean throwOnResponseDetail;
+
+        DetailAccessAuditFilter(JsonValue requestDetail, JsonValue responseDetail,
+                boolean throwOnRequestDetail, boolean throwOnResponseDetail) {
+            super(AUTHENTICATION, eventPublisher, new AuditEventFactory());
+            this.requestDetail = requestDetail;
+            this.responseDetail = responseDetail;
+            this.throwOnRequestDetail = throwOnRequestDetail;
+            this.throwOnResponseDetail = throwOnResponseDetail;
+        }
+
+        @Override
+        protected String getRealm(Context context) {
+            return realm;
+        }
+
+        @Override
+        protected JsonValue getRequestDetail(Context context, Request request) throws AuditException {
+            if (throwOnRequestDetail) {
+                throw new AuditException("request body parse failure");
+            }
+            return requestDetail;
+        }
+
+        @Override
+        protected JsonValue getResponseDetail(Context context, Request request, Response response)
+                throws AuditException {
+            if (throwOnResponseDetail) {
+                throw new AuditException("response body parse failure");
+            }
+            return responseDetail;
         }
     }
 }

@@ -12,7 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015 ForgeRock AS.
- * Portions Copyrighted 2025 3A Systems LLC.
+ * Portions Copyrighted 2025-2026 3A Systems LLC.
  */
 package org.forgerock.openam.audit;
 
@@ -120,7 +120,8 @@ public final class AMAccessAuditEventBuilder extends AccessAuditEventBuilder<AMA
         boolean isSecure = "https".equals(uriScheme);
         httpRequest(isSecure, request.getMethod(),
                 uri.getScheme() + "://" + uri.getHost() + ":" + uri.getPort() + uri.getPath(),
-                getQueryParametersAsMap(request.getForm()), getHeadersAsMap(request.getHeaders()));
+                // D3: query-only, so form-POST body fields (incl. client_secret) do not leak into queryParameters
+                getQueryParametersAsMap(new Form().fromRequestQuery(request)), getHeadersAsMap(request.getHeaders()));
         return this;
     }
 

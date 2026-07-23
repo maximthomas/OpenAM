@@ -12,6 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015 ForgeRock AS.
+ * Portions Copyrighted 2026 3A Systems LLC.
  */
 package org.forgerock.openam.audit;
 
@@ -23,8 +24,16 @@ import static org.forgerock.openam.audit.AuditConstants.*;
 import static org.forgerock.openam.audit.JsonUtils.*;
 
 import org.forgerock.audit.events.AuditEvent;
+import org.forgerock.http.header.ContentTypeHeader;
+import org.forgerock.http.protocol.Request;
+import org.forgerock.json.JsonValue;
+import org.forgerock.services.context.ClientContext;
+import org.forgerock.services.context.Context;
+import org.forgerock.services.context.RootContext;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import java.net.URI;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,6 +93,46 @@ public class AMAccessAuditEventBuilderTest {
                 .toEvent();
 
         assertThat(accessEvent).isNotNull();
+    }
+
+    @DataProvider
+    private Object[][] postBodies() {
+        return new Object[][]{
+            // content type, POST body. The first row is the D3 regression guard: getForm() would parse this
+            // body and leak client_secret into queryParameters. The ;charset row (getForm's exact-match trap
+            // already empties it) and the JSON row (getForm never parses JSON) characterize the query-only
+            // contract but do not, by themselves, pin the fix — the plain form row does.
+            {"application/x-www-form-urlencoded", "grant_type=password&client_secret=shh"},
+            {"application/x-www-form-urlencoded;charset=UTF-8", "grant_type=password&client_secret=shh"},
+            {"application/json", "{\"grant_type\":\"password\",\"client_secret\":\"shh\"}"},
+        };
+    }
+
+    /**
+     * D3 — forRequest must record URL query parameters only. A form-POST body (incl. client_secret)
+     * must not leak into http/request/queryParameters, as request.getForm() would allow.
+     */
+    @Test(dataProvider = "postBodies")
+    public void forRequestRecordsQueryParametersOnly(String contentType, String body) throws Exception {
+        Context context = ClientContext.buildExternalClientContext(new RootContext())
+                .remoteAddress("127.0.0.1")
+                .remotePort(9000)
+                .build();
+        Request request = new Request()
+                .setMethod("POST")
+                .setUri(URI.create("http://example.com:8080/oauth2/access_token?q1=v1"));
+        request.getHeaders().put(ContentTypeHeader.valueOf(contentType));
+        request.getEntity().setString(body);
+
+        AuditEvent event = new AMAccessAuditEventBuilder()
+                .timestamp(1436389263629L)
+                .eventName(EventName.AM_ACCESS_ATTEMPT)
+                .transactionId("ad1f26e3-1ced-418d-b6ec-c8488411a625")
+                .forRequest(request, context)
+                .toEvent();
+
+        JsonValue queryParameters = event.getValue().get("http").get("request").get("queryParameters");
+        assertThat(queryParameters.keys()).containsOnly("q1");
     }
 
     private Map<String, List<String>> getQueryParameters() {

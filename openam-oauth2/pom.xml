@@ -146,6 +146,13 @@
             <groupId>org.openidentityplatform.openam.jakarta</groupId>
             <artifactId>org.restlet.ext.servlet</artifactId>
         </dependency>
+        <!-- Already used by main code (OAuth2RestHttpRouteProvider) via openam-rest, and by
+             OAuth2ErrorRouteCompositionIT directly. Declared so neither relies on transitivity. -->
+        <dependency>
+            <groupId>org.openidentityplatform.openam</groupId>
+            <artifactId>openam-http</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.openidentityplatform.openam</groupId>
             <artifactId>openam-restlet</artifactId>

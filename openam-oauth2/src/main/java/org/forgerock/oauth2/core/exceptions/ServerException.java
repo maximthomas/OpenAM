@@ -41,10 +41,17 @@ public class ServerException extends OAuth2Exception {
 
     /**
      * Constructs a new ServerException with the message from the specified cause.
+     * <p>
+     * The cause is chained, not merely read for its message. This is the wrap-any-bug path -- there are
+     * dozens of {@code throw new ServerException(e)} sites -- and taking only {@code getMessage()} left the
+     * original exception, and therefore the stack that says where the fault actually was, unrecoverable by
+     * anything downstream. Nothing renders the cause: the wire shape is built from the status, the error
+     * code and the message, all of which are unchanged.
      *
      * @param cause The cause of the exception.
      */
     public ServerException(final Throwable cause) {
         this(cause.getMessage());
+        initCause(cause);
     }
 }

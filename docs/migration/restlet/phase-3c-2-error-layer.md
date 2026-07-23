@@ -993,3 +993,139 @@ goes false and the consent page renders with a broken `pageData`.
 | **R-3c.11** | **D3/D6 land silently at the 5d flip** | Both are invisible until the route moves, months later | Recorded in [decisions.md](decisions.md); excluded from the e2e lock **by design**, and listed in 5d's smoke matrix |
 | **R-3c.13** | **The login redirect degrades into an open redirect** | RoAR is an `OAuth2Exception` with a 307 and its *own* URI. Any generic mapper that reads only status/error/message and takes the redirect target from the request 301s an **unauthenticated** user agent to a client-supplied URI — and the response still looks right (301 + a `Location`), so a shape-only test passes | [D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out)'s two redundant mechanisms; `OAuth2ErrorTest`'s adversarial `redirectingTo` case; the e2e lock asserts the `Location` **value**, not its presence |
 | ~~**R-3c.14**~~ | ~~**The filter's rule order regresses silently**~~ | **Retired 2026-07-21** with the rule it guarded. [F1](openam-http-framework.md) means no input matches two rules, so the filter is no longer order-sensitive | — |
+
+<a id="as-built"></a>
+## As-built (2026-07-22)
+
+**Four main classes, five unit suites and one IT landed.** `openam-oauth2` goes **759 → 882** surefire tests
+plus **6** failsafe; `openam-uma` **192 → 193**; `openam-http` **73** (unchanged count, one test reversed —
+see below). Steps 1–7 and 9 of the execution order are done; **step 8, the e2e contract lock (§E), is
+deferred** — it needs a container built from this tree and must be recorded against live Restlet, which is
+still true until 5d.
+
+Counts below are after **three review rounds** (see [Review outcomes](#review-outcomes)); the first draft was
+859.
+
+| File | Tests | Notes |
+|---|---|---|
+| `OAuth2Error` | `OAuth2ErrorTest` — 51 | 30 of the 51 are the `mayRedirect` enumeration |
+| `RedirectUris` | `RedirectUrisTest` — 15 | |
+| `OAuth2ErrorResponseFactory` | `OAuth2ErrorResponseFactoryTest` — 24 | renders the **real** `page/error.ftl` |
+| `OAuth2ErrorFilter` | `OAuth2ErrorFilterTest` — 17 | `XacmlXmlErrorFilterTest` scaffold, as planned |
+| — | `RestletErrorParityTest` — 16 | dies at 5d, by design |
+| — | `OAuth2ErrorRouteCompositionIT` — 6 | failsafe only; needs `verify` |
+
+### What the Restlet leg said that the plan had guessed
+
+The plan's instruction to write the parity leg **first** paid for itself three times. All three were
+recorded by running a print-only harness against the live `ExceptionHandler` before a single CHF assertion
+was written.
+
+1. **Risk #3 is closed, not confirmed.** The plan called error-param encoding "the row most likely to fail".
+   Restlet and CHF emit **identical** bytes — `%20` for space on both, `%26`/`%3D`/`%2B` for the separators,
+   UTF-8 percent-encoding for non-ASCII. [plan.md](plan.md)'s risk row is struck through accordingly.
+2. **Restlet doubles a trailing separator** — `cb?` → `cb?&error=…`, `cb?a=1&` → `cb?a=1&&error=…`. The first
+   draft of `RedirectUris` suppressed this. Suppressing it was *both* a divergence *and* extra code, so the
+   guard was deleted: parity and simplicity pointed the same way.
+3. **[D11](#d11--redirectors--substitution-diverge)'s harm is milder than described, and its consequence is
+   larger.** An unbound `{rid}` is not injected, it is **deleted** — today `redirect_uri=…/cb/{rid}` redirects
+   to `…/cb/`. More importantly the decision *forces the implementation*: emitting the target verbatim rules
+   out `MutableUri`/`java.net.URI`, which reject braces where Restlet's lenient `Reference` accepted them. So
+   `RedirectUris` does string surgery, and that is a requirement rather than a shortcut. Recorded on the class.
+
+A fourth, smaller one: `page/error.ftl` renders `realm` through `?js_string`, which escapes a leading slash,
+so the page emits `realm : "\/subrealm"`. Two factory assertions were written to the raw value and failed;
+**the code was right and the expectations were wrong**, which is the argument for driving the real template
+rather than a stub.
+
+### Deviations from the plan
+
+- **The baseline was wrong.** The plan's "3c-1 as-built is 743" is stale — the true pre-3c-2 count is **759**,
+  measured by removing the five new suites and re-running. The `master` merge (`6afede3c96`) landed tests in
+  between. 759 + 100 = 859, fully accounted for.
+- **A pom change after all.** `openam-oauth2` now declares `openam-http`, which
+  `OAuth2ErrorRouteCompositionIT` needs for `Endpoints.from`. The plan's "no pom change" was about the main
+  classes and did not anticipate the IT. Declaring it **`test`-scoped broke the main compile**:
+  `OAuth2RestHttpRouteProvider` already imports `org.forgerock.openam.http`, and the narrower direct
+  declaration shadowed the transitive compile-scoped one. It is a plain compile dependency, which is also
+  the honest description of what was already true implicitly.
+- **openam-uma gained a test** (192 → **193**), against the plan's "must stay exactly 192".
+  `UmaExceptionRedirectVerdictTest` supplies the 31st `mayRedirect` verdict, which openam-oauth2's classpath
+  scan cannot reach because the module dependency runs the other way.
+- **R-3c.6 is enforced reflectively, not by hand.** A hand-maintained list cannot make "adding a subclass
+  without a verdict fails the build" true. `everyConcreteSubclassHasAVerdict` scans the two exception
+  packages with Guava's `ClassPath` and asserts **set equality** against the verdict table — set equality,
+  not containment, so a scan that finds nothing fails rather than passing vacuously.
+- **`OAuth2ErrorFilter` maps from the wire status, not the body's `code`.** The plan's "500 →
+  `server_error`, 405 → `invalid_request`, other 4xx → `invalid_request`" did not say which number to read,
+  and the two disagree: the unmapped-verb fallback is a **405 response whose body `code` is 501**. Reading
+  the body would leave 501 falling through every arm. The IT asserts both 405 paths collapse to one shape.
+
+### Design notes worth carrying into Phase 5
+
+- **`OAuth2Error` uses copy-constructor withers**, not a canonical 9-argument constructor. The class exists
+  to kill `OAuth2RestletException`'s positional trap; reintroducing a 9-positional-arg constructor internally
+  would be the same hazard one layer down.
+- **[D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out)'s second mechanism is a `redirectUriPinned` flag** set only by the RoAR carve-out, which makes
+  `redirectingTo` a no-op. The alternative — "never overwrite a non-null `redirectUri`" — is equivalent today
+  but would silently swallow a legitimate `.redirectingTo(a).redirectingTo(b)` later.
+- **`baseUrl` falls back to `""`, never `null`.** [D9](#d9--null-realm--fix) covers `realm`, but
+  `${baseUrl?html}` sits *outside* any `<#if>` guard in `error.ftl`, so a null there throws the same way. With
+  no servlet request the page now emits relative `/XUI/…` URLs instead of a FreeMarker stack trace.
+- **A failed render falls back to the JSON body**, logged. Not defensive padding: D9 exists because this page
+  *has* thrown in production. Legacy behaviour was a blank body at the error status.
+- **`WWW-Authenticate` is applied once, after the branch is chosen** (a `withChallenge` helper), for the
+  reason [D14](#d14--www-authenticate-carried-on-oauth2error-and-tested-in-every-phase) gives: today's producers set the challenge *before* an error shape is picked, so a header that
+  depends on which branch ran is how it goes missing in 5a.
+- **The login-redirect branch dispatches on `isRedirectUriFromException()`, not on status 307.** They agree
+  today — RoAR is the only 307 — but only one is the actual question. Keying on the status means any error
+  that happens to carry 307 *plus* a client `redirect_uri` becomes a cacheable **301 to that URI with the
+  error parameters dropped**, which is [D13](#d13--resourceownerauthenticationrequired-carries-its-own-redirect-uri-carve-out)'s failure mode arriving through the renderer instead of
+  through the carrier.
+
+<a id="review-outcomes"></a>
+### Review outcomes
+
+Three `/code-review` passes at xhigh; 12 findings, then 14, then 9. Eight of the nine were local; the ninth
+is a scope correction to [D-F5](openam-http-framework.md#scope-openam-http-only). Most were local, but five
+changed behaviour outside this phase's four classes and are recorded here because a later phase will meet
+them:
+
+| Change | Where | Why it is not a drive-by |
+|---|---|---|
+| **`WWW-Authenticate` realm is escaped** | `OAuth2ErrorResponseFactory` | Restlet's `HttpBasicHelper` escaped nothing, and the realm is client-controlled — `OpenAMClientAuthenticationFailureFactory.getRealm` falls back to the **un-normalised** `?realm=` when normalisation fails. A quote broke out of the quoted-string; CR/LF left framing to the container. Quoting is `HeaderUtil.quote`; only the CTL strip is ours. **A wire divergence from Restlet** — see [D14](decisions.md) |
+| **`ServerException(Throwable)` chains its cause** | `org.forgerock.oauth2.core.exceptions` | It did `this(cause.getMessage())`, discarding the original at ~40 `throw new ServerException(e)` sites. Nothing renders the cause, so the wire shape is unchanged; without it there is no stack to log, which is what made the error path's logging unfixable from inside 3c-2 |
+| **openam-http stops HTML-escaping CREST `message`** | `AnnotatedMethod.crestBody`, used by `Endpoints` | `ResourceException.toJsonValue()` escapes for CREST's HTML renderers; this writer emits JSON, so it corrupted the value for every JSON client (`response_type &lt;foo&gt;`) and protected nobody who escapes at render time. Reverses `AnnotatedMethodTest.aThrownExceptionsMessageIsHtmlEscaped`, deliberately. **Removed `OAuth2ErrorFilter.unescapeHtml` entirely** — the reversal was only sound for bodies that had been through `toJsonValue`, which the filter cannot detect |
+| **The base-URL lookup gets a normalised realm** | `OAuth2ErrorResponseFactory` | `BaseURLProviderFactory` caches a provider under every realm DN asked for and never evicts, so the raw parameter — as `ExceptionHandler:136` passed it — let an unauthenticated `?realm=<random>` grow that map without bound. The page's own `realm` is still what the client sent |
+| **`error_uri` dropped from the shape** | `OAuth2Error` | Its only setter, `OAuth2RestletException.setErrorUri`, has **no caller**, so no response has ever carried one. Re-add when something produces one |
+
+The third pass found nothing new outside the four classes, but four of its findings changed decisions this
+document had already recorded, so they are restated here rather than left to a diff:
+
+| Change | Supersedes |
+|---|---|
+| **A targetless 3xx is a 500 on *both* branches** | The HTML branch used to render the page at the raw 3xx while the JSON branch reported 500 — the same degenerate error, two answers, and the branch that shipped the undefined shape was the browser-facing one. Both now go through `deliverableStatusOf`. `aStatus307WithNoTargetRendersTheErrorPageInsteadOfABrokenRedirect` asserted the old status and is renamed |
+| **`toJsonResponse` composes its `Location`, and only on a 3xx** | It emitted the bare target, so a JSON-rendered client redirect sent the user agent to the callback with neither `error` nor `state` — a failure indistinguishable from a success — and it emitted `Location` on non-redirect statuses too |
+| **A missing `error` code becomes `server_error`** | `asMap()` guarded `error_description` and `state` but wrote `error` unconditionally, and both factories take the code verbatim from a caller (`UmaException` included). A null reached the wire as `{"error":null}`, as a valueless query token, and — `page/error.ftl` wrapping all of `pageData` in `<#if error??>` — as a **blank page**, the same failure [D9](decisions.md) exists to prevent for `realm` |
+| **The `WWW-Authenticate` filter drops non-ASCII too** | It stripped C0/DEL only. A header value is octets and CHF applies no encoding, so `?realm=/тест` reached the container truncated to low bytes or was rejected outright, turning the handled 401 into a container 500 |
+
+Two smaller ones: the CREST→OAuth2 status mapping now gives 401, 403 and 503 their RFC-defined codes instead
+of collapsing all of 4xx to `invalid_request` (a client told `invalid_request` for a 401 retries its
+parameters forever rather than re-authenticating), and the two redirect builders became package-private so
+that every *public* entry point logs exactly once — they were reachable without a log line at all.
+
+Two findings about the tests are worth carrying: `everyConcreteSubclassHasAVerdict` now filters package
+prefixes **before** `ClassPath` loads anything (it was loading every `org.forgerock` class on the test
+classpath), and `OAuth2ErrorRouteCompositionIT`'s HTML row now drives the real
+`OAuth2ErrorResponseFactory` — it hand-wrote the page it existed to prove, which is the failure mode that
+class's own javadoc argues against.
+
+### Still open
+
+- **§E, the e2e contract lock.** Deferred, not cancelled, and it must be written **against live Restlet** —
+  its value is entirely that the oracle expires at 5d ([R-3c.8](#risks-extends-planmds-register), plan.md risk #20).
+- **[D3](#d3--uncaught-bug-path-400-vs-500-diverge--keep-500) and [D6](#d6--isredirectable-unified-to-the-safe-union-fix) land silently at the 5d flip** (R-3c.11), as designed. Both are in
+  [decisions.md](decisions.md) and belong in 5d's smoke matrix.
+- **Finding 4's two `IllegalArgumentException` branches** remain 5b's to port deliberately — including
+  whether the second one, which redirects to an unvalidated URI and is the path `?display=bogus` takes,
+  should survive.

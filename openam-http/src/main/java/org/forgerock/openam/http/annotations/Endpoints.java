@@ -67,7 +67,7 @@ public final class Endpoints {
                 AnnotatedMethod method = methods.get(getMethod(request));
                 if (method == null) {
                     Response response = new Response(Status.METHOD_NOT_ALLOWED);
-                    response.setEntity(new NotSupportedException().toJsonValue().getObject());
+                    response.setEntity(AnnotatedMethod.crestBody(new NotSupportedException()));
                     return newResultPromise(response);
                 }
 
@@ -76,7 +76,7 @@ public final class Endpoints {
                 } catch (Throwable t) {
                     DEBUG.error("Endpoints :: Caught exception during execution of handle() : ", t);
                     Response response = new Response(Status.INTERNAL_SERVER_ERROR);
-                    response.setEntity(new InternalServerErrorException(t).toJsonValue().getObject());
+                    response.setEntity(AnnotatedMethod.crestBody(new InternalServerErrorException(t)));
                     return newResultPromise(response);
                 }
             }

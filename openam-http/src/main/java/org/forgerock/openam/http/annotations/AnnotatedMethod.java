@@ -92,8 +92,8 @@ public class AnnotatedMethod {
 
     Promise<Response, NeverThrowsException> invoke(Context context, Request request) {
         if (method == null) {
-            Object entity = ResourceException.getException(Status.METHOD_NOT_ALLOWED.getCode(),
-                    Status.METHOD_NOT_ALLOWED.getReasonPhrase()).toJsonValue().getObject();
+            Object entity = crestBody(ResourceException.getException(Status.METHOD_NOT_ALLOWED.getCode(),
+                    Status.METHOD_NOT_ALLOWED.getReasonPhrase()));
             return newResultPromise(createErrorResponse(Status.METHOD_NOT_ALLOWED, entity));
         }
         try {
@@ -153,10 +153,33 @@ public class AnnotatedMethod {
     private Promise<Response, NeverThrowsException> defaultErrorResponse(Throwable t) {
         DEBUG.warning("Could not invoke method: ", t);
         Response response = new Response(Status.INTERNAL_SERVER_ERROR);
-        response.setEntity(new InternalServerErrorException(t).toJsonValue().getObject());
+        response.setEntity(crestBody(new InternalServerErrorException(t)));
         // setCause takes an Exception, so an Error can only be kept by wrapping it.
         response.setCause(t instanceof Exception ? (Exception) t : new IllegalStateException(t));
         return newResultPromise(response);
+    }
+
+    /**
+     * The CREST error body this framework puts on the wire, with {@code message} left as the
+     * exception wrote it.
+     * <p>
+     * {@code ResourceException.toJsonValue()} runs {@code message} through Guava's HTML escaper,
+     * because a CREST body is also rendered into HTML pages elsewhere. This writer emits
+     * <em>JSON</em> -- {@code setEntity(Map)} routes to {@code setJson} -- so escaping here is the
+     * wrong layer: it corrupts the value for every JSON client (a message naming
+     * {@code response_type <foo>} arrives as {@code &lt;foo&gt;}) while protecting nobody, since a
+     * consumer that renders it into HTML must escape at render time against its own context anyway.
+     * Each of this module's consumers would otherwise have to reverse the transform for itself.
+     *
+     * @param e the exception to render.
+     * @return the body, ready for {@code Response.setEntity}.
+     */
+    static Object crestBody(ResourceException e) {
+        JsonValue json = e.toJsonValue();
+        if (e.getMessage() != null) {
+            json.put("message", e.getMessage());
+        }
+        return json.getObject();
     }
 
     /**

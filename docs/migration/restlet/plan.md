@@ -34,7 +34,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | 3b | Transport-neutral collaborators (verifiers, `ClientCredentialsReader`, `OAuth2Utils`) | done ([phase-3b-collaborators.md](phase-3b-collaborators.md)) |
 | 3c-1 | FreeMarker template renderer (`org.openidentityplatform.openam.oauth2.http`) | done ([phase-3c-1-renderer.md](phase-3c-1-renderer.md)) |
 | **F1–F4** | **openam-http framework fixes** — handler-thrown exceptions get a body (F1); `@ExceptionHandler` made real (F2); `Promise` returns implemented (F3); `@Produces` honoured so `String` returns stop being ISO-8859-1 (F4). **Prerequisite to 3c-2** | **done** 2026-07-22 — 64 new tests in a package that had **none** ([as-built](openam-http-framework.md#as-built)). Also unblocks **5b**: per-endpoint catch blocks collapse into one `@ExceptionHandler` per handler class |
-| 3c-2 | Error layer — `OAuth2Error`, `RedirectUris`, error factory + filter | planned ([phase-3c-2-error-layer.md](phase-3c-2-error-layer.md)) |
+| 3c-2 | Error layer — `OAuth2Error`, `RedirectUris`, error factory + filter | done 2026-07-22 — +123 unit tests and the module's first IT ([as-built](phase-3c-2-error-layer.md#as-built)). Three review passes also chained `ServerException`'s cause and stopped openam-http HTML-escaping CREST messages ([review outcomes](phase-3c-2-error-layer.md#review-outcomes)). e2e contract lock (§E) **deferred**, still to be recorded against live Restlet before 5d |
 | 3d | CHF audit filters + `HttpBodyAuditor` | pending |
 | 4 | UMA `/uma` → CHF | pending |
 | 5a–5d | OAuth2/OIDC `/oauth2` → CHF (flip in 5d) | pending |
@@ -348,7 +348,7 @@ encodes ISO-8859-1 (§6). `OAuth2Filter`'s "write an error entity then CONTINUE 
 |---|---|---|---|
 | 1 | Form-POST body re-reading | Restlet re-sets the entity after `new Form(entity)`; CHF handlers + audit + auth all read the body | `ChfOAuth2RequestTest` re-read tests; audit + `/access_token` in one integration request |
 | 2 | Redirect codes & semantics | 301 auth-required, 302 error/success/endSession; fragment vs query per `UrlLocation`; no auto-redirect on invalid redirect_uri | Exact-status unit asserts; record current responses with curl before flip, diff after |
-| 3 | Error-param encoding | Restlet `Reference`/`Form` vs CHF `Form.toQueryString` (spaces, `+`, unicode in `state`/`error_description`) | Parity unit test with special chars |
+| 3 | ~~Error-param encoding~~ **closed 2026-07-22** | Restlet `Reference`/`Form` vs CHF `Form.toQueryString`. Feared to differ; **they do not** — both emit RFC 3986 percent-encoded UTF-8, space as `%20` (not `+`), `&`/`=`/`+` as `%26`/`%3D`/`%2B`. Observed, not argued | `RestletErrorParityTest` A/B's space, `+`, `&`, `=` and Cyrillic in `state` + `error_description`, in query and fragment |
 | 4 | `WWW-Authenticate` on 401 | Basic challenge at token endpoint; Bearer challenge on protected endpoints | Header asserts in handler tests; pre/post curl diff |
 | 5 | Basic-auth charset | Restlet decodes `Authorization: Basic` as ISO-8859-1, not UTF-8 | Explicit charset in `getBasicAuthCredentials()` + test with high-bit char in secret |
 | 6 | Content types | Restlet conneg defaulted JSON (OAuth2/UMA), `application/xacml+xml; version=3.0`, HTML | Explicit `Content-Type` everywhere; asserts; curl `-H "Accept: */*"` diff |

@@ -68,9 +68,11 @@ behaviour 3c reproduces. Full rationale: [phase-3c-1-renderer.md](phase-3c-1-ren
   no predicate. `AuthorizeResource`'s GET (`:120-149`) and POST (`:187-206`) lists have **drifted**:
   `OAuth2ProviderNotFoundException` does **not** redirect on GET but **does** on POST, via the generic
   catch that passes the **unvalidated** `request.getParameter("redirect_uri")`. With no provider the
-  redirect URI was never validated — an **open redirect**. `OAuth2Error.isRedirectable` encodes the
-  union of both sets as data, and the test enumerates every `OAuth2Exception` subclass so adding one
-  without a verdict fails the build.
+  redirect URI was never validated — an **open redirect**. `OAuth2Error.mayRedirect(OAuth2Exception)`
+  encodes the union of both sets as data, and the test enumerates every `OAuth2Exception` subclass so
+  adding one without a verdict fails the build. (Named `isRedirectable` in earlier drafts; split into
+  `mayRedirect` — the policy — and `hasRedirectUri()` — the state — because one name for both invites
+  writing the state check where the policy check belongs.)
   ⚠ **Changes POST behaviour** at the flip: `POST /oauth2/authorize` against a realm with no OAuth2
   provider renders the error page instead of redirecting. Include in 5d's smoke matrix.
 - **D1 — the OAuth2 error map gets a canonical field order.** `OAuth2RestletException.asMap()` uses a
@@ -80,6 +82,38 @@ behaviour 3c reproduces. Full rationale: [phase-3c-1-renderer.md](phase-3c-1-ren
 - **D11 — the `Location` header is set verbatim.** Restlet's `Redirector` runs the redirect URI through
   a Restlet `Template`, so `{...}` sequences are variable-substituted — on a URI that the generic catch
   supplies **unvalidated**. Reproducing that would reproduce a URI-injection vector.
+  ⚠ **Corrected 2026-07-22 by observation** (`RestletErrorParityTest`): what the `Template` actually does
+  to an *unbound* variable is **delete** it, so today `redirect_uri=https://app/cb/{rid}` redirects to
+  `https://app/cb/` — a silently mangled target rather than an injected one. The decision is unchanged;
+  the harm it avoids is more mundane than the phrase "injection vector" suggests. It also forces the
+  implementation: `RedirectUris` must not parse the URI, because `java.net.URI` (and therefore CHF's
+  `MutableUri`) rejects braces outright where Restlet's lenient `Reference` accepted them.
+- **D13 — `ResourceOwnerAuthenticationRequired` keeps its own redirect URI.** RoAR is the sole producer
+  of the 307 → **301** branch and the only `OAuth2Exception` whose redirect target comes from the
+  *exception* (the login page) rather than from the request. Under D6's data-driven policy it would
+  default to redirectable, and a generic mapper would then overwrite the login URI with the client's
+  `redirect_uri` — emitting **301 → an unvalidated client URI** on unauthenticated `GET /oauth2/authorize`,
+  while still *looking* correct (a 301 with a `Location`). Two deliberately redundant mechanisms:
+  `OAuth2Error.of` populates the URI from the exception and pins it, and RoAR is in `NEVER_REDIRECT` so
+  `mayRedirect` is false. Both are asserted, including the adversarial
+  `of(roar).redirectingTo("https://evil/", …)` case. This is **reproduction**, not a change.
+- **D14 — the `WWW-Authenticate` challenge rides on `OAuth2Error`.** Today the header is set by the
+  *resources* (`TokenEndpointResource`, `RefreshTokenResource`, `TokenRevocationResource`) on the Restlet
+  `Response` **before** they throw; `ExceptionHandler` never touches it. In CHF there is no `getResponse()`
+  to decorate before throwing — the factory builds the whole `Response` — so the challenge is carried on
+  the error and emitted by the factory on **every** branch. Spelling confirmed by observation rather than
+  belief (`RestletErrorParityTest`, via `AuthenticatorUtils.formatRequest`): `Basic realm="<realm>"`.
+  Phase 5a's ported handlers must route the exception through `OAuth2Error.of` rather than re-deriving
+  the header.
+  ⚠ **The realm is escaped, and Restlet did not escape it — a wire divergence.** `HttpBasicHelper`
+  interpolated the realm raw. It is **client-controlled**: `ClientAuthenticationFailureFactory` builds the
+  challenge from `getRealm(request)`, and `OpenAMClientAuthenticationFailureFactory` reads the `realm`
+  request parameter and, when `RealmNormaliser.normalise` throws, deliberately falls back to the
+  **un-normalised** value. So `?realm=x"` broke out of the quoted-string, and CR/LF left header framing to
+  whatever the container happened to reject — CHF's `GenericHeader` validates neither. The port applies
+  RFC 7235 quoting (`HeaderUtil.quote`) after dropping control characters. Deliberate, and the one row of
+  5d's `WWW-Authenticate` smoke check where pre- and post-flip bytes may legitimately differ: only for a
+  realm containing `"`, `\` or a control character, which no valid realm does.
 
 ### Considered and explicitly *not* changed (so it is not re-litigated)
 

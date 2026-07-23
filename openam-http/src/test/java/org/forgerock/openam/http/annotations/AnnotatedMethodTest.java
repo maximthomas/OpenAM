@@ -419,11 +419,18 @@ public class AnnotatedMethodTest {
         }
     }
 
-    /** The message is attacker-influenced text in a response body, so it ships HTML-escaped. */
+    /**
+     * The message ships verbatim, HTML metacharacters included.
+     * <p>
+     * {@code ResourceException.toJsonValue()} would escape it -- a CREST body is also rendered into
+     * HTML pages elsewhere -- but this framework writes JSON, so escaping here only corrupts the
+     * value for JSON clients. Escaping belongs to whoever renders the message into markup, against
+     * that renderer's own context. Reversed deliberately; see {@code AnnotatedMethod.crestBody}.
+     */
     @Test
-    public void aThrownExceptionsMessageIsHtmlEscaped() throws IOException {
+    public void aThrownExceptionsMessageKeepsItsMarkupCharacters() throws IOException {
         assertThat(jsonBody(get(new MarkupThrowingHandler())))
-                .containsEntry("message", "&lt;b&gt;bad&lt;/b&gt; &amp; worse");
+                .containsEntry("message", "<b>bad</b> & worse");
     }
 
     /** Latin-1-representable and not, so both mangling modes show up. */

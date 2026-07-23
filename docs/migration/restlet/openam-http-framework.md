@@ -455,8 +455,69 @@ where `message` is `t.getMessage()` when non-null, else the reason phrase (findi
 this "unchanged exposure, not new". **That is only true of the outer path** — `Endpoints:76` has always emitted
 it for throwables escaping `AnnotatedMethod.invoke`, but the `InvocationTargetException` path (a handler that
 throws) emits *nothing* today, so F1 **is** new disclosure there. Confirmed and accepted 2026-07-22; tracked as
-[R-F.1b](#risks). `setIncludeCause` stays **false**, so no stack trace reaches the client, and the message is
-HTML-escaped on the way out (finding 9).
+[R-F.1b](#risks). `setIncludeCause` stays **false**, so no stack trace reaches the client. The message was
+also HTML-escaped on the way out (finding 9); that is no longer true — see [D-F5](#d-f5--the-crest-message-is-not-html-escaped).
+
+<a id="d-f5--the-crest-message-is-not-html-escaped"></a>
+### D-F5 — The CREST `message` ships verbatim, not HTML-escaped
+
+*Added 2026-07-22, reversing part of [D-F1](#d-f1--f1s-body-shape-crest-matching-endpointss-own-catch).*
+
+`ResourceException.toJsonValue()` runs `message` through Guava's `HtmlEscapers`, because a CREST body is
+also rendered into HTML pages elsewhere in CREST. **This module writes JSON** — `setEntity(Map)` routes to
+`Entity.setJson` — so escaping here is a transform applied at the wrong layer:
+
+- it **corrupts the value for every JSON client**. A message naming `response_type <foo>` arrives as
+  `response_type &lt;foo&gt;`, and 3c-2's `OAuth2ErrorFilter` had grown a five-entity reversal to undo it —
+  a reversal that is only sound for bodies that really came from `toJsonValue`, which a filter cannot
+  detect. Every future consumer would have had to re-derive it;
+- it **protects nobody who is doing the right thing**. A consumer rendering the message into markup must
+  escape against *its own* context at render time — `page/error.ftl` already does, with `?html` and
+  `?js_string` — and pre-escaping cannot help a consumer that does not.
+
+Landed as `AnnotatedMethod.crestBody`, used by both `AnnotatedMethod` and `Endpoints`. It reverses
+`AnnotatedMethodTest.aThrownExceptionsMessageIsHtmlEscaped`, deliberately and with the rationale on the
+test. **`OAuth2ErrorFilter.unescapeHtml` was deleted** in the same change.
+
+#### Scope: openam-http only
+
+*Narrowed 2026-07-22, on review.* This decision governs **annotation endpoints** — the bodies `AnnotatedMethod`
+and `Endpoints` write. It is **not** a product-wide invariant, and the first draft of this section read as
+though it were.
+
+Five producers in **openam-rest** still write `toJsonValue().getObject()` straight into a CHF response, and
+still escape:
+
+| Producer | Body |
+|---|---|
+| `RealmContextFilter:89,91` | 400 for an unresolvable realm, 500 for a failed lookup |
+| `HttpPrivilegeAuthzModule:89` | 403 |
+| `RealmRoutingFactory:129,152` | realm-routing failures |
+| `RestStatusService:50-58` | the `/json` status service |
+| `CORSService:167` | CORS rejections |
+
+They are **deliberately left alone**: `/json` is the contract XUI and every existing REST client already
+parse, and flipping their encoding is a change to that contract with its own blast radius — an audit of
+where XUI renders a `message` — not a tidy-up to ride along with a Restlet phase. So the product has two
+encodings, and which one a client sees depends on which module produced the error.
+
+This costs 3c-2 nothing today: none of the five is mounted on the CHF `/oauth2` application, so
+`OAuth2ErrorFilter` never sees an escaped `message` and deleting `unescapeHtml` stays correct. **The check
+that keeps it correct** is that the filter's scope stays `/oauth2`; if a future phase composes any
+openam-rest producer under it, that producer must adopt `crestBody` in the same change, because the filter
+cannot tell an escaped body from one that merely contains `&lt;`.
+
+Follow-up: converging openam-rest onto `crestBody` — including `XMLResourceExceptionHandler:90`, where the
+escaping is doubled today because the DOM serialiser escapes again — is its own ticket, not part of the
+Restlet migration.
+
+⚠ **This withdraws one of [R-F.1b](#risks)'s stated mitigations.** What remains: `includeCause` is false, and
+the as-built enumerates what the five mounted handlers can throw. A consumer that injects a CREST `message`
+into the DOM without escaping is now exposed where it previously was not — that is a real transfer of
+responsibility to the renderer, made knowingly, on the argument that the alternative is a framework that
+lies about its output to protect renderers that are broken anyway. Note that the transfer applies to
+annotation endpoints only — see [Scope](#scope-openam-http-only) — so `/json` consumers keep the protection
+they have today.
 
 <a id="d-f2--the-annotation-is-fixed-not-replaced"></a>
 ### D-F2 — Fix the annotation rather than invent a new one
@@ -624,7 +685,7 @@ turned out empty (finding 10), so nothing depends on the ordering.
 | # | Risk | Detail | Mitigation |
 |---|---|---|---|
 | **R-F.1** | **F1 regresses a consumer that depends on the empty body** | `/json/authenticate` and `/xacml` see a body where there was none. A client asserting `content-length: 0` on a 500 would break — but so would any client relying on an unhandled server bug | Characterization tests first (finding 1); consumer suites in Verification step 2; the path is by definition an unhandled exception |
-| **R-F.1b** | **F1 is new disclosure on the `InvocationTargetException` path** | [D-F1](#d-f1--f1s-body-shape-crest-matching-endpointss-own-catch)'s "unchanged exposure" holds for the *outer* path (`Endpoints:76`) but **not** for a throwing handler, which today emits nothing. After F1 the throwable's message reaches the client — on `/json/authenticate`, a **pre-authentication** endpoint. Confirmed and accepted 2026-07-22 | `includeCause` stays false so no stack trace ships (finding 9); the message is HTML-escaped (finding 9); the as-built enumerates what the five mounted handlers (finding 10) can actually throw |
+| **R-F.1b** | **F1 is new disclosure on the `InvocationTargetException` path** | [D-F1](#d-f1--f1s-body-shape-crest-matching-endpointss-own-catch)'s "unchanged exposure" holds for the *outer* path (`Endpoints:76`) but **not** for a throwing handler, which today emits nothing. After F1 the throwable's message reaches the client — on `/json/authenticate`, a **pre-authentication** endpoint. Confirmed and accepted 2026-07-22 | `includeCause` stays false so no stack trace ships (finding 9); the as-built enumerates what the five mounted handlers (finding 10) can actually throw. ⚠ **The "message is HTML-escaped" mitigation was withdrawn 2026-07-22** — see [D-F5](#d-f5--the-crest-message-is-not-html-escaped) |
 | **R-F.2** | **`@ExceptionHandler` dispatch becomes a second routing system** | Type-based dispatch invites scope creep — ordering, inheritance, per-verb overrides, wildcards | Deliberately minimal: one exception parameter, most-specific-assignable, no ordering annotations. Anything more is a later decision with its own plan |
 | **R-F.3** | **The exception handler faults on the error path** | An `@ExceptionHandler` that throws could recurse or mask the original failure | Hard recursion guard (work item F2); test asserts exactly one dispatch and that **both** throwables are logged |
 | **R-F.4** | **The `RUNTIME` retention is silently dropped again** | The feature re-inerts with no test failure — exactly how it got into this state | Explicit meta-annotation assertion (Tests §B), not a behavioural test |
@@ -671,6 +732,10 @@ next began — and that sequence is why the deltas below could be identified at 
 is *recorded*. Two consequences worth knowing when reading this section: the per-fix "the test diff shows
 the behaviour change" property lived in the intermediate commits and is not recoverable from history, and
 no commit hashes are cited here because none survived the squash.
+
+**Amended 2026-07-22 by [3c-2](phase-3c-2-error-layer.md#review-outcomes)'s review:** `AnnotatedMethod.crestBody`
+now builds the CREST body with the message left as the exception wrote it, and
+`aThrownExceptionsMessageIsHtmlEscaped` was reversed to match ([D-F5](#d-f5--the-crest-message-is-not-html-escaped)). Module total stays 73.
 
 | Fix | Contents | Deviation from the plan |
 |---|---|---|

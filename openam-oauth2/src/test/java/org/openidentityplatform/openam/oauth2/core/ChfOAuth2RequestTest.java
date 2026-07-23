@@ -82,6 +82,17 @@ public class ChfOAuth2RequestTest {
     }
 
     @Test
+    public void realmObjectIsExposedAsAnAttribute() throws Exception {
+        ChfOAuth2Request request = chfRequest(get("/oauth2/authorize"), endpointContext("authorize", emptyMap()));
+
+        // The *UrisFactory.get(OAuth2Request) overloads read "realmObject" directly with no fallback,
+        // so it must resolve to the Realm object (not null, not the path string).
+        assertThat(request.<Object>getParameter("realmObject"))
+                .isInstanceOf(Realm.class)
+                .isEqualTo(Realm.root());
+    }
+
+    @Test
     public void queryParameterTakesPrecedenceOverFormBody() throws Exception {
         Request httpRequest = post("/oauth2/access_token?code=fromQuery", FORM, "code=fromBody");
 

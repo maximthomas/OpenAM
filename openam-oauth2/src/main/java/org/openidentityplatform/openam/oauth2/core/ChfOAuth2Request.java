@@ -37,6 +37,7 @@ import org.forgerock.http.protocol.Request;
 import org.forgerock.http.routing.UriRouterContext;
 import org.forgerock.json.JsonValue;
 import org.forgerock.oauth2.core.OAuth2Request;
+import org.forgerock.openam.core.realms.Realm;
 import org.forgerock.openam.oauth2.OAuth2Constants;
 import org.forgerock.openam.rest.RealmContext;
 import org.forgerock.services.context.AttributesContext;
@@ -321,7 +322,10 @@ public class ChfOAuth2Request extends OAuth2Request {
                 attributes.putAll(routerContext.getUriTemplateVariables());
             }
             if (context.containsContext(RealmContext.class)) {
-                attributes.put(OAuth2Constants.Custom.REALM, RealmContext.getRealm(context).asPath());
+                Realm realm = RealmContext.getRealm(context);
+                attributes.put(OAuth2Constants.Custom.REALM, realm.asPath());
+                // The *UrisFactory.get(OAuth2Request) overloads read the Realm object directly, no fallback.
+                attributes.put(OAuth2Constants.Custom.REALM_OBJECT, realm);
             }
         }
         return attributes;

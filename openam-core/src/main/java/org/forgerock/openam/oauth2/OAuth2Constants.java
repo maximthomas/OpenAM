@@ -782,6 +782,13 @@ public class OAuth2Constants {
         public static final String DISPLAY = "display";
 
         public static final String REALM = "realm";
+        /**
+         * The realm as a {@link org.forgerock.openam.core.realms.Realm} object; {@code ChfOAuth2Request}
+         * seeds it alongside {@link #REALM}. Its value MUST stay equal to {@code RestletRealmRouter.REALM_OBJECT}
+         * (openam-restlet), which the {@code *UrisFactory.get(OAuth2Request)} readers still reference; Phase 8
+         * of the Restlet removal migrates those readers onto this constant and deletes the duplicate.
+         */
+        public static final String REALM_OBJECT = "realmObject";
         public static final String CLAIMS = "claims";
         public static final String MODULE = "module";
         public static final String SERVICE = "service";

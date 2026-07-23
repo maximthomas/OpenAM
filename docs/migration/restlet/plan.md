@@ -360,6 +360,11 @@ encodes ISO-8859-1 (§6). `OAuth2Filter`'s "write an error entity then CONTINUE 
 4. openam-rest: delete `AbstractRestletAccessAuditFilter`, `RestletBodyAuditor`,
    Restlet branch + inner `RestletRealmRouter` of `RealmRoutingFactory`; drop restlet
    deps (and the "TODO until Restlet endpoints are moved to CHF" comment).
+   - Repoint the `REALM_OBJECT` readers/writers off the deleted `RestletRealmRouter.REALM_OBJECT`
+     onto the surviving `OAuth2Constants.Custom.REALM_OBJECT` (seeded by `ChfOAuth2Request` since
+     Phase 4a; the two constants share the literal `"realmObject"` and Phase 4a left a note on the
+     survivor). Sites: `OAuth2UrisFactory:68`, `UmaUrisFactory:83`, `RealmRoutingFactory:22/248-263`,
+     `IdTokenInfo:193`. After this, delete `RestletRealmRouter` with the module.
 5. Sweep remaining poms (openam-oauth2, openam-uma, openam-server-only war excludes).
 6. Gates: `grep -rn "org.restlet" --include="*.java" .` → 0 outside docs;
    `grep -rn restlet --include=pom.xml .` → 0; `mvn clean install`;

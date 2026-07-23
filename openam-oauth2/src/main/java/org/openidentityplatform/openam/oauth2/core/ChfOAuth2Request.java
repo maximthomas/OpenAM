@@ -162,7 +162,7 @@ public class ChfOAuth2Request extends OAuth2Request {
      * <p>The path is the concatenation of the URIs matched by the routers <em>below</em> the realm
      * router, which is the CHF equivalent of the {@literal realmUrl} request attribute the Restlet
      * realm router publishes. At the realm base itself (no endpoint segment below the realm router)
-     * the path is the empty string, matching {@link RestletOAuth2Request#getEndpointPath()} rather
+     * the path is the empty string, matching {@link org.forgerock.oauth2.core.RestletOAuth2Request#getEndpointPath()} rather
      * than a bare {@code "/"} — so {@link #getEndpointType()} resolves to {@code OTHER}, not
      * {@code null}, on both transports.
      */

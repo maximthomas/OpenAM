@@ -25,7 +25,8 @@ import org.forgerock.http.protocol.Status;
 import org.forgerock.json.resource.BadRequestException;
 import org.forgerock.json.resource.ForbiddenException;
 import org.forgerock.json.resource.InternalServerErrorException;
-import org.forgerock.json.resource.NotSupportedException;
+import org.forgerock.openam.http.annotations.Endpoints;
+import org.forgerock.openam.http.annotations.Get;
 import org.forgerock.services.context.Context;
 import org.forgerock.services.context.RootContext;
 import org.forgerock.util.promise.Promises;
@@ -58,16 +59,26 @@ public class XacmlXmlErrorFilterTest {
     }
 
     @Test
-    public void shouldRewriteMethodNotAllowedFallbackToXml() throws Exception {
-        // Endpoints.from's own 405 fallback sets the Response status to METHOD_NOT_ALLOWED but embeds
-        // a bare NotSupportedException (code 501) as the entity; the filter only rewrites the body, so
-        // the outer HTTP status (405) and the embedded XML <code> (501) legitimately differ.
-        Response response = respondWith(new Response(Status.METHOD_NOT_ALLOWED)
-                .setEntity(new NotSupportedException().toJsonValue().getObject()));
+    public void shouldRenderRealUnmappedVerbAs405Xml() throws Exception {
+        // Dispatch a genuinely unmapped verb through the real Endpoints handler, as the XACML route does.
+        // Endpoints now answers 405 with a CREST body whose code is 405 (not the old NotSupportedException/501),
+        // and the filter rewrites that body to XML — so the HTTP status and the embedded <code> agree.
+        Handler endpoint = Endpoints.from(new GetOnlyHandler());
+
+        Response response = filter.filter(context, new Request().setMethod("PATCH"), endpoint)
+                .getOrThrowUninterruptibly();
 
         assertThat(response.getStatus().getCode()).isEqualTo(405);
         assertThat(response.getHeaders().getFirst("Content-Type")).isEqualTo("application/xml");
-        assertThat(response.getEntity().getString()).contains("<code>501</code>");
+        assertThat(response.getEntity().getString()).contains("<code>405</code>");
+    }
+
+    /** A handler with only a @Get, so any other verb takes Endpoints' unmapped/no-method 405 path. */
+    public static class GetOnlyHandler {
+        @Get
+        public Response onGet() {
+            return new Response(Status.OK).setEntity("GET");
+        }
     }
 
     @Test

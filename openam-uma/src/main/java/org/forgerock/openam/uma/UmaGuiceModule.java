@@ -17,7 +17,6 @@
 
 package org.forgerock.openam.uma;
 
-import static org.forgerock.openam.rest.service.RestletUtils.wrap;
 import static org.forgerock.openam.uma.UmaConstants.UMA_BACKEND_POLICY_RESOURCE_HANDLER;
 
 import org.forgerock.openam.auditors.SMSAuditFilter;
@@ -27,7 +26,6 @@ import jakarta.inject.Singleton;
 import javax.security.auth.Subject;
 
 import com.google.inject.AbstractModule;
-import com.google.inject.Key;
 import com.google.inject.Provides;
 import com.google.inject.Scopes;
 import com.google.inject.assistedinject.FactoryModuleBuilder;
@@ -42,15 +40,12 @@ import org.forgerock.guice.core.InjectorHolder;
 import org.forgerock.http.Client;
 import org.forgerock.json.resource.RequestHandler;
 import org.forgerock.json.resource.Resources;
-import org.forgerock.oauth2.core.OAuth2RequestFactory;
 import org.forgerock.oauth2.core.TokenIntrospectionHandler;
-import org.forgerock.oauth2.core.TokenStore;
 import org.forgerock.oauth2.restlet.resources.ResourceSetRegistrationHook;
 import org.forgerock.openam.core.rest.UiRolePredicate;
 import org.forgerock.openam.cts.adapters.JavaBeanAdapter;
 import org.forgerock.openam.cts.api.tokens.TokenIdGenerator;
 import org.forgerock.openam.entitlement.rest.PolicyResource;
-import org.forgerock.openam.oauth2.AccessTokenProtectionFilter;
 import org.forgerock.openam.shared.guice.CloseableHttpClientProvider;
 import org.forgerock.openam.sm.datalayer.impl.uma.UmaAuditEntry;
 import org.forgerock.openam.sm.datalayer.impl.uma.UmaPendingRequest;
@@ -59,18 +54,13 @@ import org.forgerock.openam.uma.rest.UmaIdRepoCreationListener;
 import org.forgerock.openam.uma.rest.UmaPolicyEvaluatorFactory;
 import org.forgerock.openam.uma.rest.UmaPolicyServiceImpl;
 import org.forgerock.openam.uma.rest.UmaResourceSetRegistrationHook;
-import org.forgerock.openam.uma.rest.UmaRouterProvider;
 import org.forgerock.openam.utils.Config;
-import org.restlet.Restlet;
-import org.restlet.routing.Router;
 
 @GuiceModule
 public class UmaGuiceModule extends AbstractModule {
 
     @Override
     protected void configure() {
-        bind(Key.get(Router.class, Names.named("UMARouter"))).toProvider(UmaRouterProvider.class)
-                .in(Singleton.class);
         bind(UmaPolicyService.class).to(UmaPolicyServiceImpl.class);
 
         Multibinder.newSetBinder(binder(), IdRepoCreationListener.class)
@@ -159,24 +149,6 @@ public class UmaGuiceModule extends AbstractModule {
     @Inject
     public JavaBeanAdapter<UmaPendingRequest> getPendingRequestAdapter(TokenIdGenerator idFactory) {
         return new JavaBeanAdapter<>(UmaPendingRequest.class, idFactory);
-    }
-
-    @Provides
-    @Inject
-    @Singleton
-    @Named(UmaConstants.PERMISSION_REQUEST_ENDPOINT)
-    public Restlet createPermissionRequestEndpoint(TokenStore store, OAuth2RequestFactory requestFactory) {
-        return new AccessTokenProtectionFilter(UmaConstants.PAT_SCOPE, store, requestFactory,
-                        wrap(PermissionRequestEndpoint.class));
-    }
-
-    @Provides
-    @Inject
-    @Singleton
-    @Named(UmaConstants.AUTHORIZATION_REQUEST_ENDPOINT)
-    public Restlet createAuthorizationRequestEndpoint(TokenStore store, OAuth2RequestFactory requestFactory) {
-        return new AccessTokenProtectionFilter(UmaConstants.AAT_SCOPE, store, requestFactory,
-                        wrap(AuthorizationRequestEndpoint.class));
     }
 
 }

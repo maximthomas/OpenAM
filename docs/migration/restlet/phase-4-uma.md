@@ -630,3 +630,72 @@ finding 6) → gate → `mvn -o -pl openam-oauth2 install -DskipTests`.
 `UmaRouterProvider` / `UmaExceptionHandler` / `UMAServiceEndpointApplication` → `UmaRouterIT` → `mvn -o -pl
 openam-uma test` + `verify` → whole build `-am` → Cargo boot → (optional) `e2e/uma` well-known smoke → mark
 Phase 4 `done` in [plan.md](plan.md) + record the deferred full-flow e2e.
+
+<a id="as-built"></a>
+## As-built (4b, 2026-07-23)
+
+Landed exactly on the execution order above. Module green: `mvn -o -pl openam-uma verify` = **194 unit** +
+**`UmaRouterIT` 11 IT**; the whole `-am` build assembles the WAR; the Restlet/`getCurrent()` import gate over the
+three re-based endpoints + `UmaAuditLogger` + `UmaHttpRouteProvider` = **0**. New: `UmaHttpRouteProvider` +
+`META-INF/services/org.forgerock.openam.http.HttpRouteProvider` (openam-uma); `web.xml` `/uma/*` moved from
+`ForgeRockRest` to the `OpenAM` CHF servlet, beside `/xacml/*`. Deleted: `UmaRouterProvider`, `UmaExceptionHandler`
+(+ test), `UMAServiceEndpointApplication`; `RestEndpointServlet` lost its `/uma` branch (now oauth2-only until
+Phase 5), test updated.
+
+Plan-gaps resolved in-flight (all minor, each flagged before applying):
+
+- **`UmaException.getDetail()` widened package-private → `public`** — `UmaErrorResponseFactory` (new package)
+  flattens `detail` into the error body; [D3](#d3) did not anticipate the cross-package read.
+- **`UmaConstants.PAT_SCOPE`/`AAT_SCOPE` widened → `public`** — `UmaHttpRouteProvider`
+  (`org.openidentityplatform.openam.uma`, per the new-package convention) wires the per-endpoint scopes; one source
+  of truth beats duplicating the literals. The two now-orphaned Restlet binding-name constants
+  `PERMISSION_REQUEST_ENDPOINT`/`AUTHORIZATION_REQUEST_ENDPOINT` were **deleted** (only users were the removed
+  `@Provides` + `UmaRouterProvider`).
+- **`UmaAuditLogger` re-base dropped 2 unused ctor params** (`OAuth2RequestFactory`, `TokenStore`) and a dead
+  private `getClientId(Request)` — no caller anywhere, `@Inject`-only construction.
+- **`UmaRouterIT` lives in `org.forgerock.openam.uma`**, not `…openidentityplatform.openam.uma`, so it can stub the
+  **package-private** `UmaTokenStore.createPermissionTicket`/`readPermissionTicket`; the provider is `public` so it
+  is still importable. Same reason `XacmlRouterIT` sits in its handler's package.
+- **IT case 11 triggers the realm-layer CREST via an invalid FQDN** — `RealmContextFilter` catches its
+  `BadRequestException` and renders **400 CREST** (`RealmContextFilter.java:87-90`), the exact native-CREST path
+  [D4](#d4) rests on — rather than the plan's `realms/bogus`. Reason: the modern `realms/{realmId}` branch cannot be
+  faithfully driven to its error state in-process. In production an unresolvable realm makes `RealmRoutingFactory`'s
+  `Realm.of("bogus")` → `RealmLookup.lookup` **throw** `NoRealmFoundException`, caught at `RealmRoutingFactory.java:149`
+  → clean **404 CREST**; no null-realm `RealmContext` is ever built. Under the test's Mockito `RealmLookup`, an
+  unstubbed `lookup("bogus")` instead returns **null**, producing a null-realm `RealmContext` that NPEs the shared
+  `OAuth2HttpAccessAuditFilter.getRealm` (`:116`) → a **test-only** 500. That NPE is a mock artifact, **not** a
+  production defect: every production `RealmContext`-building site (`HostnameFilter:125`, `ChfRealmRouter:148`,
+  `RealmContextFilter:265/272`) resolves a real realm or throws (→ 400/404), so `getRealm()` is never handed a null
+  realm. The FQDN path pins the same D4 claim without depending on that mock edge. *(This corrects an earlier draft of
+  this note that called the 500 a Phase-5 shared-infra follow-up; a code-review re-trace showed it is unreachable in
+  production — see [code-review 2026-07-23](#code-review-2026-07-23).)*
+- **Test note (case 5, the finding-6 guard):** `OAuth2UrisFactory.get` keys a `ConcurrentHashMap` on `baseUrl`;
+  in-process `getHttpServletRequest()` is null, so the mocked `BaseURLProvider` must return a **non-null**
+  `getRealmURL`/`getRootURL` (a null key NPEs `ConcurrentHashMap.get`). Case 5 confirms the 4a `"realmObject"` seed
+  resolves through the **real** `OAuth2UrisFactory` — the transient 500 seen while writing the test was this mock
+  gap at line 107, *past* the realmObject read at line 68, not a seed failure.
+
+**Deferred** (unchanged): the Cargo boot smoke (criterion 7) and the `e2e/uma` well-known over-the-wire smoke, plus
+the full register→PAT→permission→authz flow diff. Not yet committed.
+
+<a id="code-review-2026-07-23"></a>
+### Code review (2026-07-23)
+
+A `/code-review` over the Phase-4 diff raised five findings; each was re-traced against the code before acting:
+
+- **F1/F2 — null-realm 500 in `OAuth2HttpAccessAuditFilter.getRealm:116` + `ChfOAuth2Request.attributes:326`** —
+  *rejected as a production defect.* Traced to the Mockito-default artifact described above: production
+  `RealmLookup.lookup` **throws** for an unresolvable realm, so no null-realm `RealmContext` ever reaches these
+  sites. Adding null guards to shared `/oauth2`+`/xacml`+`/uma` code would defend an unreachable state; only the
+  misleading case-11 note was corrected.
+- **F3 — the 405-body fix (`Endpoints.java`) ripples to XACML, unverified** — the core change was already covered by
+  `EndpointsTest.unmappedVerbGives405WithA405Body` (a real PATCH dispatch). Fixed the residue: replaced
+  `XacmlXmlErrorFilterTest`'s stale canned-501 case (whose comment described superseded behaviour) with a real
+  `Endpoints.from` + filter composition asserting XML `<code>405</code>`.
+- **F4 — `UmaRouterIT` leaks the empty `GuiceModuleLoader`** (`GuiceTestCase.teardownGuiceModules` restores only the
+  `InjectorHolder`, not the loader) — fixed: an `@AfterMethod` resets the loader to the framework default via a
+  package-local `GuiceModuleLoaderAccessor` (the default loader's constructor is package-private in
+  `org.forgerock.guice.core`). `XacmlRouterIT` shares the same latent leak (unchanged here).
+- **F5 — `Endpoints.java` used the `@Deprecated` `ResourceException.getException`** while the sibling
+  `ChfAccessTokenProtectionFilter` used `newResourceException` — aligned `Endpoints.java` onto the non-deprecated
+  factory (byte-identical output; the review's suggested direction pointed at the deprecated method).

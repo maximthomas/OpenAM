@@ -26,18 +26,17 @@ import java.io.IOException;
 
 import org.forgerock.openam.rest.service.OAuth2ServiceEndpointApplication;
 import org.forgerock.openam.rest.service.RestletServiceServlet;
-import org.forgerock.openam.rest.service.UMAServiceEndpointApplication;
 
 /**
- * Root Servlet for all REST Service endpoint requests (Restlet), which are then passed onto the correct underlying
- * servlet for the requested service.
+ * Root Servlet for the remaining Restlet REST Service endpoint requests, which are then passed onto the correct
+ * underlying servlet for the requested service. {@literal /uma} moved to the CHF stack in Phase 4
+ * ({@code UmaHttpRouteProvider}); {@literal /oauth2} remains here until Phase 5.
  *
  * @since 12.0.0
  */
 public class RestEndpointServlet extends HttpServlet {
 
     private final RestletServiceServlet restletOAuth2ServiceServlet;
-    private final RestletServiceServlet restletUMAServiceServlet;
 
     /**
      * Constructs a new RestEndpointServlet.
@@ -45,21 +44,15 @@ public class RestEndpointServlet extends HttpServlet {
     public RestEndpointServlet() {
         this.restletOAuth2ServiceServlet = new RestletServiceServlet(this, OAuth2ServiceEndpointApplication.class,
                 "oauth2RestletServiceServlet");
-        this.restletUMAServiceServlet = new RestletServiceServlet(this, UMAServiceEndpointApplication.class,
-                "umaRestletServiceServlet");
     }
 
     /**
      * Constructor for test use.
      *
      * @param restletOAuth2ServiceServlet An instance of a RestletServiceServlet.
-     * @param restletUMAServiceServlet An instance of a RestletServiceServlet.
      */
-    RestEndpointServlet(
-            RestletServiceServlet restletOAuth2ServiceServlet,
-            RestletServiceServlet restletUMAServiceServlet) {
+    RestEndpointServlet(RestletServiceServlet restletOAuth2ServiceServlet) {
         this.restletOAuth2ServiceServlet = restletOAuth2ServiceServlet;
-        this.restletUMAServiceServlet = restletUMAServiceServlet;
     }
 
     /**
@@ -75,8 +68,6 @@ public class RestEndpointServlet extends HttpServlet {
             IOException {
         if ("/oauth2".equals(request.getServletPath())) {
             restletOAuth2ServiceServlet.service(new HttpServletRequestWrapper(request), response);
-        } else if ("/uma".equals(request.getServletPath())) {
-            restletUMAServiceServlet.service(new HttpServletRequestWrapper(request), response);
         }
     }
 
@@ -86,6 +77,5 @@ public class RestEndpointServlet extends HttpServlet {
     @Override
     public void destroy() {
         restletOAuth2ServiceServlet.destroy();
-        restletUMAServiceServlet.destroy();
     }
 }

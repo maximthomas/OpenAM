@@ -12,7 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.uma;
@@ -24,7 +24,6 @@ import static org.forgerock.util.query.QueryFilter.equalTo;
 import javax.security.auth.Subject;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -37,7 +36,9 @@ import com.sun.identity.entitlement.EntitlementException;
 import com.sun.identity.idm.AMIdentity;
 import com.sun.identity.idm.IdUtils;
 import com.sun.identity.shared.debug.Debug;
-import org.apache.commons.lang3.StringUtils;
+import org.forgerock.http.protocol.Request;
+import org.forgerock.http.protocol.Response;
+import org.forgerock.http.protocol.Status;
 import org.forgerock.json.JsonValue;
 import org.forgerock.oauth2.core.AccessToken;
 import org.forgerock.oauth2.core.OAuth2ProviderSettings;
@@ -52,30 +53,23 @@ import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
 import org.forgerock.oauth2.resources.ResourceSetStore;
 import org.forgerock.openam.cts.api.fields.ResourceSetTokenField;
+import org.forgerock.openam.http.annotations.Contextual;
+import org.forgerock.openam.http.annotations.Post;
 import org.forgerock.openam.oauth2.OAuth2UrisFactory;
 import org.forgerock.openam.oauth2.ResourceSetDescription;
 import org.forgerock.openam.oauth2.extensions.ExtensionFilterManager;
-import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.forgerock.openam.sm.datalayer.impl.uma.UmaPendingRequest;
 import org.forgerock.openam.tokens.CoreTokenField;
 import org.forgerock.openam.uma.audit.UmaAuditLogger;
 import org.forgerock.openam.uma.audit.UmaAuditType;
 import org.forgerock.openam.uma.extensions.RequestAuthorizationFilter;
-import org.forgerock.openam.utils.JsonValueBuilder;
+import org.forgerock.services.context.Context;
 import org.forgerock.util.query.QueryFilter;
-import org.json.JSONException;
-import org.restlet.Request;
-import org.restlet.data.ChallengeResponse;
-import org.restlet.data.Status;
-import org.restlet.ext.json.JsonRepresentation;
-import org.forgerock.openam.rest.jakarta.servlet.ServletUtils;
-import org.restlet.representation.Representation;
-import org.restlet.resource.Post;
-import org.restlet.resource.ServerResource;
+import org.openidentityplatform.openam.uma.AbstractUmaHttpEndpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class AuthorizationRequestEndpoint extends ServerResource {
+public class AuthorizationRequestEndpoint extends AbstractUmaHttpEndpoint {
 
     private final Logger logger = LoggerFactory.getLogger("UmaProvider");
     private final UmaProviderSettingsFactory umaProviderSettingsFactory;
@@ -91,8 +85,6 @@ public class AuthorizationRequestEndpoint extends ServerResource {
     private final PendingRequestsService pendingRequestsService;
     private final Map<String, ClaimGatherer> claimGatherers;
     private final ExtensionFilterManager extensionFilterManager;
-    private final UmaExceptionHandler exceptionHandler;
-    private final JacksonRepresentationFactory jacksonRepresentationFactory;
 
     /**
      * Constructs a new AuthorizationRequestEndpoint
@@ -102,8 +94,7 @@ public class AuthorizationRequestEndpoint extends ServerResource {
             TokenStore oauth2TokenStore, OAuth2RequestFactory requestFactory,
             OAuth2ProviderSettingsFactory oauth2ProviderSettingsFactory, OAuth2UrisFactory oAuth2UrisFactory,
             UmaAuditLogger auditLogger, PendingRequestsService pendingRequestsService,
-            Map<String, ClaimGatherer> claimGatherers, ExtensionFilterManager extensionFilterManager,
-            UmaExceptionHandler exceptionHandler, JacksonRepresentationFactory jacksonRepresentationFactory) {
+            Map<String, ClaimGatherer> claimGatherers, ExtensionFilterManager extensionFilterManager) {
         this.umaProviderSettingsFactory = umaProviderSettingsFactory;
         this.requestFactory = requestFactory;
         this.oauth2TokenStore = oauth2TokenStore;
@@ -113,54 +104,50 @@ public class AuthorizationRequestEndpoint extends ServerResource {
         this.pendingRequestsService = pendingRequestsService;
         this.claimGatherers = claimGatherers;
         this.extensionFilterManager = extensionFilterManager;
-        this.exceptionHandler = exceptionHandler;
-        this.jacksonRepresentationFactory = jacksonRepresentationFactory;
     }
 
     @Post
-    public Representation requestAuthorization(JsonRepresentation entity) throws BadRequestException, UmaException,
-            EntitlementException, ServerException, NotFoundException {
-        UmaProviderSettings umaProviderSettings = umaProviderSettingsFactory.get(this.getRequest());
-        final OAuth2Request oauth2Request = requestFactory.create(getRequest());
+    public Response requestAuthorization(@Contextual Context context, @Contextual Request request)
+            throws BadRequestException, UmaException, EntitlementException, ServerException, NotFoundException {
+        final OAuth2Request oauth2Request = requestFactory.create(context, request);
+        UmaProviderSettings umaProviderSettings = umaProviderSettingsFactory.get(oauth2Request);
         OAuth2ProviderSettings oauth2ProviderSettings = oauth2ProviderSettingsFactory.get(oauth2Request);
         OAuth2Uris oAuth2Uris = oAuth2UrisFactory.get(oauth2Request);
         final UmaTokenStore umaTokenStore = umaProviderSettings.getUmaTokenStore();
         String realm = oauth2Request.getParameter("realm");
 
-        JsonValue requestBody = json(toMap(entity));
+        JsonValue requestBody = oauth2Request.getBody();
 
-        PermissionTicket permissionTicket = getPermissionTicket(umaTokenStore, requestBody);
-        validatePermissionTicketHolder(umaTokenStore, permissionTicket);
+        PermissionTicket permissionTicket = getPermissionTicket(umaTokenStore, requestBody, oauth2Request);
+        validatePermissionTicketHolder(umaTokenStore, permissionTicket, oauth2Request);
 
         final String resourceSetId = permissionTicket.getResourceSetId();
-        final Request request = getRequest();
         final String resourceOwnerId = getResourceOwnerId(oauth2ProviderSettings, resourceSetId);
 
         AMIdentity resourceOwner = createIdentity(resourceOwnerId, realm);
         String requestingPartyId = null;
         try {
-            requestingPartyId = getRequestingPartyId(umaProviderSettings, oAuth2Uris, requestBody);
+            requestingPartyId = getRequestingPartyId(umaProviderSettings, oAuth2Uris, requestBody, oauth2Request);
         } finally {
-            auditLogger.log(resourceSetId, resourceOwner, UmaAuditType.REQUEST, request,
-                    requestingPartyId == null ? getAuthorisationApiToken().getResourceOwnerId() : requestingPartyId);
+            auditLogger.log(resourceSetId, resourceOwner, UmaAuditType.REQUEST, oauth2Request,
+                    requestingPartyId == null ? getAuthorisationApiToken(oauth2Request).getResourceOwnerId() : requestingPartyId);
         }
 
         if (isEntitled(umaProviderSettings, oauth2ProviderSettings, permissionTicket, requestingPartyId)) {
-            getResponse().setStatus(new Status(200));
-            auditLogger.log(resourceSetId, resourceOwner, UmaAuditType.GRANTED, request, requestingPartyId);
+            auditLogger.log(resourceSetId, resourceOwner, UmaAuditType.GRANTED, oauth2Request, requestingPartyId);
             return createJsonRpt(umaTokenStore, permissionTicket);
         } else {
             try {
                 if (verifyPendingRequestDoesNotAlreadyExist(resourceSetId, resourceOwnerId, permissionTicket.getRealm(),
                         requestingPartyId, permissionTicket.getScopes())) {
-                    auditLogger.log(resourceSetId, resourceOwner, UmaAuditType.DENIED, request, requestingPartyId);
+                    auditLogger.log(resourceSetId, resourceOwner, UmaAuditType.DENIED, oauth2Request, requestingPartyId);
                     throw new UmaException(403, UmaConstants.NOT_AUTHORISED_ERROR_CODE,
                             "The client is not authorised to access the requested resource set");
                 } else {
-                    pendingRequestsService.createPendingRequest(ServletUtils.getRequest(getRequest()), resourceSetId,
-                            auditLogger.getResourceName(resourceSetId, request), resourceOwnerId, requestingPartyId,
+                    pendingRequestsService.createPendingRequest(oauth2Request.getHttpServletRequest(), resourceSetId,
+                            auditLogger.getResourceName(resourceSetId, oauth2Request), resourceOwnerId, requestingPartyId,
                             permissionTicket.getRealm(), permissionTicket.getScopes());
-                    auditLogger.log(resourceSetId, resourceOwner, UmaAuditType.REQUEST_SUBMITTED, request,
+                    auditLogger.log(resourceSetId, resourceOwner, UmaAuditType.REQUEST_SUBMITTED, oauth2Request,
                             requestingPartyId);
                 }
             } catch (org.forgerock.openam.sm.datalayer.store.ServerException e) {
@@ -171,10 +158,11 @@ public class AuthorizationRequestEndpoint extends ServerResource {
         }
     }
 
-    private void validatePermissionTicketHolder(UmaTokenStore umaTokenStore, PermissionTicket permissionTicket)
+    private void validatePermissionTicketHolder(UmaTokenStore umaTokenStore, PermissionTicket permissionTicket,
+            OAuth2Request oauth2Request)
             throws ServerException, UmaException, NotFoundException, BadRequestException {
 
-        String requestingClientId = getAuthorisationApiToken().getClientId();
+        String requestingClientId = getAuthorisationApiToken(oauth2Request).getClientId();
         String ticketClientClientId = permissionTicket.getClientClientId();
 
         if (hasExpired(permissionTicket)) {
@@ -207,13 +195,8 @@ public class AuthorizationRequestEndpoint extends ServerResource {
         throw new UmaException(400, UmaConstants.INVALID_TICKET_ERROR_CODE, "The permission ticket is invalid");
     }
 
-    @Override
-    protected void doCatch(Throwable throwable) {
-        exceptionHandler.handleException(getResponse(), throwable);
-    }
-
     private String getRequestingPartyId(UmaProviderSettings umaProviderSettings, OAuth2Uris oAuth2Uris,
-            JsonValue requestBody)
+            JsonValue requestBody, OAuth2Request oauth2Request)
             throws ServerException, NotFoundException, UmaException {
         if (requestBody.isDefined("claim_tokens")) {
             for (JsonValue claimToken : requestBody.get("claim_tokens")) {
@@ -222,8 +205,8 @@ public class AuthorizationRequestEndpoint extends ServerResource {
                 if (claimGatherer == null) {
                     continue;
                 }
-                String requestingPartyId = claimGatherer.getRequestingPartyId(requestFactory.create(getRequest()),
-                        getAuthorisationApiToken(), claimToken.get("token"));
+                String requestingPartyId = claimGatherer.getRequestingPartyId(oauth2Request,
+                        getAuthorisationApiToken(oauth2Request), claimToken.get("token"));
                 if (requestingPartyId != null) {
                     return requestingPartyId;
                 }
@@ -234,7 +217,7 @@ public class AuthorizationRequestEndpoint extends ServerResource {
             throw newNeedInfoException(oAuth2Uris);
         }
         // Default to using AAT
-        return getAuthorisationApiToken().getResourceOwnerId();
+        return getAuthorisationApiToken(oauth2Request).getResourceOwnerId();
     }
 
     private UmaException newNeedInfoException(OAuth2Uris oAuth2Uris)
@@ -355,17 +338,19 @@ public class AuthorizationRequestEndpoint extends ServerResource {
         return IdUtils.getIdentity(username, realm);
     }
 
-    private Representation createJsonRpt(UmaTokenStore umaTokenStore, PermissionTicket permissionTicket)
+    private Response createJsonRpt(UmaTokenStore umaTokenStore, PermissionTicket permissionTicket)
             throws ServerException, NotFoundException {
         RequestingPartyToken rpt = umaTokenStore.createRPT(permissionTicket);
         Map<String, Object> response = new HashMap<>();
         response.put("rpt", rpt.getId());
-        return jacksonRepresentationFactory.create(response);
+        // setEntity(Map) -> application/json; charset=UTF-8.
+        return new Response(Status.valueOf(200)).setEntity(response);
     }
 
-    private PermissionTicket getPermissionTicket(UmaTokenStore umaTokenStore, JsonValue requestBody)
+    private PermissionTicket getPermissionTicket(UmaTokenStore umaTokenStore, JsonValue requestBody,
+            OAuth2Request oauth2Request)
             throws BadRequestException, UmaException, ServerException, NotFoundException {
-        String requestingClientId = getAuthorisationApiToken().getClientId();
+        String requestingClientId = getAuthorisationApiToken(oauth2Request).getClientId();
         String permissionTicketId = getTicketId(requestBody);
         try {
             return umaTokenStore.readPermissionTicket(permissionTicketId);
@@ -408,34 +393,13 @@ public class AuthorizationRequestEndpoint extends ServerResource {
         return ticketId;
     }
 
-    protected AccessToken getAuthorisationApiToken() throws ServerException {
-        Request req = getRequest();
-        ChallengeResponse challengeResponse = req.getChallengeResponse();
+    protected AccessToken getAuthorisationApiToken(OAuth2Request oauth2Request) throws ServerException {
         try {
-            return oauth2TokenStore.readAccessToken(requestFactory.create(req),
-                    challengeResponse.getRawValue());
+            return oauth2TokenStore.readAccessToken(oauth2Request, oauth2Request.getAuthorizationBearerToken());
         } catch (InvalidGrantException e) {
             throw new ServerException("Unable to verify client identity.");
         } catch (NotFoundException e) {
             throw new ServerException(e.getMessage());
-        }
-    }
-
-    private Map<String, Object> toMap(JsonRepresentation entity) throws BadRequestException {
-        if (entity == null) {
-            return Collections.emptyMap();
-        }
-
-        try {
-            final String jsonString = entity.getJsonObject().toString();
-            if (StringUtils.isNotEmpty(jsonString)) {
-                JsonValue jsonContent = JsonValueBuilder.toJsonValue(jsonString);
-                return jsonContent.asMap(Object.class);
-            }
-
-            return Collections.emptyMap();
-        } catch (JSONException e) {
-            throw new BadRequestException(e.getMessage());
         }
     }
 

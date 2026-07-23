@@ -12,6 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015 ForgeRock AS.
+ * Portions copyright 2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.uma;
@@ -63,11 +64,9 @@ public final class UmaConstants {
     static final String SUPPORTED_UMA_PROFILES_ATTR_NAME = "uma-supported-uma-profiles";
     static final String AUDIT_CONNECTION_CONFIG = "uma-audit-connection-config";
 
-    static final String PAT_SCOPE = "uma_protection";
-    static final String AAT_SCOPE = "uma_authorization";
-
-    public static final String PERMISSION_REQUEST_ENDPOINT = "permission-request-endpoint";
-    public static final String AUTHORIZATION_REQUEST_ENDPOINT = "authz-request-endpoint";
+    // Public so UmaHttpRouteProvider (a different package) can wire the per-endpoint scope checks.
+    public static final String PAT_SCOPE = "uma_protection";
+    public static final String AAT_SCOPE = "uma_authorization";
 
     static final String NOT_AUTHORISED_ERROR_CODE = "not_authorised";
     static final String REQUEST_SUBMITTED_ERROR_CODE = "request_submitted";

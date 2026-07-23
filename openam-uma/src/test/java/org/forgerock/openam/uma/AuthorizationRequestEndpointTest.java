@@ -22,12 +22,9 @@ import static org.forgerock.json.JsonValue.*;
 import static org.forgerock.json.test.assertj.AssertJJsonValueAssert.assertThat;
 import static org.forgerock.openam.utils.Time.currentTimeMillis;
 import static org.mockito.BDDMockito.*;
-import static org.mockito.BDDMockito.eq;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
 
 import javax.security.auth.Subject;
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,10 +36,10 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.identity.entitlement.Entitlement;
 import com.sun.identity.entitlement.Evaluator;
 import com.sun.identity.idm.AMIdentity;
+import org.forgerock.http.protocol.Request;
 import org.forgerock.json.JsonValue;
 import org.forgerock.oauth2.core.AccessToken;
 import org.forgerock.oauth2.core.OAuth2ProviderSettings;
@@ -58,19 +55,16 @@ import org.forgerock.openam.cts.api.fields.ResourceSetTokenField;
 import org.forgerock.openam.oauth2.OAuth2UrisFactory;
 import org.forgerock.openam.oauth2.ResourceSetDescription;
 import org.forgerock.openam.oauth2.extensions.ExtensionFilterManager;
-import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.forgerock.openam.sm.datalayer.impl.uma.UmaPendingRequest;
 import org.forgerock.openam.uma.audit.UmaAuditLogger;
 import org.forgerock.openam.uma.audit.UmaAuditType;
 import org.forgerock.openam.uma.extensions.RequestAuthorizationFilter;
+import org.forgerock.openam.utils.JsonValueBuilder;
+import org.forgerock.services.context.Context;
+import org.forgerock.services.context.RootContext;
 import org.forgerock.util.query.QueryFilter;
-import org.json.JSONObject;
 import org.mockito.InOrder;
 import org.mockito.ArgumentMatchers;
-import org.mockito.Mockito;
-import org.restlet.Request;
-import org.restlet.Response;
-import org.restlet.ext.json.JsonRepresentation;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -82,29 +76,29 @@ public class AuthorizationRequestEndpointTest {
     private static final String RS_DESCRIPTION_ID = "RESOURCE_SET_DESCRIPTION_ID";
     private static final String REQUESTING_PARTY_ID = "REQUESTING_PARTY_ID";
     private static final String RESOURCE_NAME = UmaConstants.UMA_POLICY_SCHEME + RS_DESCRIPTION_ID;
+    private static final String DEFAULT_BODY = "{\"ticket\": \"016f84e8-f9b9-11e0-bd6f-0021cc6004de\"}";
 
     private AuthorizationRequestEndpoint endpoint;
     private UmaProviderSettings umaProviderSettings;
     private UmaProviderSettingsFactory umaProviderSettingsFactory;
     private OAuth2RequestFactory requestFactory;
+    private OAuth2Request oAuth2Request;
     private TokenStore oauth2TokenStore;
     private Evaluator policyEvaluator;
     private UmaTokenStore umaTokenStore;
-    private Request request;
     private AccessToken accessToken;
     private PermissionTicket permissionTicket;
-    private JsonRepresentation entity;
-    private JSONObject requestBody;
     private RequestingPartyToken rpt;
-    private Response response;
     private ResourceSetStore resourceSetStore;
     private Subject subject = new Subject();
     private UmaAuditLogger umaAuditLogger;
     private PendingRequestsService pendingRequestsService;
     private IdTokenClaimGatherer idTokenClaimGatherer;
     private RequestAuthorizationFilter requestAuthorizationFilter;
-    private JacksonRepresentationFactory jacksonRepresentationFactory =
-            new JacksonRepresentationFactory(new ObjectMapper());
+
+    // create(context, request) is stubbed, so these are just argument tokens forwarded to the factory.
+    private final Context context = new RootContext();
+    private final Request request = new Request();
 
     private class AuthorizationRequestEndpoint2 extends AuthorizationRequestEndpoint {
 
@@ -113,11 +107,9 @@ public class AuthorizationRequestEndpointTest {
                 OAuth2ProviderSettingsFactory oAuth2ProviderSettingsFactory,
                 OAuth2UrisFactory oAuth2UrisFactory,
                 UmaAuditLogger auditLogger, PendingRequestsService pendingRequestsService,
-                Map<String, ClaimGatherer> claimGatherers, ExtensionFilterManager extensionFilterManager,
-                UmaExceptionHandler exceptionHandler, JacksonRepresentationFactory jacksonRepresentationFactory) {
+                Map<String, ClaimGatherer> claimGatherers, ExtensionFilterManager extensionFilterManager) {
             super(umaProviderSettingsFactory, oauth2TokenStore, requestFactory, oAuth2ProviderSettingsFactory,
-                    oAuth2UrisFactory, auditLogger, pendingRequestsService, claimGatherers, extensionFilterManager,
-                    exceptionHandler, jacksonRepresentationFactory);
+                    oAuth2UrisFactory, auditLogger, pendingRequestsService, claimGatherers, extensionFilterManager);
         }
 
         @Override
@@ -132,7 +124,7 @@ public class AuthorizationRequestEndpointTest {
         }
 
         @Override
-        protected AccessToken getAuthorisationApiToken() throws ServerException {
+        protected AccessToken getAuthorisationApiToken(OAuth2Request oauth2Request) throws ServerException {
             return accessToken;
         }
     }
@@ -141,15 +133,16 @@ public class AuthorizationRequestEndpointTest {
     @SuppressWarnings("unchecked")
     public void setup() throws Exception {
         requestFactory = mock(OAuth2RequestFactory.class);
-        OAuth2Request oAuth2Request = mock(OAuth2Request.class);
-        given(requestFactory.create(any(Request.class))).willReturn(oAuth2Request);
+        oAuth2Request = mock(OAuth2Request.class);
+        given(requestFactory.create(any(Context.class), any(Request.class))).willReturn(oAuth2Request);
         given(oAuth2Request.getParameter("realm")).willReturn("REALM");
-        accessToken = mock(AccessToken.class);
+        givenBody(DEFAULT_BODY);
 
-        oauth2TokenStore = mock(TokenStore.class);
-        given(oauth2TokenStore.readAccessToken(ArgumentMatchers.<OAuth2Request>anyObject(), anyString())).willReturn(accessToken);
+        accessToken = mock(AccessToken.class);
         given(accessToken.getClientId()).willReturn(RS_CLIENT_ID);
         given(accessToken.getResourceOwnerId()).willReturn(REQUESTING_PARTY_ID);
+
+        oauth2TokenStore = mock(TokenStore.class);
 
         umaAuditLogger = mock(UmaAuditLogger.class);
 
@@ -177,8 +170,7 @@ public class AuthorizationRequestEndpointTest {
         given(umaProviderSettings.getUmaTokenStore()).willReturn(umaTokenStore);
 
         umaProviderSettingsFactory = mock(UmaProviderSettingsFactory.class);
-        given(umaProviderSettingsFactory.get(ArgumentMatchers.<Request>anyObject())).willReturn(umaProviderSettings);
-        given(umaProviderSettings.getUmaTokenStore()).willReturn(umaTokenStore);
+        given(umaProviderSettingsFactory.get(any(OAuth2Request.class))).willReturn(umaProviderSettings);
 
         OAuth2ProviderSettingsFactory oauth2ProviderSettingsFactory = mock(OAuth2ProviderSettingsFactory.class);
         OAuth2ProviderSettings oauth2ProviderSettings = mock(RealmOAuth2ProviderSettings.class);
@@ -201,23 +193,13 @@ public class AuthorizationRequestEndpointTest {
         given(extensionFilterManager.getFilters(RequestAuthorizationFilter.class))
                 .willReturn(Collections.singletonList(requestAuthorizationFilter));
 
-        UmaExceptionHandler exceptionHandler = mock(UmaExceptionHandler.class);
-
-        endpoint = spy(new AuthorizationRequestEndpoint2(umaProviderSettingsFactory, oauth2TokenStore,
+        endpoint = new AuthorizationRequestEndpoint2(umaProviderSettingsFactory, oauth2TokenStore,
                 requestFactory, oauth2ProviderSettingsFactory, oauth2UrisFactory, umaAuditLogger,
-                pendingRequestsService, claimGatherers, extensionFilterManager, exceptionHandler,
-                jacksonRepresentationFactory));
-        request = mock(Request.class);
-        given(endpoint.getRequest()).willReturn(request);
+                pendingRequestsService, claimGatherers, extensionFilterManager);
+    }
 
-        response = mock(Response.class);
-        endpoint.setResponse(response);
-
-        requestBody = mock(JSONObject.class);
-        given(requestBody.toString()).willReturn("{\"ticket\": \"016f84e8-f9b9-11e0-bd6f-0021cc6004de\"}");
-
-        entity = mock(JsonRepresentation.class);
-        given(entity.getJsonObject()).willReturn(requestBody);
+    private void givenBody(String json) {
+        given(oAuth2Request.getBody()).willReturn(JsonValueBuilder.toJsonValue(json));
     }
 
     @Test(expectedExceptions = UmaException.class)
@@ -236,7 +218,7 @@ public class AuthorizationRequestEndpointTest {
 
         //Then
         try {
-            endpoint.requestAuthorization(entity);
+            endpoint.requestAuthorization(context, request);
         } catch (UmaException e) {
             InOrder inOrder = inOrder(requestAuthorizationFilter, policyEvaluator, requestAuthorizationFilter);
             inOrder.verify(requestAuthorizationFilter).beforeAuthorization(eq(permissionTicket), any(Subject.class),
@@ -265,7 +247,7 @@ public class AuthorizationRequestEndpointTest {
 
         //Then
         try {
-            endpoint.requestAuthorization(entity);
+            endpoint.requestAuthorization(context, request);
         } catch (UmaException e) {
             InOrder inOrder = inOrder(requestAuthorizationFilter, policyEvaluator, requestAuthorizationFilter);
             inOrder.verify(requestAuthorizationFilter).beforeAuthorization(eq(permissionTicket), any(Subject.class),
@@ -293,7 +275,7 @@ public class AuthorizationRequestEndpointTest {
         given(permissionTicket.getScopes()).willReturn(requestedScopes);
 
         //Then
-        assertThat(endpoint.requestAuthorization(entity)).isNotNull();
+        assertThat(endpoint.requestAuthorization(context, request)).isNotNull();
         InOrder inOrder = inOrder(requestAuthorizationFilter, policyEvaluator, requestAuthorizationFilter);
         inOrder.verify(requestAuthorizationFilter).beforeAuthorization(eq(permissionTicket), any(Subject.class),
                 any(Subject.class));
@@ -317,7 +299,7 @@ public class AuthorizationRequestEndpointTest {
         given(permissionTicket.getScopes()).willReturn(requestedScopes);
 
         //Then
-        assertThat(endpoint.requestAuthorization(entity)).isNotNull();
+        assertThat(endpoint.requestAuthorization(context, request)).isNotNull();
         InOrder inOrder = inOrder(requestAuthorizationFilter, policyEvaluator, requestAuthorizationFilter);
         inOrder.verify(requestAuthorizationFilter).beforeAuthorization(eq(permissionTicket), any(Subject.class),
                 any(Subject.class));
@@ -344,7 +326,7 @@ public class AuthorizationRequestEndpointTest {
 
         //Then
         try {
-            endpoint.requestAuthorization(entity);
+            endpoint.requestAuthorization(context, request);
         } catch (UmaException e) {
             assertThat(e.getStatusCode()).isEqualTo(403);
             assertThat(e.getError()).isEqualTo("need_info");
@@ -372,7 +354,7 @@ public class AuthorizationRequestEndpointTest {
 
         //Then
         try {
-            endpoint.requestAuthorization(entity);
+            endpoint.requestAuthorization(context, request);
         } catch (UmaException e) {
             assertThat(e.getStatusCode()).isEqualTo(403);
             assertThat(e.getError()).isEqualTo("need_info");
@@ -400,7 +382,7 @@ public class AuthorizationRequestEndpointTest {
 
         //Then
         try {
-            endpoint.requestAuthorization(entity);
+            endpoint.requestAuthorization(context, request);
         } catch (UmaException e) {
             assertThat(e.getStatusCode()).isEqualTo(403);
             assertThat(e.getError()).isEqualTo("need_info");
@@ -427,7 +409,7 @@ public class AuthorizationRequestEndpointTest {
         mockRequestBodyWithIdTokenClaim();
 
         //Then
-        assertThat(endpoint.requestAuthorization(entity)).isNotNull();
+        assertThat(endpoint.requestAuthorization(context, request)).isNotNull();
     }
 
     @Test(expectedExceptions = UmaException.class)
@@ -451,12 +433,12 @@ public class AuthorizationRequestEndpointTest {
 
         //Then
         try {
-            endpoint.requestAuthorization(entity);
+            endpoint.requestAuthorization(context, request);
         } catch (UmaException e) {
             verify(pendingRequestsService).createPendingRequest(nullable(HttpServletRequest.class), eq("RESOURCE_SET_ID"),
                     nullable(String.class), anyString(), anyString(), eq("REALM"), eq(requestedScopes));
             verify(umaAuditLogger).log(eq("RESOURCE_SET_ID"), any(AMIdentity.class), eq(UmaAuditType.REQUEST_SUBMITTED),
-                    any(Request.class), anyString());
+                    any(OAuth2Request.class), anyString());
             assertThat(e.getStatusCode()).isEqualTo(403);
             assertThat(e.getError()).isEqualTo("request_submitted");
             throw e;
@@ -483,12 +465,12 @@ public class AuthorizationRequestEndpointTest {
 
         //Then
         try {
-            endpoint.requestAuthorization(entity);
+            endpoint.requestAuthorization(context, request);
         } catch (UmaException e) {
             verify(pendingRequestsService).createPendingRequest(nullable(HttpServletRequest.class), eq("RESOURCE_SET_ID"),
                     nullable(String.class), anyString(), anyString(), eq("REALM"), eq(requestedScopes));
             verify(umaAuditLogger).log(eq("RESOURCE_SET_ID"), any(AMIdentity.class), eq(UmaAuditType.REQUEST_SUBMITTED),
-                    any(Request.class), anyString());
+                    any(OAuth2Request.class), anyString());
             assertThat(e.getStatusCode()).isEqualTo(403);
             assertThat(e.getError()).isEqualTo("request_submitted");
             throw e;
@@ -515,12 +497,12 @@ public class AuthorizationRequestEndpointTest {
 
         //Then
         try {
-            endpoint.requestAuthorization(entity);
+            endpoint.requestAuthorization(context, request);
         } catch (UmaException e) {
             verify(pendingRequestsService, never()).createPendingRequest(any(HttpServletRequest.class),
                     eq("RESOURCE_SET_ID"), anyString(), anyString(), anyString(), eq("REALM"), eq(requestedScopes));
             verify(umaAuditLogger, never()).log(eq("RESOURCE_SET_ID"), any(AMIdentity.class), eq(UmaAuditType.REQUEST_SUBMITTED),
-                    any(Request.class), anyString());
+                    any(OAuth2Request.class), anyString());
             assertThat(e.getStatusCode()).isEqualTo(403);
             assertThat(e.getError()).isEqualTo("request_submitted");
             throw e;
@@ -552,8 +534,7 @@ public class AuthorizationRequestEndpointTest {
     }
 
     private void mockRequestBodyWithIdTokenClaim() {
-        Mockito.reset(requestBody, idTokenClaimGatherer);
-        given(requestBody.toString()).willReturn("{\"ticket\": \"016f84e8-f9b9-11e0-bd6f-0021cc6004de\", "
+        givenBody("{\"ticket\": \"016f84e8-f9b9-11e0-bd6f-0021cc6004de\", "
                 + "\"claim_tokens\": [{"
                 + "\"format\": \"" + IdTokenClaimGatherer.FORMAT + "\", "
                 + "\"token\": \"ID_TOKEN\"}]}");
@@ -563,8 +544,7 @@ public class AuthorizationRequestEndpointTest {
     }
 
     private void mockRequestBodyWithInvalidIdTokenClaim() {
-        Mockito.reset(requestBody, idTokenClaimGatherer);
-        given(requestBody.toString()).willReturn("{\"ticket\": \"016f84e8-f9b9-11e0-bd6f-0021cc6004de\", "
+        givenBody("{\"ticket\": \"016f84e8-f9b9-11e0-bd6f-0021cc6004de\", "
                 + "\"claim_tokens\": [{"
                 + "\"format\": \"" + IdTokenClaimGatherer.FORMAT + "\", "
                 + "\"token\": \"ID_TOKEN\"}]}");
@@ -577,8 +557,7 @@ public class AuthorizationRequestEndpointTest {
     }
 
     private void mockRequestBodyWithUnknownClaim() {
-        Mockito.reset(requestBody);
-        given(requestBody.toString()).willReturn("{\"ticket\": \"016f84e8-f9b9-11e0-bd6f-0021cc6004de\", "
+        givenBody("{\"ticket\": \"016f84e8-f9b9-11e0-bd6f-0021cc6004de\", "
                 + "\"claim_tokens\": [{"
                 + "\"format\": \"UNKNOWN_FORMAT\", "
                 + "\"token\": \"TOKEN\"}]}");

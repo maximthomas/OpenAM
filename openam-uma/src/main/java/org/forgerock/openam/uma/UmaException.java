@@ -12,6 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015 ForgeRock AS.
+ * Portions copyright 2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.uma;
@@ -50,7 +51,8 @@ public class UmaException extends OAuth2Exception {
         return this;
     }
 
-    JsonValue getDetail() {
+    // Public so UmaErrorResponseFactory (a different package) can flatten it into the error body.
+    public JsonValue getDetail() {
         return detail;
     }
 }

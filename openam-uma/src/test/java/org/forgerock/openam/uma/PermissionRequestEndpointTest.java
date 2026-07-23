@@ -21,12 +21,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.forgerock.json.JsonValue.*;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.*;
-import static org.mockito.Mockito.eq;
 
 import java.util.Collections;
 import java.util.Map;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.forgerock.http.protocol.Request;
+import org.forgerock.http.protocol.Response;
 import org.forgerock.json.JsonValue;
 import org.forgerock.oauth2.core.AccessToken;
 import org.forgerock.oauth2.core.OAuth2ProviderSettings;
@@ -34,22 +34,14 @@ import org.forgerock.oauth2.core.OAuth2ProviderSettingsFactory;
 import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.OAuth2RequestFactory;
 import org.forgerock.oauth2.core.RealmOAuth2ProviderSettings;
-import org.forgerock.oauth2.core.exceptions.InvalidGrantException;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
 import org.forgerock.openam.oauth2.ResourceSetDescription;
 import org.forgerock.oauth2.resources.ResourceSetStore;
 import org.forgerock.openam.oauth2.extensions.ExtensionFilterManager;
-import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.forgerock.openam.uma.extensions.PermissionRequestFilter;
-import org.json.JSONObject;
-import org.mockito.ArgumentCaptor;
-import org.mockito.ArgumentMatchers;
-import org.restlet.Request;
-import org.restlet.Response;
-import org.restlet.data.Status;
-import org.restlet.ext.json.JsonRepresentation;
-import org.restlet.representation.Representation;
+import org.forgerock.services.context.Context;
+import org.forgerock.services.context.RootContext;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -58,28 +50,29 @@ public class PermissionRequestEndpointTest {
     private PermissionRequestEndpoint endpoint;
 
     private ResourceSetStore resourceSetStore;
-    private Response response;
     private UmaTokenStore umaTokenStore;
     private PermissionRequestFilter permissionRequestFilter;
-    private JacksonRepresentationFactory jacksonRepresentationFactory =
-            new JacksonRepresentationFactory(new ObjectMapper());
+    private OAuth2Request oAuth2Request;
+
+    // create(context, request) is stubbed, so these are just argument tokens forwarded to the factory.
+    private final Context context = new RootContext();
+    private final Request request = new Request();
 
     @BeforeMethod
     @SuppressWarnings("unchecked")
-    public void setup() throws ServerException, InvalidGrantException, NotFoundException {
+    public void setup() throws Exception {
         resourceSetStore = mock(ResourceSetStore.class);
         OAuth2RequestFactory requestFactory = mock(OAuth2RequestFactory.class);
         umaTokenStore = mock(UmaTokenStore.class);
 
         OAuth2ProviderSettingsFactory providerSettingFactory = mock(OAuth2ProviderSettingsFactory.class);
         OAuth2ProviderSettings providerSettings = mock(RealmOAuth2ProviderSettings.class);
-
-        given(providerSettingFactory.get(ArgumentMatchers.<OAuth2Request>anyObject())).willReturn(providerSettings);
+        given(providerSettingFactory.get(any(OAuth2Request.class))).willReturn(providerSettings);
         given(providerSettings.getResourceSetStore()).willReturn(resourceSetStore);
 
         UmaProviderSettingsFactory umaProviderSettingsFactory = mock(UmaProviderSettingsFactory.class);
         UmaProviderSettings umaProviderSettings = mock(UmaProviderSettings.class);
-        given(umaProviderSettingsFactory.get(any(Request.class))).willReturn(umaProviderSettings);
+        given(umaProviderSettingsFactory.get(any(OAuth2Request.class))).willReturn(umaProviderSettings);
         given(umaProviderSettings.getUmaTokenStore()).willReturn(umaTokenStore);
 
         ExtensionFilterManager extensionFilterManager = mock(ExtensionFilterManager.class);
@@ -87,23 +80,15 @@ public class PermissionRequestEndpointTest {
         given(extensionFilterManager.getFilters(PermissionRequestFilter.class))
                 .willReturn(Collections.singleton(permissionRequestFilter));
 
-        UmaExceptionHandler exceptionHandler = mock(UmaExceptionHandler.class);
+        endpoint = new PermissionRequestEndpoint(providerSettingFactory, requestFactory,
+                umaProviderSettingsFactory, extensionFilterManager);
 
-        endpoint = spy(new PermissionRequestEndpoint(providerSettingFactory, requestFactory,
-                umaProviderSettingsFactory, extensionFilterManager, exceptionHandler, jacksonRepresentationFactory));
-
-        response = mock(Response.class);
-        endpoint.setResponse(response);
-
-        Request request = mock(Request.class);
-        given(endpoint.getRequest()).willReturn(request);
+        oAuth2Request = mock(OAuth2Request.class);
+        given(requestFactory.create(any(Context.class), any(Request.class))).willReturn(oAuth2Request);
 
         AccessToken accessToken = mock(AccessToken.class);
         given(accessToken.getClientId()).willReturn("CLIENT_ID");
         given(accessToken.getResourceOwnerId()).willReturn("RESOURCE_OWNER_ID");
-
-        OAuth2Request oAuth2Request = mock(OAuth2Request.class);
-        given(requestFactory.create(request)).willReturn(oAuth2Request);
         given(oAuth2Request.getToken(AccessToken.class)).willReturn(accessToken);
     }
 
@@ -111,18 +96,22 @@ public class PermissionRequestEndpointTest {
         JsonValue description = json(object(field("scopes", array("SCOPE_A", "SCOPE_B"))));
         ResourceSetDescription resourceSetDescription = new ResourceSetDescription("RESOURCE_SET_ID",
                 "CLIENT_ID", "RESOURCE_OWNER_ID", description.asMap());
-
         given(resourceSetStore.read("RESOURCE_SET_ID", "RESOURCE_OWNER_ID")).willReturn(resourceSetDescription);
     }
 
+    private void givenBody(JsonValue body) {
+        given(oAuth2Request.getBody()).willReturn(body);
+    }
+
     @Test(expectedExceptions = UmaException.class)
-    public void shouldThrowInvalidResourceSetIdExceptionWhenEntityIsNull() throws Exception {
+    public void shouldThrowInvalidResourceSetIdExceptionWhenBodyIsEmpty() throws Exception {
 
         //Given
+        givenBody(json(object()));
 
         //When
         try {
-            endpoint.registerPermissionRequest(null);
+            endpoint.registerPermissionRequest(context, request);
         } catch (UmaException e) {
             //Then
             assertThat(e.getStatusCode()).isEqualTo(400);
@@ -135,16 +124,12 @@ public class PermissionRequestEndpointTest {
     @Test(expectedExceptions = UmaException.class)
     public void shouldThrowInvalidResourceSetIdExceptionWhenNoResourceSetId() throws Exception {
 
-        //Given
-        JsonRepresentation entity = mock(JsonRepresentation.class);
-        JSONObject requestBody = mock(JSONObject.class);
-
-        given(entity.getJsonObject()).willReturn(requestBody);
-        given(requestBody.toString()).willReturn("");
+        //Given -- a body present but lacking resource_set_id.
+        givenBody(json(object(field("scopes", array("SCOPE_A")))));
 
         //When
         try {
-            endpoint.registerPermissionRequest(entity);
+            endpoint.registerPermissionRequest(context, request);
         } catch (UmaException e) {
             //Then
             assertThat(e.getStatusCode()).isEqualTo(400);
@@ -158,15 +143,11 @@ public class PermissionRequestEndpointTest {
     public void shouldThrowInvalidResourceSetIdExceptionWhenResourceSetIdIsNotAString() throws Exception {
 
         //Given
-        JsonRepresentation entity = mock(JsonRepresentation.class);
-        JSONObject requestBody = mock(JSONObject.class);
-
-        given(entity.getJsonObject()).willReturn(requestBody);
-        given(requestBody.toString()).willReturn("{\"resource_set_id\":[]}");
+        givenBody(json(object(field("resource_set_id", array()))));
 
         //When
         try {
-            endpoint.registerPermissionRequest(entity);
+            endpoint.registerPermissionRequest(context, request);
         } catch (UmaException e) {
             //Then
             assertThat(e.getStatusCode()).isEqualTo(400);
@@ -180,18 +161,14 @@ public class PermissionRequestEndpointTest {
     public void shouldThrowInvalidScopeExceptionWhenNoScope() throws Exception {
 
         //Given
-        JsonRepresentation entity = mock(JsonRepresentation.class);
-        JSONObject requestBody = mock(JSONObject.class);
+        givenBody(json(object(field("resource_set_id", "RESOURCE_SET_ID"))));
         ResourceSetDescription resourceSetDescription = new ResourceSetDescription("RESOURCE_SET_ID",
                 "CLIENT_ID", "RESOURCE_OWNER_ID", Collections.<String, Object>emptyMap());
-
-        given(entity.getJsonObject()).willReturn(requestBody);
-        given(requestBody.toString()).willReturn("{\"resource_set_id\":\"RESOURCE_SET_ID\"}");
         given(resourceSetStore.read("RESOURCE_SET_ID", "RESOURCE_OWNER_ID")).willReturn(resourceSetDescription);
 
         //When
         try {
-            endpoint.registerPermissionRequest(entity);
+            endpoint.registerPermissionRequest(context, request);
         } catch (UmaException e) {
             //Then
             assertThat(e.getStatusCode()).isEqualTo(400);
@@ -205,18 +182,14 @@ public class PermissionRequestEndpointTest {
     public void shouldThrowInvalidScopeExceptionWhenScopeIsNotASetOfStrings() throws Exception {
 
         //Given
-        JsonRepresentation entity = mock(JsonRepresentation.class);
-        JSONObject requestBody = mock(JSONObject.class);
+        givenBody(json(object(field("resource_set_id", "RESOURCE_SET_ID"), field("scopes", "SCOPE"))));
         ResourceSetDescription resourceSetDescription = new ResourceSetDescription("RESOURCE_SET_ID",
                 "CLIENT_ID", "RESOURCE_OWNER_ID", Collections.<String, Object>emptyMap());
-
-        given(entity.getJsonObject()).willReturn(requestBody);
-        given(requestBody.toString()).willReturn("{\"resource_set_id\":\"RESOURCE_SET_ID\", \"scopes\":\"SCOPE\"}");
         given(resourceSetStore.read("RESOURCE_SET_ID", "RESOURCE_OWNER_ID")).willReturn(resourceSetDescription);
 
         //When
         try {
-            endpoint.registerPermissionRequest(entity);
+            endpoint.registerPermissionRequest(context, request);
         } catch (UmaException e) {
             //Then
             assertThat(e.getStatusCode()).isEqualTo(400);
@@ -230,18 +203,13 @@ public class PermissionRequestEndpointTest {
     public void shouldThrowInvalidResourceSetIdExceptionWhenResourceSetNotFound() throws Exception {
 
         //Given
-        JsonRepresentation entity = mock(JsonRepresentation.class);
-        JSONObject requestBody = mock(JSONObject.class);
-
-        given(entity.getJsonObject()).willReturn(requestBody);
-        given(requestBody.toString()).willReturn("{\"resource_set_id\":\"RESOURCE_SET_ID\", "
-                + "\"scopes\":[\"SCOPE_A\", \"SCOPE_C\"]}");
-
+        givenBody(json(object(field("resource_set_id", "RESOURCE_SET_ID"),
+                field("scopes", array("SCOPE_A", "SCOPE_C")))));
         doThrow(NotFoundException.class).when(resourceSetStore).read("RESOURCE_SET_ID", "RESOURCE_OWNER_ID");
 
         //When
         try {
-            endpoint.registerPermissionRequest(entity);
+            endpoint.registerPermissionRequest(context, request);
         } catch (UmaException e) {
             //Then
             assertThat(e.getStatusCode()).isEqualTo(400);
@@ -254,18 +222,13 @@ public class PermissionRequestEndpointTest {
     public void shouldThrowInvalidResourceSetIdExceptionWhenResourceSetStoreThrowsServerException() throws Exception {
 
         //Given
-        JsonRepresentation entity = mock(JsonRepresentation.class);
-        JSONObject requestBody = mock(JSONObject.class);
-
-        given(entity.getJsonObject()).willReturn(requestBody);
-        given(requestBody.toString()).willReturn("{\"resource_set_id\":\"RESOURCE_SET_ID\", "
-                + "\"scopes\":[\"SCOPE_A\", \"SCOPE_C\"]}");
-
+        givenBody(json(object(field("resource_set_id", "RESOURCE_SET_ID"),
+                field("scopes", array("SCOPE_A", "SCOPE_C")))));
         doThrow(ServerException.class).when(resourceSetStore).read("RESOURCE_SET_ID", "RESOURCE_OWNER_ID");
 
         //When
         try {
-            endpoint.registerPermissionRequest(entity);
+            endpoint.registerPermissionRequest(context, request);
         } catch (UmaException e) {
             //Then
             assertThat(e.getStatusCode()).isEqualTo(400);
@@ -278,18 +241,13 @@ public class PermissionRequestEndpointTest {
     public void shouldThrowInvalidScopeExceptionWhenRequestedScopeNotInResourceScope() throws Exception {
 
         //Given
-        JsonRepresentation entity = mock(JsonRepresentation.class);
-        JSONObject requestBody = mock(JSONObject.class);
-
-        given(entity.getJsonObject()).willReturn(requestBody);
-        given(requestBody.toString()).willReturn("{\"resource_set_id\":\"RESOURCE_SET_ID\", "
-                + "\"scopes\":[\"SCOPE_A\", \"SCOPE_C\"]}");
-
+        givenBody(json(object(field("resource_set_id", "RESOURCE_SET_ID"),
+                field("scopes", array("SCOPE_A", "SCOPE_C")))));
         setupResourceSetStore();
 
         //When
         try {
-            endpoint.registerPermissionRequest(entity);
+            endpoint.registerPermissionRequest(context, request);
         } catch (UmaException e) {
             //Then
             assertThat(e.getStatusCode()).isEqualTo(400);
@@ -304,30 +262,22 @@ public class PermissionRequestEndpointTest {
     public void shouldReturnPermissionTicket() throws Exception {
 
         //Given
-        JsonRepresentation entity = mock(JsonRepresentation.class);
-        JSONObject requestBody = mock(JSONObject.class);
-
-        given(entity.getJsonObject()).willReturn(requestBody);
-        given(requestBody.toString()).willReturn("{\"resource_set_id\":\"RESOURCE_SET_ID\", "
-                + "\"scopes\":[\"SCOPE_A\", \"SCOPE_B\"]}");
-
+        givenBody(json(object(field("resource_set_id", "RESOURCE_SET_ID"),
+                field("scopes", array("SCOPE_A", "SCOPE_B")))));
         setupResourceSetStore();
 
         PermissionTicket ticket = new PermissionTicket("abc", null, null, null);
-        given(umaTokenStore.createPermissionTicket(eq("RESOURCE_SET_ID"), anySetOf(String.class), eq("CLIENT_ID"))).willReturn(ticket);
+        given(umaTokenStore.createPermissionTicket(eq("RESOURCE_SET_ID"), anySetOf(String.class), eq("CLIENT_ID")))
+                .willReturn(ticket);
 
         //When
-        Representation responseBody = endpoint.registerPermissionRequest(entity);
+        Response response = endpoint.registerPermissionRequest(context, request);
 
         //Then
-        Map<String, String> permissionTicket = (Map<String, String>) new ObjectMapper()
-                .readValue(responseBody.getText(), Map.class);
+        assertThat(response.getStatus().getCode()).isEqualTo(201);
+        Map<String, String> permissionTicket = (Map<String, String>) response.getEntity().getJson();
         assertThat(permissionTicket).containsEntry("ticket", "abc");
-
-        verify(permissionRequestFilter).onPermissionRequest(any(ResourceSetDescription.class), anySetOf(String.class),
-                anyString());
-        ArgumentCaptor<Status> statusCaptor = ArgumentCaptor.forClass(Status.class);
-        verify(response).setStatus(statusCaptor.capture());
-        assertThat(statusCaptor.getValue().getCode()).isEqualTo(201);
+        verify(permissionRequestFilter).onPermissionRequest(any(ResourceSetDescription.class),
+                anySetOf(String.class), anyString());
     }
 }

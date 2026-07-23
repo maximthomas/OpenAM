@@ -1131,6 +1131,10 @@
         <servlet-name>OpenAM</servlet-name>
         <url-pattern>/xacml/*</url-pattern>
     </servlet-mapping>
+    <servlet-mapping>
+        <servlet-name>OpenAM</servlet-name>
+        <url-pattern>/uma/*</url-pattern>
+    </servlet-mapping>
 
     <servlet>
         <servlet-name>ForgeRockRest</servlet-name>
@@ -1139,10 +1143,6 @@
     <servlet-mapping>
         <servlet-name>ForgeRockRest</servlet-name>
         <url-pattern>/oauth2/*</url-pattern>
-    </servlet-mapping>
-    <servlet-mapping>
-        <servlet-name>ForgeRockRest</servlet-name>
-        <url-pattern>/uma/*</url-pattern>
     </servlet-mapping>
 
     <!-- Setup favicon.ico extension type -->

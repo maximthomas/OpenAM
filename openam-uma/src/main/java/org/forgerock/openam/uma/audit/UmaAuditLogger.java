@@ -12,6 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
+ * Portions copyright 2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.uma.audit;
@@ -26,12 +27,9 @@ import com.sun.identity.shared.debug.Debug;
 import org.forgerock.json.JsonPointer;
 import org.forgerock.util.query.QueryFilter;
 import org.forgerock.json.resource.QueryRequest;
-import org.forgerock.oauth2.core.AccessToken;
 import org.forgerock.oauth2.core.OAuth2ProviderSettings;
 import org.forgerock.oauth2.core.OAuth2ProviderSettingsFactory;
-import org.forgerock.oauth2.core.OAuth2RequestFactory;
-import org.forgerock.oauth2.core.TokenStore;
-import org.forgerock.oauth2.core.exceptions.InvalidGrantException;
+import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.openam.oauth2.ResourceSetDescription;
 import org.forgerock.oauth2.resources.ResourceSetStore;
@@ -42,28 +40,21 @@ import org.forgerock.openam.sm.datalayer.impl.uma.UmaAuditEntry;
 import org.forgerock.openam.sm.datalayer.store.ServerException;
 import org.forgerock.openam.sm.datalayer.store.TokenDataStore;
 import org.forgerock.openam.uma.UmaException;
-import org.restlet.Request;
-import org.restlet.data.ChallengeResponse;
 
 @Singleton
 public class UmaAuditLogger {
     private final TokenDataStore<UmaAuditEntry> delegate;
     private final Debug logger = Debug.getInstance("UmaAuditLogger");
-    private final OAuth2RequestFactory requestFactory;
-    private final TokenStore oauth2TokenStore;
     private final OAuth2ProviderSettingsFactory oauth2ProviderSettingsFactory;
 
     @Inject
     public UmaAuditLogger(@DataLayer(ConnectionType.UMA_AUDIT_ENTRY) TokenDataStore delegate,
-            TokenStore oauth2TokenStore, OAuth2RequestFactory requestFactory,
             OAuth2ProviderSettingsFactory oauth2ProviderSettingsFactory) {
         this.delegate = delegate;
-        this.requestFactory = requestFactory;
-        this.oauth2TokenStore = oauth2TokenStore;
         this.oauth2ProviderSettingsFactory = oauth2ProviderSettingsFactory;
     }
 
-    public void log(String resourceSetId, AMIdentity resourceOwner, UmaAuditType message, Request request,
+    public void log(String resourceSetId, AMIdentity resourceOwner, UmaAuditType message, OAuth2Request request,
             String requestingPartyId) {
         try {
             log(resourceSetId, getResourceName(resourceSetId, request), resourceOwner, message, requestingPartyId);
@@ -102,9 +93,9 @@ public class UmaAuditLogger {
                 .accept(new UmaAuditQueryFilterVisitor(), null);
     }
 
-    public String getResourceName(String resourceSetId, Request request) throws NotFoundException, UmaException,
+    public String getResourceName(String resourceSetId, OAuth2Request request) throws NotFoundException, UmaException,
             org.forgerock.oauth2.core.exceptions.ServerException {
-        OAuth2ProviderSettings providerSettings = oauth2ProviderSettingsFactory.get(requestFactory.create(request));
+        OAuth2ProviderSettings providerSettings = oauth2ProviderSettingsFactory.get(request);
         ResourceSetDescription resourceSetDescription = getResourceSet(resourceSetId, providerSettings);
         return resourceSetDescription.getName();
     }
@@ -121,19 +112,6 @@ public class UmaAuditLogger {
             return results.iterator().next();
         } catch (org.forgerock.oauth2.core.exceptions.ServerException e) {
             throw new UmaException(400, "invalid_resource_set_id", e.getMessage());
-        }
-    }
-
-    private String getClientId(Request request) throws org.forgerock.oauth2.core.exceptions.ServerException {
-        ChallengeResponse challengeResponse = request.getChallengeResponse();
-        try {
-            AccessToken accessToken = oauth2TokenStore.readAccessToken(requestFactory.create(request),
-                    challengeResponse.getRawValue());
-            return accessToken.getClientId();
-        } catch (InvalidGrantException e) {
-            throw new org.forgerock.oauth2.core.exceptions.ServerException("Unable to verify client identity.");
-        } catch (NotFoundException e) {
-            throw new org.forgerock.oauth2.core.exceptions.ServerException(e.getMessage());
         }
     }
 

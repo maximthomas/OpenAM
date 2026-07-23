@@ -19,8 +19,11 @@ package org.forgerock.openam.uma;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 
 import java.net.URI;
 import java.util.Collections;
@@ -28,16 +31,14 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.forgerock.http.protocol.Response;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
-import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
-import org.mockito.ArgumentMatchers;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
-import org.restlet.Request;
-import org.restlet.Response;
-import org.restlet.ext.jackson.JacksonRepresentation;
-import org.restlet.representation.Representation;
+import org.forgerock.openam.core.realms.Realm;
+import org.forgerock.openam.rest.RealmContext;
+import org.forgerock.services.context.AttributesContext;
+import org.forgerock.services.context.Context;
+import org.forgerock.services.context.RootContext;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -47,11 +48,9 @@ public class UmaWellKnownConfigurationEndpointTest {
 
     private UmaProviderSettingsFactory providerSettingsFactory;
     private UmaUrisFactory umaUrisFactory;
-    private Response response;
     private UmaUris umaUris;
     private UmaProviderSettings providerSettings;
-    private JacksonRepresentationFactory jacksonRepresentationFactory =
-            new JacksonRepresentationFactory(new ObjectMapper());
+    private Context context;
 
     @BeforeMethod
     public void setup() throws Exception {
@@ -59,21 +58,19 @@ public class UmaWellKnownConfigurationEndpointTest {
         umaUrisFactory = mock(UmaUrisFactory.class);
         providerSettingsFactory = mock(UmaProviderSettingsFactory.class);
 
-        UmaExceptionHandler exceptionHandler = mock(UmaExceptionHandler.class);
+        endpoint = new UmaWellKnownConfigurationEndpoint(umaUrisFactory, providerSettingsFactory);
 
-        endpoint = new UmaWellKnownConfigurationEndpoint(umaUrisFactory, providerSettingsFactory, exceptionHandler,
-                jacksonRepresentationFactory);
-
-        response = mock(Response.class);
-        endpoint.setResponse(response);
+        // The realm the endpoint resolves from the context; get(...) is stubbed with matchers so the
+        // exact realm instance/path does not matter.
+        context = new RealmContext(new AttributesContext(new RootContext()), Realm.root());
 
         umaUris = mock(UmaUris.class);
         providerSettings = mock(UmaProviderSettings.class);
-        given(umaUrisFactory.get(ArgumentMatchers.<Request>anyObject())).willReturn(umaUris);
-        given(providerSettingsFactory.get(ArgumentMatchers.<Request>anyObject())).willReturn(providerSettings);
+        given(umaUrisFactory.get(any(Context.class), any(Realm.class))).willReturn(umaUris);
+        given(providerSettingsFactory.get(anyString())).willReturn(providerSettings);
     }
 
-    private UmaProviderSettings setupProviderSettings() throws NotFoundException, ServerException {
+    private void setupProviderSettings() throws NotFoundException, ServerException {
         given(providerSettings.getVersion()).willReturn("VERSION");
         given(umaUris.getIssuer()).willReturn(URI.create("ISSUER"));
         given(providerSettings.getSupportedPATProfiles()).willReturn(Collections.singleton("PAT_PROFILE"));
@@ -87,35 +84,29 @@ public class UmaWellKnownConfigurationEndpointTest {
         given(umaUris.getResourceSetRegistrationEndpoint()).willReturn(URI.create("RESOURCE_SET_REGISTRATION_ENDPOINT"));
         given(umaUris.getPermissionRegistrationEndpoint()).willReturn(URI.create("PERMISSION_REGISTRATION_ENDPOINT"));
         given(umaUris.getRPTEndpoint()).willReturn(URI.create("RPT_ENDPOINT"));
-
-        return providerSettings;
     }
 
-    private UmaProviderSettings setupProviderSettingsWithOptionalConfiguration() throws NotFoundException, ServerException {
+    private void setupProviderSettingsWithOptionalConfiguration() throws NotFoundException, ServerException {
         setupProviderSettings();
-        given(umaUrisFactory.get(ArgumentMatchers.<Request>anyObject())).willReturn(umaUris);
         given(providerSettings.getSupportedClaimTokenProfiles())
                 .willReturn(Collections.singleton("CLAIM_TOKEN_PROFILE"));
         given(providerSettings.getSupportedUmaProfiles()).willReturn(Collections.singleton(URI.create("UMA_PROFILE")));
         given(umaUris.getDynamicClientEndpoint()).willReturn(URI.create("DYNAMIC_CLIENT_ENDPOINT"));
         given(umaUris.getRequestingPartyClaimsEndpoint()).willReturn(URI.create("REQUESTING_PARTY_CLAIMS_ENDPOINT"));
-        return providerSettings;
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     public void shouldGetRequiredUmaConfiguration() throws Exception {
 
         //Given
         setupProviderSettings();
 
         //When
-        Representation configuration = endpoint.getConfiguration();
+        Response response = endpoint.getConfiguration(context);
 
         //Then
-        Map<String, Object> configurationResponse = (Map<String, Object>) new ObjectMapper()
-                .readValue(configuration.getText(), Map.class);
-        assertThat(configurationResponse).contains(entry("version", "VERSION"), entry("issuer", "ISSUER"),
+        assertThat(response.getStatus().getCode()).isEqualTo(200);
+        assertThat(bodyOf(response)).contains(entry("version", "VERSION"), entry("issuer", "ISSUER"),
                 entry("pat_profiles_supported", Collections.singletonList("PAT_PROFILE")),
                 entry("aat_profiles_supported", Collections.singletonList("AAT_PROFILE")),
                 entry("rpt_profiles_supported", Collections.singletonList("RPT_PROFILE")),
@@ -126,24 +117,20 @@ public class UmaWellKnownConfigurationEndpointTest {
                 entry("resource_set_registration_endpoint", "RESOURCE_SET_REGISTRATION_ENDPOINT"),
                 entry("permission_registration_endpoint", "PERMISSION_REGISTRATION_ENDPOINT"),
                 entry("rpt_endpoint", "RPT_ENDPOINT"));
-
-        verifyZeroInteractions(response);
     }
 
     @Test
-    @SuppressWarnings("unchecked")
     public void shouldGetOptionalUmaConfiguration() throws Exception {
 
         //Given
         setupProviderSettingsWithOptionalConfiguration();
 
         //When
-        Representation configuration = endpoint.getConfiguration();
+        Response response = endpoint.getConfiguration(context);
 
         //Then
-        Map<String, Object> configurationResponse = (Map<String, Object>) new ObjectMapper()
-                .readValue(configuration.getText(), Map.class);
-        assertThat(configurationResponse).contains(entry("version", "VERSION"), entry("issuer", "ISSUER"),
+        assertThat(response.getStatus().getCode()).isEqualTo(200);
+        assertThat(bodyOf(response)).contains(entry("version", "VERSION"), entry("issuer", "ISSUER"),
                 entry("pat_profiles_supported", Collections.singletonList("PAT_PROFILE")),
                 entry("aat_profiles_supported", Collections.singletonList("AAT_PROFILE")),
                 entry("rpt_profiles_supported", Collections.singletonList("RPT_PROFILE")),
@@ -158,21 +145,24 @@ public class UmaWellKnownConfigurationEndpointTest {
                 entry("uma_profiles_supported", Collections.singletonList("UMA_PROFILE")),
                 entry("dynamic_client_endpoint", "DYNAMIC_CLIENT_ENDPOINT"),
                 entry("requesting_party_claims_endpoint", "REQUESTING_PARTY_CLAIMS_ENDPOINT"));
-
-        verifyZeroInteractions(response);
     }
 
     @Test(expectedExceptions = NotFoundException.class)
-    @SuppressWarnings("unchecked")
     public void shouldThrowNotFoundExceptionWhenUmaProviderNotConfigured() throws Exception {
 
         //Given
-        doThrow(NotFoundException.class).when(providerSettingsFactory).get(ArgumentMatchers.<Request>anyObject());
+        doThrow(NotFoundException.class).when(providerSettingsFactory).get(anyString());
 
         //When
-        endpoint.getConfiguration();
+        endpoint.getConfiguration(context);
 
-        //Then
-        //Expected NotFoundException
+        //Then -- the endpoint lets it propagate; the shared @ExceptionHandler maps it only under the framework.
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> bodyOf(Response response) throws Exception {
+        // getString() yields the serialized wire JSON (URIs rendered as strings), unlike getJson() which
+        // returns the raw map still holding URI objects.
+        return new ObjectMapper().readValue(response.getEntity().getString(), Map.class);
     }
 }

@@ -40,20 +40,18 @@ public class RestEndpointServletTest {
     private RestEndpointServlet restEndpointServlet;
 
     private RestletServiceServlet restletOAuth2ServiceServlet;
-    private RestletServiceServlet restletUMAServiceServlet;
 
     @BeforeClass
     public void setupMocks() {
         restletOAuth2ServiceServlet = mock(RestletServiceServlet.class);
-        restletUMAServiceServlet = mock(RestletServiceServlet.class);
     }
 
     @BeforeMethod
     public void setUp() {
 
-        reset(restletOAuth2ServiceServlet, restletUMAServiceServlet);
+        reset(restletOAuth2ServiceServlet);
 
-        restEndpointServlet = new RestEndpointServlet(restletOAuth2ServiceServlet, restletUMAServiceServlet);
+        restEndpointServlet = new RestEndpointServlet(restletOAuth2ServiceServlet);
     }
 
     @Test
@@ -66,14 +64,12 @@ public class RestEndpointServletTest {
 
         //Then
         verifyZeroInteractions(restletOAuth2ServiceServlet);
-        verifyZeroInteractions(restletUMAServiceServlet);
     }
 
     @DataProvider(name = "restletPaths")
     public Object[][] restletPathData() {
         return new Object[][] {
-                {"/oauth2", restletOAuth2ServiceServlet},
-                {"/uma", restletUMAServiceServlet}
+                {"/oauth2", restletOAuth2ServiceServlet}
         };
     }
 
@@ -95,7 +91,7 @@ public class RestEndpointServletTest {
 
         //Then
         verify(servlet).service(ArgumentMatchers.<HttpServletRequest>anyObject(), eq(response));
-        for (HttpServlet s : Arrays.asList(restletOAuth2ServiceServlet, restletUMAServiceServlet)) {
+        for (HttpServlet s : Arrays.asList(restletOAuth2ServiceServlet)) {
             if (s != servlet) {
                 verifyZeroInteractions(s);
             }
@@ -112,6 +108,5 @@ public class RestEndpointServletTest {
 
         //Then
         verify(restletOAuth2ServiceServlet).destroy();
-        verify(restletUMAServiceServlet).destroy();
     }
 }

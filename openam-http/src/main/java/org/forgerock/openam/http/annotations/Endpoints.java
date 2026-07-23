@@ -71,7 +71,7 @@ public final class Endpoints {
                     // no-method sentinel, so both "method not allowed" paths render one shape rather
                     // than the status-line-405/body-code-501 mismatch a NotSupportedException gave.
                     Response response = new Response(Status.METHOD_NOT_ALLOWED);
-                    response.setEntity(AnnotatedMethod.crestBody(ResourceException.getException(
+                    response.setEntity(AnnotatedMethod.crestBody(ResourceException.newResourceException(
                             Status.METHOD_NOT_ALLOWED.getCode(), Status.METHOD_NOT_ALLOWED.getReasonPhrase())));
                     return newResultPromise(response);
                 }

@@ -12,12 +12,10 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.uma;
-
-import static org.forgerock.json.JsonValue.json;
 
 import jakarta.inject.Inject;
 
@@ -25,10 +23,11 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.lang3.StringUtils;
+import org.forgerock.http.protocol.Request;
+import org.forgerock.http.protocol.Response;
+import org.forgerock.http.protocol.Status;
 import org.forgerock.json.JsonValue;
 import org.forgerock.json.JsonValueException;
 import org.forgerock.oauth2.core.AccessToken;
@@ -38,69 +37,58 @@ import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.OAuth2RequestFactory;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
+import org.forgerock.openam.http.annotations.Contextual;
+import org.forgerock.openam.http.annotations.Post;
 import org.forgerock.openam.oauth2.ResourceSetDescription;
 import org.forgerock.oauth2.resources.ResourceSetStore;
 import org.forgerock.openam.oauth2.extensions.ExtensionFilterManager;
-import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.forgerock.openam.uma.extensions.PermissionRequestFilter;
-import org.forgerock.openam.utils.JsonValueBuilder;
-import org.json.JSONException;
-import org.restlet.Request;
-import org.restlet.data.Status;
-import org.restlet.ext.jackson.JacksonRepresentation;
-import org.restlet.ext.json.JsonRepresentation;
-import org.restlet.representation.Representation;
-import org.restlet.resource.Post;
-import org.restlet.resource.ServerResource;
+import org.forgerock.services.context.Context;
+import org.openidentityplatform.openam.uma.AbstractUmaHttpEndpoint;
 
 /**
- * Restlet endpoint for UMA resource servers to register client attempts to access a protected resource.
+ * Endpoint for UMA resource servers to register client attempts to access a protected resource.
  *
  * @since 13.0.0
  */
-public class PermissionRequestEndpoint extends ServerResource {
+public class PermissionRequestEndpoint extends AbstractUmaHttpEndpoint {
 
     private final OAuth2ProviderSettingsFactory providerSettingsFactory;
     private final OAuth2RequestFactory requestFactory;
     private final UmaProviderSettingsFactory umaProviderSettingsFactory;
     private final ExtensionFilterManager extensionFilterManager;
-    private final UmaExceptionHandler exceptionHandler;
-    private final JacksonRepresentationFactory jacksonRepresentationFactory;
 
     /**
      * Constructs a new PermissionRequestEndpoint instance
      * @param providerSettingsFactory An instance of the OAuth2ProviderSettingsFactory.
      * @param requestFactory An instance of the OAuth2RequestFactory.
+     * @param umaProviderSettingsFactory An instance of the UmaProviderSettingsFactory.
      * @param extensionFilterManager An instance of the ExtensionFilterManager.
-     * @param exceptionHandler The exception handler.
-     * @param jacksonRepresentationFactory The factory for {@code JacksonRepresentation} instances.
      */
     @Inject
     public PermissionRequestEndpoint(OAuth2ProviderSettingsFactory providerSettingsFactory,
             OAuth2RequestFactory requestFactory, UmaProviderSettingsFactory umaProviderSettingsFactory,
-            ExtensionFilterManager extensionFilterManager, UmaExceptionHandler exceptionHandler,
-            JacksonRepresentationFactory jacksonRepresentationFactory) {
+            ExtensionFilterManager extensionFilterManager) {
         this.providerSettingsFactory = providerSettingsFactory;
         this.requestFactory = requestFactory;
         this.umaProviderSettingsFactory = umaProviderSettingsFactory;
         this.extensionFilterManager = extensionFilterManager;
-        this.exceptionHandler = exceptionHandler;
-        this.jacksonRepresentationFactory = jacksonRepresentationFactory;
     }
 
     /**
      * Registers the permission that the client requires for it to be able to access a protected resource.
      *
-     * @param entity The permission request JSON body.
-     * @return A JSON object containing the permission ticket.
+     * @param context The request context.
+     * @param request The CHF request carrying the permission request JSON body.
+     * @return A 201 response containing the permission ticket.
      * @throws UmaException If the JSON request body is invalid or the requested resource set does not exist.
      */
     @Post
-    public Representation registerPermissionRequest(JsonRepresentation entity) throws UmaException, NotFoundException,
-            ServerException {
-        JsonValue permissionRequest = json(toMap(entity));
+    public Response registerPermissionRequest(@Contextual Context context, @Contextual Request request)
+            throws UmaException, NotFoundException, ServerException {
+        OAuth2Request oAuth2Request = requestFactory.create(context, request);
+        JsonValue permissionRequest = oAuth2Request.getBody();
         String resourceSetId = getResourceSetId(permissionRequest);
-        OAuth2Request oAuth2Request = requestFactory.create(getRequest());
         String clientId = getClientId(oAuth2Request);
         OAuth2ProviderSettings providerSettings = providerSettingsFactory.get(oAuth2Request);
         String resourceOwnerId = getResourceOwnerId(oAuth2Request);
@@ -110,14 +98,10 @@ public class PermissionRequestEndpoint extends ServerResource {
         for (PermissionRequestFilter filter : extensionFilterManager.getFilters(PermissionRequestFilter.class)) {
             filter.onPermissionRequest(resourceSetDescription, scopes, clientId);
         }
-        String ticket = umaProviderSettingsFactory.get(getRequest()).getUmaTokenStore()
+        String ticket = umaProviderSettingsFactory.get(oAuth2Request).getUmaTokenStore()
                 .createPermissionTicket(resourceSetId, scopes, clientId).getId();
-        return setResponse(201, Collections.<String, Object>singletonMap("ticket", ticket));
-    }
-
-    @Override
-    protected void doCatch(Throwable throwable) {
-        exceptionHandler.handleException(getResponse(), throwable);
+        // setEntity(Map) -> application/json; charset=UTF-8.
+        return new Response(Status.valueOf(201)).setEntity(Collections.<String, Object>singletonMap("ticket", ticket));
     }
 
     private String getResourceSetId(JsonValue permissionRequest) throws UmaException {
@@ -181,28 +165,5 @@ public class PermissionRequestEndpoint extends ServerResource {
 
     private String getResourceOwnerId(OAuth2Request request) {
         return request.getToken(AccessToken.class).getResourceOwnerId();
-    }
-
-    private Representation setResponse(int statusCode, Map<String, Object> entity) {
-        getResponse().setStatus(new Status(statusCode));
-        return jacksonRepresentationFactory.create(entity);
-    }
-
-    private Map<String, Object> toMap(JsonRepresentation entity) throws UmaException {
-        if (entity == null) {
-            return Collections.emptyMap();
-        }
-
-        try {
-            final String jsonString = entity.getJsonObject().toString();
-            if (StringUtils.isNotEmpty(jsonString)) {
-                JsonValue jsonContent = JsonValueBuilder.toJsonValue(jsonString);
-                return jsonContent.asMap(Object.class);
-            }
-
-            return Collections.emptyMap();
-        } catch (JSONException e) {
-            throw new UmaException(400, "invalid_resource_set_id", e.getMessage());
-        }
     }
 }

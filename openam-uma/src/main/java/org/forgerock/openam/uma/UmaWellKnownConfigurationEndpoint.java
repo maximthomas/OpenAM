@@ -12,7 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.uma;
@@ -26,55 +26,54 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Set;
 
+import org.forgerock.http.protocol.Response;
+import org.forgerock.http.protocol.Status;
 import org.forgerock.json.JsonValue;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
-import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
-import org.restlet.ext.jackson.JacksonRepresentation;
-import org.restlet.representation.Representation;
-import org.restlet.resource.Get;
-import org.restlet.resource.ServerResource;
+import org.forgerock.openam.core.realms.Realm;
+import org.forgerock.openam.http.annotations.Contextual;
+import org.forgerock.openam.http.annotations.Get;
+import org.forgerock.openam.rest.RealmContext;
+import org.forgerock.services.context.Context;
+import org.openidentityplatform.openam.uma.AbstractUmaHttpEndpoint;
 
 /**
  * .well-known configuration for a UMA Authorization Server instance.
  *
  * @since 13.0.0
  */
-public class UmaWellKnownConfigurationEndpoint extends ServerResource {
+public class UmaWellKnownConfigurationEndpoint extends AbstractUmaHttpEndpoint {
 
     private final UmaUrisFactory urisFactory;
-    private final UmaExceptionHandler exceptionHandler;
     private final UmaProviderSettingsFactory providerSettingsFactory;
-    private final JacksonRepresentationFactory jacksonRepresentationFactory;
 
     /**
      * Constructs a new instance of a UmaWellKnownConfigurationEndpoint.
-     *  @param urisFactory An instance of the UmaProviderSettingFactory.
-     * @param exceptionHandler An instance of the UmaExceptionHandler.
-     * @param jacksonRepresentationFactory The factory for {@code JacksonRepresentation} instances.
+     * @param urisFactory An instance of the UmaUrisFactory.
+     * @param providerSettingsFactory An instance of the UmaProviderSettingsFactory.
      */
     @Inject
     public UmaWellKnownConfigurationEndpoint(UmaUrisFactory urisFactory,
-            UmaProviderSettingsFactory providerSettingsFactory, UmaExceptionHandler exceptionHandler,
-            JacksonRepresentationFactory jacksonRepresentationFactory) {
+            UmaProviderSettingsFactory providerSettingsFactory) {
         this.urisFactory = urisFactory;
         this.providerSettingsFactory = providerSettingsFactory;
-        this.exceptionHandler = exceptionHandler;
-        this.jacksonRepresentationFactory = jacksonRepresentationFactory;
     }
 
     /**
      * Gets the configuration for the configured UMA provider for the realm.
      *
+     * @param context The request context; the realm is resolved from its {@link RealmContext}.
      * @return The UMA configuration.
      * @throws NotFoundException If no UMA provider has been configured for the realm.
      * @throws ServerException If there is a problem retrieving the configuration for the store.
      */
     @Get
-    public Representation getConfiguration() throws NotFoundException, ServerException {
+    public Response getConfiguration(@Contextual Context context) throws NotFoundException, ServerException {
 
-        UmaUris umaUris = urisFactory.get(getRequest());
-        UmaProviderSettings providerSettings = providerSettingsFactory.get(getRequest());
+        Realm realm = context.asContext(RealmContext.class).getRealm();
+        UmaUris umaUris = urisFactory.get(context, realm);
+        UmaProviderSettings providerSettings = providerSettingsFactory.get(realm.asPath());
 
         JsonValue configuration = json(object(
                 field("version", providerSettings.getVersion()),
@@ -108,11 +107,7 @@ public class UmaWellKnownConfigurationEndpoint extends ServerResource {
             configuration.add("requesting_party_claims_endpoint", requestingPartyClaimsEndpoint.toString());
         }
 
-        return jacksonRepresentationFactory.create(configuration.asMap());
-    }
-
-    @Override
-    protected void doCatch(Throwable throwable) {
-        exceptionHandler.handleException(getResponse(), throwable);
+        // setEntity(Map) routes to setJson -> application/json; charset=UTF-8.
+        return new Response(Status.OK).setEntity(configuration.asMap());
     }
 }

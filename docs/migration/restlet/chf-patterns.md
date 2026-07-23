@@ -434,6 +434,14 @@ Context ctx = comp.getContext().createChildContext();   // == RestEndpointServle
   fixture, so a *fictional* one still passes parity while silently voiding the golden's post-migration value.
   3c-1 found three keys whose natural-looking types are wrong — see
   [phase-3c-1 D12](phase-3c-1-renderer.md#d12--golden-data-models-are-derived-from-the-producers).
+  - **A hand-built empty legacy representation is not a production empty body.** Verified building 3d-2's
+    `RestletAuditParityTest`: a production empty body is a `Representation` reporting `isEmpty()==true`, on which
+    `RestletBodyAuditor.jacksonAuditor` short-circuits to `{}`. A `new JacksonRepresentation<>(new
+    StringRepresentation(""), Map.class)` does **not** report empty — it tries to parse `""` and throws. So the
+    empty-body row cannot A/B the Jackson leg; assert the CHF auditor against the **org.json `jsonAuditor`** leg
+    there (it guards `isEmpty()` on the representation) and document why. General lesson: an empty/edge fixture
+    hand-wrapped for the legacy leg may not hit the same guard the real producer does — check the guard, not the
+    constructor.
 - **Pin the golden files' own I/O charset** (`UTF_8` on read *and* write). Pinning the renderer's encoding says
   nothing about how the test reads its fixtures; default-charset I/O reintroduces `file.encoding` dependence
   across the JDK 11–26 × 3-OS matrix (JEP 400 flipped the default at 18).
@@ -527,3 +535,26 @@ reading `userId`/`trackingIds` from `AuditRequestContext` and HTTP detail from
   filter leaves it re-readable for the handler — no `BufferingRepresentation` equivalent needed (contrast the
   Restlet base's transient-entity wrap). Restlet's `jsonAuditor`+`jacksonAuditor` **collapse to one** on CHF
   (single `Entity.getJson()`).
+
+**Confirmed building 3d-2** (`OAuth2HttpAccessAuditFilter`/`UMAHttpAccessAuditFilter`/`HttpBodyAuditor`, commit
+`41170fb92a`; full record: [phase-3d-audit.md § As-built](phase-3d-audit.md#as-built)):
+
+- **`OAuth2RequestFactory.create(context, request)` caches one `ChfOAuth2Request` on the `AttributesContext`.**
+  So every per-request reader in a chain — the audit filter, `ClientAuthenticator`, any handler — that calls
+  `create(context, request)` gets the **same instance and its attribute map**. This is what makes the audit
+  filter's `AM_CTX_ID` request-attribute fallback (`oAuth2Request.getAttribute(AM_CTX_ID)`) able to read what
+  `ClientAuthenticator` wrote, and it means a filter never pays to rebuild the request. Rely on it when wiring
+  Phase 4/5 routes; do **not** thread a request object through manually.
+- **Give any filter that resolves an SSO session a `protected SSOToken getSSOToken(OAuth2Request)` seam.**
+  `SSOTokenManager.getInstance().createSSOToken(...)` is a static that cannot run in a unit/IT JVM; a `protected`
+  override point lets tests supply (or null out) the session without the static. Its cost, inherited from the
+  Restlet original, is that it is **not cached per request** — called in both `getUserId` and the tracking-id
+  helper, i.e. up to **4× per audited request**. Faithful to Restlet; a caching pass is a CHF-cleanup item, not
+  a migration change.
+- **`OpenIdConnectToken` does not implement `IntrospectableToken`.** So the identity-derivation `instanceof`
+  ladder (`IntrospectableToken` → `getResourceOwnerId()`, else `OpenIdConnectToken` → `get(sub)`) is
+  order-safe — an OIDC token never matches the introspectable branch.
+- **`HttpBodyAuditor` is a pure `Entity → JsonValue`** with one shared `select(fields, valueOf)` loop behind
+  `jsonAuditor` (`map::get`) and `formAuditor` (`form::getFirst`) — the field-selection contract is defined once,
+  mirroring the legacy `RestletBodyAuditor.extractValues`. `noBodyAuditor()` is literally `null` (a `—` in the
+  finding-2 route matrix), so wiring can pass it directly.

@@ -646,6 +646,86 @@ closed it in 3d-1).
 
 ## As-built
 
-_To be filled on completion (mirror the 3c-1/3c-2 as-built sections): final class list + packages, test count
-delta from baseline, whether D3 was folded in or deferred, any correction to the finding-2 matrix discovered
-while wiring, and the resolved `AM_CTX_ID` behaviour._
+_Completed 2026-07-23 on `features/restlet-migration`. Landed as **two commits**, per the mandated split:_
+
+- **3d-1** `666ea57318` — *audit base enablement + `forRequest` query-only fix* (live-path, openam-audit-core).
+- **3d-2** `41170fb92a` — *OAuth2/UMA CHF audit filters (build-ahead) + 3d review fixes* (openam-oauth2). The
+  post-review cleanups to the 3d-1 base (below) were folded into this commit rather than a third.
+
+### Final classes
+
+**New (openam-oauth2, `org.openidentityplatform.openam.oauth2.audit`)** — CDDL + `Copyright 2026 3A Systems LLC.`, no `@since`:
+
+| Class | Shape |
+|---|---|
+| `HttpBodyAuditor` | `abstract … implements Function<Entity, JsonValue, AuditException>`; static `jsonAuditor` / `formAuditor` / `noBodyAuditor`; one private `select(fields, valueOf)` helper both auditors reuse (review #2) |
+| `OAuth2HttpAccessAuditFilter` | extends `AbstractHttpAccessAuditFilter` under `Component.OAUTH`; overrides the 4 context-bearing hooks (seed-then-read-back), `getRequestDetail`/`getResponseDetail`, `getRealm`; `protected getSSOToken(OAuth2Request)` testability seam |
+| `UMAHttpAccessAuditFilter` | extends the OAuth2 filter; overrides **only** the two outcome hooks so the outcome does not re-derive identity |
+
+**Modified in place** (`org.forgerock.openam.audit`, `Portions Copyrighted 2026 3A Systems LLC.`):
+
+| Class | Change |
+|---|---|
+| `AbstractHttpAccessAuditFilter` | 4 context-bearing hook overloads (delegating defaults) + 2 null detail hooks; attempt/success/failure rewired to consult them; **3xx→SUCCESSFUL** fix (`isClientError()||isServerError()`, D2); `Debug` logger field (`private static final`, review #4) |
+| `AMAccessAuditEventBuilder` | `forRequest` query params via `new Form().fromRequestQuery(request)` — query-only, no form-POST body leak (D3) |
+
+**No pom change** — the transitive `openam-audit-core` edge held (`mvn -o -pl openam-oauth2 install` clean); no direct dependency needed.
+
+### Tests
+
+| Class | Module | Count | Kind |
+|---|---|---|---|
+| `AbstractHttpAccessAuditFilterTest` (+6) / `AMAccessAuditEventBuilderTest` (+1 `forRequest` query-only) | openam-audit-core | **18** (both classes) | 3d-1 unit |
+| `HttpBodyAuditorTest` | openam-oauth2 | 7 | 3d-2 characterization (survives 5d) |
+| `RestletAuditParityTest` | openam-oauth2 | 10 | 3d-2 **parity oracle** |
+| `OAuth2HttpAccessAuditFilterTest` | openam-oauth2 | 8 | 3d-2 unit |
+| `UMAHttpAccessAuditFilterTest` | openam-oauth2 | 4 | 3d-2 unit |
+| `OAuth2AuditRouteCompositionIT` | openam-oauth2 | 2 | 3d-2 IT (failsafe) |
+
+3d-2 adds **29 unit + 2 IT**. Full `openam-oauth2 test` observed **916 green** (no regression). Verification
+criteria #5 (Restlet-import gate) = **0** in the new main classes. The parity oracle drives the real legacy
+`RestletBodyAuditor` (`jsonAuditor` + `jacksonAuditor` + `formAuditor`) against `HttpBodyAuditor` on identical
+bytes — green, so the finding-3 collapse and the field-selection contract are pinned to *observed* legacy output.
+
+### Resolved / confirmed at implementation
+
+- **D3 folded into 3d-1** as decided — not deferred.
+- **Finding-2 matrix: no correction.** 3d-2 constructs no live routes, so the per-endpoint auditor matrix
+  (§ finding 2) was not exercised; it remains a Phase 4/5d wiring input, unchanged.
+- **`AM_CTX_ID` fallback (finding 7 / R-3d.5) reproduced and de-risked.** The read is
+  `oAuth2Request.getAttribute(Constants.AM_CTX_ID)`; `OAuth2HttpAccessAuditFilterTest` pins it via a mocked
+  `getAttribute`. Confirmed during review *why* it will work end-to-end: `OAuth2RequestFactory.create(context,
+  request)` caches one `ChfOAuth2Request` on the `AttributesContext`, so the audit filter and `ClientAuthenticator`
+  share the same request instance and its attribute map — so once `ClientAuthenticator` is ported (Phase 5) and
+  writes `AM_CTX_ID` there, this fallback reads it. Still confirm in 5d smoke.
+- **`OpenIdConnectToken` does not implement `IntrospectableToken`** (verified), so the `instanceof` order in
+  `getUserId` is safe — an OIDC token takes the `sub` branch, not the resource-owner branch.
+- **Explicit-null divergence (D1) confirmed by the oracle**, not just asserted: `HttpBodyAuditor.jsonAuditor`
+  matches `jacksonAuditor` (omits an explicitly-`null` field) and diverges from the org.json `jsonAuditor`
+  (which emits `JSONObject.NULL`) — the accepted, deliberately-not-reproduced quirk.
+- **Parity-oracle empty-body limitation (test-infra gotcha).** A production empty body is a truly-empty
+  `Representation` (`isEmpty()==true`), which a hand-built `JacksonRepresentation` wrapping `""` **cannot**
+  reproduce — it tries to parse `""` and throws. So the empty-body parity row A/Bs against the **org.json
+  `jsonAuditor`** leg only (which guards `isEmpty()` on the representation), documented inline in the test. This
+  is a limitation of driving the legacy Jackson leg in-process, not a CHF-auditor defect.
+
+### Review fixes (folded into 3d-2 `41170fb92a`)
+
+The `/code-review` "reuse / don't reinvent" pass produced 5 findings; **#2, #4, #5 applied**, verified
+behaviour-neutral (audit-core 18, oauth2 29 + IT 2, parity oracle green):
+
+- **#2** — folded the duplicated per-field selection loop in `jsonAuditor`/`formAuditor` into one reused
+  `HttpBodyAuditor.select(...)` (mirrors legacy `RestletBodyAuditor.extractValues`).
+- **#4** — `Debug` logger `private final` → `private static final` (matches `AbstractRestletAccessAuditFilter`).
+- **#5** — stripped internal review-artifact tags (`finding N` / `D1` / `D2` / `D3`) from production and test
+  comments, keeping the self-contained explanation.
+
+**Left for the CHF-cleanup phase (both parity-faithful, deliberately not changed under a parity-first migration):**
+
+- **#1** `AMAccessAuditEventBuilder.forRequest` builds `http/request/path` with `uri.getPort()` == `-1` on
+  default-port URIs — pre-existing, affects Restlet and CHF identically, already in
+  [decisions.md § CHF cleanup backlog](decisions.md#chf-cleanup-backlog) (`:-1` bullet).
+- **#3** `getSSOToken` (an uncached `SSOTokenManager.createSSOToken` lookup) runs up to **4× per audited
+  request** — twice per attempt (`getUserId` + `putTrackingIds`), twice per outcome. This is faithful to the
+  Restlet original (`OAuth2AbstractAccessAuditFilter` calls `getSSOToken` in both helpers too); caching it for
+  the request lifetime would diverge from the parity oracle and belongs in the later CHF-cleanup pass.

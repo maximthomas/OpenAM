@@ -139,6 +139,26 @@ behaviour 3c reproduces. Full rationale: [phase-3c-1-renderer.md](phase-3c-1-ren
   The general rule, including the tier map and the cases where working around **is** correct (commons
   artifacts cost a release cycle), is [docs/framework-ownership.md](../../framework-ownership.md).
 
+<a id="chf-cleanup-backlog"></a>
+## CHF cleanup backlog (tracked, not blocking)
+
+Commons/CHF (`org.forgerock.http`, `../commons`) sharp edges found during the migration that we **own** and could
+fix at source, but that no in-flight phase strictly needs. Per
+[docs/framework-ownership.md](../../framework-ownership.md) a commons fix costs a release cycle, so these are
+routed around in-phase and fixed here only when a phase actually requires the corrected behaviour.
+
+- **`Form.fromRequestEntity` exact-matches the whole `Content-Type` header** (`Form.java:231-239`:
+  `"application/x-www-form-urlencoded".equalsIgnoreCase(header)`), so a legitimate
+  `application/x-www-form-urlencoded;charset=UTF-8` body is silently parsed as **empty**; `Request.getForm()`
+  (`Request.java:79-88`) inherits this. Found 2026-07-23 during Phase 3d review
+  ([phase-3d-audit.md](phase-3d-audit.md) finding 8); it is also why the audit query-param leak is
+  self-inconsistent (a bare form POST leaks its body into `queryParameters`, a `;charset=…` one does not).
+  **Proposed fix:** parse media type/subtype and ignore parameters (a proper `Content-Type` parse), matched
+  case-insensitively. **Blast radius:** every `getForm()` / `fromRequestEntity` consumer across the ecosystem —
+  its own commit + tests, never bundled into a migration phase. **Status: deferred** — Phase 3d routes around it
+  (`Form.fromRequestQuery` for query-only detail, `new Form().fromFormString(...)` for the body auditors), so
+  nothing in 3d/4/5 needs it yet. Do it when a phase must read a charset-suffixed form body via `getForm()`.
+
 ## Cutover lever
 
 The `OpenAM` `HttpFrameworkServlet` in

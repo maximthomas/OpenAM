@@ -35,7 +35,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | 3c-1 | FreeMarker template renderer (`org.openidentityplatform.openam.oauth2.http`) | done ([phase-3c-1-renderer.md](phase-3c-1-renderer.md)) |
 | **F1–F4** | **openam-http framework fixes** — handler-thrown exceptions get a body (F1); `@ExceptionHandler` made real (F2); `Promise` returns implemented (F3); `@Produces` honoured so `String` returns stop being ISO-8859-1 (F4). **Prerequisite to 3c-2** | **done** 2026-07-22 — 64 new tests in a package that had **none** ([as-built](openam-http-framework.md#as-built)). Also unblocks **5b**: per-endpoint catch blocks collapse into one `@ExceptionHandler` per handler class |
 | 3c-2 | Error layer — `OAuth2Error`, `RedirectUris`, error factory + filter | done 2026-07-22 — +123 unit tests and the module's first IT ([as-built](phase-3c-2-error-layer.md#as-built)). Three review passes also chained `ServerException`'s cause and stopped openam-http HTML-escaping CREST messages ([review outcomes](phase-3c-2-error-layer.md#review-outcomes)). e2e contract lock (§E) **deferred**, still to be recorded against live Restlet before 5d |
-| 3d | CHF audit filters + `HttpBodyAuditor` | pending |
+| 3d | CHF audit filters + `HttpBodyAuditor` | planned ([phase-3d-audit.md](phase-3d-audit.md)) — **two risk profiles, split mandatory**: **3d-1** enhances the shared `AbstractHttpAccessAuditFilter` (openam-audit-core) — a **live-path** change to `/json` audit (+ a 3xx-classification bug fix), guarded by `/json` audit tests; **3d-2** = 3 build-ahead OAuth2/UMA classes in openam-oauth2. *Not* "purely additive build-ahead" as phase-3-research framed it |
 | 4 | UMA `/uma` → CHF | pending |
 | 5a–5d | OAuth2/OIDC `/oauth2` → CHF (flip in 5d) | pending |
 | 6 | WebFinger `/.well-known` + stragglers | pending |
@@ -181,12 +181,25 @@ captured in [chf-patterns.md](chf-patterns.md) during Phase 2 — every phase be
   HTML error page. *(Its fifth rule, synthesising a body for `Endpoints.from`'s empty 500, was deleted by
   [F1](openam-http-framework.md) — the framework now emits a body.)*
 
-**3d. Audit**
-- `OAuth2HttpAccessAuditFilter` / `UMAHttpAccessAuditFilter` — extend
+**3d. Audit** — detailed plan: [phase-3d-audit.md](phase-3d-audit.md).
+- `OAuth2HttpAccessAuditFilter` / `UMAHttpAccessAuditFilter` (new pkg
+  `org.openidentityplatform.openam.oauth2.audit`, openam-oauth2) — extend
   `AbstractHttpAccessAuditFilter` (openam-audit-core); port userId/trackingIds
-  extraction from `OAuth2AbstractAccessAuditFilter`; realm from `RealmContext`.
-- `HttpBodyAuditor` — CHF replacement for `RestletBodyAuditor`
-  (`formAuditor`/`jsonAuditor`/`jacksonAuditor`/`noBodyAuditor` over the buffered entity).
+  extraction from `OAuth2AbstractAccessAuditFilter` via 3a's neutral accessors; realm from
+  `RealmContext`. **Constructed per-route with per-endpoint body auditors**, not as
+  `Component`-MapBinder singletons (the auditor pair varies per endpoint — full matrix in the
+  3d doc).
+- `HttpBodyAuditor` — CHF replacement for `RestletBodyAuditor` over the buffered CHF `Entity`.
+  `jsonAuditor` **collapses** Restlet's `jsonAuditor`+`jacksonAuditor` (one `Entity.getJson()`
+  on CHF); `formAuditor` via `fromFormString` (not `fromRequestEntity` — charset trap);
+  `noBodyAuditor` == null.
+- **Two `openam-audit-core` fixes (we own it), each additive/behaviour-neutral for `/json`:**
+  the CHF base carries **no** body detail and its outcome hooks lack the request/context —
+  add context-bearing + detail hooks (delegating defaults, no existing subclass edited); and
+  it audits **3xx as FAILED** (`isSuccessful()` = 2xx only) where Restlet audits 3xx as
+  success — fix to `isClientError()||isServerError()` so OAuth2's 301/302 flows are not
+  logged as failures at 5d. Separately, `AMAccessAuditEventBuilder.forRequest` leaks POST
+  form fields into `queryParameters` (risk #13) — recommended fix in its own commit.
 
 **Tests:** `ChfOAuth2RequestTest` (precedence matrix, body re-read stability,
 per-method/media-type parameterNames, locale, endpoint type, ISO-8859-1 basic-auth
@@ -358,7 +371,7 @@ encodes ISO-8859-1 (§6). `OAuth2Filter`'s "write an error entity then CONTINUE 
 | 10 | `getParameterCount` | Counts query duplicates only (`DuplicateRequestParameterValidator`) | Keep query-only semantics; test duplicate `redirect_uri` |
 | 11 | Case sensitivity | Both Restlet templates and CHF matchers are case-sensitive | Spot-check `/oauth2/Authorize` → 404 pre & post |
 | 12 | Endpoint-type checks | `ClientCredentialsReader` keys auth-method rules off the `/access_token` path | `EndpointType` tests incl. realm-prefixed URIs |
-| 13 | Audit event parity | Restlet `forHttpServletRequest` vs CHF `forRequest` builder paths; body detail per route | Compare emitted access events per area against recorded JSON |
+| 13 | Audit event parity | Restlet `forHttpServletRequest` vs CHF `forRequest` builder paths; body detail per route. **Two concrete divergences found in 3d** ([phase-3d-audit.md](phase-3d-audit.md)): (a) the CHF base audits **3xx as FAILED** (`isSuccessful()`=2xx only) where Restlet audits it as success — breaks every authorize-success 302 → fix in the base ([D2](phase-3d-audit.md#d2--3xx-classified-as-success-fix-in-the-base)); (b) `forRequest` reads query params from `getForm()`, leaking POST-body form fields (incl. `client_secret`) into `queryParameters` → fix in `forRequest` ([D3](phase-3d-audit.md#d3--forrequest-query-param-leak-fix-separately)) | `RestletAuditParityTest` (body auditors), `AbstractHttpAccessAuditFilterTest` (302→SUCCESSFUL), `OAuth2AuditRouteCompositionIT`; per-area recorded-JSON diff at 5d |
 | 14 | HTML output | Same FreeMarker 2.3.31; only the loader changes | Golden-file render tests; browser smoke of consent + device pages |
 | 15 | Locale selection | `HttpServletRequest.getLocale()` vs Accept-Language parse (q-values); servlet returns `Locale.getDefault()` when the header is absent | Multi-range header unit test + absent-header test |
 | 16 | Scripting client behavior | Redirect-following / cookie defaults differ between Restlet client and java.net.http | `followRedirects(NEVER)`; script integration test |

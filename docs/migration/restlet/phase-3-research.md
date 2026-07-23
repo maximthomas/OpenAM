@@ -175,6 +175,14 @@ change must keep the Restlet path green, verified by the existing Restlet-path u
 4/5 — so they carry integration risk only when their consumers land, and are independently
 mergeable in any order after 3a.
 
+> **Corrected 2026-07-23 for 3d** (see [phase-3d-audit.md](phase-3d-audit.md)). "3d is purely additive
+> build-ahead" holds only for its **new** OAuth2/UMA classes (3d-2). The delivered design also enhances the
+> shared `AbstractHttpAccessAuditFilter` (openam-audit-core) — body-detail + request-bearing hooks and a
+> 3xx-classification fix — which is a **live-path change to `/json` authenticate + docs audit** (3d-1). It is
+> behaviour-neutral for `/json` today (verified: those endpoints emit no 3xx; new hook paths are dormant) but
+> must be treated as live: it carries a live guard (`/json` audit tests) and lands as its own commit. This
+> table row's "Med — build-ahead" was written before that base-enhancement design existed.
+
 ## 4. Recommended split
 
 Four shippable green commits, each its own detailed plan doc, in order:

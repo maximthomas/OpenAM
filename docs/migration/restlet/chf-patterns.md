@@ -10,7 +10,8 @@ the first area moved off Restlet. Every later phase (3–8) reuses this shape. P
 derivation — verified while delivering [Phase 3a](phase-3a-oauth2request.md)
 (`ChfOAuth2Request`).** Phases 3b/3c/4/5 read requests through the `OAuth2Request` neutral
 API, but any new CHF handler parsing a raw `org.forgerock.http.protocol.Request` hits the
-same traps. **§13 is the build-ahead testing pattern** (Phase 3c).
+same traps. **§13 is the build-ahead testing pattern** (Phase 3c); **§14 is the framework-ownership
+rule** (fix defects in code we own); **§15 is the CHF access-audit base** (Phase 3d).
 
 > **⚠ §2 describes a framework that was fixed on 2026-07-22 — re-read it if you read this doc earlier.**
 > `openam-http`'s annotation framework had four defects (empty-bodied 500s, a dead `@ExceptionHandler`, an
@@ -494,3 +495,35 @@ as the baseline the fix is measured against.
 framework should emit; a rule saying "every handler must remember to X"; a behaviour that survives only
 because some call *accidentally* throws; a declared-but-unimplemented annotation or return type; or the
 sentence *"if this needs fixing, it should be fixed once in \<module\>"*.
+
+## 15. CHF access-audit base (`AbstractHttpAccessAuditFilter`) — shape & traps (Phase 3d)
+
+The CHF access-audit base is `org.forgerock.openam.audit.AbstractHttpAccessAuditFilter` (openam-audit-core,
+**in-tree**); its Restlet counterpart is `AbstractRestletAccessAuditFilter` (openam-rest). It emits two events
+per request (`AM_ACCESS_ATTEMPT` before the handler in `filter()`, `AM_ACCESS_OUTCOME` in the `.then(...)`),
+reading `userId`/`trackingIds` from `AuditRequestContext` and HTTP detail from
+`AMAccessAuditEventBuilder.forRequest(request, context)`. Facts verified 2026-07-23 (full detail:
+[phase-3d-audit.md](phase-3d-audit.md)):
+
+- **It is a *stripped* port — two gaps vs the Restlet base.** (1) **No body detail**: it never calls
+  `builder.requestDetail(...)` / `responseWithDetail(..., detail)` even though both exist on the builder.
+  (2) Its **outcome hooks take only `Response`** (`getUserIdForAccessOutcome(Response)` etc.) — no request, no
+  context — and the attempt hooks lack the context. Any subclass that needs the request in the outcome (OAuth2
+  reads tokens off it) must widen the hooks. Do it **additively** — new `(Context, …)` overloads whose defaults
+  delegate to the existing signatures — so the live `/json` subclasses (`AuthenticationAccessAuditFilter`,
+  `DocsAccessAuditFilter`) and the base test stay untouched.
+- **⚠ 3xx is audited as FAILED.** `filter()` branches on `Status.isSuccessful()`, which is **2xx only**
+  (`Status.java` has `isRedirection()`/`isClientError()`/`isServerError()` and **no `isError()`**). The Restlet
+  base branches on `isError()` (4xx/5xx), so it audits every 3xx as **success**. For any area that returns 3xx
+  on success (OAuth2 `/authorize` = 302), reproduce Restlet: failure iff `isClientError() || isServerError()`.
+- **⚠ `forRequest` leaks POST-body form fields into `http/request/queryParameters`.** It reads query params via
+  `request.getForm()` (`AMAccessAuditEventBuilder:123`) = query **+** body merged (§7). The Restlet path
+  (`forHttpServletRequest`) used the servlet query string only. Fix at source: `Form.fromRequestQuery(request)`.
+- **Body auditors are per-route, not per-component.** `/json` binds one filter per `Component` via a
+  `MapBinder` + `HttpAccessAuditFilterFactory`; OAuth2/UMA attach a fresh filter **per endpoint** with a
+  different body-auditor pair. CHF audit filters for those areas are plain constructible classes, built in the
+  route provider — do **not** route them through the component MapBinder.
+- **Body auditing needs no buffering.** The CHF `Entity` is buffered (§7), so reading the body in the audit
+  filter leaves it re-readable for the handler — no `BufferingRepresentation` equivalent needed (contrast the
+  Restlet base's transient-entity wrap). Restlet's `jsonAuditor`+`jacksonAuditor` **collapse to one** on CHF
+  (single `Entity.getJson()`).

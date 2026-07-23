@@ -363,5 +363,20 @@ public abstract class OAuth2Request {
         public String getEndpointPath() {
             throw new UnsupportedOperationException("Realm parameter only OAuth2Request");
         }
+
+        @Override
+        public String getAuthorizationBearerToken() {
+            throw new UnsupportedOperationException("Realm parameter only OAuth2Request");
+        }
+
+        @Override
+        public String getQueryParameter(String name) {
+            throw new UnsupportedOperationException("Realm parameter only OAuth2Request");
+        }
+
+        @Override
+        public String getFormParameter(String name) {
+            throw new UnsupportedOperationException("Realm parameter only OAuth2Request");
+        }
     }
 }

@@ -20,7 +20,10 @@ import static org.forgerock.oauth2.core.Utils.isEmpty;
 
 import java.io.IOException;
 import java.io.StringWriter;
+import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
@@ -179,8 +182,9 @@ public class FreemarkerTemplateRenderer {
      * that case should error or fall back to {@code page/} is Phase 5b's decision when it ports the
      * check-session endpoint.
      * <p>
-     * Note that composing a popup puts {@code htmlCode} into the caller's {@code dataModel}, as the legacy
-     * code does.
+     * Composing a popup needs {@code htmlCode} in the wrapper's model. Unlike the legacy renderer, which put
+     * it into the caller's own {@code dataModel} ({@code OAuth2Representation:83}), this renders the wrapper
+     * from a copy, so the caller's map is never mutated. The output is unchanged.
      *
      * @param display the requested display type, case-insensitive. {@code null} and {@code ""} both mean
      *     {@code page}.
@@ -202,12 +206,18 @@ public class FreemarkerTemplateRenderer {
         // would turn that request from a rendered page into a 400.
         DisplayType displayType = DisplayType.PAGE;
         if (!isEmpty(display)) {
-            displayType = Enum.valueOf(DisplayType.class, display.toUpperCase());
+            displayType = Enum.valueOf(DisplayType.class, display.toUpperCase(Locale.ROOT));
         }
 
         if (DisplayType.POPUP.equals(displayType)) {
-            dataModel.put(HTML_CODE, render(templatePath(displayType, templateName), dataModel));
-            return render(templatePath(displayType, POPUP_TEMPLATE), dataModel);
+            String embeddedPage = render(templatePath(displayType, templateName), dataModel);
+            // The wrapper needs htmlCode, but the legacy renderer added it to the caller's own map
+            // (OAuth2Representation:83) -- a side effect that throws on an immutable model and would strand
+            // a stale htmlCode in a reused one. Render the wrapper from a copy: byte-identical, because
+            // popup.ftl reads only htmlCode, but the caller's map is left untouched.
+            Map<String, Object> wrapperModel = new HashMap<>(dataModel);
+            wrapperModel.put(HTML_CODE, embeddedPage);
+            return render(templatePath(displayType, POPUP_TEMPLATE), wrapperModel);
         }
         return render(templatePath(displayType, templateName), dataModel);
     }
@@ -232,6 +242,9 @@ public class FreemarkerTemplateRenderer {
      * @return a response carrying the page as UTF-8 bytes.
      */
     public static Response toHtmlResponse(Status status, String html) {
+        // render() is render-or-throw and never returns null; fail loudly at the seam if a future caller
+        // forgets that, rather than with a bare NPE from getBytes below.
+        Objects.requireNonNull(html, "html");
         Response response = new Response(status);
         response.getHeaders().put(ContentTypeHeader.NAME, HTML_CONTENT_TYPE);
         response.setEntity(html.getBytes(UTF_8));

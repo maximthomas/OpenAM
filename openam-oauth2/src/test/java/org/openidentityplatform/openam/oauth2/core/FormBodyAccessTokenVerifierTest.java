@@ -22,6 +22,7 @@ import org.forgerock.http.protocol.Request;
 import org.forgerock.oauth2.core.RestletOAuth2Request;
 import org.forgerock.oauth2.core.TokenStore;
 import org.forgerock.services.context.RootContext;
+import org.restlet.data.CharacterSet;
 import org.restlet.data.MediaType;
 import org.restlet.data.Method;
 import org.restlet.data.Reference;
@@ -93,6 +94,25 @@ public class FormBodyAccessTokenVerifierTest {
     public void restletReadsTheTokenFromAFormBody() {
         org.restlet.Request request = new org.restlet.Request(Method.POST, BASE_URI + "/userinfo");
         request.setEntity(new StringRepresentation("access_token=" + TOKEN, MediaType.APPLICATION_WWW_FORM));
+
+        assertThat(verifier.obtainTokenId(new RestletOAuth2Request(null, request))).isEqualTo(TOKEN);
+    }
+
+    /**
+     * The Restlet counterpart of {@code chfReadsTheTokenWhenTheContentTypeCarriesACharset}, pinning
+     * the transport parity for a charset-bearing {@code Content-Type}. Restlet's server adapter parses
+     * the {@code charset} parameter out of the header into the representation's {@code CharacterSet},
+     * leaving the {@code MediaType} clean, so {@code getFormParameter}'s
+     * {@code MediaType.APPLICATION_WWW_FORM.equals(...)} guard still matches and the token is read —
+     * exactly as the CHF path does once it parses the media type out.
+     */
+    @Test
+    public void restletReadsTheTokenWhenTheContentTypeCarriesACharset() {
+        org.restlet.Request request = new org.restlet.Request(Method.POST, BASE_URI + "/userinfo");
+        StringRepresentation entity =
+                new StringRepresentation("access_token=" + TOKEN, MediaType.APPLICATION_WWW_FORM);
+        entity.setCharacterSet(CharacterSet.UTF_8);
+        request.setEntity(entity);
 
         assertThat(verifier.obtainTokenId(new RestletOAuth2Request(null, request))).isEqualTo(TOKEN);
     }

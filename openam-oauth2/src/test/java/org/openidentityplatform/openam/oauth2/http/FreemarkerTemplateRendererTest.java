@@ -142,6 +142,36 @@ public class FreemarkerTemplateRendererTest {
                 .isEqualTo("WRAPPER[THE-REQUESTED-PAGE]");
     }
 
+    /**
+     * The wrapper's {@code htmlCode} must not leak back into the caller's model. The legacy renderer added
+     * it to the caller's own map; this one renders the wrapper from a copy, so the caller's map is untouched.
+     */
+    @Test
+    public void popupCompositionDoesNotMutateTheCallersDataModel() throws Exception {
+        Map<String, Object> model = RendererFixtures.authorize();
+
+        renderer.renderForDisplay("popup", "authorize.ftl", model);
+
+        assertThat(model).doesNotContainKey("htmlCode");
+    }
+
+    /**
+     * The other half of the D5 fix: honouring the requested name means a popup whose inner template does not
+     * exist now misses and throws, where {@code OAuth2Representation:80}'s hardcoded {@code authorize.ftl}
+     * would have served the consent page. {@code OpenIDConnectCheckSessionEndpoint}'s {@code checkSession.ftl}
+     * under {@code display=popup} is the live case; whether it should error or fall back is Phase 5b's call.
+     */
+    @Test
+    public void popupCompositionThrowsWhenTheRequestedInnerTemplateIsMissing() {
+        StringTemplateLoader templates = new StringTemplateLoader();
+        templates.putTemplate("templates/popup/popup.ftl", "WRAPPER[${htmlCode}]");
+        // Deliberately no templates/popup/checkSession.ftl.
+
+        assertThatThrownBy(() -> new FreemarkerTemplateRenderer(templates)
+                .renderForDisplay("popup", "checkSession.ftl", new HashMap<>()))
+                .isInstanceOf(TemplateNotFoundException.class);
+    }
+
     /** {@code FormPostResponse.ftl} sits at the template root, outside any display folder. */
     @Test
     public void formPostResponseIsRenderedFromTheTemplateRoot() throws Exception {

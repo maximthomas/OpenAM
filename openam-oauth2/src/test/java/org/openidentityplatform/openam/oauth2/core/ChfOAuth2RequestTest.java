@@ -177,6 +177,17 @@ public class ChfOAuth2RequestTest {
         assertThat(request.getParameterNames()).isEmpty();
     }
 
+    @Test
+    public void mutatingTheReturnedParameterNamesDoesNotCorruptTheParameterCache() throws Exception {
+        ChfOAuth2Request request = chfRequest(get("/oauth2/authorize?client_id=one&state=two"),
+                endpointContext("authorize", emptyMap()));
+
+        request.getParameterNames().clear();
+
+        assertThat(request.getParameterNames()).containsOnly("client_id", "state");
+        assertThat(request.<String>getParameter("client_id")).isEqualTo("one");
+    }
+
     // --- endpoint type ---------------------------------------------------------------------
 
     @Test
@@ -212,6 +223,19 @@ public class ChfOAuth2RequestTest {
 
         assertThat(request.getEndpointPath()).isNull();
         assertThat(request.getEndpointType()).isNull();
+    }
+
+    @Test
+    public void endpointPathAtTheRealmBaseIsEmptyMatchingRestlet() throws Exception {
+        // A RealmContext with no endpoint router below it: the realm base itself. Restlet's
+        // getEndpointPath() returns "" here (EndpointType.get("") -> OTHER); CHF must agree, rather
+        // than returning "/" (EndpointType.get("/") -> null).
+        Context realmBase = new RealmContext(attributesContext, Realm.root());
+
+        ChfOAuth2Request request = chfRequest(get("/oauth2"), realmBase);
+
+        assertThat(request.getEndpointPath()).isEqualTo("");
+        assertThat(request.getEndpointType()).isEqualTo(EndpointType.OTHER);
     }
 
     // --- request URL mutation ---------------------------------------------------------------

@@ -88,8 +88,9 @@ public class RestletOAuth2Request extends OAuth2Request {
         }
 
         //query param priority over body
-        if (getResourceRefQueryParameter(request, name) != null) {
-            return (T) getResourceRefQueryParameter(request, name);
+        String queryValue = getResourceRefQueryParameter(request, name);
+        if (queryValue != null) {
+            return (T) queryValue;
         }
 
         if (request.getMethod().equals(Method.POST)) {

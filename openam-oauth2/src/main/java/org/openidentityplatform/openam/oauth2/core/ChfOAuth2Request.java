@@ -112,11 +112,13 @@ public class ChfOAuth2Request extends OAuth2Request {
 
     @Override
     public Set<String> getParameterNames() {
+        // Return a copy, not the Form's live keySet: the Form is instance-cached, so handing back a
+        // view would let a caller's mutation corrupt this request's parameter map.
         if (GET.equals(request.getMethod())) {
-            return queryForm().keySet();
+            return new LinkedHashSet<>(queryForm().keySet());
         } else if (POST.equals(request.getMethod())) {
             if (isContentType(FORM_CONTENT_TYPE)) {
-                return formBody().keySet();
+                return new LinkedHashSet<>(formBody().keySet());
             } else if (isContentType(JSON_CONTENT_TYPE)) {
                 return getBody().keys();
             }
@@ -159,7 +161,10 @@ public class ChfOAuth2Request extends OAuth2Request {
      *
      * <p>The path is the concatenation of the URIs matched by the routers <em>below</em> the realm
      * router, which is the CHF equivalent of the {@literal realmUrl} request attribute the Restlet
-     * realm router publishes.
+     * realm router publishes. At the realm base itself (no endpoint segment below the realm router)
+     * the path is the empty string, matching {@link RestletOAuth2Request#getEndpointPath()} rather
+     * than a bare {@code "/"} — so {@link #getEndpointType()} resolves to {@code OTHER}, not
+     * {@code null}, on both transports.
      */
     @Override
     public String getEndpointPath() {
@@ -178,7 +183,7 @@ public class ChfOAuth2Request extends OAuth2Request {
                 }
             }
         }
-        return "/" + String.join("/", matched);
+        return matched.isEmpty() ? "" : "/" + String.join("/", matched);
     }
 
     @Override

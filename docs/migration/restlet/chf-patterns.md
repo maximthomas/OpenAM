@@ -48,7 +48,8 @@ rule** (fix defects in code we own); **§15 is the CHF access-audit base** (Phas
 > [openam-http-framework.md](openam-http-framework.md) and its
 > [As-built](openam-http-framework.md#as-built). The pre-fix behaviour is preserved as the baseline in
 > [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md#7--the-filter-cannot-catch--and-endpointsfroms-500-has-an-empty-body).
-> An earlier correction (2026-07-17) fixed this section's account of the 405 bodies; that part still stands.
+> An earlier correction (2026-07-17) fixed this section's account of the 405 bodies; a later fix (2026-07-23,
+> Phase 4) made the two 405 paths emit one shape — see the 405 table below.
 
 - **A thrown exception becomes a response — one shape, whatever failed.** `AnnotatedMethod.invoke`
   catches everything a handler method can throw and produces a CREST error:
@@ -70,17 +71,20 @@ rule** (fix defects in code we own); **§15 is the CHF access-audit base** (Phas
   the framework's plumbing — an unresolvable `@Contextual` context, say — goes straight to the default
   500. Otherwise an endpoint mapping `IllegalArgumentException` could turn a wiring error into a 200 and
   mask it indefinitely.
-- **There are TWO framework 405 bodies, not one:**
+- **Both framework 405 paths now emit a 405-coded body** (fixed 2026-07-23, Phase 4):
 
   | Trigger | Status | Body `code` |
   |---|---|---|
-  | Verb not in the `{GET,POST,PUT,DELETE}` map (HEAD/OPTIONS/PATCH) — `Endpoints.java:68-71` | 405 | **501** (`NotSupportedException`) |
+  | Verb not in the `{GET,POST,PUT,DELETE}` map (HEAD/OPTIONS/PATCH) — `Endpoints.java` `method == null` | 405 | **405** (`ResourceException.getException(405, "Method Not Allowed")`) |
   | Verb *is* mapped but no annotated method — `AnnotatedMethod.java:94-98` | 405 | **405** (`ResourceException.getException(405, …)`) |
 
   `findMethod` never returns `null` (`:201` returns a sentinel with `method == null`), so
-  GET/POST/PUT/DELETE always take the second path. The Phase-2 "body says 501" quirk is real but
-  applies **only** to the first row — the outer HTTP status and the JSON `code` legitimately disagree
-  there. Unchanged by F1–F4, and pinned by `EndpointsTest`.
+  GET/POST/PUT/DELETE always take the second path. **History:** the first row used to emit a body whose
+  `code` was **501** (`new NotSupportedException()`) against the 405 status — a self-contradiction that also
+  diverged from Restlet. Phase 4 fixed `Endpoints.java` to use a 405-coded body there too, so the two paths
+  now render one shape. `/oauth2` never depended on the fix (its `OAuth2ErrorFilter` keys off the wire
+  status), but `/uma` carries no such filter and needed the raw framework body coherent. Pinned by
+  `EndpointsTest.unmappedVerbGives405WithA405Body`.
 - **Annotated-method return types are constrained, and each has one meaning.** Decided in
   `AnnotatedMethod.checkMethod` at **`Endpoints.from` construction time** (route-provider wiring), not
   per request — an unsupported type is `IllegalArgumentException("Unsupported response type: …")` while
@@ -252,6 +256,14 @@ delivered `openam-oauth2/.../oauth2/core/ChfOAuth2Request.java`.
   `getParameterCount(name)` counts **query-string duplicates only** (the
   `DuplicateRequestParameterValidator` contract) — build it from `new Form().fromRequestQuery(request)`,
   never from the body.
+- **The attribute map is seeded from `RealmContext`:** `ChfOAuth2Request.attributes()` puts `realm` (the
+  realm *path string*) and `realmObject` (the `Realm` *object*, `RealmContext.getRealm(context)`) — so
+  `getParameter(REALM)` / `getParameter(REALM_OBJECT)` resolve under CHF. Load-bearing: the
+  `*UrisFactory.get(OAuth2Request)` overloads (`OAuth2UrisFactory.java:68`, `UmaUrisFactory.java:83`) read
+  `REALM_OBJECT` **directly** with no token/`realm` fallback, so an unseeded `realmObject` NPEs them — a break
+  that *compiles* and slips past mocked tests (see [phase-4-uma.md](phase-4-uma.md) finding 6; `realmObject`
+  seeding was added in Phase 4a). The provider-settings factories are safe without it — they resolve through
+  `OAuth2RealmResolver` (stashed-token realm, else seeded `realm`).
 - **Never call `Request.getForm()`.** It is `fromRequestQuery(this)` *then* `fromRequestEntity(this)`
   merged into **one** `Form`, which collapses precedence tiers 2 and 3 (query and body become
   indistinguishable).
@@ -558,3 +570,35 @@ reading `userId`/`trackingIds` from `AuditRequestContext` and HTTP detail from
   `jsonAuditor` (`map::get`) and `formAuditor` (`form::getFirst`) — the field-selection contract is defined once,
   mirroring the legacy `RestletBodyAuditor.extractValues`. `noBodyAuditor()` is literally `null` (a `—` in the
   finding-2 route matrix), so wiring can pass it directly.
+
+## 16. The Restlet `StatusService` renders a CREST body for *bare* error statuses (Phase 4)
+
+Verified 2026-07-23 building [Phase 4](phase-4-uma.md) (finding 1), by disassembling the in-repo Restlet
+`org.restlet.engine.application.StatusFilter`. **Applies to every Restlet area whose app sets a
+`StatusService` — `/oauth2` and `/uma` both do** — so Phase 5 needs it too.
+
+- **Any error status with a null entity gets a body, whether or not the resource set one.** A Restlet
+  `Filter` that rejects with `response.setStatus(new Status(4xx, throwable))` and returns `STOP` (e.g.
+  `AccessTokenProtectionFilter`) never sets an entity. But the app's outer `StatusFilter.afterHandle` runs
+  on the way out and, seeing `status.isError() && getEntity() == null`, fills it from
+  `getStatusService().toRepresentation(status, …)`. So a "bare 401" is **not** empty on the wire.
+- **The body is CREST `{code, reason, message}`, not the exception's own shape.** `RestStatusService`
+  (base of `JSONRestStatusService`, openam-rest) does
+  `ResourceException.getException(status.getCode(), throwable.getMessage()).toJsonValue()` when the
+  throwable is **not** a CREST `ResourceException`. `OAuth2Exception`/`UmaException` are **not** CREST
+  `ResourceException`s, so their `getError()` (`"invalid_token"`, …) is **discarded** — the client sees
+  `{"code":401,"reason":"Unauthorized","message":"<getMessage()>"}` at `application/json`. Only the
+  HTTP status code and the exception *message* survive.
+- **This is the SAME shape `Endpoints.from` emits natively** for a framework 405/500 (§2 —
+  `crestBody(ResourceException)`). So a CHF port that (a) lets the framework produce 405/500 and (b) has
+  its filters build the CREST map via `ResourceException.getException(code, msg).toJsonValue().getObject()`
+  reproduces the legacy `StatusService` output **without any error filter**. `setEntity(Map)` supplies
+  `application/json; charset=UTF-8` (§6) — the lone, benign difference from Restlet's charset-less
+  `application/json`.
+- **The endpoint-exception path is different and must not be conflated.** When a resource's `doCatch`
+  (Restlet) / `@ExceptionHandler` (CHF) sets its own entity, `StatusFilter` leaves it alone — that path
+  keeps the endpoint's designed shape (UMA `{error, error_description, …}`; OAuth2's error map). ⇒ two
+  shapes coexist on one area: **CREST for filter/framework errors, the endpoint's shape for endpoint
+  errors.** Wiring a blanket rewriter like `OAuth2ErrorFilter` over an area that has CREST-shaped
+  filter/framework errors (UMA) changes them; scope it to areas whose contract *is* the OAuth2 shape
+  end-to-end. Check which of the two paths each error takes before choosing where the shape is produced.

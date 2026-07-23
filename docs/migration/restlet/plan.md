@@ -36,7 +36,7 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | **F1–F4** | **openam-http framework fixes** — handler-thrown exceptions get a body (F1); `@ExceptionHandler` made real (F2); `Promise` returns implemented (F3); `@Produces` honoured so `String` returns stop being ISO-8859-1 (F4). **Prerequisite to 3c-2** | **done** 2026-07-22 — 64 new tests in a package that had **none** ([as-built](openam-http-framework.md#as-built)). Also unblocks **5b**: per-endpoint catch blocks collapse into one `@ExceptionHandler` per handler class |
 | 3c-2 | Error layer — `OAuth2Error`, `RedirectUris`, error factory + filter | done 2026-07-22 — +123 unit tests and the module's first IT ([as-built](phase-3c-2-error-layer.md#as-built)). Three review passes also chained `ServerException`'s cause and stopped openam-http HTML-escaping CREST messages ([review outcomes](phase-3c-2-error-layer.md#review-outcomes)). e2e contract lock (§E) **deferred**, still to be recorded against live Restlet before 5d |
 | 3d | CHF audit filters + `HttpBodyAuditor` | done 2026-07-23 — landed as the mandated **two commits**: **3d-1** (`666ea57318`) enhances the shared `AbstractHttpAccessAuditFilter` (openam-audit-core) with context/detail hooks, the **3xx→SUCCESSFUL** fix ([D2](phase-3d-audit.md#d2--3xx-classified-as-success-fix-in-the-base)) and `forRequest` query-only ([D3](phase-3d-audit.md#d3--forrequest-query-param-leak-fix-separately)) — a **live-path** change to `/json` audit, guarded by its tests; **3d-2** (`41170fb92a`) = 3 build-ahead OAuth2/UMA classes + the parity oracle in openam-oauth2 (**+29 unit, +2 IT**; 916 module green; import gate 0) ([as-built](phase-3d-audit.md#as-built)). A review pass folded in reuse/cleanup fixes (`select` helper, static logger). Live-route audit smoke (risk #13 pre/post-flip `queryParameters` diff) **deferred to 5d** |
-| 4 | UMA `/uma` → CHF | pending |
+| 4 | UMA `/uma` → CHF (atomic flip; sub-phases **4a** shared protection filter + **4b** endpoints/flip) | planned ([phase-4-uma.md](phase-4-uma.md)) |
 | 5a–5d | OAuth2/OIDC `/oauth2` → CHF (flip in 5d) | pending |
 | 6 | WebFinger `/.well-known` + stragglers | pending |
 | 7 | Outbound scripting HTTP client | pending |
@@ -211,24 +211,36 @@ stay green.
 
 ## Phase 4 — UMA `/uma` → CHF
 
-- Convert in place (names kept, Restlet base → `Endpoints` annotations):
-  `PermissionRequestEndpoint` (`@Post`, 201 + `{"ticket": ...}`),
-  `AuthorizationRequestEndpoint` (`@Post`), `UmaWellKnownConfigurationEndpoint` (`@Get`).
-- `UmaExceptionHandler` → `UmaExceptionFilter` (CHF; same error format + status logic).
-- New shared `ChfAccessTokenProtectionFilter` (openam-oauth2): Bearer parse →
-  `tokenStore.readAccessToken` → scope check; 401 with `WWW-Authenticate: Bearer` /
-  403 / 404 / 500; stashes the `AccessToken` on the `OAuth2Request`.
-- New `UmaHttpRouteProvider` + services file; per-route chain:
-  `UMAHttpAccessAuditFilter(bodyAuditors)` → `ChfAccessTokenProtectionFilter(scope)` →
-  `UmaExceptionFilter` → handler; realm routing as Phase 2.
-- Modified: `UmaGuiceModule` (named `Restlet` providers → `Handler`; drop `UMARouter`),
-  web.xml (`/uma/*` → `OpenAM`), `RestEndpointServlet` (drop uma branch).
-  Deleted: `UmaRouterProvider`, `UMAServiceEndpointApplication`, Restlet
-  `UMAAccessAuditFilter`. (Restlet `AccessTokenProtectionFilter` survives until Phase 5c
-  — resource_set still uses it.)
-- Tests: port the 21 openam-uma tests to constructed CHF requests/contexts.
-- Verify: `mvn -pl openam-uma,openam-oauth2 test`; Cargo IT; smoke: permission_request
-  201/401 + error format, uma-configuration, realm-prefixed variants.
+Detailed execution plan: [phase-4-uma.md](phase-4-uma.md). Atomic flip (like Phase 2 XACML — three
+JSON endpoints, no HTML/redirect/3xx), split into **4a** (shared `ChfAccessTokenProtectionFilter`,
+openam-oauth2, build-ahead, reused by Phase 5c) and **4b** (endpoints + flip, openam-uma). The
+tracker-level outline below; the doc supersedes two of these bullets — see its "Deviation from plan.md".
+
+- Re-base **in place** (names/packages kept, Restlet base → `Endpoints` annotations): `PermissionRequestEndpoint`
+  (`@Post`, 201 + `{"ticket"}`), `AuthorizationRequestEndpoint` (`@Post`, 200 `{"rpt"}` / 403),
+  `UmaWellKnownConfigurationEndpoint` (`@Get`, public).
+- `UmaExceptionHandler` → a shared **`@ExceptionHandler`** (`UmaErrorResponseFactory` + `AbstractUmaHttpEndpoint`
+  base), **not a filter** — a filter cannot recover the exception's status/error after the framework's CREST
+  500 ([phase-4-uma.md](phase-4-uma.md) finding 2). Dispatch on the *actual* thrown exception, not `.getCause()`.
+- New shared **`ChfAccessTokenProtectionFilter`** (openam-oauth2, 4a): Bearer via `getAuthorizationBearerToken()`
+  → `tokenStore.readAccessToken` → scope check; on failure reproduce the Restlet **CREST** `{code,reason,message}`
+  body (via the app `StatusFilter`/`JSONRestStatusService` today), **no** `WWW-Authenticate`, **no** OAuth2 `error`
+  field ([phase-4-uma.md](phase-4-uma.md) findings 1, 3); stashes the `AccessToken` on the cached `OAuth2Request`.
+- New `UmaHttpRouteProvider` + services file (openam-uma has none today); per-route chain (audit outermost,
+  inside the realm router): `UMAHttpAccessAuditFilter(bodyAuditors)` → `ChfAccessTokenProtectionFilter(scope)` →
+  `Endpoints.from(handler)`; realm routing as Phase 2 (the audit filter is the CHF `UMAHttpAccessAuditFilter`
+  from 3d-2). **No `OAuth2ErrorFilter`** — UMA keeps CREST-shape
+  framework/filter errors + UMA-shape endpoint errors ([phase-4-uma.md](phase-4-uma.md) D4).
+- Modified: `UmaGuiceModule` (drop `UMARouter` + the two `Restlet @Named` endpoint providers), `UmaAuditLogger`
+  (Restlet `Request` → `OAuth2Request`), web.xml (`/uma/*` → `OpenAM`), `RestEndpointServlet` (drop uma branch).
+  Deleted: `UmaRouterProvider`, `UmaExceptionHandler`, `UMAServiceEndpointApplication`; Restlet `UMAAccessAuditFilter`
+  deferred to Phase 8 (shares `OAuth2AbstractAccessAuditFilter`). Restlet `AccessTokenProtectionFilter` survives
+  until Phase 5c (resource_set still uses it).
+- Tests: port the endpoint + exception tests to constructed CHF requests/contexts; new `UmaRouterIT` (layer 2,
+  in-process composition) pins both error shapes; e2e `/uma/.well-known` smoke now, full protected flow deferred
+  to share Phase 5c resource_set fixtures.
+- Verify: `mvn -o -pl openam-oauth2 test` + `install` (4a), then `mvn -o -pl openam-uma test`/`verify` + whole
+  build `-am` (4b); Cargo boot; both-error-shape assertions in `UmaRouterIT` are the load-bearing guard.
 
 ## Phase 5 — OAuth2/OIDC `/oauth2` → CHF
 

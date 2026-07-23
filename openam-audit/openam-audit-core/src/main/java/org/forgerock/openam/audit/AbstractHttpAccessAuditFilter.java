@@ -53,7 +53,7 @@ import com.sun.identity.shared.debug.Debug;
  */
 public abstract class AbstractHttpAccessAuditFilter implements Filter {
 
-    private final Debug debug = Debug.getInstance("amAudit");
+    private static final Debug debug = Debug.getInstance("amAudit");
 
     private final AuditEventPublisher auditEventPublisher;
     private final AuditEventFactory auditEventFactory;
@@ -80,7 +80,7 @@ public abstract class AbstractHttpAccessAuditFilter implements Filter {
         return next.handle(context, request).then(new Function<Response, Response, NeverThrowsException>() {
             @Override
             public Response apply(Response response) {
-                // D2: only 4xx/5xx are failures (Restlet parity). 3xx (e.g. OAuth2 authorize's 302) is a success.
+                // Only 4xx/5xx are failures (Restlet parity). 3xx (e.g. OAuth2 authorize's 302) is a success.
                 Status status = response.getStatus();
                 if (status.isClientError() || status.isServerError()) {
                     auditAccessFailure(request, context, response);

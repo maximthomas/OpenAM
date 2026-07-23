@@ -120,7 +120,7 @@ public final class AMAccessAuditEventBuilder extends AccessAuditEventBuilder<AMA
         boolean isSecure = "https".equals(uriScheme);
         httpRequest(isSecure, request.getMethod(),
                 uri.getScheme() + "://" + uri.getHost() + ":" + uri.getPort() + uri.getPath(),
-                // D3: query-only, so form-POST body fields (incl. client_secret) do not leak into queryParameters
+                // Query-only, so form-POST body fields (incl. client_secret) do not leak into queryParameters
                 getQueryParametersAsMap(new Form().fromRequestQuery(request)), getHeadersAsMap(request.getHeaders()));
         return this;
     }

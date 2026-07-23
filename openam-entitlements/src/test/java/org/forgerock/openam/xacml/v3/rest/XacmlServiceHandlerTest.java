@@ -33,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import javax.security.auth.Subject;
@@ -166,6 +167,21 @@ public class XacmlServiceHandlerTest {
 
         assertThat(response.getStatus().getCode()).isEqualTo(400);
         assertThat(errorMessage(response)).startsWith("JSON Exception.");
+    }
+
+    @Test
+    public void shouldNotHtmlEscapeErrorMessage() throws Exception {
+        // The error body must carry the raw message: XacmlXmlErrorFilter escapes it exactly once when it
+        // renders XML, so pre-escaping here would double-escape (<policy> -> &amp;lt;policy&amp;gt;).
+        EntitlementException failure = mock(EntitlementException.class);
+        when(failure.getLocalizedMessage(any(Locale.class))).thenReturn("bad <policy> & \"stuff\"");
+        doThrow(failure).when(importExport).importXacml(eq("/"), any(), any(), eq(false));
+
+        Response response = handler.importXACML(contextForRealm("/"),
+                requestFor("POST", "/xacml/policies").setEntity(new byte[0]));
+
+        assertThat(response.getStatus().getCode()).isEqualTo(400);
+        assertThat(errorMessage(response)).isEqualTo("bad <policy> & \"stuff\"");
     }
 
     @Test

@@ -44,6 +44,7 @@ import org.forgerock.http.protocol.Form;
 import org.forgerock.http.protocol.Request;
 import org.forgerock.http.protocol.Response;
 import org.forgerock.http.protocol.Status;
+import org.forgerock.json.JsonValue;
 import org.forgerock.json.resource.BadRequestException;
 import org.forgerock.json.resource.ForbiddenException;
 import org.forgerock.json.resource.InternalServerErrorException;
@@ -192,7 +193,11 @@ public class XacmlServiceHandler {
     }
 
     private Response errorResponse(org.forgerock.json.resource.ResourceException exception) {
-        return new Response(Status.valueOf(exception.getCode())).setEntity(exception.toJsonValue().getObject());
+        JsonValue json = exception.toJsonValue();
+        if (exception.getMessage() != null) {
+            json.put("message", exception.getMessage());
+        }
+        return new Response(Status.valueOf(exception.getCode())).setEntity(json.getObject());
     }
 
     private String getRealm(Context context) {

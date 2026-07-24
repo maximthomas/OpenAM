@@ -145,14 +145,16 @@ collapse to CHF `jsonAuditor`, `formAuditor`→`formAuditor`, `noBodyAuditor()`�
 
 ## Scope & sizing — the iterative step sequence
 
-Phase 5 is **~7 shippable commits**, implemented one after another. plan.md's 5a/5b/5c/5d is the skeleton, but
+Phase 5 is **~7 shippable build commits plus a dedicated §E gate commit** (step **5-E** below — a test-only
+recording of the live contract), implemented one after another. plan.md's 5a/5b/5c/5d is the skeleton, but
 three of those four are too big or too coupled for one clean commit, so each is split on the **same
 risk-isolation principle** (findings #1, #3): a commit should be reviewable on its own and revertible without
 dragging unrelated work with it.
 
 | Step | Sub-phase | Scope | New classes (approx) | Risk | Guard |
 |---|---|---|---|---|---|
-| **1** | **5a-1** | `/access_token` — the grant-type dispatcher (`TokenEndpointHandler`), replacing `TokenEndpointFilter`+`AccessTokenFlowFinder`+`OAuth2FlowFinder`+`TokenEndpointResource`+`RefreshTokenResource`+`ErrorResource`; `WWW-Authenticate`; `Cache-Control: no-store`+`Pragma`; CHF `TokenRequestHook` seam. **First task: the cookie spike** (finding #6). Establishes `AbstractOAuth2HttpJsonEndpoint` (finding #2) | base + 1 handler + 1 hook iface + hook re-impl | **High** | spike + unit + composition IT + e2e lock |
+| **1** | **5a-1** | `/access_token` — the grant-type dispatcher (`TokenEndpointHandler`), replacing `TokenEndpointFilter`+`AccessTokenFlowFinder`+`OAuth2FlowFinder`+`TokenEndpointResource`+`RefreshTokenResource`+`ErrorResource`; `WWW-Authenticate`; `Cache-Control: no-store`+`Pragma`; CHF `TokenRequestHook` seam. **First task: the cookie spike** (finding #6). Establishes `AbstractOAuth2HttpJsonEndpoint` (finding #2). Detailed plan: [phase-5a-1.md](phase-5a-1.md) | base + 1 handler + 1 hook iface + hook re-impl | **High** | spike + unit + composition IT + e2e lock |
+| **E** | **5-E (§E lock)** | e2e contract lock — record the live-Restlet `/oauth2` error/redirect contract into `e2e/oauth2/oauth2-test.spec.mjs` **by observation** (JSON error + `WWW-Authenticate: Basic` on `/access_token`, incl. the real `GET /access_token` body per finding #1; 301→login `Location`; 302 query-vs-fragment; `text/html;charset=UTF-8` error page) + confirm the 3c golden/parity tests green. A **gate**, not a build step: landable any time in 5a–5c, **recommended right after 5a-1**; **must precede 5d-1** | test-only (0) | **High** — unrecoverable after 5d-1 (risk #20) | the recorded spec, re-run + byte-diffed at 5d-1 |
 | **2** | **5a-2** | The 9 remaining JSON endpoints — mechanical conversions off the shared template (`TokenInfoHandler`, `TokenIntrospectionHandler`, `TokenRevocationHandler`, `UserInfoHandler`, `IdTokenInfoHandler`, `ConnectClientRegistrationHandler`, `OpenIDConnectConfigurationHandler`, `JwkUriHandler`, `DeviceCodeHandler`) | 9 handlers | Med | unit per handler |
 | **3** | **5b-1** | `AuthorizeHandler` **alone** — the centrepiece (~600L across `AuthorizeResource`+`ConsentRequiredResource`+`OAuth2Representation`): consent page + success 302 + the catch-collapse; port `ConsentRequiredResource.getDataModel`; CHF `AuthorizeRequestHook`; `RedirectUris` success path. Establishes `AbstractOAuth2HttpBrowserEndpoint` (finding #2) | base + 1 handler + 1 hook iface | **High** | unit + golden HTML + composition IT + e2e |
 | **4** | **5b-2** | The 3 remaining browser endpoints — `DeviceCodeVerificationHandler`, `CheckSessionHandler` (realm-prefixed only — JSP kept, §5d), `EndSessionHandler` | 3 handlers | Med | unit + golden HTML |
@@ -167,7 +169,9 @@ each commit reviewable and each risk isolated.
 Step dependency order: **5a-1 → 5a-2 → 5b-1 → 5b-2 → 5c → 5d-1 → 5d-2** (5a/5b/5c independent after the two
 shared bases + conversion template land in 5a-1/5b-1; 5d-1 depends on all handlers; 5d-2 depends only on 5d-1
 soaking green). Each of 5a/5b/5c is build-ahead → `mvn install` its module so the next compiles, per the
-[.m2 resolution rule](chf-patterns.md#11-build--test-notes-for-the-oauth2-request-re-plumb-phase-3a).
+[.m2 resolution rule](chf-patterns.md#11-build--test-notes-for-the-oauth2-request-re-plumb-phase-3a). The
+**5-E gate** is out-of-band: it records live-Restlet behaviour, so it lands any time in 5a–5c (recommended
+right after 5a-1) and constrains only 5d-1 — which must not flip until 5-E is recorded and green.
 
 > **Why 5b splits (finding #1).** `AuthorizeHandler` ports three Restlet classes (~600L) and carries the
 > hardest logic in the phase — the fragment/query redirect composition, the consent data-model, and the
@@ -645,10 +649,17 @@ build-ahead; they degrade to `golden == CHF` at 5d-2 (when the Restlet leg is de
   oracle + composition IT + the §E lock — the same instruments 3c/4 relied on.
 - **R-5.10 resource_set trailing slash** (risk #8) — three CHF routes, verified per-route in `OAuth2RouterIT`.
 
-## Execution order — 7 iterative steps, implemented one after another
+## Execution order — 7 build steps + the §E gate step (5-E)
 
-0. **(gate, any time during steps 1–5) Record the §E e2e contract lock + confirm golden/parity green against
-   live Restlet.** Must land before step 6 (5d-1) — the oracle dies at the flip.
+**5-E (the §E gate).** Record the live-Restlet `/oauth2` error/redirect contract into
+`e2e/oauth2/oauth2-test.spec.mjs` **by observation, not prediction** + confirm the 3c golden/parity tests green.
+A distinct, tracked step — but a **gate**, not a sequential build step: landable any time in 5a–5c,
+**recommended right after 5a-1** (its `/access_token` rows empirically settle finding #1's `GET /access_token`
+question), and it **must land before 5d-1** — the live oracle dies when the mapping moves (risk #20). Re-run +
+byte-diff the same spec after 5d-1; only the deliberate D3/D5/D6/D11/D13/D14 rows may differ.
+
+The seven build steps, one after another:
+
 1. **5a-1** — **the cookie spike first** (finding #6), then `TokenEndpointHandler` + `AbstractOAuth2HttpJsonEndpoint`
    base + CHF `TokenRequestHook` seam + `LoginHintHook` dual-impl → tests → `install`.
 2. **5a-2** — the 9 simple JSON handlers off the conversion template → tests → `install`.

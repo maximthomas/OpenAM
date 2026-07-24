@@ -319,12 +319,17 @@ chain in `OAuth2RouterIT` at **5d-1**. What 5a-2 owns and what it feeds forward:
 - **Unit** (above) — per-handler dispatch, error mapping, cache headers, the dual-verb resolution, the
   revoke cascade, and `IdTokenInfoHandler`'s real-context realm test (the closest thing to an IT in 5a-2, because
   it exercises the `ChfOAuth2Request` attribute-precedence + `REALM_OBJECT` seeding that a mock would void).
-- **§E cache-lock rows (recommended, lands in the still-open 5-E gate).** The §E lock currently holds only
-  `/access_token` rows. **Add rows that capture the cache-header truth against live Restlet now** (while it still
-  serves `/oauth2`) — at minimum: `/tokeninfo` success carries `Cache-Control: no-cache, no-store` and **no
-  `Pragma`**; `/introspect` and `/userinfo` success/error carry **no** `Cache-Control`/`Pragma`. This turns
-  finding 1 from a code-read into a recorded oracle, so the 5d-1 byte-diff has something to match. (Cheap: a few
-  `expect(headers[...]).toBe(...)` on existing smoke calls.)
+- **§E cache-lock rows — RECORDED 2026-07-24** (task #11 done; `e2e/oauth2/oauth2-test.spec.mjs`, 13 rows green
+  vs live `openidentityplatform/openam` Restlet). Finding 1 is now a **recorded oracle**, not a code-read. The
+  three distinct contracts, captured verbatim (do not "tidy"):
+  - `/access_token` — `Cache-Control: no-store` + `Pragma: no-cache`, on **success** (client_credentials 200) **and
+    error** (GET 405). Both asserted.
+  - `/tokeninfo` — success (200) carries `Cache-Control: no-cache, no-store` and **no `Pragma`** (matches
+    `TokenInfoHandler`'s hardcoded string byte-for-byte); the 401 error path carries **none**.
+  - `/introspect` (200) and `/userinfo` (400) — **no** `Cache-Control`/`Pragma`.
+  - **New find:** `/tokeninfo` success `Content-Type` is `application/json` with **no charset** (Restlet), whereas
+    CHF `setEntity(Map)` will emit `application/json; charset=UTF-8` → a deliberate 5d-1 byte-diff, asserted in the
+    oracle so it is not lost when Restlet dies. Flag-not-fix at the flip.
 - **Forward context for 5d-1's `OAuth2RouterIT`** (assert then, not now): `/tokeninfo` GET cache headers; the
   three-error-shapes coexistence; `/connect/register` GET with no auth → 401 not 500; `/idtokeninfo` realm
   resolution end-to-end; the dual-verb endpoints answering both GET and POST on one route.
@@ -442,10 +447,13 @@ refs; module `install` clean (javadoc jar built → doclint OK on the new classe
 
 **Review watch-items (5a-2a review, 2026-07-24 — follow-ups, not code changes):**
 
-- **5d-1 byte-diff — tokeninfo cache-header string.** `TokenInfoHandler` hardcodes `Cache-Control: no-cache, no-store`;
-  Restlet renders that from `CacheDirective.noCache()+noStore()` (`ValidationServerResource:81-82`). If the live
-  render order/spacing differs, the 5d-1 byte-diff flags it. **→ the §E oracle must capture the live header verbatim
-  before the flip** ([task #11](plan.md)).
+- **5d-1 byte-diff — tokeninfo cache-header string. ORACLE CAPTURED 2026-07-24 (task #11 done).** Live Restlet
+  renders `CacheDirective.noCache()+noStore()` (`ValidationServerResource:81-82`) as exactly
+  `Cache-Control: no-cache, no-store` (one header, space after the comma, no `Pragma`) — **identical** to
+  `TokenInfoHandler`'s hardcoded string, so no cache-header divergence is expected. Pinned in
+  `e2e/oauth2/oauth2-test.spec.mjs`. **New sub-finding:** the tokeninfo success `Content-Type` is `application/json`
+  with **no charset** on Restlet, but CHF `setEntity(Map)` emits `application/json; charset=UTF-8` → a deliberate
+  Content-Type byte-diff to flag (not fix) at 5d-1; also asserted in the oracle.
 - **POST content-type variance.** Restlet tagged introspect `@Post("form")` and userinfo `@Post("form:json")`
   (variant hints); the CHF handlers accept any POST and rely on `ChfOAuth2Request`/service-layer param extraction.
   Parity holds for form bodies (the real case); a JSON-body **userinfo** POST is an untested edge. Acceptable — noted

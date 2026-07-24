@@ -432,6 +432,79 @@ test.describe("OAuth2 /access_token contract lock (5-E, live Restlet)", () => {
     expect(response.status()).toBe(405);
     expect(body.error).toBe("method_not_allowed");
     expect(body.error_description).toBe("Required Method: POST found: GET");
+    // OBSERVED: /access_token stamps the OAuth2Filter cache headers on the ERROR path too (finding 1).
+    expect(response.headers()["cache-control"]).toBe("no-store");
+    expect(response.headers()["pragma"]).toBe("no-cache");
+  });
+
+});
+
+/**
+ * Step 5-E cache-header contract lock (finding 1 oracle), recorded against LIVE RESTLET and thus a GATE that
+ * must land before 5d-1 (Restlet stops serving /oauth2 at the flip). Three distinct cache contracts, captured
+ * VERBATIM while Restlet still serves them -- the CHF handlers must byte-match at the 5d-1 diff:
+ *   - /access_token : "Cache-Control: no-store" + "Pragma: no-cache"   (success AND error; from OAuth2Filter)
+ *   - /tokeninfo    : "Cache-Control: no-cache, no-store", NO Pragma    (success only; from the resource)
+ *   - everything else (userinfo, introspect, ...) : no cache headers, ever
+ * Do not "tidy" these strings -- the exact bytes ARE the oracle. Observed 2026-07-24 against openidentityplatform/openam.
+ */
+test.describe("OAuth2 cache-header contract lock (5-E, live Restlet)", () => {
+
+  const CC_BASIC = Buffer.from(`${CONFIDENTIAL_CLIENT_ID}:${CONFIDENTIAL_SECRET}`).toString("base64");
+  let ccToken;
+
+  test.beforeAll(async ({ request }) => {
+    // client_credentials is a single self-contained grant (no PKCE dance); the 200 token response is itself
+    // the /access_token SUCCESS-path cache-header oracle.
+    const resp = await request.post(`${OPENAM_BASE}/oauth2/access_token`, {
+      form: { grant_type: "client_credentials", scope: SCOPE },
+      headers: { Accept: "application/json", Authorization: `Basic ${CC_BASIC}` },
+    });
+    expect(resp.status()).toBe(200);
+    console.log(`[5-E] /access_token success -> Cache-Control=${resp.headers()["cache-control"]} Pragma=${resp.headers()["pragma"]}`);
+    expect(resp.headers()["cache-control"]).toBe("no-store");
+    expect(resp.headers()["pragma"]).toBe("no-cache");
+    ccToken = (await resp.json()).access_token;
+  });
+
+  test("/tokeninfo success carries 'no-cache, no-store' and NO Pragma", async ({ request }) => {
+    const response = await request.get(`${OPENAM_BASE}/oauth2/tokeninfo`, {
+      params: { access_token: ccToken },
+      headers: { Accept: "application/json" },
+    });
+    const cc = response.headers()["cache-control"];
+    const pragma = response.headers()["pragma"];
+    const ct = response.headers()["content-type"];
+    console.log(`[5-E] /tokeninfo success -> ${response.status()} Cache-Control=${cc} Pragma=${pragma} Content-Type=${ct}`);
+    expect(response.status()).toBe(200);
+    // Verbatim oracle: one header, a space after the comma, no Pragma -- exactly TokenInfoHandler's hardcoded string.
+    expect(cc).toBe("no-cache, no-store");
+    expect(pragma).toBeUndefined();
+    // Restlet renders JSON as "application/json" with NO charset; the CHF setEntity(Map) emits
+    // "application/json; charset=UTF-8" -> a KNOWN, deliberate Content-Type byte-diff to FLAG (not fix) at 5d-1.
+    expect(ct).toBe("application/json");
+  });
+
+  test("/introspect success carries no cache headers", async ({ request }) => {
+    const response = await request.post(`${OPENAM_BASE}/oauth2/introspect`, {
+      form: { token: ccToken },
+      headers: { Accept: "application/json", Authorization: `Basic ${CC_BASIC}` },
+    });
+    console.log(`[5-E] /introspect success -> ${response.status()} Cache-Control=${response.headers()["cache-control"]} Pragma=${response.headers()["pragma"]}`);
+    expect(response.status()).toBe(200);
+    expect(response.headers()["cache-control"]).toBeUndefined();
+    expect(response.headers()["pragma"]).toBeUndefined();
+  });
+
+  test("/userinfo carries no cache headers", async ({ request }) => {
+    // A client_credentials token has no resource owner, so userinfo returns 400 here -- but the cache-header
+    // contract is outcome-independent: neither the 200 (see the functional test above) nor this 400 adds headers.
+    const response = await request.get(`${OPENAM_BASE}/oauth2/userinfo`, {
+      headers: { Accept: "application/json", Authorization: `Bearer ${ccToken}` },
+    });
+    console.log(`[5-E] /userinfo -> ${response.status()} Cache-Control=${response.headers()["cache-control"]} Pragma=${response.headers()["pragma"]}`);
+    expect(response.headers()["cache-control"]).toBeUndefined();
+    expect(response.headers()["pragma"]).toBeUndefined();
   });
 
 });

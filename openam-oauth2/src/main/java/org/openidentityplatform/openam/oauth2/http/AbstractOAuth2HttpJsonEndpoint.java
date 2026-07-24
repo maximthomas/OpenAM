@@ -57,12 +57,23 @@ public abstract class AbstractOAuth2HttpJsonEndpoint {
         OAuth2Request o2 = requestFactory.create(ctx, request);
         Response response = errorResponseFactory.toJsonResponse(
                 OAuth2Error.of(e).withState(o2.<String>getParameter("state")));
-        return noCache(response);
+        return withErrorHeaders(response);
     }
 
     /**
-     * Stamps the no-cache directives the Restlet {@code OAuth2Filter} added to <em>every</em> OAuth2 response,
-     * success or error. Subclasses must call this on their success responses; {@link #onError} covers the errors.
+     * Endpoint-specific headers for the error response. Default: none -- most OAuth2 JSON endpoints add no cache
+     * headers on their error path. Only {@code /access_token} (and {@code /authorize}) did, via the Restlet
+     * {@code OAuth2Filter}; {@code TokenEndpointHandler} overrides this to {@link #noCache}.
+     */
+    protected Response withErrorHeaders(Response response) {
+        return response;
+    }
+
+    /**
+     * Stamps {@code Cache-Control: no-store} + {@code Pragma: no-cache} -- the directives the Restlet
+     * {@code OAuth2Filter} added to every {@code /access_token} (and {@code /authorize}) response, success and
+     * error. Only those two endpoints inherited it; the other OAuth2 JSON endpoints set their own cache header
+     * (or none), so this is opt-in per handler, not a base default.
      */
     protected static Response noCache(Response response) {
         response.getHeaders().put("Cache-Control", "no-store");

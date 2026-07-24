@@ -83,6 +83,12 @@ public class TokenEndpointHandler extends AbstractOAuth2HttpJsonEndpoint {
         return noCache(response);
     }
 
+    /** The OAuth2Filter stamped no-store/no-cache on this endpoint's error responses too (finding 1). */
+    @Override
+    protected Response withErrorHeaders(Response response) {
+        return noCache(response);
+    }
+
     /** Reproduces the finder's gate + the two resources' service call; hooks only on the access-grant path. */
     private AccessToken issue(String grantType, OAuth2Request o2) throws OAuth2Exception {
         if (isEmpty(grantType)) {

@@ -217,12 +217,16 @@ root.setDefaultRoute(Handlers.chainOf(innerChain, realmContextFilter));
   `new RootContext()` suffices. Read either body with `response.getEntity().getJson()` (§2). See
   `TokenEndpointHandlerTest`. Note `InvalidClientException(String)` is **400**; only
   `InvalidClientAuthZHeaderException` (auth-header path) is **401** (RFC 6749 §5.2).
-- **No-cache belongs on *every* OAuth2 response, so put it in the base (5a review, 2026-07-24).** The Restlet
-  `OAuth2Filter.beforeHandle` stamps `Cache-Control: no-store` + `Pragma: no-cache` **unconditionally** — success
-  and error alike — for all OAuth2 endpoints. In CHF the error path is the shared base `onError`, so
-  `AbstractOAuth2HttpJsonEndpoint.noCache(Response)` lives on the base and is called from `onError`; each subclass
-  must also call it on its **success** response. Easy to get wrong by adding the headers only in the success
-  handler (as 5a-1 first did) — then every error body silently loses them and the 5d-1 byte-diff flags it.
+- **Cache headers are per-endpoint — do NOT default them on the base (corrected 5a-2, 2026-07-24).** The Restlet
+  `OAuth2Filter.beforeHandle` stamps `Cache-Control: no-store` + `Pragma: no-cache` on success *and* error, but
+  it wraps **only** `/access_token` + `/authorize` (`TokenEndpointFilter`/`AuthorizeEndpointFilter` are its only
+  subclasses). The other OAuth2 JSON endpoints get **none** from the filter — `/tokeninfo` sets its own
+  `Cache-Control: no-cache, no-store` (**no `Pragma`**) on its **success** path only; the rest set nothing. So
+  the base's `onError` calls an overridable `withErrorHeaders(Response)` that **defaults to no headers**;
+  `TokenEndpointHandler` overrides it to `noCache` and also calls `noCache` on its success response. Each handler
+  reproduces its own contract — `noCache` is opt-in, never a base default. Getting this wrong (an unconditional
+  base `noCache`, as 5a-1 first had it) adds `no-store`/`Pragma` the other endpoints never sent, and the 5d-1
+  byte-diff flags it.
 - **Content-type validation: gate on body-emptiness, compare case-insensitively (5a review).** The Restlet
   `*EndpointFilter.validateContentType` only rejects a **non-empty** entity — an empty/absent body is never
   checked. Reproduce with an early `if (request.getEntity().isRawContentEmpty()) return;` (that call peeks via

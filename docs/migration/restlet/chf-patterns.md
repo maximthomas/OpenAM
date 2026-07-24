@@ -631,3 +631,19 @@ Verified 2026-07-23 building [Phase 4](phase-4-uma.md) (finding 1), by disassemb
   errors.** Wiring a blanket rewriter like `OAuth2ErrorFilter` over an area that has CREST-shaped
   filter/framework errors (UMA) changes them; scope it to areas whose contract *is* the OAuth2 shape
   end-to-end. Check which of the two paths each error takes before choosing where the shape is produced.
+
+## 15. `OAuth2Exception` → HTTP status quirks (Phase 5a-2b)
+
+Facts pinned while porting `/token/revoke` — a CHF handler that `throw`s to the base
+`@ExceptionHandler(OAuth2Exception)` gets the status from `e.getStatusCode()`, so these govern the wire:
+
+- **`ServerException` is `400 server_error`, not 500** (`ServerException(String)` → `super(400, …)`).
+  Surprising given the name.
+- **`OAuth2Exception` is `abstract` and no subtype maps to 500** (`grep 'super(500' …/core/exceptions`
+  → none). ⇒ **a handler cannot produce a 500 by throwing to the base mapper.** A genuine 500 only comes
+  from the framework's own CREST fallback (an *unmatched*, non-`OAuth2Exception` throwable — §2).
+- **Corollary for `/token/revoke` (corrects plan D4):** the Restlet's `catch (CoreTokenException) → 500`
+  is unreachable dead code (`TokenStore.read(String)` throws only the OAuth2 `ServerException`/
+  `NotFoundException`; nothing in the flow throws `CoreTokenException` — `getToken` merely over-declared it).
+  The port omits the catch; there was no reachable 500 to preserve, and `new ServerException` would have
+  yielded 400 anyway. Byte-parity holds because the branch never executed.

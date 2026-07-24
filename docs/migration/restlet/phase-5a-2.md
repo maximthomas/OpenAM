@@ -303,8 +303,9 @@ the other eight: none anywhere). Per-handler specials:
   audience → 400 "no registered client matches audience of id_token"; non-ASCII claim round-trips UTF-8 (guards
   finding 6).
 - **`DeviceCodeHandler`** — success map keys (`device_code`/`user_code`/`expires_in`/`interval`/
-  `verification_uri`); missing `client_id`/`scope`/`response_type` → 400 `invalid_request`; verification-URL
-  fallback via the servlet request.
+  `verification_uri`); missing `client_id`/`scope`/`response_type` → 400 `bad_request` (byte-parity with the
+  Restlet's literal `OAuth2RestletException(400, "bad_request", …)` — **not** `invalid_request`, corrected 5a-2b);
+  verification-URL fallback via the servlet request.
 - **`AbstractOAuth2HttpJsonEndpoint` (D1)** — a focused assertion that `withErrorHeaders` default adds nothing,
   and `TokenEndpointHandler`'s override still stamps `no-store`+`Pragma` on the error path (re-run the 5a-1 suite;
   `errorResponseCarriesCacheHeaders` must stay green).
@@ -452,6 +453,67 @@ refs; module `install` clean (javadoc jar built → doclint OK on the new classe
 
 **Committed 2026-07-24** (5a-2a landed as a single commit; 5a-2b to follow).
 
-### 5a-2b
+### 5a-2b (built 2026-07-24) — the 4 handlers with real decisions
 
-_(to be filled in as 5a-2b lands)_
+**Shipped:** `ConnectClientRegistrationHandler` (D5), `DeviceCodeHandler`, `TokenRevocationHandler` (D4),
+`IdTokenInfoHandler` (D3, + inner `ValidateIdTokenRequest`); 4 focused test classes (**16 new tests**, all green;
+http-package suite 42 green incl. the `TokenEndpointHandler` D1 regression). Grep gate: 0 `org.restlet` / `getCurrent()`
+imports in the new handlers (javadoc prose that *names* the dropped Restlet types is not a code ref).
+
+**Verified findings & decisions (so they need not be re-read):**
+
+- **D5 deployment URL — reused `OAuth2Utils.getDeploymentURL(servletRequest)`** instead of the plan's "small private
+  helper". It already emits the exact `scheme://host:port/<first-URI-segment>` shape (raw reconstruction, **not** the
+  configured `BaseURLProvider` root the plan warned against) and is `@Inject`-ed like `DeviceCodeResource`. Concern
+  **C2 pinned**: the deployment root is the first URI segment (`openam`), not a contextPath.
+- **D5 neutral Bearer** — `getAuthorizationBearerToken()` on both verbs; the Restlet GET-without-header **500 NPE
+  becomes a graceful null → proper 401**. Documented 5d-1 divergence (record in the smoke matrix).
+- **DeviceCode missing-param → `bad_request`, not `invalid_request`** (plan line 306 corrected). `BadRequestException(msg)`
+  = `super(400, "bad_request", …)` reproduces the Restlet's literal. Dropped the provably-dead `if (scope == null)`
+  line (the `isEmpty(scope)` guard already threw). Verification-URI fallback keeps the **configured** `getRootURL`
+  (deliberately not unified with D5's raw reconstruction).
+- **D4 revoke — `CoreTokenException` catch omitted (plan D4 corrected, user-approved).** `TokenStore.read(String)` throws
+  only the OAuth2 `ServerException`/`NotFoundException`; nothing in the flow throws `CoreTokenException` — the Restlet
+  catch was unreachable dead code (its `getToken` over-declared `throws CoreTokenException`). D4's stated goal (keep the
+  path at 500 via `new ServerException`) was doubly wrong: **`ServerException` is 400**, and **no `OAuth2Exception` maps
+  to 500** (the class is abstract). Recorded in [chf-patterns §15](chf-patterns.md#15-oauth2exception--http-status-quirks-phase-5a-2b).
+  The challenge decoration is deleted — a bare `throw` lets the base emit `WWW-Authenticate` (D14 path).
+- **D3 idtokeninfo — two plan corrections, wire output preserved byte-for-byte.** `new InvalidClientException(msg)` does
+  **not compile** (ctor is `protected`); reproduced 400 + `invalid_client` + fixed message via
+  `BadRequestException(e.getError(), "no registered client matches audience of id_token")`. The `RealmLookupException`
+  path likewise → `BadRequestException("Invalid realm", …)`. Kept `ValidateIdTokenRequest` minus its Restlet-typed
+  `getRequest()` override; three CHF realm writes (`REALM`, load-bearing `REALM_OBJECT`, servlet `REALM_PARAM`);
+  `build()` String → `JsonValueBuilder.toJsonValue(...).asMap()` for UTF-8 (finding 6). Dropped the Restlet's dead
+  `SigningManager` field (D6 precedent).
+- **Concern C1 answered:** `JWTTokenParams.REALM` == `Custom.REALM` == `"realm"`, and `ChfOAuth2Request.getParameter`
+  reads attributes first, so after `setRealmOnRequest` the wrapper's `getParameter("realm")` override is **redundant on
+  the CHF path** (the attribute-seeding already returns the token realm). **Kept** for faithfulness — harmless.
+- **D3 real-context test proves the regression the plan feared:** a real `ChfOAuth2Request` over
+  `RootContext→AttributesContext→RealmContext→UriRouterContext` with a real HS256 id_token whose `realm` claim (`/beta`)
+  differs from the URL realm (`/alpha`) asserts `/beta` reaches `providerSettingsFactory`, `urisFactory`, the servlet
+  attribute, and the client-lookup wrapper — plus UTF-8 round-trip + `charset=UTF-8`. A mocked request would no-op
+  `setRealmOnRequest` and hide it.
+
+**Review dispositions (5a-2b code-review, 2026-07-24):** no new correctness bug; all divergences are accepted,
+documented, or deferred to the 5d-1 live oracle.
+
+- **F1/F2 — client/config-reachable `RuntimeException` → CHF CREST 500 (Restlet gave 400 `server_error`).**
+  `DeviceCodeHandler` `Integer.valueOf(max_age)` (a malformed `max_age` client value) and `IdTokenInfoHandler`
+  `JwsAlgorithm.valueOf(<configured alg>)` throw non-`OAuth2Exception` runtimes the base does not map. This is the
+  **deliberately-accepted 5a-1 decision** (`decisions.md:48-49`, `phase-5a-1.md:282`): every unmapped `Throwable`
+  diverges 400→500. Not re-litigated here. **→ record both reachable instances in the 5d-1 smoke matrix.**
+- **F3 — `/connect/register` deployment URL adds `:443`/`:80` on default-port deployments.**
+  `OAuth2Utils.getDeploymentURL` always appends `getServerPort()`; the Restlet `getHostRef()` reflects the `Host`
+  header literally, so it omits the port when the client does. Matches on OpenAM's usual non-default/proxied ports.
+  **Decision (user, 2026-07-24): keep `getDeploymentURL` (DRY/canonical) and treat as a 5d-1 byte-diff watch-item**
+  (like the tokeninfo cache header) — the live oracle is the definitive check; fix then only if it actually diverges.
+- **F4 — error body echoes `state` on `/connect/register` + `/idtokeninfo`.** Those Restlet resources passed
+  `null`; the shared base `onError` echoes `state` uniformly (5a-1 design — not overridable per-handler). Only
+  manifests if a client sends `state`, which is out-of-flow for these endpoints. Accepted; note for the 5d-1 matrix.
+- **F5 — moot.** `OpenAMClientRegistrationStore.get` never calls `request.getRequest()`, so dropping the wrapper's
+  `getRequest()` override is safe; the D3 test *does* exercise the wrapper's `getParameter` override (captured + asserted).
+- **F6 (dropped unexpected-error logging) / F7 (test-scaffold duplication across the 9 http test classes)** —
+  valid quality notes, **deferred** to a separate focused cleanup (F6 is base-level/cross-cutting; F7 also touches the
+  committed 5a-2a tests).
+
+**Not committed yet** (verification passed; commit pending user go-ahead).

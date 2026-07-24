@@ -35,10 +35,12 @@ import org.forgerock.http.protocol.Response;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
 import org.forgerock.openam.core.realms.Realm;
+import org.forgerock.openam.core.realms.RealmTestHelper;
 import org.forgerock.openam.rest.RealmContext;
 import org.forgerock.services.context.AttributesContext;
 import org.forgerock.services.context.Context;
 import org.forgerock.services.context.RootContext;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -51,6 +53,7 @@ public class UmaWellKnownConfigurationEndpointTest {
     private UmaUris umaUris;
     private UmaProviderSettings providerSettings;
     private Context context;
+    private RealmTestHelper realmTestHelper;
 
     @BeforeMethod
     public void setup() throws Exception {
@@ -60,6 +63,11 @@ public class UmaWellKnownConfigurationEndpointTest {
 
         endpoint = new UmaWellKnownConfigurationEndpoint(umaUrisFactory, providerSettingsFactory);
 
+        // Initialise the static Realm class so Realm.root() works regardless of test ordering; without
+        // this the injected CoreWrapper may be null and Realm.root() throws NPE.
+        realmTestHelper = new RealmTestHelper();
+        realmTestHelper.setupRealmClass();
+
         // The realm the endpoint resolves from the context; get(...) is stubbed with matchers so the
         // exact realm instance/path does not matter.
         context = new RealmContext(new AttributesContext(new RootContext()), Realm.root());
@@ -68,6 +76,11 @@ public class UmaWellKnownConfigurationEndpointTest {
         providerSettings = mock(UmaProviderSettings.class);
         given(umaUrisFactory.get(any(Context.class), any(Realm.class))).willReturn(umaUris);
         given(providerSettingsFactory.get(anyString())).willReturn(providerSettings);
+    }
+
+    @AfterMethod
+    public void tearDown() {
+        realmTestHelper.tearDownRealmClass();
     }
 
     private void setupProviderSettings() throws NotFoundException, ServerException {

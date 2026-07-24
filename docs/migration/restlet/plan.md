@@ -37,7 +37,14 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | 3c-2 | Error layer — `OAuth2Error`, `RedirectUris`, error factory + filter | done 2026-07-22 — +123 unit tests and the module's first IT ([as-built](phase-3c-2-error-layer.md#as-built)). Three review passes also chained `ServerException`'s cause and stopped openam-http HTML-escaping CREST messages ([review outcomes](phase-3c-2-error-layer.md#review-outcomes)). e2e contract lock (§E) **deferred**, still to be recorded against live Restlet before 5d |
 | 3d | CHF audit filters + `HttpBodyAuditor` | done 2026-07-23 — landed as the mandated **two commits**: **3d-1** (`666ea57318`) enhances the shared `AbstractHttpAccessAuditFilter` (openam-audit-core) with context/detail hooks, the **3xx→SUCCESSFUL** fix ([D2](phase-3d-audit.md#d2--3xx-classified-as-success-fix-in-the-base)) and `forRequest` query-only ([D3](phase-3d-audit.md#d3--forrequest-query-param-leak-fix-separately)) — a **live-path** change to `/json` audit, guarded by its tests; **3d-2** (`41170fb92a`) = 3 build-ahead OAuth2/UMA classes + the parity oracle in openam-oauth2 (**+29 unit, +2 IT**; 916 module green; import gate 0) ([as-built](phase-3d-audit.md#as-built)). A review pass folded in reuse/cleanup fixes (`select` helper, static logger). Live-route audit smoke (risk #13 pre/post-flip `queryParameters` diff) **deferred to 5d** |
 | 4 | UMA `/uma` → CHF (atomic flip; sub-phases **4a** shared protection filter + **4b** endpoints/flip) | done 2026-07-23 (uncommitted; Cargo boot + `e2e/uma` smoke deferred) — `/uma/*` flipped to the `OpenAM` CHF servlet via new `UmaHttpRouteProvider`; three endpoints re-based in place, shared `@ExceptionHandler`/`UmaErrorResponseFactory`, `ChfAccessTokenProtectionFilter` (4a) wired; `UmaRouterProvider`/`UmaExceptionHandler`/`UMAServiceEndpointApplication` deleted. **194 unit + `UmaRouterIT` 11 IT** green, whole `-am` WAR assembles, import gate 0 ([as-built](phase-4-uma.md#as-built)) |
-| 5a–5d | OAuth2/OIDC `/oauth2` → CHF (flip in 5d) | pending |
+| **5** | **OAuth2/OIDC `/oauth2` → CHF** — umbrella research + plan: [phase-5-oauth2.md](phase-5-oauth2.md). Largest area; **reviewed + restructured into 7 iterative steps** (all factual/API/line claims verified against the tree). Surface is **15 endpoints / 18 `router.attach()`** (resource_set ×3), not "16 routes". All of 3c/3d/4a was build-ahead *for this phase* (renderer, error layer, audit, protection filter — **all confirmed present**). **Gate: the §E e2e contract lock + golden/parity tests must be recorded against live Restlet before 5d-1** (the oracle is deleted at the flip) | **planned** 2026-07-24 |
+| 5a-1 | `/access_token` grant dispatcher (`TokenEndpointHandler`) + `AbstractOAuth2HttpJsonEndpoint` base + `TokenRequestHook` seam. **Cookie spike first** (settle servlet-response cookie survival before the hook seam) | pending |
+| 5a-2 | The 9 simple JSON endpoints off the shared conversion template | pending |
+| 5b-1 | `AuthorizeHandler` **alone** (~600L) + `AbstractOAuth2HttpBrowserEndpoint` base (+ consent data model, catch-collapse, `AuthorizeRequestHook`) | pending |
+| 5b-2 | device/user, checkSession (**realm-prefixed only — JSP kept**), endSession | pending |
+| 5c | resource_set — handler + CHF `ResourceSetRegistrationExceptionFilter`, guarded by `ChfAccessTokenProtectionFilter(null)` | pending |
+| 5d-1 | **the flip, Restlet dormant** — `OAuth2HttpRouteProvider` (18 attachments + audit matrix) + services + web.xml mapping move + hook re-sign; **Restlet stack left in place** (one-line revert); soak green | pending |
+| 5d-2 | **the deletion** — after 5d-1 soaks: delete the ~40-class Restlet OAuth2 stack + `ForgeRockRest` servlet + Guice unbinds + drop Restlet hook interfaces | pending |
 | 6 | WebFinger `/.well-known` + stragglers | pending |
 | 7 | Outbound scripting HTTP client | pending |
 | 8 | Delete openam-restlet + vendored fork + pom sweep | pending |
@@ -244,8 +251,27 @@ tracker-level outline below; the doc supersedes two of these bullets — see its
 
 ## Phase 5 — OAuth2/OIDC `/oauth2` → CHF
 
-Sub-phases 5a–5c land as shippable commits while Restlet still serves `/oauth2`; 5d is
-the atomic flip (a path prefix moves whole in web.xml).
+> **Detailed umbrella plan (research + sizing + step sequence + verification + IT + risks):
+> [phase-5-oauth2.md](phase-5-oauth2.md)** (2026-07-24, **reviewed + restructured into 7 iterative steps**; all
+> factual/API/line claims verified against the tree). It supersedes the bullets below where they differ.
+> Key deltas surfaced by the full code map: **(1)** the 3 `Restlet*AccessTokenVerifier` rebind is **already
+> done** (3b) — no such class exists; **(2)** `/oauth2` framework/uncaught errors are **CREST via
+> `JSONRestStatusService`** (not `OAuth2StatusService`, which is WebFinger-only → Phase 6) — that is what makes
+> `OAuth2ErrorFilter` the right unifier; **(3)** the `TokenRequestHook`/`AuthorizeRequestHook` re-sign is a
+> **coordination** problem (parallel CHF hook interfaces in 5a-1/5b-1, delete Restlet ones at **5d-2**), since
+> the Restlet callers stay live until the flip; **(4)** `/oauth2/connect/checkSession` is served today by an
+> **exact-mapped JSP** that out-ranks `/oauth2/*` — **decision locked: keep the JSP, mount `CheckSessionHandler`
+> for realm-prefixed paths only**; **(5)** the phase is **7 steps** — 5a→**5a-1**(token)+**5a-2**(9 JSON),
+> 5b→**5b-1**(`AuthorizeHandler` alone)+**5b-2**(3 browser endpoints), 5c, 5d→**5d-1**(flip, Restlet dormant,
+> one-line revert)+**5d-2**(delete); two `@ExceptionHandler` bases (JSON + browser), not one; **(6)** the **§E
+> e2e contract lock + golden/parity tests must be recorded against live Restlet before 5d-1** — the oracle
+> expires at the flip (risk #20); **(7)** surface is **15 endpoints / 18 `router.attach()`** (resource_set ×3),
+> not "16 routes". **Session decisions:** `Form.fromRequestEntity` charset trap → route around in handlers now,
+> fix commons in parallel; two parity-preserved security debts deferred (unverified `id_token_hint` signature;
+> 301→login redirect).
+
+Sub-phases 5a–5c land as build-ahead commits while Restlet still serves `/oauth2`; the flip is **two commits** —
+5d-1 moves the path prefix in web.xml (Restlet left dormant, one-line revert), 5d-2 deletes the dormant stack.
 
 **5a. JSON endpoints** — handlers in `org.openidentityplatform.openam.oauth2.http` /
 `org.openidentityplatform.openam.openidconnect.http`, each `Endpoints`-annotated, using

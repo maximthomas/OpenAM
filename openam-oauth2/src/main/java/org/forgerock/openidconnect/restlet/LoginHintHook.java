@@ -12,13 +12,18 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2014-2016 ForgeRock AS.
+ * Portions copyright 2026 3A Systems LLC.
  */
 
 package org.forgerock.openidconnect.restlet;
 
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.restlet.AuthorizeRequestHook;
 import org.forgerock.oauth2.restlet.TokenRequestHook;
+import org.openidentityplatform.openam.oauth2.http.ChfTokenRequestHook;
 import org.restlet.Request;
 import org.restlet.Response;
 import org.restlet.data.CookieSetting;
@@ -31,7 +36,7 @@ import static org.forgerock.openam.oauth2.OAuth2Constants.Params.*;
  * Hooks into the authorize and token request to set/unset a cookie containing the login_hint OIDC parameter, which
  * may be used by the authentication chain.
  */
-public class LoginHintHook implements AuthorizeRequestHook, TokenRequestHook {
+public class LoginHintHook implements AuthorizeRequestHook, TokenRequestHook, ChfTokenRequestHook {
 
     /**
      * Adds the login_hint value to cookie.
@@ -78,6 +83,34 @@ public class LoginHintHook implements AuthorizeRequestHook, TokenRequestHook {
     @Override
     public void afterTokenHandling(OAuth2Request o2request, Request request, Response response) {
         removeCookie(request, response);
+    }
+
+    /**
+     * CHF path: authentication has completed - remove the cookie via the servlet response.
+     * @param o2request The current OAuth2 request.
+     */
+    @Override
+    public void afterTokenHandling(OAuth2Request o2request) {
+        if (hasLoginHintCookie(o2request.getHttpServletRequest())) {
+            // Match the set-cookie's path/HttpOnly so the browser actually clears it.
+            Cookie cookie = new Cookie(LOGIN_HINT_COOKIE, "");
+            cookie.setMaxAge(0);
+            cookie.setPath("/");
+            cookie.setHttpOnly(true);
+            o2request.getHttpServletResponse().addCookie(cookie);
+        }
+    }
+
+    private boolean hasLoginHintCookie(HttpServletRequest request) {
+        Cookie[] cookies = request == null ? null : request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (LOGIN_HINT_COOKIE.equals(cookie.getName())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void removeCookie(Request request, Response response) {

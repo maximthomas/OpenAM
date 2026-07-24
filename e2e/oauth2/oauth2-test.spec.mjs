@@ -21,6 +21,10 @@ const REALM = "root";
 const CLIENT_ID = "test_client_app";
 const SCOPE="profile"
 const REDIRECT_URI="http://app.invalid/cb"
+// Confidential client for the 5-E bad-secret row: the public client cannot use client_credentials, so it
+// never reaches client authentication (the WWW-Authenticate challenge path).
+const CONFIDENTIAL_CLIENT_ID = "test_client_confidential"
+const CONFIDENTIAL_SECRET = "confidential-secret"
 /**
  * Ensures the OAuth2 service exists in the OpenAM instance.
  * Creates it with default configuration if it doesn't exist.
@@ -125,6 +129,54 @@ async function ensureOAuth2ClientExists(adminToken, request) {
   }
 }
 
+/**
+ * Ensures a Confidential OAuth2 client (client_secret_basic) exists, for the 5-E bad-secret row.
+ */
+async function ensureConfidentialClientExists(adminToken, request) {
+  const response = await request.get(
+    `${OPENAM_BASE}/json/realms/${REALM}/realm-config/agents/OAuth2Client/${CONFIDENTIAL_CLIENT_ID}`,
+    {
+      headers: {
+        "iPlanetDirectoryPro": adminToken,
+        "Accept-API-Version": "protocol=2.0,resource=1.0",
+      },
+    }
+  );
+
+  if (response.status() === 404) {
+    const createResponse = await request.put(
+      `${OPENAM_BASE}/json/realms/${REALM}/realm-config/agents/OAuth2Client/${CONFIDENTIAL_CLIENT_ID}`,
+      {
+        headers: {
+          "iPlanetDirectoryPro": adminToken,
+          "Content-Type": "application/json",
+          "Accept-API-Version": "protocol=2.0,resource=1.0",
+        },
+        data: {
+          "userpassword": CONFIDENTIAL_SECRET,
+          "com.forgerock.openam.oauth2provider.clientType": "Confidential",
+          "com.forgerock.openam.oauth2provider.scopes": [`[0]=${SCOPE}`],
+          "com.forgerock.openam.oauth2provider.defaultScopes": [`[0]=${SCOPE}`],
+          "com.forgerock.openam.oauth2provider.grantTypes": ["[0]=client_credentials"],
+          "com.forgerock.openam.oauth2provider.tokenEndPointAuthMethod": "client_secret_basic",
+          "isConsentImplied": true,
+          "sunIdentityServerDeviceStatus": "Active"
+        },
+      }
+    );
+    if (!createResponse.ok()) {
+      throw new Error(`Failed to create confidential client: ${createResponse.statusText()}`);
+    }
+    console.log(`Confidential client "${CONFIDENTIAL_CLIENT_ID}" created successfully`);
+  } else if (!response.ok()) {
+    throw new Error(
+      `Failed to check confidential client: ${response.statusText}`
+    );
+  } else {
+    console.log(`Confidential client "${CONFIDENTIAL_CLIENT_ID}" already exists`);
+  }
+}
+
 test.beforeAll(async ({ request }) => {
   const adminToken = await getAdminToken(request)
 
@@ -134,6 +186,7 @@ test.beforeAll(async ({ request }) => {
   }
   await ensureOAuth2ServiceExists(adminToken, request);
   await ensureOAuth2ClientExists(adminToken, request);
+  await ensureConfidentialClientExists(adminToken, request);
 });
 
 let accessToken;
@@ -323,6 +376,62 @@ test.describe("OAuth Service test", () => {
 
       const error = await response.json();
       expect(error.error).toBe('invalid_request');
+  });
+
+});
+
+/**
+ * Step 5-E: the /access_token contract lock, recorded against LIVE RESTLET (must land before 5d-1, since
+ * Restlet stops serving /oauth2 at the flip). The two contract-certain rows assert the shape; the
+ * GET /access_token row is RECORDED BY OBSERVATION (finding 1) and is the oracle for the deliberate 405
+ * change at 5d-1 -- do not predict its exact status here, pin it from the logged capture.
+ */
+test.describe("OAuth2 /access_token contract lock (5-E, live Restlet)", () => {
+
+  test("unknown grant_type -> 400 unsupported_grant_type", async ({ request }) => {
+    const response = await request.post(`${OPENAM_BASE}/oauth2/access_token`, {
+      form: { grant_type: "no_such_grant", client_id: CLIENT_ID },
+      headers: { Accept: "application/json" },
+    });
+    const body = await response.json();
+    console.log(`[5-E] unknown grant_type -> ${response.status()} ${JSON.stringify(body)}`);
+    // The finder gates on its known set before dispatch, so an unknown grant is unsupported_grant_type,
+    // never invalid_grant (which the second, service-level map would give).
+    expect(response.status()).toBe(400);
+    expect(body.error).toBe("unsupported_grant_type");
+  });
+
+  test("bad client secret -> 401 with WWW-Authenticate", async ({ request }) => {
+    // A CONFIDENTIAL client: the public client hits unauthorized_client (400) before client auth runs.
+    const badBasic = Buffer.from(`${CONFIDENTIAL_CLIENT_ID}:wrong-secret`).toString("base64");
+    const response = await request.post(`${OPENAM_BASE}/oauth2/access_token`, {
+      form: { grant_type: "client_credentials", scope: SCOPE },
+      headers: { Accept: "application/json", Authorization: `Basic ${badBasic}` },
+    });
+    const body = await response.json();
+    const wwwAuth = response.headers()["www-authenticate"];
+    console.log(`[5-E] bad secret -> ${response.status()} WWW-Authenticate=${wwwAuth} ${JSON.stringify(body)}`);
+    // An Authorization header that fails client auth carries the RFC 6749 5.2 challenge.
+    expect(response.status()).toBe(401);
+    expect(body.error).toBe("invalid_client");
+    expect(wwwAuth).toMatch(/^Basic realm=/);
+  });
+
+  test("GET /access_token records the live-Restlet response (finding 1 oracle)", async ({ request }) => {
+    const response = await request.get(`${OPENAM_BASE}/oauth2/access_token`, {
+      headers: { Accept: "application/json" },
+      maxRedirects: 0,
+    });
+    const body = await response.json();
+    console.log(`[5-E] GET /access_token -> status=${response.status()} body=${JSON.stringify(body)}`);
+    // OBSERVED against live Restlet (2026-07-24): TokenEndpointFilter.validateMethod's 405 STANDS -- the
+    // OAuth2Filter "write error then CONTINUE" path does NOT overwrite it with the finder's 400, so finding 1's
+    // 400-invalid_request prediction was wrong. At 5d-1 the @Post-only CHF handler also yields 405, but its
+    // body error code is framework-derived (invalid_request via OAuth2ErrorFilter), not method_not_allowed:
+    // flag THAT body divergence in the 5d-1 smoke diff, NOT a status change.
+    expect(response.status()).toBe(405);
+    expect(body.error).toBe("method_not_allowed");
+    expect(body.error_description).toBe("Required Method: POST found: GET");
   });
 
 });

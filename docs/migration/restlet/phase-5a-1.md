@@ -109,6 +109,13 @@ throwaway — delete the probe route/cookie once the answer is recorded.
 
 ### 1. ⚠ The `OAuth2Filter` "write error then CONTINUE" bug changes what `GET /access_token` returns today
 
+> **⚠ CORRECTED BY THE 5-E LIVE CAPTURE (2026-07-24) — see [As-built §5-E](#step-5-e--access_token-contract-lock-observed-against-live-restlet-2026-07-24).**
+> The prediction below (that CONTINUE overwrites the 405 with a 400 `invalid_request`) is **wrong** against a
+> live container: `GET /access_token` returns **405 `method_not_allowed`** — `validateMethod`'s 405 stands. So
+> 5d-1 is **not** a 400→405 status change; both are 405, and the only divergence is the body error code
+> (`method_not_allowed` → CHF's framework-derived `invalid_request`). The analysis below is kept as the
+> record of what was *predicted*.
+
 `OAuth2Filter.beforeHandle` (`OAuth2Filter.java:58-80`) catches a method/content-type validation failure,
 writes the error status + entity, then **falls through to `return super.beforeHandle(...)` → `Filter.CONTINUE`**
 (`:79`) — so the request proceeds to the wrapped finder/resource anyway, and the resource's output **overwrites**
@@ -469,3 +476,102 @@ success; one request through the (5d) audit wrap proving the buffered body re-re
    (record `GET /access_token`'s real response, finding 1).
 6. Gate (0 Restlet imports in new files) → `mvn -o -pl openam-oauth2 install -DskipTests` → whole-reactor
    `mvn -o install -DskipTests` → mark 5a-1 done in [plan.md](plan.md) and proceed to **5a-2**.
+
+## As-built
+
+### Step 0 — cookie spike: **cookie survives → neutral signature `afterTokenHandling(OAuth2Request)`** (2026-07-24)
+
+Both the code-read and an over-the-wire probe agree: a cookie written on the bridged `HttpServletResponse`
+survives `HttpFrameworkServlet`'s CHF-`Response` write-back. So `ChfTokenRequestHook` ships the **neutral**
+signature (D4), **not** the `(OAuth2Request, Response)` widening.
+
+- **Code-read** — `HttpFrameworkServlet.writeResponse` (`HttpFrameworkServlet.java:355-396`) never
+  `reset()`/`resetBuffer()`/`sendError()`s the servlet response; `setStatus(code)` (`:365`) sets only the
+  status; headers are copied with **`addHeader`** (`:374`, *additive*, not `setHeader`); the entity streams last
+  (`:386`), so the response isn't committed before the header copy. `sessionContext.getSession().save(response)`
+  (`:368`) is a no-op for `ServletSession` and touches only the CHF `Response`. Nothing can clobber a
+  `Set-Cookie` already placed on the servlet response by the hook (which runs *inside* the handler, before the
+  promise resolves).
+- **Probe** — `CookieSpikeTest` drove a real `HttpFrameworkServlet.service()` (Mockito request; a faithful
+  `HttpServletResponseWrapper` where `addCookie` → additive `Set-Cookie`) with a trivial handler that wrote
+  `spikeCookie` on the `AttributesContext`'s `HttpServletResponse` (the `ChfOAuth2Request.getHttpServletResponse`
+  seam) and returned a CHF `Response` carrying `Cache-Control: no-store`. Assertion: both `Set-Cookie:
+  spikeCookie=1` and `Cache-Control: no-store` reached the response, status 200. Green, then **deleted**
+  (throwaway per plan; the live guard is the 5d-1 `login_hint` e2e round-trip + the `LoginHintHook` CHF-path
+  unit test).
+
+### Steps 1–4 — build-ahead classes + tests (2026-07-24)
+
+Landed as designed; `AbstractOAuth2HttpJsonEndpoint` (D1), `ChfTokenRequestHook` (neutral, D4),
+`LoginHintHook` dual-impl, `OAuth2GuiceModule` Multibinder, `TokenEndpointHandler` (D3). Base field injection
+via `Endpoints.from(Object)` works (member injection populates the base `@Inject` fields; R-5a1.4 retired for
+the unit path). Two **corrections to the plan**, both verified against the tree and locked by tests:
+
+- **Hooks fire only on the access-grant path (chosen: faithful split).** D3's pseudocode ran the hook loop
+  unconditionally after dispatch, but the Restlet code splits it — `TokenEndpointResource.token` runs the hooks,
+  `RefreshTokenResource.token` does **not** (matching finding 6, which names only `TokenEndpointResource`).
+  `TokenEndpointHandler.issue` reproduces the split (hook loop gated on `!refresh`), so `refresh_token` does not
+  newly delete the `login_hint` cookie — keeping the 5d-1 smoke diff to only the intended GET→405 change.
+  Locked by `refreshTokenRoutesToRefreshAndSkipsHooks` (hook `never`) + `accessGrantsRouteToRequestAccessToken`
+  (hook once).
+- **A plain `InvalidClientException` (no Authorization header) is 400, not 401.** The plan's test spec predicted
+  401; `InvalidClientException(String)` is `this(400, "invalid_client", …)`, and only the auth-header path
+  (`InvalidClientAuthZHeaderException`, `super(401, …)`) is 401 — exactly RFC 6749 §5.2. Recorded by
+  `plainInvalidClientIs400WithNoChallenge`.
+
+**Tests:** `TokenEndpointHandlerTest` (17 cases: success + cache headers + hook-once; per-grant routing incl.
+the load-bearing unknown→`unsupported_grant_type`; content-type incl. the `;charset=UTF-8` trap;
+`WWW-Authenticate` on the AuthZ challenge; IAE→400; `state` echo) + `LoginHintHookTest` (2). Full openam-oauth2
+suite **945** surefire, 0 failures (was 882 baseline; count only grows). `onError` covered transitively, so no
+separate base test. Gate: 0 `org.restlet`/`getCurrent()` in the 3 new files.
+
+### Step 5-E — /access_token contract lock: **observed against live Restlet (2026-07-24)**
+
+Three rows in `e2e/oauth2/oauth2-test.spec.mjs` (`describe "OAuth2 /access_token contract lock (5-E, live
+Restlet)"`), captured against a live container from this tree (Restlet still serves `/oauth2`; my build-ahead
+changes don't touch that path, so the capture is authoritative for the Restlet contract):
+
+- **unknown `grant_type` → 400 `unsupported_grant_type`** ("Grant type is not supported"). ✅ confirms finding 2.
+- **`GET /access_token` → 405 `method_not_allowed`** (`"Required Method: POST found: GET"`). ⚠ **This overturns
+  [finding 1](#1--the-oauth2filter-write-error-then-continue-bug-changes-what-get-access_token-returns-today).**
+  The predicted CONTINUE-bug overwrite to **400 `invalid_request`** does **not** happen — `validateMethod`'s 405
+  stands on the wire. **5d-1 impact flips:** the status does **not** change (405 both), so the divergence to
+  flag in the 5d-1 smoke diff is the **body error code** — Restlet `method_not_allowed` vs the CHF `@Post`-only
+  handler's framework 405, which `OAuth2ErrorFilter` renders as `invalid_request` (per
+  `OAuth2ErrorRouteCompositionIT.aMappedVerbWithNoAnnotatedMethodBecomesInvalidRequest`). Pin the CHF side at
+  5d-1.
+- **bad client secret → 401, `WWW-Authenticate: Basic realm="/"`, `error: invalid_client`** ("Client
+  authentication failed"). ✅ confirms finding 4 / D14 live. First capture used the *public* client and hit
+  `unauthorized_client` (400) — public clients can't use `client_credentials`, so client auth (the challenge
+  path) was never reached; fixed by adding a **confidential** client (`test_client_confidential`,
+  `client_secret_basic`) to the `beforeAll` setup and pointing the row at it.
+
+All three rows green. **5-E recording is done**; the remaining 5-E activity is the post-5d-1 re-run + byte-diff
+(a 5d-1 gate), for which the `GET /access_token` row's `method_not_allowed`→`invalid_request` body-code change
+is the one expected divergence.
+
+### Step 6 — builds
+
+`mvn -o -pl openam-oauth2 install -DskipTests` ✓ (doclint clean — the new javadoc passes). Whole-reactor
+`mvn -o install -DskipTests` (verification criterion 4) run separately.
+
+### Round-1 review fixes (`/code-review`, 2026-07-24)
+
+A `/code-review` pass surfaced 7 findings; each was re-verified against the Restlet originals before acting.
+Five were fixed (four are wire-contract divergences the **5d-1 byte-diff** would otherwise flag), two are
+deliberate won't-fixes. `TokenEndpointHandlerTest` grew 17→22, all green.
+
+| # | Finding | Verdict | Fix |
+|---|---------|---------|-----|
+| 1 | Cache headers set only on the success path | **fixed** — `OAuth2Filter.beforeHandle:76-77` adds `no-store`/`no-cache` to **every** response (success *and* error) | added `AbstractOAuth2HttpJsonEndpoint.noCache(Response)`; called from the handler's success path **and** the base `onError`. Correct for all 5a-2 endpoints too (they all inherit it from `OAuth2Filter`). |
+| 2 | Refresh path leaked the raw `InvalidGrantException` message | **fixed (refresh-only)** — `RefreshTokenResource:97-100` masks it to `"grant is invalid"`; `TokenEndpointResource` leaves the access-grant message raw | `issue()` catches `InvalidGrantException`: `throw refresh ? new InvalidGrantException("grant is invalid") : e`. (The original's debug-log is non-contractual and was intentionally not reproduced.) |
+| 4 | Content-type check keyed off header presence, not body | **fixed** — `TokenEndpointFilter:69-71` only inspects a **non-empty** entity | `validateContentType` early-returns on `request.getEntity().isRawContentEmpty()` (a peek via `push`/`read`/`pop`, so it does **not** consume the body). |
+| 3 | Case-sensitive content-type compare | **fixed** — media types are case-insensitive (RFC 7231); Restlet `MediaType.equals` was too. `ContentTypeHeader.getType()` preserves case | `FORM_URLENCODED.equalsIgnoreCase(type)`. |
+| 7 | `ensureConfidentialClientExists` (e2e) treated a failed existence-GET as "already exists" | **fixed** | mirrored the sibling helper's `else if (!response.ok()) throw`. |
+| 5 | `LoginHintHook.afterTokenHandling(OAuth2Request)` NPEs if the servlet response is null | **won't-fix** | the Restlet original never guarded either; `getHttpServletResponse()` is non-null in a servlet deployment whenever a request-with-cookie exists, so the NPE is unreachable — a guard would handle an impossible state. |
+| 6 | `ACCESS_GRANTS` duplicates `AccessTokenFlowFinder`'s grant list | **won't-fix** | no existing shared constant; extracting one edits the Restlet finder (out of build-ahead scope). Drift is low-risk and caught by tests + the 5d-1 diff. Revisit when the finder is deleted (5d/5e). |
+
+**5d-1 gate note:** findings 1/2/4 change *error*-path bytes only under narrow inputs (any error → cache headers;
+refresh + invalid grant → masked description; empty-body + non-form CT → falls to the grant gate). The happy
+path and the three locked §5-E rows are unaffected. These now match live Restlet by construction; the 5d-1
+re-run/byte-diff remains the confirmation.

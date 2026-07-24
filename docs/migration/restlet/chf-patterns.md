@@ -203,6 +203,31 @@ root.setDefaultRoute(Handlers.chainOf(innerChain, realmContextFilter));
   legal): see `XacmlServiceHandlerTest.TestXacmlServiceHandler`. Keep the innermost
   `checkPermission(DelegationPermission, SSOToken, String)` seam `@VisibleForTesting` and test it
   directly for the granted/denied audit-logging assertions.
+- **Testing an `AbstractOAuth2HttpJsonEndpoint` subclass (Phase 5a) — don't spin up Guice.** `new TheHandler()`,
+  then set the four `@Inject` fields by walking the class hierarchy with reflection (`getDeclaredField` on each
+  superclass, since `requestFactory`/`errorResponseFactory` live on the base), then drive through
+  `Endpoints.from(handler)` (the `Object` overload — it uses the instance as-is) so the base
+  `@ExceptionHandler onError` actually runs and maps thrown `OAuth2Exception`s. Use the **real**
+  `OAuth2ErrorResponseFactory(mock(FreemarkerTemplateRenderer.class), mock(BaseURLProviderFactory.class),
+  mock(RealmNormaliser.class))` — its `toJsonResponse` needs no renderer — so the error body and
+  `WWW-Authenticate` are the production shapes. Mint real `InvalidClient*Exception`s (their ctors are
+  package-private) via a one-off test subclass of the abstract `ClientAuthenticationFailureFactory`
+  (`hasAuthorizationHeader`→true/false, `getRealm`→…) and its `getException(o2, msg)` / `getException(msg)`.
+  Mock `OAuth2Request` and stub `getParameter("grant_type")`/`"state"` — no servlet/realm context needed, a bare
+  `new RootContext()` suffices. Read either body with `response.getEntity().getJson()` (§2). See
+  `TokenEndpointHandlerTest`. Note `InvalidClientException(String)` is **400**; only
+  `InvalidClientAuthZHeaderException` (auth-header path) is **401** (RFC 6749 §5.2).
+- **No-cache belongs on *every* OAuth2 response, so put it in the base (5a review, 2026-07-24).** The Restlet
+  `OAuth2Filter.beforeHandle` stamps `Cache-Control: no-store` + `Pragma: no-cache` **unconditionally** — success
+  and error alike — for all OAuth2 endpoints. In CHF the error path is the shared base `onError`, so
+  `AbstractOAuth2HttpJsonEndpoint.noCache(Response)` lives on the base and is called from `onError`; each subclass
+  must also call it on its **success** response. Easy to get wrong by adding the headers only in the success
+  handler (as 5a-1 first did) — then every error body silently loses them and the 5d-1 byte-diff flags it.
+- **Content-type validation: gate on body-emptiness, compare case-insensitively (5a review).** The Restlet
+  `*EndpointFilter.validateContentType` only rejects a **non-empty** entity — an empty/absent body is never
+  checked. Reproduce with an early `if (request.getEntity().isRawContentEmpty()) return;` (that call peeks via
+  `push`/`read`/`pop`, so it does **not** consume the body). Then compare with `equalsIgnoreCase` — media types
+  are case-insensitive (RFC 7231) and `ContentTypeHeader.getType()` preserves the header's case.
 
 ## 6. Header/entity gotchas (CHF `Response`)
 

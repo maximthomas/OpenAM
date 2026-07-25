@@ -159,6 +159,17 @@ routed around in-phase and fixed here only when a phase actually requires the co
   (`Form.fromRequestQuery` for query-only detail, `new Form().fromFormString(...)` for the body auditors), so
   nothing in 3d/4/5 needs it yet. Do it when a phase must read a charset-suffixed form body via `getForm()`.
 
+- **`AcceptLanguageHeader` exposes only parsed `Locale`s, never the raw language tags** (commons,
+  `org.forgerock.http.header.AcceptLanguageHeader` → `getLocales(): PreferredLocales`). Round-tripping through
+  `java.util.Locale` drops a `*`, normalises non-canonical case, and re-derives the q-ordering rather than
+  reporting it — so a consumer that needs the tags *as the client sent them* cannot use it. Found 2026-07-25
+  planning Phase 5b-1: the OAuth2 consent page interpolates the accepted-language tags into JavaScript
+  (`${locale?js_string}`, from `ConsentRequiredResource:101-105`), and Restlet handed over the raw
+  `Preference<Language>` names. **Proposed fix:** a purely additive accessor returning the raw tokens in
+  preference order beside `getLocales()`. **Blast radius:** none (new method). **Status: deferred** — 5b-1a
+  hand-parses the header in `ChfOAuth2Request.getAcceptedLanguages()` (~15 lines, one class we own, A/B'd
+  against Restlet's parser), so nothing blocks on a commons release. Do it when a second consumer appears.
+
 - **`AMAccessAuditEventBuilder.forRequest` builds `http/request/path` with `uri.getPort()`**
   (`AMAccessAuditEventBuilder.java:122`), which is **-1** when the request URI carries no explicit port (default
   80/443, e.g. behind a TLS-terminating load balancer), yielding audited paths like

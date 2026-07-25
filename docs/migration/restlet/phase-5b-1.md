@@ -1,0 +1,859 @@
+# Phase 5b-1 — OAuth2 `/authorize` → CHF: Detailed Implementation Plan
+
+Execution plan for **step 5b-1** of [Phase 5](phase-5-oauth2.md) of the Restlet → CHF migration — the
+`/oauth2/authorize` endpoint, the centrepiece of the whole migration (consent HTML, success redirect
+composition, `form_post`, the 301→login redirect, and the catch-collapse). Parent tracker: [plan.md](plan.md);
+umbrella substrate: [phase-5-oauth2.md](phase-5-oauth2.md); the steps this one builds on:
+[phase-5a-1.md](phase-5a-1.md) (the `AbstractOAuth2HttpJsonEndpoint` base + hook-seam precedent + the cookie
+spike) and [phase-5a-2.md](phase-5a-2.md) (the per-endpoint cache-header correction, D1); the build-ahead infra
+it consumes: [phase-3c-1-renderer.md](phase-3c-1-renderer.md) (`FreemarkerTemplateRenderer` + the **goldens**),
+[phase-3c-2-error-layer.md](phase-3c-2-error-layer.md) (`OAuth2Error`/`RedirectUris`/`OAuth2ErrorResponseFactory`);
+decisions: [decisions.md](decisions.md); reusable CHF patterns: [chf-patterns.md](chf-patterns.md); test layers:
+[../../test-infrastructure.md](../../test-infrastructure.md). Written 2026-07-25; branch
+`features/restlet-migration`. All facts below verified against the tree on 2026-07-25.
+
+> **Naming.** The request that produced this plan said "5b-b1"; the tracked step is **5b-1**
+> ([plan.md](plan.md) phase table). This doc splits it into **5-E2** (a test-only live-oracle gate),
+> **5b-1a** (the browser substrate) and **5b-1b** (`AuthorizeHandler` itself) — the same
+> reviewability/risk-isolation split 5a-2 used for 5a-2a/5a-2b.
+
+## Context
+
+`/oauth2/authorize` is the largest single port in Phase 5: three Restlet classes (`AuthorizeResource` 218 L +
+`ConsentRequiredResource` 172 L + `OAuth2Representation` 219 L ≈ 600 L) plus the `AuthorizeEndpointFilter`
+method/content-type/cache wrapper. It carries everything the JSON endpoints did not:
+
+- an **HTML consent page** with a 20-key data model and four display folders;
+- a **success 302** whose parameters go in the fragment or the query depending on `AuthorizationToken.isFragment()`;
+- **`response_mode=form_post`**, an auto-submitting HTML form instead of a redirect;
+- a **301 to the login page** on an unauthenticated request (with the request URL as `goto`);
+- **fourteen catch clauses across two verbs** (8 on GET, 6 on POST, 9 distinct types) **that have drifted
+  apart** — the thing [D6](decisions.md) unifies.
+
+Everything it renders and every error shape it produces already exists as build-ahead infrastructure
+(`FreemarkerTemplateRenderer` + 11 goldens, `OAuth2Error`/`mayRedirect`, `RedirectUris`,
+`OAuth2ErrorResponseFactory`). **5b-1 authors no new rendering, redirect-composition or error infrastructure** —
+it ports the endpoint shell onto them, plus the two things the JSON steps did not need: a **browser**
+`@ExceptionHandler` base and a **shared consent-page collaborator**.
+
+Build-ahead: **nothing is routed.** The handler first runs in a live CHF chain in `OAuth2RouterIT` at 5d-1. The
+guards are the per-handler unit tests, the existing golden oracle, a new composition IT, and — the reason 5-E2
+comes first — the **live-Restlet `/authorize` contract lock**, which cannot be recorded after 5d-1
+([R-5.1](phase-5-oauth2.md#risk-register-extends-planmds--phase-4s), [plan.md](plan.md) risk #20).
+
+> **Convention.** New classes: `org.openidentityplatform.openam.oauth2.http`, CDDL header, `Copyright 2026 3A
+> Systems LLC.`, **no `@since`** ([decisions.md](decisions.md)). Classes modified in place keep their header and
+> gain a `Portions copyright 2026 3A Systems LLC.` line — except our own 2026 classes, which carry no
+> `Portions` line ([phase-5a-2 as-built](phase-5a-2.md#as-built)).
+
+## Scope & sizing — split three ways
+
+One commit covering the oracle, two abstract bases, a hook seam, a new neutral accessor, a shared consent
+renderer and the 600-line handler would be ~15 files with three unrelated risk profiles. Split:
+
+| Step | Scope | New / changed | Risk |
+|---|---|---|---|
+| **5-E2** | **The `/authorize` live-Restlet contract lock** — a consent-capable e2e client ([finding 12](#12--the-e2e-environment-cannot-currently-reach-a-consent-page)) plus 9 authorize rows in `e2e/oauth2/oauth2-test.spec.mjs`, written **by observation**. Test-only, no main code. Extends step **5-E**, whose recorded rows so far cover only `/access_token` + cache headers ([finding 1](#1--the-e-lock-does-not-yet-cover-authorize--and-cannot-be-written-after-5d-1)) | e2e spec only (0 main) | **High** — unrecoverable after 5d-1 |
+| **5b-1a** | **The browser substrate**: extract `AbstractOAuth2HttpEndpoint` (shared fields + `noCache`/`withErrorHeaders`), add `AbstractOAuth2HttpBrowserEndpoint` (the browser `@ExceptionHandler`), `ChfAuthorizeRequestHook` + `LoginHintHook` dual-impl + Guice Multibinder, and the neutral **`getAcceptedLanguages()`** accessor the consent model needs ([finding 5](#5--getacceptedlanguages-does-not-exist--the-consent-models-locale-key-has-no-neutral-source)) | 3 new + 3 modified + 3 tests + 1 IT | **Med** |
+| **5b-1b** | **`AuthorizeHandler`** + the shared **`ConsentPageRenderer`** (data model + `authorize.ftl` render, reused by 5b-2's device flow — [finding 6](#6--consentrequiredresource-is-shared-with-the-device-flow--on-chf-it-must-become-a-collaborator-not-a-base)) | 2 new + 2 tests | **High** |
+
+**Total new main classes: 5** (`AbstractOAuth2HttpEndpoint`, `AbstractOAuth2HttpBrowserEndpoint`,
+`ChfAuthorizeRequestHook`, `ConsentPageRenderer`, `AuthorizeHandler`) + one new accessor on two classes.
+
+Order: **5-E2 → 5b-1a → 5b-1b**. 5-E2 is deliberately first, not merely "before 5d-1": the handler's
+method/content-type behaviour and its 405/400 wire bodies are **decided by** what the oracle records
+([finding 2](#2--the-continue-bug-makes-authorizes-filter-validation-unpredictable--record-it-do-not-derive-it)),
+and characterizing before porting is the lesson [3b as-built #2](phase-3b-collaborators.md) and
+[3c-1 execution step 3](phase-3c-1-renderer.md) both recorded.
+
+## Key research findings (drove this design)
+
+<a id="1--the-e-lock-does-not-yet-cover-authorize--and-cannot-be-written-after-5d-1"></a>
+### 1. ⚠ The §E lock does **not** yet cover `/authorize` — and cannot be written after 5d-1
+
+[plan.md](plan.md)'s 5-E row reads "recorded (13 rows green vs live Restlet)", which is true of the
+`/access_token` rows and the cache-header rows. Verified against the spec
+(`e2e/oauth2/oauth2-test.spec.mjs`, 510 L): its `describe` blocks are `"OAuth Service test"`,
+`"OAuth2 /access_token contract lock (5-E, live Restlet)"` (3 rows) and
+`"OAuth2 cache-header contract lock (5-E, live Restlet)"` (4 rows). **There is no authorize row at all** — no
+301→login `Location`, no 302 query-vs-fragment, no `text/html;charset=UTF-8` error page, no consent-page
+capture, although the umbrella's §E list ([phase-5-oauth2.md](phase-5-oauth2.md) prerequisite gate) names all
+four. Restlet stops serving `/oauth2` at 5d-1, so these rows have to be recorded now, and 5b-1 is the step
+that needs them.
+
+<a id="2--the-continue-bug-makes-authorizes-filter-validation-unpredictable--record-it-do-not-derive-it"></a>
+### 2. ⚠ The CONTINUE bug makes `/authorize`'s filter validation unpredictable — record it, do not derive it
+
+`AuthorizeEndpointFilter extends OAuth2Filter` (`AuthorizeEndpointFilter.java:33`) contributes three things:
+
+- `validateMethod` (`:54-59`) — GET or POST, else **405 `method_not_allowed`** with the literal message
+  `"Required Method: GET or POST found: <method>"`;
+- `validateContentType` (`:68-74`) — a **non-empty** entity must be `application/x-www-form-urlencoded`, else
+  `InvalidRequestException("Invalid Content Type")`;
+- **`Cache-Control: no-store` + `Pragma: no-cache` on every response** (`OAuth2Filter.java:76-77`), success and
+  error alike. `/authorize` is one of exactly **two** endpoints that get these from the filter
+  ([phase-5a-2 finding 1](phase-5a-2.md)).
+
+But `OAuth2Filter.beforeHandle` (`:59-79`) writes the error status + a **JSON** entity and then falls through
+to `return super.beforeHandle(...)` → `Filter.CONTINUE`, so the wrapped resource runs anyway. Whether the
+filter's error survives is **not derivable**: 5a-1 predicted that the resource would overwrite the 405 on
+`GET /access_token`, and the live capture **overturned that** — the 405 stood on the wire
+([phase-5a-1 as-built §5-E](phase-5a-1.md#step-5-e--access_token-contract-lock-observed-against-live-restlet-2026-07-24)).
+⇒ `PUT /oauth2/authorize` and a JSON-bodied `POST /oauth2/authorize` must be **observed**, not predicted, and
+the handler's validation design (D8) follows the observation.
+
+<a id="3--the-two-catch-lists-and-what-collapsing-them-actually-changes"></a>
+### 3. The two catch lists, and what collapsing them actually changes
+
+`AuthorizeResource` GET (`:120-149`) and POST (`:187-206`) — verified clause by clause, with each exception's
+**own** status/error checked so the collapse can be proven byte-safe:
+
+| Exception | GET | POST | Own `status/error` | Collapsed base result |
+|---|---|---|---|---|
+| `IllegalArgumentException` | 400 `invalid_request`; **redirects** to the raw `redirect_uri` unless the message contains `client_id` | *(not caught)* → `doCatch` → 400 `server_error` **HTML error page** | n/a | **D7** — one non-redirecting 400 `invalid_request` |
+| `ResourceOwnerAuthenticationRequired` | 307+login URI → **301** | same | 307 `redirection_temporary` | identical (`OAuth2Error.of` pins the login URI, [D13](decisions.md)) |
+| `ResourceOwnerConsentRequired` | renders `authorize.ftl` | *(not thrown — the 3-arg `authorize` cannot raise it)* | *not an `OAuth2Exception`* | handled **in the handler**, not the base |
+| `InvalidClientException` | no redirect | no redirect | 400/401 `invalid_client` | identical (`NEVER_REDIRECT`) |
+| `RedirectUriMismatchException` | no redirect | no redirect | 400 `redirect_uri_mismatch` | identical (`NEVER_REDIRECT`) |
+| `DuplicateRequestParameterException` | no redirect, literal `400 invalid_request` | same | **400 `invalid_request`** | identical — the literal matches the exception's own values |
+| `CsrfException` | *(not caught — unreachable on GET)* | no redirect, literal `400 bad_request` | **400 `bad_request`** | identical — literal matches |
+| `OAuth2ProviderNotFoundException` | no redirect | **redirects** (falls to the generic catch, **unvalidated** URI) | inherits `NotFoundException` | **no redirect** — the [D6](decisions.md) open-redirect fix |
+| any other `OAuth2Exception` | redirects to the raw `redirect_uri`, `parameterLocation` honoured | same | own | identical |
+
+⇒ **Exactly two behaviour changes** land from the collapse, both already decided:
+`OAuth2ProviderNotFoundException` on POST stops redirecting ([D6](decisions.md), already in 5d-1's smoke
+matrix), and the `IllegalArgumentException` handling unifies (**D7**, new here). Everything else is
+byte-identical, because each literal `(status, error)` pair the Restlet catch passed equals the exception's own
+pair.
+
+<a id="4--the-consent-data-model-is-already-pinned-by-a-golden--reproduce-it-key-for-key"></a>
+### 4. The consent data model is already pinned by a golden — reproduce it key for key
+
+R-5.5 (a CHF port that does not enumerate the implicitly-seeded keys renders a consent page with every `<#if>`
+false) is **already de-risked**: `RendererFixtures.authorize()`
+(`openam-oauth2/src/test/java/.../http/RendererFixtures.java`) is the producer-derived model, and
+`RestletRendererParityTest` asserts `Restlet == golden == CHF` over `page/`, `popup/`, `touch/`, `wap/` and the
+composed popup. The model to reproduce, with its source line in `ConsentRequiredResource` and its **type** (the
+types are the trap — see the `RendererFixtures` class javadoc):
+
+| Key | Source | Type |
+|---|---|---|
+| `realm` | request attribute (`:79`) — on CHF, `ChfOAuth2Request` seeds it from `RealmContext` (`:324-329`) | `String` |
+| `redirect_uri`, `scope`, `state`, `nonce`, `acr`, `response_type`, `client_id`, `ui_locales` | `getQuery().getValuesMap()` (`:80`) — **query string only**, not the POST body | `String` |
+| `target` | `resRef.getPath()` + `"?" + query` when the query is non-blank (`:81-87`) | `String` |
+| `display_name`, `display_description` | ESAPI-encoded client name/description (`:88-89`) | `String` |
+| `display_scopes`, `display_claims` | `JsonValue.toString()` (`:143,:160`) — **JSON text, not collections** | `String` |
+| `display_scope` | raw scope-description list (`:147`) — read only by `wap/authorize.ftl` | `List<String>` |
+| `user_name` | raw, **not** ESAPI-encoded (`:91`) — the only key carrying non-ASCII to the bytes | `String` |
+| `xui` | `xuiState.isXUIEnabled()` (`:92`) — produced, read by no template | `Boolean` |
+| `user_code` | `getParameter(USER_CODE)` (`:93`) — the device flow | `String`/null |
+| `baseUrl` | `baseURLProviderFactory.get(realm).getRootURL(servletRequest)` (`:94-95`) | `String` |
+| `saveConsentEnabled` | `consentRequired.isSaveConsentEnabled()` (`:96`) — **a real `Boolean`** (`<#if saveConsentEnabled >`) | `Boolean` |
+| `csrf` | `csrfProtection.createCsrfToken(request)` (`:100`) — already neutral | `String` |
+| `locale` | accepted-language names joined with `" "` (`:101-105`) | `String` |
+
+Two sources need translating, and only two:
+
+- **`target`** — Restlet reads the resource reference. The CHF equivalent is the **CHF `Request`'s** URI, not
+  the servlet request's: `request.getUri().getPath()` + `"?" + request.getUri().getQuery()`. It must be the CHF
+  URI because `ChfOAuth2Request.setQueryParameter`/`removeQueryParameterValue` write back through
+  `Form.toRequestQuery(request)` (`ChfOAuth2Request.java:270-274`), exactly as the Restlet accessors mutate the
+  resource reference — so a servlet-request reconstruction would silently drop query mutations. *(On the
+  consent path itself no mutation has occurred — `alterMaxAge`/`removeLoginPrompt` fire only on the
+  `ResourceOwnerAuthenticationRequired` path, `ResourceOwnerSessionValidator.java:183,344` — but sourcing
+  `target` from the same place Restlet did removes the question rather than relying on that staying true.)*
+  `HttpFrameworkServlet.createRequest` builds the CHF URI as
+  `Uris.createNonStrict(scheme, null, serverName, serverPort, req.getRequestURI(), req.getQueryString(), null)`
+  (`HttpFrameworkServlet.java:300-306`), so `getPath()` **includes the context path** —
+  `/openam/oauth2/authorize`, matching the golden fixture's `target` exactly.
+- **`locale`** — see finding 5.
+
+Everything else transfers verbatim through `o2.getParameter(...)`, `o2.getHttpServletRequest()` and the
+already-neutral `CsrfProtection`.
+
+<a id="5--getacceptedlanguages-does-not-exist--the-consent-models-locale-key-has-no-neutral-source"></a>
+### 5. ⚠ `getAcceptedLanguages()` does **not** exist — the consent model's `locale` key has no neutral source
+
+[plan.md](plan.md)'s 3a bullet and the umbrella's 5b-1 section both say the consent locales come from
+`getAcceptedLanguages()`. **No such method exists** on `OAuth2Request` (verified: the class declares
+`getLocale()` and 17 other accessors, none of them this), and the only two callers of the Restlet
+`getClientInfo().getAcceptedLanguages()` are `ConsentRequiredResource:102` and
+`DeviceCodeVerificationResource:230` — i.e. precisely 5b-1 and 5b-2. So the accessor is a **5b-1a deliverable**,
+not a consumed one.
+
+`getLocale()` is not a substitute: it returns a single `Locale` (`ChfOAuth2Request.java:143-158`), while the
+model needs the **full preference-ordered list of raw tags** joined with `" "` — `"en-GB en fr"` — and the raw
+tag matters because the value is interpolated into the consent page's JavaScript (`${locale?js_string}`) for
+XUI to pick translations. Round-tripping through `java.util.Locale` would normalise case and lose a `*`.
+
+⇒ **D3**: add `List<String> getAcceptedLanguages()` to `OAuth2Request` (concrete, default empty) and implement
+it on `ChfOAuth2Request` by parsing the raw `Accept-Language` header, **A/B'd against Restlet's own parser**
+while Restlet is still on the classpath — the `RestletErrorParityTest` pattern
+([chf-patterns §13](chf-patterns.md#13-the-3-way-golden-oracle-phase-3c--how-parity-survives-restlets-deletion)).
+
+<a id="6--consentrequiredresource-is-shared-with-the-device-flow--on-chf-it-must-become-a-collaborator-not-a-base"></a>
+### 6. `ConsentRequiredResource` is shared with the device flow — on CHF it must become a collaborator
+
+`DeviceCodeVerificationResource extends ConsentRequiredResource` (`:81`) and calls the **same**
+`getDataModel(e, request)` + `authorize.ftl` render (`:197-198`) for the device flow's consent step. On Restlet
+the sharing mechanism was inheritance; on CHF the superclass slot is taken by
+`AbstractOAuth2HttpBrowserEndpoint` (which carries the `@ExceptionHandler` that must not be overridden), and
+Java has single inheritance. ⇒ the consent page becomes an **injected collaborator**, `ConsentPageRenderer`,
+built in 5b-1b and consumed unchanged by 5b-2 (**D5**).
+
+One field of `ConsentRequiredResource` does **not** survive: `resourceOwnerSessionValidator` (`:55,:64`) is
+assigned and never read — `CsrfProtection` holds its own. Drop it (the `TokenIntrospectionResource` dead-field
+precedent, [phase-5a-2 D6](phase-5a-2.md#d6)).
+
+<a id="7--the-success-path-collapses-onto-redirecturis--with-one-documented-edge"></a>
+### 7. The success path collapses onto `RedirectUris` — with one documented edge
+
+`OAuth2Representation.toRepresentation` (`:148-173`) does three things: build a `Form` from
+`AuthorizationToken.getToken()`, place it in the **fragment** (`setFragment`, replaces) or the **query**
+(`addQueryParameter`, appends) per `authorizationToken.isFragment()`, and then either render
+`FormPostResponse.ftl` (when `response_mode == form_post`, `:189-191`) or run a
+`Redirector(MODE_CLIENT_FOUND)` = **302**.
+
+That is `RedirectUris.compose(redirectUri, token.getToken(), isFragment ? FRAGMENT : QUERY)` exactly —
+fragment replaces, query appends, encoding parity already proven ([plan.md](plan.md) risk #3, closed). Two notes:
+
+- **`RedirectUris`' documented empty-params divergence is unreachable here.** Its javadoc flags that an empty
+  map leaves the target untouched (where Restlet's `setFragment("")` would clear an existing fragment) and asks
+  Phase 5b to decide. `AuthorizationToken` comes from `tokenIssuer.issueTokens` and always carries at least the
+  code or the access token, so the empty case cannot arise on the success path. **Decision: leave `RedirectUris`
+  unchanged**; pin the reasoning with a test asserting a one-entry token map still composes.
+- **[D11](decisions.md) applies to the success redirect too.** Restlet ran the composed target through the
+  `Redirector`'s `Template`, deleting unbound `{...}` sequences; CHF sets `Location` verbatim. On the success
+  path the target has been validated by `authorize()`, so a braced URI is not reachable through a registered
+  client — but the divergence is the same one D11 already accepted.
+
+<a id="8--the-hook-seam-authorize-needs-both-halves-and-cannot-un-write-a-servlet-cookie"></a>
+### 8. The hook seam: `/authorize` needs **both** halves, and cannot un-write a servlet cookie
+
+`AuthorizeRequestHook` (`org.forgerock.oauth2.restlet`) has two Restlet-typed methods, both invoked by
+`AuthorizeResource` on both verbs: `beforeAuthorizeHandling` (`:102-104`, `:166-168`) before anything, and
+`afterAuthorizeSuccess` (`:114-116`, `:181-183`) after the representation is built. Sole impl `LoginHintHook`,
+which already implements the CHF `ChfTokenRequestHook` from 5a-1 — including a working servlet-response
+cookie-delete (`LoginHintHook.java`, `afterTokenHandling(OAuth2Request)`). The 5a-1 **cookie spike proved
+servlet-response cookies survive `HttpFrameworkServlet`'s write-back**
+([phase-5a-1 as-built step 0](phase-5a-1.md#step-0--cookie-spike-cookie-survives--neutral-signature-aftertokenhandlingoauth2request-2026-07-24)),
+so the neutral signature stands here too.
+
+One asymmetry has no CHF equivalent: `afterAuthorizeSuccess` first **removes** the `Set-Cookie` that
+`beforeAuthorizeHandling` just added to the Restlet response's `CookieSetting` series, then adds the max-age-0
+delete. A `jakarta.servlet.http.HttpServletResponse` has no cookie-removal API. ⇒ **D6**: the CHF impl emits
+both headers — the set from `before`, then the max-age-0 delete from `after`. The browser applies them in order
+and the end state is identical (the cookie is gone); the wire carries one extra `Set-Cookie` on the
+authorize-success response. A documented 5d-1 byte-diff, not a behaviour change.
+
+<a id="9--display-and-the-two-illegalargumentexception-sources"></a>
+### 9. `?display=` and the two `IllegalArgumentException` sources
+
+`FreemarkerTemplateRenderer.renderForDisplay` throws `IllegalArgumentException` from `Enum.valueOf` for an
+unknown display, deliberately preserved so 5b can map it ([3c-1 D7](phase-3c-1-renderer.md)). Today that IAE is
+raised **inside** `AuthorizeResource`'s `catch (ResourceOwnerConsentRequired)` block (`:130-132`), and a sibling
+`catch` does not protect a `catch` body — so it escapes to `doCatch` →
+`ExceptionHandler.handle(Throwable, Context, Request, Response)` (`:74-92`), which wraps a non-`OAuth2RestletException`
+cause in `new ServerException(throwable)` → **400 `server_error`, rendered as the HTML error page** (`:132-137`,
+no redirect URI ⇒ the page branch). The *other* IAE source — `authorizationService.authorize(...)`, whose javadoc
+declares `IllegalArgumentException If the request is missing any required parameters` — is caught on GET
+(`:120-126`) and not on POST, giving the split in finding 3.
+
+⇒ three inputs, three different current answers (`400 invalid_request` + open redirect / `400 invalid_request`
+error page / `400 server_error` error page). **D7** unifies them.
+
+<a id="10--the-consent-model-reads-the-query-only-and-its-build-order-is-load-bearing"></a>
+### 10. ⚠ The consent model reads the **query only**, and its build order is load-bearing (review, 2026-07-25)
+
+`getDataModel` builds the map in three ordered phases (`ConsentRequiredResource.java:79-107`), and each phase
+boundary matters:
+
+```java
+Map<String, Object> data = new HashMap<>(getRequest().getAttributes());  // 1. attributes
+data.putAll(getQuery().getValuesMap());                                  // 2. QUERY overlay — wins
+… data.put("target", …); data.put("display_name", …); addDisplayScopesAndClaims(data); …  // 3. derived
+```
+
+Two consequences a `getParameter`-based port gets **backwards**:
+
+- **`getQuery().getValuesMap()` is the query string only — never the POST body.** `ChfOAuth2Request.getParameter`
+  falls through query → **form body** on a POST (`:98-104`). That is invisible on `/authorize` (its consent page
+  is only reached on GET) but **not** on the device flow: `DeviceCodeVerificationResource` renders the same
+  `authorize.ftl` with the same `getDataModel` from inside its **`@Post`** method (`:128`, `:197-198`), so a
+  `getParameter`-based renderer would populate the consent model with form-body values Restlet never put there.
+  Since `ConsentPageRenderer` is shared with 5b-2 (finding 6), it must read those keys through
+  **`o2.getQueryParameter(name)`** (`ChfOAuth2Request:219-221`), which is query-only by construction.
+- **Query overlays attributes** — `putAll` after the attribute seed. `getParameter` has the *opposite*
+  precedence (attributes first, `:87-90`), so a request carrying `?realm=alpha` puts the raw query value in
+  today's model where `getParameter` would return the router-resolved path. Narrow (non-canonical realm
+  spellings) but real. **Locked 2026-07-25: reproduce the overlay.**
+- **Phase 3 must come after phase 2.** `addDisplayScopesAndClaims` carries an explicit comment
+  (`:144-146`) that `display_scope` is set **after** the raw query copy *so an attacker cannot supply
+  `display_scope` themselves*. Building the derived keys first and overlaying the query afterwards would
+  reintroduce that injection. The port keeps the three phases in order (D5).
+
+<a id="11--the-three-level-base-hierarchy-is-safe--and-the-obvious-alternative-is-not"></a>
+### 11. The three-level base hierarchy is safe — and the obvious alternative is fragile
+
+Verified in `AnnotatedMethod.java`: `findExceptionHandlers` scans `requestHandler.getClass().getMethods()`
+(`:233`), which **includes inherited public methods**, so an `@ExceptionHandler` declared on a middle-level base
+is discovered on every leaf handler — D1's `AbstractOAuth2HttpEndpoint` → two sibling bases → handlers works
+as designed. Guice member injection likewise walks the whole hierarchy, so the `@Inject` fields may live on the
+grandparent.
+
+The alternative — `AbstractOAuth2HttpBrowserEndpoint extends AbstractOAuth2HttpJsonEndpoint`, overriding
+`onError` — *would* work, but only by accident: `getMethods()` returns the override and hides the base method,
+so there is exactly one candidate and `:246`'s "More than one @ExceptionHandler for <type>" never fires. It
+depends entirely on the override being **re-annotated** (Java drops annotations on an override), and if that is
+ever forgotten the endpoint silently loses its mapper and every OAuth2 error becomes a framework CREST 500.
+Modelling "browser endpoint IS-A JSON endpoint" to save one file is not worth standing on that.
+
+**Test-scaffolding consequence:** [chf-patterns §5](chf-patterns.md#5-chf-handler-test-scaffolding)'s recipe
+("set the `@Inject` fields by walking the class hierarchy with reflection") now spans **three** levels. The
+walk must not stop at the first superclass.
+
+<a id="12--the-e2e-environment-cannot-currently-reach-a-consent-page"></a>
+### 12. ⚠ The e2e environment cannot currently reach a consent page (review, 2026-07-25)
+
+`ensureOAuth2ServiceExists` creates the provider with `clientsCanSkipConsent: true`, and **both** e2e clients
+(`test_client_app`, `test_client_confidential`) are created with `isConsentImplied: true`
+(`e2e/oauth2/oauth2-test.spec.mjs`). `AuthorizationService:166-167` computes
+`requireConsent = !clientsCanSkipConsent || !clientRegistration.isConsentImplied()` — false for both ⇒
+**`ResourceOwnerConsentRequired` is never thrown in e2e today**, so rows 2 and 9 of the 5-E2 table are
+unreachable as the fixtures stand.
+
+⇒ 5-E2 adds a **third client**, `test_client_consent`, with `isConsentImplied: false` (which makes
+`requireConsent` true regardless of the service flag, so it does not depend on the service already existing with
+the right config) and `responseTypes: [code, token]`, so rows 5 and 6 — the query-vs-fragment error
+composition — are reachable from the same fixture. Additive; no existing row changes behaviour. 5b-2's
+device-flow consent reuses it.
+
+## Design decisions
+
+<a id="d1"></a>
+### D1 — Extract `AbstractOAuth2HttpEndpoint`; the browser base is its sibling, not its subclass
+
+`AbstractOAuth2HttpJsonEndpoint` already owns three things both bases need: the two `@Inject` fields
+(`requestFactory`, `errorResponseFactory`), the overridable `withErrorHeaders` hook (5a-2 D1) and the
+`noCache(Response)` helper whose exact header strings are a **wire contract**. Duplicating them into the browser
+base invites drift on precisely the bytes the 5d-1 diff checks.
+
+```
+AbstractOAuth2HttpEndpoint            (fields + withErrorHeaders + noCache — no @ExceptionHandler)
+├── AbstractOAuth2HttpJsonEndpoint    @ExceptionHandler → toJsonResponse           (5a, unchanged behaviour)
+└── AbstractOAuth2HttpBrowserEndpoint @ExceptionHandler → redirect / error page    (5b-1a, new)
+```
+
+The two `@ExceptionHandler`s stay on the concrete bases — they are siblings, so there is no override and no
+annotation loss ([chf-patterns §2](chf-patterns.md#2-endpointsfrom--semantics-that-matter)); the framework
+discovers them on inherited public methods, so every subclass keeps its mapper. The edit to
+`AbstractOAuth2HttpJsonEndpoint` is a pure move of three members to a new superclass, guarded by the existing
+42-test `http` suite.
+
+*Alternative rejected:* leave the JSON base untouched and copy the members. Eight duplicated lines, two of which
+are literal header values that must never diverge — the cost of the extract is lower than the cost of the
+drift.
+
+<a id="d2"></a>
+### D2 — `AbstractOAuth2HttpBrowserEndpoint`: mayRedirect ⇒ 302, else the page — and the location comes from the error
+
+```java
+public abstract class AbstractOAuth2HttpBrowserEndpoint extends AbstractOAuth2HttpEndpoint {
+
+    @ExceptionHandler
+    public Response onError(OAuth2Exception e, @Contextual Context ctx, @Contextual Request request) {
+        OAuth2Request o2 = requestFactory.create(ctx, request);
+        OAuth2Error err = OAuth2Error.of(e).withState(o2.<String>getParameter("state"));
+        String redirectUri = o2.getParameter(OAuth2Constants.Params.REDIRECT_URI);
+        if (OAuth2Error.mayRedirect(e) && !isEmpty(redirectUri)) {
+            err = err.redirectingTo(redirectUri, err.getParameterLocation());
+        }
+        return withErrorHeaders(errorResponseFactory.toResponse(o2, err));
+    }
+}
+```
+
+⚠ **Two corrections to the umbrella's pseudocode** ([phase-5-oauth2.md](phase-5-oauth2.md) "Two bases, not one"),
+both verified against the shipped API:
+
+1. `redirectingTo` takes **two** arguments — `redirectingTo(String, UrlLocation)` (`OAuth2Error.java:261`).
+   There is no single-argument overload. The location must be `err.getParameterLocation()`, which
+   `OAuth2Error.of` already populated from `exception.getParameterLocation()` — dropping it would send every
+   implicit-flow error to the query string where Restlet used the fragment.
+2. The umbrella's version calls `toResponse` on **two** separate branches; one call after an optional
+   `redirectingTo` is the same thing with one exit. `toResponse` already dispatches on `hasRedirectUri()` +
+   `isRedirectUriFromException()` (`OAuth2ErrorResponseFactory.java:94-110`), so the login-redirect 301, the
+   error 302 and the HTML page all fall out of that single call — and [D13](decisions.md)'s pin means a
+   `ResourceOwnerAuthenticationRequired` cannot be retargeted even if a future subclass gets the guard wrong.
+
+`withErrorHeaders` defaults to no headers (5a-2 D1); `AuthorizeHandler` overrides it to `noCache` because
+`/authorize` is one of the two endpoints the Restlet `OAuth2Filter` stamped (finding 2).
+
+<a id="d3"></a>
+### D3 — `getAcceptedLanguages()`: a new neutral accessor, A/B'd against Restlet's parser
+
+Add to `OAuth2Request` (modified in place, `Portions` line):
+
+```java
+/** The Accept-Language tags in preference order, raw as the client sent them. Empty when absent. */
+public List<String> getAcceptedLanguages() {
+    return Collections.emptyList();
+}
+```
+
+`ChfOAuth2Request` overrides it, parsing the raw header into `(token, q)` pairs and returning the tokens in
+descending-q order, ties broken by header order. `RestletOAuth2Request` is **not** touched — nothing on the
+Restlet path calls the neutral accessor (`ConsentRequiredResource` keeps its own loop until 5d-2), and the
+oracle does not need it: the parity test drives Restlet's `ClientInfo.getAcceptedLanguages()` **directly**, the
+way `RestletErrorParityTest` drives `ExceptionHandler` directly.
+
+**The exact ordering/`*` semantics are settled by observation, not by reading Restlet's parser.** The parity
+test A/Bs a table of headers — `"en"`, `"en-GB,en;q=0.8,fr;q=0.9"`, `"*"`, `"en;q=0"`, an empty header, an
+absent header, a malformed one — and the implementation is written to match what Restlet actually produced.
+Whatever cannot be matched is recorded as a divergence in this doc's As-built and in the 5d-1 smoke matrix
+rather than papered over. `ChfOAuth2Request.getLocale()` is left alone: it has its own contract and its own
+tests.
+
+<a id="d4"></a>
+### D4 — `ChfAuthorizeRequestHook` + `LoginHintHook` triple-impl
+
+```java
+package org.openidentityplatform.openam.oauth2.http;
+public interface ChfAuthorizeRequestHook {
+    void beforeAuthorizeHandling(OAuth2Request o2request);
+    void afterAuthorizeSuccess(OAuth2Request o2request);
+}
+```
+
+Neutral signature, per the 5a-1 cookie-spike outcome (finding 8). `LoginHintHook` implements
+`AuthorizeRequestHook`, `TokenRequestHook`, `ChfTokenRequestHook` **and** `ChfAuthorizeRequestHook`; the two CHF
+authorize methods read/write the `oidcLoginHint` cookie through `getHttpServletRequest()`/
+`getHttpServletResponse()`, reusing the private `hasLoginHintCookie` helper the CHF token method already added.
+`OAuth2GuiceModule` gains a fourth Multibinder beside the existing three. Both Restlet interfaces and their
+`LoginHintHook` methods die at **5d-2**, not here — `AuthorizeResource` is still live.
+
+<a id="d5"></a>
+### D5 — `ConsentPageRenderer`: the shared consent collaborator (composition, not inheritance)
+
+```java
+@Singleton
+public class ConsentPageRenderer {
+    @Inject ConsentPageRenderer(FreemarkerTemplateRenderer renderer, XUIState xuiState,
+            BaseURLProviderFactory baseURLProviderFactory, CsrfProtection csrfProtection) { … }
+
+    /** The consent page at 200, rendered for the request's ?display=. */
+    public Response render(ResourceOwnerConsentRequired consentRequired, OAuth2Request o2, Request request)
+            throws IOException, TemplateException { … }
+
+    @VisibleForTesting
+    Map<String, Object> dataModel(ResourceOwnerConsentRequired consentRequired, OAuth2Request o2,
+            Request request) { … }
+}
+```
+
+Port `ConsentRequiredResource.getDataModel` + `addDisplayScopesAndClaims` **verbatim in behaviour**, key for key
+per finding 4, including the ordering quirk `RendererFixtures.addDisplayScopesAndClaims` documents (the scope
+object is added to the array *before* `values` is put on it). Two translations only: `target` from
+`request.getUri()` (finding 4) and `locale` from `getAcceptedLanguages()` joined with `" "` via the existing
+`OAuth2Utils.joinStatic` (D3). Drop the dead `resourceOwnerSessionValidator` (finding 6).
+
+**Build it in the producer's three phases, in order** (finding 10 — this is the correction the review added,
+and it is the difference between a faithful port and a subtly wrong one):
+
+1. **Attributes.** `realm` from `o2.getAttribute(Custom.REALM)` (seeded from `RealmContext`), plus any URI
+   template variables.
+2. **Query overlay — query wins.** **Enumerate** the keys (R-5.5) — `realm`, `redirect_uri`, `scope`, `state`,
+   `nonce`, `acr`, `response_type`, `client_id`, `ui_locales` — reading each through
+   **`o2.getQueryParameter(name)`**, *not* `getParameter`. Query-only is the contract
+   (`getQuery().getValuesMap()`), and it is load-bearing for 5b-2, whose device flow renders this same page
+   from a **POST** where `getParameter` would leak form-body values into the model. **Omit** a key whose value
+   is null, so the templates' `<#if x??>` guards behave as they do today — a Restlet `getValuesMap()` never
+   contains an absent parameter.
+3. **Derived keys, strictly last** — `target`, `display_name`/`display_description`, `display_scopes`/
+   `display_claims`/`display_scope`, `user_name`, `xui`, `user_code`, `baseUrl`, `saveConsentEnabled`, `csrf`,
+   `locale`. Phase 3 **must** follow phase 2: `ConsentRequiredResource:144-146` records that `display_scope` is
+   written after the query copy specifically so a client cannot supply its own. Reversing the phases
+   reintroduces that injection.
+
+`dataModel` is `@VisibleForTesting` so the golden assert can drive it without a `Response`.
+
+Exposing it as an injected collaborator rather than a base class is forced by finding 6, and is what lets 5b-2
+reuse it with no further work.
+
+<a id="d6"></a>
+### D6 — the login-hint cookie is set **and** deleted on an authorize success (**locked 2026-07-25**)
+
+Finding 8. `LoginHintHook`'s CHF `afterAuthorizeSuccess` cannot retract the `Set-Cookie` its
+`beforeAuthorizeHandling` wrote, so a successful authorize carrying a `login_hint` emits two `Set-Cookie`
+headers for `oidcLoginHint` (set, then max-age-0) where Restlet emitted one. End state identical. Asserted in
+the `LoginHintHook` CHF test; recorded for the 5d-1 byte-diff, and **captured live in 5-E2 row 9** so the diff
+has a baseline.
+
+*Alternative rejected (user-confirmed 2026-07-25):* buffering the cookie on a request attribute and flushing it
+only on the non-success paths. That invents machinery to hide a difference the browser cannot observe.
+
+<a id="d7"></a>
+### D7 — `IllegalArgumentException` → one non-redirecting 400 `invalid_request` (**locked 2026-07-25**)
+
+Findings 3 and 9 leave three current answers for an IAE. Unify to **400 `invalid_request`, rendered as the HTML
+error page, never redirected**, on both verbs and from both sources. **User-confirmed 2026-07-25** over the two
+strict-parity alternatives (keep GET's redirect, or keep both verbs' drift).
+
+**Scope: one `try`/`catch` around the whole handler-method body**, not per call. It must cover
+`authorizationService.authorize(...)`, `redirectUriResolver.resolve(...)`, `RedirectUris.compose(...)`, the
+consent render (where `renderForDisplay`'s `?display=bogus` IAE arises — finding 9) and the form-post render.
+That is *simpler* than Restlet's structure, where the display IAE escaped the `catch` it was raised inside, and
+it is what makes the three inputs converge on one answer:
+
+```java
+} catch (IllegalArgumentException e) {
+    // Not routed through the base: mayRedirect() is keyed on exception type, and this is the one
+    // 400 whose *policy* is "never redirect" while its type (InvalidRequestException) is redirectable.
+    return withErrorHeaders(errorResponseFactory.toResponse(o2,
+            OAuth2Error.of(400, "invalid_request", e.getMessage())
+                    .withState(o2.<String>getParameter("state"))));
+}
+```
+
+Rationale, in [D6](decisions.md)'s own terms — the safe union of what GET and POST each refused: POST does not
+redirect an IAE at all, so the union refuses it. That **closes a second open redirect**: GET today sends a
+malformed-parameter error to a `redirect_uri` that, the request having failed validation, was never checked
+against the client's registered set. The two error-code changes it carries (`server_error` → `invalid_request`
+on the POST and `?display=bogus` paths) make the wire *more* truthful, and `invalid_request` is exactly what
+[3c-1 D7](phase-3c-1-renderer.md) asked 5b to map the display IAE to.
+
+⚠ **A deliberate behaviour change at 5d-1** — sibling of [D6](decisions.md), belongs in the same smoke-matrix
+row. It is **not** in the §E lock (the lock records reproduction only).
+
+<a id="d8"></a>
+### D8 — method and content-type validation: recorded first, then reproduced
+
+Gated on 5-E2 (finding 2). The decision tree, so 5b-1b is mechanical once the rows exist:
+
+- **Verb.** A handler with only `@Get` and `@Post` returns the framework **405** for PUT/DELETE with no verb
+  check ([chf-patterns §2](chf-patterns.md#2-endpointsfrom--semantics-that-matter)), and the CREST 405 body is
+  rewritten by `OAuth2ErrorFilter` to `invalid_request` at 5d-1 — the same `method_not_allowed` →
+  `invalid_request` body-code divergence 5-E already locked for `GET /access_token`. **No verb check in the
+  handler**, whatever the oracle says about the status.
+- **Content type.** If the oracle shows the filter's 400 `invalid_request` **survives** on a JSON-bodied POST,
+  reproduce it in the handler with the charset-safe, empty-body-tolerant recipe 5a-1 settled
+  (`request.getEntity().isRawContentEmpty()` early-return, then
+  `FORM_URLENCODED.equalsIgnoreCase(ContentTypeHeader.valueOf(request).getType())` —
+  [chf-patterns §5](chf-patterns.md#5-chf-handler-test-scaffolding)). If it shows the request **proceeded**
+  (the CONTINUE bug winning), the check is dead code on the wire: **do not port it**, and record the
+  no-op removal here. Either way the handler **returns** — it never reproduces the fall-through
+  ([phase-3c-2](phase-3c-2-error-layer.md) "Recorded for Phase 5a").
+- **Cache headers.** Unconditional, both verbs, success *and* error: `noCache` on every returned `Response` and
+  `withErrorHeaders` overridden to `noCache` (finding 2, D1).
+
+<a id="d9"></a>
+### D9 — `AuthorizeHandler`: two verbs, one success path, one consent path
+
+```java
+public class AuthorizeHandler extends AbstractOAuth2HttpBrowserEndpoint {
+
+    @Get public Response authorize(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
+    @Post public Response consent(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
+}
+```
+
+Both verbs: build `o2 = requestFactory.create(ctx, request)` (the `(Context, Request)` overload, one cached
+instance shared with the 5d filters), run `beforeAuthorizeHandling` on every `ChfAuthorizeRequestHook`, call
+`authorizationService.authorize(o2)` (GET) or `authorize(o2, consentGiven, saveConsent)` (POST, with
+`consentGiven = "allow".equalsIgnoreCase(decision)` and `saveConsent = "on".equalsIgnoreCase(save_consent)` —
+verbatim from `AuthorizeResource:170-171`), then the shared success tail:
+
+1. `redirectUri = redirectUriResolver.resolve(o2)`;
+2. `response_mode == form_post` → render `templates/FormPostResponse.ftl` with
+   `{redirectUri: <composed>, formValues: token.getToken()}` at **200**; else **302** with
+   `Location = RedirectUris.compose(redirectUri, token.getToken(), token.isFragment() ? FRAGMENT : QUERY)`
+   (finding 7). ⚠ The composed reference is what `FormPostResponse.ftl` receives as `redirectUri` too —
+   `OAuth2Representation:164-165` composes **before** branching, so form_post posts to the URI *with* the
+   parameters already on it. Reproduce that ordering, do not "clean it up";
+3. run `afterAuthorizeSuccess` on every hook;
+4. `noCache` and return.
+
+The GET path additionally catches `ResourceOwnerConsentRequired` (a plain `Exception`, so it cannot reach the
+base) → `noCache(consentPageRenderer.render(e, o2, request))`. The POST path does **not**: the 3-arg
+`authorize` cannot raise it (finding 3). Both catch `IllegalArgumentException` per D7 and let every
+`OAuth2Exception` reach the base. `IOException`/`TemplateException` from a render become
+`new ServerException(e)` so the status stays a contractual 400 rather than the framework's 500
+([D3](decisions.md) applies to *bug* paths only; a missing template is a deployment fault the error page can
+still describe).
+
+## New / modified / tests
+
+### 5-E2 — test-only
+
+- `e2e/oauth2/oauth2-test.spec.mjs` — `ensureConsentClientExists` (`test_client_consent`, finding 12) wired
+  into the existing `beforeAll`, plus a new
+  `describe("OAuth2 /authorize contract lock (5-E, live Restlet)")` carrying the 9 rows.
+
+### 5b-1a — the browser substrate
+
+**New** (`org.openidentityplatform.openam.oauth2.http`): `AbstractOAuth2HttpEndpoint` (D1),
+`AbstractOAuth2HttpBrowserEndpoint` (D2), `ChfAuthorizeRequestHook` (D4).
+**Modified in place**: `AbstractOAuth2HttpJsonEndpoint` (members move to the new parent — our own 2026 class, no
+`Portions` line), `OAuth2Request` + `ChfOAuth2Request` (D3 accessor; `OAuth2Request` gains a `Portions` line),
+`LoginHintHook` (D4), `OAuth2GuiceModule` (D4 Multibinder).
+
+### 5b-1b — the handler
+
+**New**: `ConsentPageRenderer` (D5), `AuthorizeHandler` (D8, D9).
+
+### Tests (openam-oauth2; TestNG + Mockito + AssertJ; scaffold per [chf-patterns §5](chf-patterns.md#5-chf-handler-test-scaffolding))
+
+**5b-1a**
+
+- **`AbstractOAuth2HttpBrowserEndpointTest`** — a trivial subclass driven through `Endpoints.from(handler)`
+  (the `Object` overload, so the base mapper really runs), asserting all three branches of one `onError`:
+  - `ResourceOwnerAuthenticationRequired(loginUri)` → **301**, `Location` == the login URI **verbatim**, no
+    error parameters, and — the adversarial row — unchanged even when `redirect_uri=https://evil/` is on the
+    request ([D13](decisions.md));
+  - a redirectable `OAuth2Exception` + `redirect_uri` → **302**, parameters in the **query**; the same with
+    `UrlLocation.FRAGMENT` on the exception → parameters in the **fragment** (the D2 correction — a test that
+    passes with a dropped location argument is not testing this);
+  - each `NEVER_REDIRECT` type + `redirect_uri` → the **HTML error page**, `Content-Type: text/html; charset=UTF-8`;
+  - `state` echoed in every non-login branch; `withErrorHeaders` default adds nothing, and an overriding
+    subclass stamps `no-store`/`Pragma`.
+- **`ChfOAuth2RequestTest`** (extended) — `getAcceptedLanguages()` over the D3 header table, plus absent header
+  → empty list, and that `getLocale()` is unaffected.
+- **`RestletAcceptLanguageParityTest`** — the A/B oracle (D3): the same header table through Restlet's
+  `ClientInfo.getAcceptedLanguages()` and through `ChfOAuth2Request`, asserted equal. Legitimately imports
+  Restlet (a parity test, exempt from the grep gate until 5d-2), and degrades to deletion at 5d-2.
+- **`LoginHintHookTest`** (extended) — CHF `beforeAuthorizeHandling` writes the cookie only when `login_hint`
+  differs from the existing cookie; `afterAuthorizeSuccess` writes the max-age-0 delete; both together emit two
+  `Set-Cookie`s (D6). Existing Restlet-path tests stay green.
+
+**5b-1b**
+
+- **`ConsentPageRendererTest`** — the load-bearing one: `dataModel(...)` built from a real `ChfOAuth2Request`
+  over a `RootContext → AttributesContext → RealmContext → UriRouterContext` chain and a real
+  `ResourceOwnerConsentRequired`, asserted **key-for-key and type-for-type against `RendererFixtures.authorize()`**
+  (finding 4) — that fixture is the producer-derived golden model, so this is the only assertion that can catch
+  a silently-empty model (R-5.5). Plus: **a POST whose form body carries a different `scope`/`state` than the
+  query — the query values must win and the body must not appear** (finding 10 / R-5b1.9, the assertion that
+  protects 5b-2's device flow); `?realm=alpha` overrides the resolved realm attribute (the locked overlay);
+  `display_scope` is written after the query copy; `target` includes the context path and the query
+  (`/openam/oauth2/authorize?…`) and survives a `setQueryParameter` mutation; an absent optional parameter is
+  **omitted**, not null-valued; `locale` is the space-joined tag list; the rendered page is 200 + `text/html; charset=UTF-8`; a **non-ASCII `user_name`**
+  round-trips as UTF-8 bytes (risk #21 — the templates are ASCII, so only a non-ASCII *model* catches it);
+  `?display=touch` resolves `templates/touch/authorize.ftl`, `?display=popup` composes the wrapper.
+- **`AuthorizeHandlerTest`** — driven through `Endpoints.from(handler)`:
+  - **success GET, `response_type=code`** → 302, `Location` == redirect_uri + **query** parameters, `no-store` +
+    `Pragma`, `afterAuthorizeSuccess` called **once**, `beforeAuthorizeHandling` called once **before** the
+    service;
+  - **success, `isFragment()`** → parameters in the **fragment**, target's existing fragment replaced (R-5.4);
+  - **`response_mode=form_post`** → 200 HTML, `redirectUri` in the model is the **composed** target (D9 step 2),
+    `formValues` == the token map;
+  - **POST** → `decision=allow`/`save_consent=on` mapping asserted on the 3-arg `authorize` call; `decision=deny`
+    → the `AccessDeniedException` the service raises reaches the base and redirects;
+  - **consent** → `ResourceOwnerConsentRequired` on GET renders the page at 200 (delegating to
+    `ConsentPageRenderer`, verified by interaction), and is **not** reachable on POST;
+  - **the collapse table (finding 3)** — one row per exception: `ResourceOwnerAuthenticationRequired` → 301
+    login; `InvalidClientException`/`RedirectUriMismatchException`/`DuplicateRequestParameterException`/
+    `CsrfException`/`OAuth2ProviderNotFoundException` → error page with the exception's own `(status, error)`;
+    a generic `OAuth2Exception` + `redirect_uri` → 302. The `OAuth2ProviderNotFoundException`-on-POST row is
+    labelled as the [D6](decisions.md) change;
+  - **D7** — an IAE from the service (with and without `client_id` in the message) and an IAE from
+    `renderForDisplay` (`?display=bogus`) all → 400 `invalid_request` error page, **no `Location` header**;
+  - **cache headers on the error path** (`withErrorHeaders` override) and on every success path;
+  - **`state`** echoed in every error body.
+- **Gate:** `grep -rn "org.restlet\|getCurrent()"` over the 5 new main files → 0 (`LoginHintHook` and the parity
+  test are exempt, as in 5a-1).
+
+## Integration testing
+
+5b-1 ships **no route**, so there is no `OAuth2HttpRouteProvider` to exercise — but unlike 5a there *is* a
+worthwhile in-process composition test, because the browser base is the first thing in this migration whose
+contract is a **3xx and an HTML body flowing through the framework and the error filter**. Three layers:
+
+1. **Layer-2 — `AuthorizeRouteCompositionIT`** (new, openam-oauth2, modelled on the existing
+   `OAuth2ErrorRouteCompositionIT`, which already proved `Endpoints.from` composition needs **no**
+   `commons.guice:test` dependency — [finding #5](phase-5-oauth2.md#integration-testing)). Build
+   `Handlers.chainOf(Endpoints.from(handler), new OAuth2ErrorFilter())` in process and dispatch real `Request`s,
+   asserting what a unit test structurally cannot:
+   - a **301** and a **302** produced by an `@ExceptionHandler` survive the framework **and** `OAuth2ErrorFilter`
+     untouched (the filter keys on `≥400`, so a 3xx must pass through — pinned, not assumed);
+   - the **HTML error page** is not rewritten into an OAuth2 JSON body by the filter (it guards on
+     `Content-Type` before parsing — the one interaction that would silently destroy the page);
+   - the consent page reaches the wire as **`text/html; charset=UTF-8`** with UTF-8 bytes;
+   - a **PUT** to a `@Get`/`@Post`-only handler gives the framework 405, rewritten by the filter to
+     `invalid_request` — pinning the D8 divergence *now*, in-process, so 5d-1's `OAuth2RouterIT` only has to
+     confirm it.
+   Runs on all 9 CI legs (failsafe on `verify`).
+2. **Layer-4 e2e — 5-E2** (below). This is the step's *primary* guard, and the only one that can ever be
+   recorded.
+3. **Layer-3 Cargo boot** — not needed in 5b-1a/5b-1b (no route, no new Guice-bound route provider; the new
+   Multibinder binding is exercised by the whole-reactor build). It returns as a 5d-1 gate.
+
+### 5-E2 — the `/authorize` rows to record against live Restlet
+
+Write **by observation**, against a live container built from this tree, before `AuthorizeHandler` exists. The
+build-ahead changes do not touch the Restlet `/oauth2` path, so the capture is authoritative.
+
+**Fixture first (finding 12):** add `ensureConsentClientExists` to the existing `beforeAll`, creating
+`test_client_consent` — `isConsentImplied: false` (so `requireConsent` is true whatever the provider's
+`clientsCanSkipConsent` says), `clientType: Public`, `responseTypes: [code, token]`, the same
+`redirect_uri`/`scope` as the other fixtures. Without it, rows 2, 6 and 9 cannot be reached at all.
+
+| # | Request | Client | Record |
+|---|---|---|---|
+| 1 | `GET /oauth2/authorize?client_id=…&response_type=code&redirect_uri=…&scope=…`, **no session** | either | status (expect 301), the **`Location` value** incl. the `goto` parameter's exact encoding, `Cache-Control`/`Pragma` |
+| 2 | same, **authenticated**, consent not yet given | consent | status, `Content-Type`, that the body is the consent page, `Cache-Control`/`Pragma` |
+| 3 | `GET /oauth2/authorize?client_id=<unknown>&…` | — | status, `Content-Type` (expect `text/html;charset=UTF-8`), the `error`/`error_description` visible in the page, absence of `Location` |
+| 4 | `GET /oauth2/authorize?…&response_type=code` with a **registered but mismatched** `redirect_uri` | app | status + whether a `Location` is emitted at all (the no-auto-redirect policy) |
+| 5 | an error reachable **after** validation with `response_type=code` (e.g. an unsupported `scope`) | app | 302 + error parameters in the **query** |
+| 6 | the same with `response_type=token` | consent | 302 + error parameters in the **fragment** |
+| 7 | `PUT /oauth2/authorize` | — | status + body (**finding 2** — do not predict; this is the 405-vs-overwrite question) |
+| 8 | `POST /oauth2/authorize` with `Content-Type: application/json` | — | status + body (**finding 2** — decides [D8](#d8)) |
+| 9 | consent `POST` with `decision=allow` + the page's `csrf` token | consent | 302, `Location`'s parameter placement, and the `Set-Cookie` headers (the [D6](#d6) baseline) |
+
+Rows 7 and 8 are the ones that *change the code being written*; rows 1–6 and 9 are the 5d-1 byte-diff baseline.
+Row 9 has to scrape `csrf` (and `target`) out of row 2's rendered page — which is also a free check that the
+consent page really carries them. Authenticate any second identity in a disposable `apiRequest.newContext()`
+(the cookie-outranks-header trap, [../../test-infrastructure.md](../../test-infrastructure.md)).
+
+## Verification criteria
+
+**5-E2**
+
+1. `npx playwright test e2e/oauth2` against a live container from this tree — the new rows green **and**
+   the 7 existing 5-E rows still green.
+2. Every row asserts a **recorded** value, not a predicted one; rows 7–8 are written after seeing the response.
+3. The 3c oracles still green — `RestletRendererParityTest` + `RestletErrorParityTest` (`Restlet == golden ==
+   CHF`), confirming the goldens are proven-legacy before any 5b main code lands.
+
+**5b-1a**
+
+4. `mvn -o -pl openam-oauth2 test` — new tests green; **existing suite unchanged and only larger** (5a-2b
+   baseline **979** surefire: 963 after 5a-2a + 16 from 5a-2b — [phase-5a-2 as-built](phase-5a-2.md#as-built)).
+   The **5a suite must stay green through the D1 extract** — `TokenEndpointHandlerTest` (22) and the 42-test
+   `http` package suite are the guard that the moved members still behave.
+5. `mvn -o -pl openam-oauth2 verify` — `AuthorizeRouteCompositionIT` green (`mvn test` skips `*IT`).
+6. `grep -rn "org.restlet\|getCurrent()"` over the 3 new main files → 0.
+7. `mvn -o -pl openam-oauth2 install -DskipTests` — so 5b-1b compiles against the new base.
+
+**5b-1b**
+
+8. `mvn -o -pl openam-oauth2 test` + `verify` — `ConsentPageRendererTest` and `AuthorizeHandlerTest` green;
+   `RestletRendererParityTest` **still green** (the consent model is now produced by our code as well as the
+   fixture — if they disagree, one of them is wrong).
+9. `grep` gate over the 2 new files → 0.
+10. Whole-reactor `mvn -o install -DskipTests` — **doclint is fatal**
+    ([../../test-infrastructure.md](../../test-infrastructure.md)); the new Guice binding wires without breaking
+    WAR assembly (handler bound, routed nowhere).
+11. CI (`.github/workflows/build.yml`): JDK 11–26 × 3 OSes on the `features/**` push — free cross-version
+    coverage of the UTF-8 HTML bytes and the `Accept-Language` parse.
+
+**Success** = the `/authorize` live contract is recorded and re-runnable; both bases exist with the JSON base's
+behaviour unchanged; `AuthorizeHandler` + `ConsentPageRenderer` reproduce the consent model key-for-key against
+the golden fixture, compose success redirects per `isFragment()`, and collapse fourteen catch clauses into one
+mapper with **exactly two** intended behaviour changes ([D6](decisions.md) and [D7](#d7)), each recorded for the
+5d-1 smoke matrix.
+
+## Risks (extends [phase-5-oauth2.md](phase-5-oauth2.md)'s register)
+
+- **R-5b1.1 — the authorize oracle is never recorded (R-5.1).** If 5b-1 ships the handler without 5-E2, the
+  301/302/consent contract has no live baseline and 5d-1's byte-diff has nothing to diff against; after 5d-1 it
+  is unrecoverable. **Guard:** 5-E2 is a separate, *first* commit, and criterion 3 pins the 3c oracles at the
+  same moment.
+- **R-5b1.2 — the consent model renders empty (R-5.5).** Restlet seeded 9 OAuth2 parameters *implicitly* from
+  the query map; an enumerating port that misses one turns a `<#if x??>` false and silently drops a field from
+  the consent page. **Guard:** `ConsentPageRendererTest` asserts key-for-key against `RendererFixtures.authorize()`
+  — the producer-derived model — rather than against a hand-written expectation.
+- **R-5b1.3 — fragment-vs-query comes from the wrong source (R-5.4).** The success location is
+  `AuthorizationToken.isFragment()`; the *error* location is the exception's `parameterLocation`. Crossing them
+  breaks implicit/hybrid flows in a way no compiler catches. **Guard:** separate assertions for each, and the D2
+  correction (the two-argument `redirectingTo`) has its own test.
+- **R-5b1.4 — the D1 extract regresses 5a.** Moving `noCache`/`withErrorHeaders`/the injected fields to a new
+  superclass could break member injection or the `@ExceptionHandler` discovery that `Endpoints.from` performs
+  over inherited methods. **Guard:** the 5a-1/5a-2 suites are run unchanged as the first step of 5b-1a; the
+  `http` package suite (42) must stay green before any new class is written.
+- **R-5b1.5 — `Accept-Language` divergence (D3).** A different tag order or a dropped `*` changes the consent
+  page's `locale`, and therefore which XUI translation the user sees — invisible in an English test.
+  **Guard:** `RestletAcceptLanguageParityTest` A/Bs the real Restlet parser; anything unmatchable is recorded,
+  not hidden.
+- **R-5b1.6 — D7 is a behaviour change wearing a mechanical-port disguise.** Unifying the IAE handling closes an
+  open redirect *and* changes two error codes. If it is not recorded it will look like a regression at 5d-1.
+  **Guard:** [D7](#d7) is stated as a change, kept out of the §E lock, and added to 5d-1's smoke matrix beside
+  [D6](decisions.md).
+- **R-5b1.7 — build-ahead, no live guard (risk #19).** Dormant until 5d-1. **Guard:** unit + the composition IT
+  + the golden oracle + the 5-E2 rows. Retired when `OAuth2RouterIT` wires the route.
+- **R-5b1.9 — the consent model built with `getParameter` (finding 10).** It would pass every `/authorize` test
+  — the page is only rendered on GET there — and then quietly corrupt 5b-2's device-flow consent page, which
+  renders the same model from a **POST** whose form body `getParameter` reads and `getQuery().getValuesMap()`
+  never did. It would also invert the `?realm=` precedence. **Guard:** `ConsentPageRendererTest` drives a
+  **POST whose form body carries a different `scope`/`state` than the query** and asserts the query values win;
+  the three build phases are asserted in order, including that `display_scope` is written last.
+- **R-5b1.8 — `target` sourced from the servlet request.** It would look right in every test and silently drop
+  query mutations, breaking the consent form's action URL on the `max_age`/`prompt=login` paths (risk #17).
+  **Guard:** `target` is built from `request.getUri()` (finding 4), asserted with a mutated query in
+  `ConsentPageRendererTest`.
+
+## CHF / framework friction (per the "fix what we own" invitation)
+
+Five touch points examined. **No `openam-http` change is needed** — which is itself the finding: F1–F4
+([openam-http-framework.md](openam-http-framework.md)) already removed the sharp edges this step would
+otherwise have hit. **One commons gap is real**, and is filed rather than fixed in-phase.
+
+- **`@ExceptionHandler` returning a 3xx.** Works: the mapper's `Response` is passed through as built
+  ([chf-patterns §2](chf-patterns.md#2-endpointsfrom--semantics-that-matter)); no framework status clamping
+  exists. Pinned by the composition IT rather than assumed.
+- **HTML bodies.** `FreemarkerTemplateRenderer.toHtmlResponse` sets `Content-Type` *before* the byte entity, so
+  the ISO-8859-1 fallback (§6, risk #21) cannot bite. No change needed; F4 removed the `String`-return trap
+  independently.
+- **Sibling `@ExceptionHandler` bases (D1).** `AnnotatedMethod` discovers handlers on inherited public methods
+  and dispatches most-specific-assignable; two sibling bases each declaring one is ordinary use, not a new
+  requirement.
+- **`Form.fromRequestEntity` charset trap** (commons backlog, [decisions.md](decisions.md#chf-cleanup-backlog)).
+  `/authorize`'s POST body is read through `ChfOAuth2Request.getParameter`, which already parses the media type
+  (`ChfOAuth2Request.java:300-302`) — the phase's locked route-around. Unchanged here; the commons fix stays on
+  its own cadence.
+- **⚠ NEW — `AcceptLanguageHeader` cannot return the raw language tags** (commons,
+  `org.forgerock.http.header`). It exposes `getLocales(): PreferredLocales`, i.e. parsed `java.util.Locale`s,
+  which is lossy for exactly this use: a `*` disappears, non-canonical case is normalised, and the q-ordering
+  is re-derived rather than reported. The consent page interpolates the raw tags into JavaScript, so 5b-1a
+  hand-parses the header in `ChfOAuth2Request.getAcceptedLanguages` instead (D3) and proves the result against
+  Restlet's parser. **Proposed commons fix:** an accessor returning the raw tokens in preference order beside
+  the existing `getLocales()` — purely additive. **Blast radius:** none (new method). **Status: filed to the
+  [CHF cleanup backlog](decisions.md#chf-cleanup-backlog), deferred** — the hand-parse is ~15 lines, contained
+  in one class we own, and adopting a new commons release inside a migration phase buys nothing here. Revisit
+  when another consumer needs the same thing.
+
+## Iterative execution steps
+
+Nine steps, implemented one after another. Each leaves the tree green and is separately reviewable; the
+**Done when** column is the gate for starting the next one. S1–S2 are test-only, S3–S6 land as commit **5b-1a**,
+S7–S8 as commit **5b-1b**. Only S3 touches already-shipped code, and it touches no behaviour.
+
+| # | Step | Deliverable | Done when |
+|---|---|---|---|
+| **S1** | **e2e consent fixture** (finding 12) | `ensureConsentClientExists` → `test_client_consent` (`isConsentImplied:false`, `responseTypes:[code,token]`), called from the existing `beforeAll` | the full `e2e/oauth2` spec is green with the new client created and no existing row's behaviour changed |
+| **S2** | **5-E2 — record the live `/authorize` contract** (gate) | the 9 rows of the table above in `e2e/oauth2/oauth2-test.spec.mjs`, written **after** reading each real response | all 9 rows green against live Restlet; the 7 existing 5-E rows still green; `RestletRendererParityTest` + `RestletErrorParityTest` green; **rows 7–8's answers written into [D8](#d8)** — this is what unblocks S8 |
+| **S3** | **D1 — extract `AbstractOAuth2HttpEndpoint`** | the two `@Inject` fields, `withErrorHeaders` and `noCache` move to a new parent; `AbstractOAuth2HttpJsonEndpoint` keeps only its `@ExceptionHandler` | `mvn -o -pl openam-oauth2 test` — **979 surefire, byte-identical outcomes**; the 42-test `http` suite and `TokenEndpointHandlerTest` (22) green with **no test edited**. A pure refactor: if any assertion had to change, the extract is wrong |
+| **S4** | **D3 — `getAcceptedLanguages()`** | the accessor on `OAuth2Request` (default empty) + the hand-parse on `ChfOAuth2Request`; `RestletAcceptLanguageParityTest` over the header table | the parity table is green **against Restlet's real parser** — and the implementation was adjusted to match what Restlet does, not the other way round. Anything unmatchable is written into As-built |
+| **S5** | **D2 — `AbstractOAuth2HttpBrowserEndpoint`** | the browser `@ExceptionHandler` + `AbstractOAuth2HttpBrowserEndpointTest` driving a trivial subclass through `Endpoints.from` | all three branches asserted — 301 login (incl. the adversarial `redirect_uri=https://evil/` row), 302 **query and fragment** separately, error page per `NEVER_REDIRECT` type; `state` echo; `withErrorHeaders` default and override |
+| **S6** | **D4 — the hook seam** | `ChfAuthorizeRequestHook`, `LoginHintHook` fourth impl, `OAuth2GuiceModule` Multibinder, `LoginHintHookTest` extension | CHF before/after cookie behaviour asserted incl. the [D6](#d6) double `Set-Cookie`; existing Restlet-path hook tests untouched and green |
+| **S6a** | **`AuthorizeRouteCompositionIT`** | the layer-2 composition guard for S5 | `mvn -o -pl openam-oauth2 verify` green: 3xx passes through `OAuth2ErrorFilter` untouched, the HTML page is not rewritten, UTF-8 bytes reach the wire, PUT → framework 405 → `invalid_request`. **→ commit 5b-1a** (gate + `install`) |
+| **S7** | **D5 — `ConsentPageRenderer`** | the shared consent collaborator, built in the producer's three phases (finding 10), + `ConsentPageRendererTest` | `dataModel(...)` matches `RendererFixtures.authorize()` **key-for-key and type-for-type**; `target` carries context path + query; absent parameters omitted; query-only reads proven with a POST carrying a conflicting form body; non-ASCII `user_name` round-trips UTF-8; `RestletRendererParityTest` still green |
+| **S8** | **D9/D7/D8 — `AuthorizeHandler`** | the handler + `AuthorizeHandlerTest` | success 302 query **and** fragment, `form_post` (composed URI in the model), consent branch, the full collapse table one row per exception, [D7](#d7) IAE rows with **no `Location`**, cache headers on every path, hooks called once in order. **→ commit 5b-1b** (gate + `install` + whole-reactor `install -DskipTests`) |
+| **S9** | **Close out** | As-built filled in (oracle rows, `Accept-Language` outcome, D8's resolution, any plan corrections); [plan.md](plan.md) 5-E2/5b-1 marked done | 5d-1's smoke matrix has [D6](decisions.md) + [D7](#d7) + the double `Set-Cookie` recorded as expected divergences. Proceed to **5b-2**, which consumes `AbstractOAuth2HttpBrowserEndpoint` and `ConsentPageRenderer` unchanged |
+
+**Hard ordering constraints** (everything else is preference):
+
+- **S2 before S8** — rows 7–8 decide whether `AuthorizeHandler` validates content type at all ([D8](#d8)).
+  S2 also cannot be written after 5d-1 at all (R-5b1.1).
+- **S1 before S2** — rows 2, 6 and 9 are unreachable without the consent client.
+- **S3 before S5** — the browser base extends the extracted parent.
+- **S4 before S7** — the consent model's `locale` key needs the accessor.
+- **S5 before S6a and S8** — both consume the base.
+- **S7 before S8** — the handler injects the renderer.
+
+S3 and S4 are independent of each other and of S1–S2; if the live container is not available immediately,
+start at S3 and fold S1–S2 in before S8.
+
+## As-built
+
+*(To be filled in as 5-E2 / 5b-1a / 5b-1b land — the recorded oracle rows, the `Accept-Language` parity outcome,
+and any plan corrections, following the 5a-1/5a-2 format.)*

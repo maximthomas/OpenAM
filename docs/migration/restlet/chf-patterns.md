@@ -11,7 +11,8 @@ derivation — verified while delivering [Phase 3a](phase-3a-oauth2request.md)
 (`ChfOAuth2Request`).** Phases 3b/3c/4/5 read requests through the `OAuth2Request` neutral
 API, but any new CHF handler parsing a raw `org.forgerock.http.protocol.Request` hits the
 same traps. **§13 is the build-ahead testing pattern** (Phase 3c); **§14 is the framework-ownership
-rule** (fix defects in code we own); **§15 is the CHF access-audit base** (Phase 3d).
+rule** (fix defects in code we own); **§15 is the CHF access-audit base** (Phase 3d); **§17 is
+`OAuth2Exception` → status** (5a-2b); **§18 is the servlet-built request URI** (5b-1).
 
 > **⚠ §2 describes a framework that was fixed on 2026-07-22 — re-read it if you read this doc earlier.**
 > `openam-http`'s annotation framework had four defects (empty-bodied 500s, a dead `@ExceptionHandler`, an
@@ -632,7 +633,12 @@ Verified 2026-07-23 building [Phase 4](phase-4-uma.md) (finding 1), by disassemb
   filter/framework errors (UMA) changes them; scope it to areas whose contract *is* the OAuth2 shape
   end-to-end. Check which of the two paths each error takes before choosing where the shape is produced.
 
-## 15. `OAuth2Exception` → HTTP status quirks (Phase 5a-2b)
+## 17. `OAuth2Exception` → HTTP status quirks (Phase 5a-2b)
+
+<a id="15-oauth2exception--http-status-quirks-phase-5a-2b"></a>
+*(Numbered §15 when written; renumbered to §17 in 5b-1 planning — §15 was already the access-audit base. The
+old anchor is kept above so existing links still resolve.)*
+
 
 Facts pinned while porting `/token/revoke` — a CHF handler that `throw`s to the base
 `@ExceptionHandler(OAuth2Exception)` gets the status from `e.getStatusCode()`, so these govern the wire:
@@ -647,3 +653,34 @@ Facts pinned while porting `/token/revoke` — a CHF handler that `throw`s to th
   `NotFoundException`; nothing in the flow throws `CoreTokenException` — `getToken` merely over-declared it).
   The port omits the catch; there was no reachable 500 to preserve, and `new ServerException` would have
   yielded 400 anyway. Byte-parity holds because the branch never executed.
+
+## 18. The CHF request URI under `HttpFrameworkServlet` is **absolute** (Phase 5b-1)
+
+Verified in `commons/http-framework/servlet/.../HttpFrameworkServlet.java:293-320` while planning the
+`/authorize` port; reusable by every later phase that needs a URL rather than a parameter.
+
+- `createRequest` builds the CHF `Request` URI as
+  `Uris.createNonStrict(req.getScheme(), null, req.getServerName(), req.getServerPort(), req.getRequestURI(),
+  req.getQueryString(), null)` (`:300-306`). So:
+  - `request.getUri().toString()` is the **absolute** request URL — scheme, host, port, **context path**, query.
+    This is what `ChfOAuth2Request.getRequestUrl()` returns, which is what `ResourceOwnerSessionValidator`
+    threads into the login redirect's `goto` (risk #17): absolute, as the Restlet `ResourceRef` was.
+  - `request.getUri().getPath()` **includes the context path** (`/openam/oauth2/authorize`), matching Restlet's
+    `getResourceRef().getPath()`. It is *not* route-relative, whatever `routing-base` says — `routing-base` only
+    feeds `UriRouterContext.matchedUri`/`remainingUri` (`:337-343`, `ServletRoutingBase.CONTEXT_PATH` returns the
+    context path minus its leading slash; `SERVLET_PATH` appends the servlet path).
+  - The query is **re-encoded** by `createNonStrict` (CHF-81 tolerance of invalid query strings), where Restlet
+    passed the raw string through. Equal for well-formed queries; note it before byte-diffing a URL built from it.
+- ⇒ **Reconstruct a path+query value from the CHF `Request` URI, not from `getHttpServletRequest()`.** They agree
+  on the bytes, but only the CHF URI carries `OAuth2Request.setQueryParameter`/`removeQueryParameterValue`
+  mutations — `ChfOAuth2Request` writes those back through `Form.toRequestQuery(request)`
+  (`ChfOAuth2Request.java:270-274`), exactly as the Restlet accessors mutate the resource reference. Sourcing
+  from the servlet request silently reverts them.
+- **Exception, already in force:** the *deployment root* (`scheme://host:port/<first-segment>`) is reconstructed
+  from the servlet request via `OAuth2Utils.getDeploymentURL` ([phase-5a-2b as-built](phase-5a-2.md#as-built) D5),
+  because that helper is the canonical shape and is what `/connect/register` and `/device/code` already use.
+
+**Related gap (Phase 5b-1):** there was no neutral accessor for the *list* of `Accept-Language` tags —
+`OAuth2Request.getLocale()` collapses the header to a single `Locale`. The consent page's `locale` key needs the
+raw preference-ordered tags, so `getAcceptedLanguages()` is added in 5b-1a and A/B'd against Restlet's
+`ClientInfo` parser ([phase-5b-1 D3](phase-5b-1.md#d3)) — planned 2026-07-25, not yet built.

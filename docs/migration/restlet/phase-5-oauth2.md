@@ -227,14 +227,23 @@ vs `mayRedirect→redirectingTo else toResponse(o, err)`). So there are **two** 
   @ExceptionHandler
   public Response onError(OAuth2Exception e, @Contextual Context ctx, @Contextual Request request) {
       OAuth2Request o = requestFactory.create(ctx, request);
-      OAuth2Error err = OAuth2Error.of(e).withState(o.getParameter("state"));
+      OAuth2Error err = OAuth2Error.of(e).withState(o.<String>getParameter("state"));
       String redirectUri = o.getParameter("redirect_uri");
-      if (OAuth2Error.mayRedirect(e) && redirectUri != null) {
-          return errorResponseFactory.toResponse(o, err.redirectingTo(redirectUri));   // 302 error redirect
+      if (OAuth2Error.mayRedirect(e) && !isEmpty(redirectUri)) {
+          err = err.redirectingTo(redirectUri, err.getParameterLocation());
       }
-      return errorResponseFactory.toResponse(o, err);   // rendered error page
+      return withErrorHeaders(errorResponseFactory.toResponse(o, err));
   }
   ```
+
+  ⚠ **Corrected 2026-07-25 (5b-1 planning), against the shipped API.** The original sketch above had two
+  defects: `redirectingTo` takes **two** arguments — `redirectingTo(String, UrlLocation)`
+  (`OAuth2Error.java:261`), there is no one-argument overload, and dropping the location sends every
+  implicit-flow error to the query where Restlet used the fragment; and the two `toResponse` branches are one
+  call, because `toResponse` already dispatches on `hasRedirectUri()`/`isRedirectUriFromException()`
+  (`OAuth2ErrorResponseFactory.java:94-110`). `withErrorHeaders` is the 5a-2 D1 hook — `/authorize` is one of
+  the two endpoints the Restlet `OAuth2Filter` stamped with `no-store`/`Pragma`, so `AuthorizeHandler`
+  overrides it. See [phase-5b-1 D2](phase-5b-1.md#d2).
 
 (The two bodies share the first two lines but diverge on the response shape — which is precisely why they can't
 be one non-overridable method. `resource_set` (5c) uses **neither** base — it has its own exception filter, D5-4.)
@@ -322,6 +331,18 @@ port the endpoint shells onto them. **5b splits into two commits (finding #1):**
 (5b-1, ~600L, the riskiest handler in the phase) then the three mechanical browser endpoints (5b-2).
 
 ### 5b-1 — `AuthorizeHandler` (the centrepiece)
+
+> **Detailed plan: [phase-5b-1.md](phase-5b-1.md)** (2026-07-25). It splits the step **three ways** — **5-E2**
+> (the `/authorize` §E rows, test-only, *first*: two of them decide the handler's validation design), **5b-1a**
+> (browser substrate), **5b-1b** (`AuthorizeHandler` + `ConsentPageRenderer`) — and supersedes the bullets below
+> where they differ. Four corrections it makes to this section, all verified against the tree:
+> **(a)** the §E lock has **no** `/authorize` row today, so the "recorded" state in [plan.md](plan.md) covers
+> `/access_token` + cache headers only; **(b)** `getAcceptedLanguages()` **does not exist** on `OAuth2Request`
+> — it is a 5b-1a deliverable, not consumed infrastructure; **(c)** `ConsentRequiredResource` is a **shared
+> base with the device flow** (`DeviceCodeVerificationResource:81`), so on CHF the consent page must be an
+> injected `ConsentPageRenderer`, not a base class — the base slot is taken by
+> `AbstractOAuth2HttpBrowserEndpoint`; **(d)** the browser base pseudocode above is corrected (see the ⚠ note
+> there).
 
 Establishes `AbstractOAuth2HttpBrowserEndpoint` (the browser `@ExceptionHandler` base, finding #2) and the CHF
 `AuthorizeRequestHook` seam (on the cookie-spike outcome from 5a-1).

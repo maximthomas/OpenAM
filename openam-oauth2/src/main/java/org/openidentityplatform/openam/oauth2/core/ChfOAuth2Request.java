@@ -40,9 +40,9 @@ import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.openam.core.realms.Realm;
 import org.forgerock.openam.oauth2.OAuth2Constants;
 import org.forgerock.openam.rest.RealmContext;
-import org.forgerock.services.context.AttributesContext;
 import org.forgerock.services.context.Context;
 import org.forgerock.util.i18n.PreferredLocales;
+import org.openidentityplatform.openam.http.ChfContexts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -189,12 +189,12 @@ public class ChfOAuth2Request extends OAuth2Request {
 
     @Override
     public HttpServletRequest getHttpServletRequest() {
-        return (HttpServletRequest) servletAttribute(HttpServletRequest.class.getName());
+        return ChfContexts.servletRequest(context);
     }
 
     @Override
     public HttpServletResponse getHttpServletResponse() {
-        return (HttpServletResponse) servletAttribute(HttpServletResponse.class.getName());
+        return ChfContexts.servletResponse(context);
     }
 
     @Override
@@ -299,13 +299,6 @@ public class ChfOAuth2Request extends OAuth2Request {
      */
     private boolean isContentType(String mediaType) {
         return mediaType.equalsIgnoreCase(ContentTypeHeader.valueOf(request).getType());
-    }
-
-    private Object servletAttribute(String name) {
-        if (!context.containsContext(AttributesContext.class)) {
-            return null;
-        }
-        return context.asContext(AttributesContext.class).getAttributes().get(name);
     }
 
     private Map<String, Object> attributes() {

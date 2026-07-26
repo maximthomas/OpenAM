@@ -12,7 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.uma;
@@ -20,8 +20,8 @@ package org.forgerock.openam.uma;
 import jakarta.inject.Inject;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.inject.Singleton;
 import org.forgerock.json.resource.http.HttpContext;
@@ -34,9 +34,11 @@ import org.forgerock.openam.core.realms.Realm;
 import org.forgerock.openam.oauth2.OAuth2UrisFactory;
 import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
 import org.forgerock.openam.rest.service.RestletRealmRouter;
+import org.forgerock.openam.services.baseurl.BaseURLProvider;
 import org.forgerock.openam.services.baseurl.BaseURLProviderFactory;
 import org.forgerock.openam.services.baseurl.InvalidBaseUrlException;
 import org.forgerock.services.context.Context;
+import org.openidentityplatform.openam.http.ChfContexts;
 import org.restlet.Request;
 
 /**
@@ -47,7 +49,9 @@ import org.restlet.Request;
 @Singleton
 public class UmaUrisFactory {
 
-    private final Map<String, UmaUris> urisMap = new HashMap<>();
+    // Concurrent, not plain: the lookups below read this map outside getUmaUris' monitor, and /uma/.well-known
+    // /uma-configuration is public, so two cold requests can race a resize. OAuth2UrisFactory already does this.
+    private final Map<String, UmaUris> urisMap = new ConcurrentHashMap<>();
     private final OAuth2UrisFactory oAuth2UriFactory;
     private final UmaProviderSettingsFactory umaProviderSettingsFactory;
     private final BaseURLProviderFactory baseURLProviderFactory;
@@ -120,10 +124,24 @@ public class UmaUrisFactory {
      * @return The OAuth2ProviderSettings instance.
      */
     public UmaUris get(Context context, Realm realm) throws NotFoundException, ServerException {
-        HttpContext httpContext = context.asContext(HttpContext.class);
         String baseUrl;
         try {
-            baseUrl = baseURLProviderFactory.get(realm.asPath()).getRealmURL(httpContext, "/uma", realm);
+            BaseURLProvider baseUrlProvider = baseURLProviderFactory.get(realm.asPath());
+            // A plain CHF chain (HttpFrameworkServlet -> Endpoints.from) carries NO CREST HttpContext -- only
+            // the servlet request, in the AttributesContext. Asking for HttpContext unconditionally is what
+            // made /uma/.well-known/uma-configuration a 500 after the phase-4 flip. Prefer the servlet
+            // request; fall back to HttpContext so a CREST-routed caller keeps working. If a chain offers
+            // neither, say so: letting asContext raise IllegalArgumentException reproduces exactly the
+            // opaque 500 this method was fixed to stop producing.
+            HttpServletRequest servletRequest = ChfContexts.servletRequest(context);
+            if (servletRequest != null) {
+                baseUrl = baseUrlProvider.getRealmURL(servletRequest, "/uma", realm);
+            } else if (context.containsContext(HttpContext.class)) {
+                baseUrl = baseUrlProvider.getRealmURL(context.asContext(HttpContext.class), "/uma", realm);
+            } else {
+                throw new ServerException("Cannot determine the base URL: the request carries neither a "
+                        + "servlet request nor an HttpContext");
+            }
         } catch (InvalidBaseUrlException e) {
             throw new ServerException("Configuration error");
         }

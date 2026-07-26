@@ -12,7 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2014-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.oauth2;
@@ -35,6 +35,7 @@ import org.forgerock.openam.services.baseurl.BaseURLProvider;
 import org.forgerock.openam.services.baseurl.BaseURLProviderFactory;
 import org.forgerock.openam.services.baseurl.InvalidBaseUrlException;
 import org.forgerock.services.context.Context;
+import org.openidentityplatform.openam.http.ChfContexts;
 
 /**
  * A factory for creating/retrieving OAuth2Uris instances.
@@ -80,9 +81,22 @@ public class OAuth2UrisFactory {
         BaseURLProvider baseURLProvider = baseURLProviderFactory.get(realm.asPath());
         String baseUrl, deploymentUrl;
         try {
-            HttpContext httpContext = context.asContext(HttpContext.class);
-            baseUrl = baseURLProvider.getRealmURL(httpContext, "/oauth2", realm);
-            deploymentUrl = baseURLProvider.getRootURL(httpContext);
+            // A plain CHF chain (HttpFrameworkServlet -> Endpoints.from) carries NO CREST HttpContext, only the
+            // servlet request; a CREST chain carries both. Prefer the servlet request so this works under
+            // either -- see ChfContexts. A chain with neither gets a named failure rather than the
+            // IllegalArgumentException asContext would raise, which is what the phase-4 500 looked like.
+            HttpServletRequest servletRequest = ChfContexts.servletRequest(context);
+            if (servletRequest != null) {
+                baseUrl = baseURLProvider.getRealmURL(servletRequest, "/oauth2", realm);
+                deploymentUrl = baseURLProvider.getRootURL(servletRequest);
+            } else if (context.containsContext(HttpContext.class)) {
+                HttpContext httpContext = context.asContext(HttpContext.class);
+                baseUrl = baseURLProvider.getRealmURL(httpContext, "/oauth2", realm);
+                deploymentUrl = baseURLProvider.getRootURL(httpContext);
+            } else {
+                throw new ServerException("Cannot determine the base URL: the request carries neither a "
+                        + "servlet request nor an HttpContext");
+            }
         } catch (InvalidBaseUrlException e) {
             throw new ServerException("Configuration error");
         }

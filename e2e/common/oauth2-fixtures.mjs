@@ -1,0 +1,458 @@
+/*
+ * The contents of this file are subject to the terms of the Common Development and
+ * Distribution License (the License). You may not use this file except in compliance with the
+ * License.
+ *
+ * You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+ * specific language governing permission and limitations under the License.
+ *
+ * When distributing Covered Software, include this CDDL Header Notice in each file and include
+ * the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+ * Header, with the fields enclosed by brackets [] replaced by your own identifying
+ * information: "Portions copyright [year] [name of copyright owner]".
+ *
+ * Copyright 2026 3A Systems, LLC.
+ */
+
+/*
+ * Shared OAuth2/OIDC/UMA fixtures for the specs that cover the endpoints moving from Restlet to CHF
+ * (docs/migration/restlet/). Every helper is idempotent and safe to call from several spec files
+ * concurrently -- Playwright runs spec FILES in parallel, so "create if absent, widen if present" is the
+ * only safe shape here.
+ */
+
+import { OPENAM_BASE } from "./openam-commons.mjs";
+
+export const REALM = "root";
+export const SCOPE = "profile";
+export const REDIRECT_URI = "http://app.invalid/cb";
+
+/*
+ * Client ids are PER SPEC FILE, not shared. Playwright runs spec files in parallel, and rewriting a client
+ * invalidates the tokens already issued against it -- so two files sharing one client flake as soon as their
+ * beforeAll hooks interleave. Each file owning its own clients removes the coupling entirely.
+ *
+ * The secrets are deliberately long. OpenAM signs id_tokens with HS256 (the default
+ * idTokenSignedResponseAlg) using the client secret, and HMAC-SHA256 needs a >=256-bit key -- a short secret
+ * makes the token endpoint fail with a bare `server_error` that says nothing about the cause.
+ */
+export const OIDC_CLIENT_SECRET = "oidc-secret-0123456789-0123456789-0123456789";
+export const RS_CLIENT_SECRET = "rs-secret-0123456789-0123456789-0123456789";
+
+/** Scopes every spec here relies on the provider supporting. */
+const REQUIRED_SCOPES = ["openid", "profile", "uma_protection", "uma_authorization"];
+
+/**
+ * Where the provider stores a consent decision. Any non-empty value keeps `isSaveConsentEnabled` true;
+ * `description` is a real user attribute, so storing a decision against it actually works.
+ */
+const SAVED_CONSENT_ATTRIBUTE = "description";
+
+const CONFIG_VERSION = { "Accept-API-Version": "protocol=1.0,resource=1.0" };
+const AGENT_VERSION = { "Accept-API-Version": "protocol=2.0,resource=1.0" };
+
+function adminHeaders(adminToken, version) {
+  return { iPlanetDirectoryPro: adminToken, "Content-Type": "application/json", ...version };
+}
+
+/**
+ * Ensures the realm has an OAuth2 provider, and returns the response holding its configuration.
+ *
+ * This lives here rather than in a single spec file because Playwright runs spec FILES in parallel: if the
+ * only creator were one spec's `beforeAll`, every other spec racing it on a cold container would read a 404.
+ *
+ * Every value in the payload is load-bearing for the recorded 5-E2 oracle, and all three are written
+ * explicitly even where they match the schema default, so that the rows do not silently depend on a default
+ * changing underneath them:
+ *   - `clientsCanSkipConsent: true`   -- consent is then driven by the CLIENT's `isConsentImplied`
+ *   - `codeVerifierEnforced: true`    -- every `response_type=code` row must carry a real S256 challenge
+ *   - `savedConsentAttribute`         -- row 2 asserts `isSaveConsentEnabled: true`; see the note below on
+ *                                        why an absent value silently turns that off
+ */
+export async function ensureOAuth2Provider(adminToken, request) {
+  const url = `${OPENAM_BASE}/json/realms/${REALM}/realm-config/services/oauth-oidc`;
+  const existing = await request.get(url, { headers: adminHeaders(adminToken, CONFIG_VERSION) });
+  if (existing.ok()) {
+    return existing;
+  }
+  if (existing.status() !== 404) {
+    throw new Error(`OAuth2 provider not readable: ${existing.status()} ${await existing.text()}`);
+  }
+  const created = await request.post(`${url}?_action=create`, {
+    headers: adminHeaders(adminToken, CONFIG_VERSION),
+    data: {
+      coreOAuth2Config: { savedConsentAttribute: SAVED_CONSENT_ATTRIBUTE },
+      advancedOAuth2Config: {
+        clientsCanSkipConsent: true, codeVerifierEnforced: true,
+        supportedScopes: [SCOPE], defaultScopes: [SCOPE],
+      },
+    },
+  });
+  // A concurrent spec file may have created it between our GET and POST -- that is success, not failure.
+  if (!created.ok() && created.status() !== 409) {
+    throw new Error(`Failed to create OAuth2 provider: ${created.status()} ${await created.text()}`);
+  }
+  console.log("OAuth2 provider service created");
+  return request.get(url, { headers: adminHeaders(adminToken, CONFIG_VERSION) });
+}
+
+/**
+ * Brings the realm's OAuth2 provider up to what every spec here needs -- creating it first if absent --
+ * and does nothing at all once it is already there. Two invariants, checked independently:
+ *
+ *   1. `openid` / `uma_protection` / `uma_authorization` are issuable (only ever ADDS scopes).
+ *   2. `coreOAuth2Config.savedConsentAttribute` is non-empty, which keeps the consent page rendering
+ *      `isSaveConsentEnabled: true` -- the 5-E2 row-2 oracle.
+ *
+ * They are checked separately on purpose: coupling (2) to (1) would mean a container that has the scopes but
+ * lost the attribute could never be healed, and row 2 would then fail on every future run.
+ *
+ * ⚠ The realm-config endpoint answers `501 Patch not supported`, so a full-object PUT is the ONLY way to
+ * change one field -- and that round trip is lossy in a way that is easy to miss. An UNTOUCHED provider
+ * reads back `savedConsentAttribute: ""` and still renders `isSaveConsentEnabled: true` (verified against a
+ * freshly created provider on a restarted container). But PUTting that same `""` back stores it as *absent*
+ * at the SMS level, and `RealmOAuth2ProviderSettings.isSaveConsentEnabled()` is a plain `!= null` check --
+ * so an innocent-looking read-modify-write silently turns the consent page's "save consent" control off,
+ * even though nothing appeared to change. Hence invariant 2: never PUT this field as null/empty.
+ *
+ * Safe from four spec files in parallel: identical writers computing the same target state from the same
+ * base, and a loser re-reads rather than failing.
+ */
+export async function ensureProviderConfig(adminToken, request) {
+  const url = `${OPENAM_BASE}/json/realms/${REALM}/realm-config/services/oauth-oidc`;
+  const current = await ensureOAuth2Provider(adminToken, request);
+  if (!current.ok()) {
+    throw new Error(`OAuth2 provider not readable: ${current.status()} ${await current.text()}`);
+  }
+  const config = await current.json();
+  const supported = config.advancedOAuth2Config?.supportedScopes ?? [];
+  const missingScopes = REQUIRED_SCOPES.filter((scope) => !supported.includes(scope));
+  const savedConsent = config.coreOAuth2Config?.savedConsentAttribute || SAVED_CONSENT_ATTRIBUTE;
+  const needsSavedConsent = !config.coreOAuth2Config?.savedConsentAttribute;
+  if (missingScopes.length === 0 && !needsSavedConsent) {
+    console.log(`OAuth2 provider already supports ${REQUIRED_SCOPES.join(", ")}`);
+    return;
+  }
+  const updated = await request.put(url, {
+    headers: adminHeaders(adminToken, CONFIG_VERSION),
+    data: {
+      ...config,
+      coreOAuth2Config: { ...config.coreOAuth2Config, savedConsentAttribute: savedConsent },
+      advancedOAuth2Config: {
+        ...config.advancedOAuth2Config,
+        supportedScopes: [...new Set([...supported, ...REQUIRED_SCOPES])],
+      },
+    },
+  });
+  if (!updated.ok()) {
+    // A concurrent spec file writing the same target state is success, not failure -- so re-read and judge
+    // on the state, not on our own write's status.
+    await assertProviderConfig(adminToken, request, `${updated.status()} ${await updated.text()}`);
+    return;
+  }
+  console.log(`OAuth2 provider updated (scopes: ${missingScopes.join(", ") || "none"},`
+    + ` savedConsentAttribute: ${needsSavedConsent ? savedConsent : "already set"})`);
+}
+
+/** Re-reads the provider and fails with the original write error unless someone else got us there. */
+async function assertProviderConfig(adminToken, request, writeError) {
+  const url = `${OPENAM_BASE}/json/realms/${REALM}/realm-config/services/oauth-oidc`;
+  const reread = await request.get(url, { headers: adminHeaders(adminToken, CONFIG_VERSION) });
+  const config = reread.ok() ? await reread.json() : {};
+  const supported = config.advancedOAuth2Config?.supportedScopes ?? [];
+  if (REQUIRED_SCOPES.every((scope) => supported.includes(scope))
+      && config.coreOAuth2Config?.savedConsentAttribute) {
+    console.log("OAuth2 provider already brought up to date by a concurrent spec file");
+    return;
+  }
+  throw new Error(`Failed to update the OAuth2 provider: ${writeError}`);
+}
+
+/**
+ * Ensures the realm has a UMA provider. Without it every /uma protocol endpoint answers
+ * `404 No UMA provider for realm /`, and the resource_set registration endpoint has nothing to point at.
+ */
+export async function ensureUmaProvider(adminToken, request) {
+  const url = `${OPENAM_BASE}/json/realms/${REALM}/realm-config/services/uma`;
+  const existing = await request.get(url, { headers: adminHeaders(adminToken, CONFIG_VERSION) });
+  if (existing.ok()) {
+    console.log("UMA provider service already exists");
+    return;
+  }
+  // Only a 404 means "absent". Falling through on a 401 or a 500 would report the same failure one call
+  // later as `Failed to create UMA provider`, pointing the reader at creation instead of the real cause.
+  if (existing.status() !== 404) {
+    throw new Error(`UMA provider not readable: ${existing.status()} ${await existing.text()}`);
+  }
+  const created = await request.post(`${url}?_action=create`, {
+    headers: adminHeaders(adminToken, CONFIG_VERSION),
+    data: {},
+  });
+  // A concurrent spec file may have created it between our GET and POST -- that is success, not failure.
+  if (!created.ok() && created.status() !== 409) {
+    throw new Error(`Failed to create UMA provider: ${created.status()} ${await created.text()}`);
+  }
+  console.log("UMA provider service created");
+}
+
+/**
+ * Writes an OAuth2 client. `data` is the full agent representation and the PUT is a full replace, so this
+ * runs unconditionally rather than create-if-absent: a client left over from an earlier revision of these
+ * fixtures (different secret, missing scope) would otherwise survive and fail the specs in confusing ways.
+ * Repeating the same PUT concurrently from two spec files is harmless.
+ */
+async function ensureClient(adminToken, request, clientId, data) {
+  const url = `${OPENAM_BASE}/json/realms/${REALM}/realm-config/agents/OAuth2Client/${clientId}`;
+  const written = await request.put(url, { headers: adminHeaders(adminToken, AGENT_VERSION), data });
+  if (!written.ok()) {
+    throw new Error(`Failed to write client ${clientId}: ${written.status()} ${await written.text()}`);
+  }
+  console.log(`OAuth2 client "${clientId}" written (${written.status()})`);
+}
+
+export async function ensureOidcClient(adminToken, request, clientId) {
+  await ensureClient(adminToken, request, clientId, {
+    "userpassword": OIDC_CLIENT_SECRET,
+    "com.forgerock.openam.oauth2provider.clientType": "Confidential",
+    "com.forgerock.openam.oauth2provider.redirectionURIs": [`[0]=${REDIRECT_URI}`],
+    "com.forgerock.openam.oauth2provider.scopes": ["[0]=openid", "[1]=profile"],
+    "com.forgerock.openam.oauth2provider.defaultScopes": ["[0]=openid"],
+    "com.forgerock.openam.oauth2provider.grantTypes": [
+      "[0]=authorization_code", "[1]=implicit", "[2]=refresh_token",
+      "[3]=urn:ietf:params:oauth:grant-type:device_code",
+    ],
+    "com.forgerock.openam.oauth2provider.responseTypes": [
+      "[0]=code", "[1]=token", "[2]=id_token", "[3]=code token", "[4]=token id_token",
+    ],
+    "com.forgerock.openam.oauth2provider.tokenEndPointAuthMethod": "client_secret_basic",
+    // HS256 signs the id_token with the client secret, so idtokeninfo can verify it without a client JWKS.
+    // With RS256 the server looks for the CLIENT's public key and fails with server_error.
+    "com.forgerock.openam.oauth2provider.idTokenSignedResponseAlg": "HS256",
+    "isConsentImplied": true,
+    "sunIdentityServerDeviceStatus": "Active",
+  });
+}
+
+export async function ensureResourceServerClient(adminToken, request, clientId) {
+  await ensureClient(adminToken, request, clientId, {
+    "userpassword": RS_CLIENT_SECRET,
+    "com.forgerock.openam.oauth2provider.clientType": "Confidential",
+    "com.forgerock.openam.oauth2provider.redirectionURIs": [`[0]=${REDIRECT_URI}`],
+    // uma_authorization is what an AAT carries -- /uma/authz_request refuses anything else with a 403.
+    "com.forgerock.openam.oauth2provider.scopes": [
+      "[0]=uma_protection", "[1]=openid", "[2]=uma_authorization",
+    ],
+    "com.forgerock.openam.oauth2provider.defaultScopes": ["[0]=uma_protection"],
+    "com.forgerock.openam.oauth2provider.grantTypes": [
+      "[0]=password", "[1]=authorization_code", "[2]=client_credentials",
+    ],
+    "com.forgerock.openam.oauth2provider.responseTypes": ["[0]=code", "[1]=token"],
+    "com.forgerock.openam.oauth2provider.tokenEndPointAuthMethod": "client_secret_basic",
+    "isConsentImplied": true,
+    "sunIdentityServerDeviceStatus": "Active",
+  });
+}
+
+/**
+ * Removes an OAuth2 client through the admin API. Needed for cleanup because OpenAM's
+ * `/oauth2/connect/register` implements only the RFC 7591 create and the RFC 7592 read -- a DELETE against
+ * `registration_client_uri` answers 405 -- so a dynamically registered client cannot remove itself.
+ */
+export async function deleteClient(adminToken, request, clientId) {
+  const response = await request.delete(
+    `${OPENAM_BASE}/json/realms/${REALM}/realm-config/agents/OAuth2Client/${clientId}`,
+    { headers: adminHeaders(adminToken, AGENT_VERSION) });
+  if (!response.ok() && response.status() !== 404) {
+    console.log(`[fixtures] could not delete client ${clientId}: ${response.status()} ${await response.text()}`);
+  }
+}
+
+export function basicAuth(clientId, secret) {
+  return `Basic ${Buffer.from(`${clientId}:${secret}`).toString("base64")}`;
+}
+
+/**
+ * A name no earlier run can have taken. Resource-set names are unique per resource owner -- registering a
+ * duplicate answers `400 A shared item with the name '...' already exists` -- so a fixed name works exactly
+ * once against a given container and then fails forever.
+ */
+export function uniqueName(prefix) {
+  return `${prefix} ${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Registers a resource set. Returns `{response, name}` -- the name matters because a retry uses a different
+ * one, so callers that assert on the stored name must use what was actually sent.
+ *
+ * Retries a `server_error` a couple of times. On a container where the UMA provider service has only just
+ * been created, the first registration can fail while the realm's UMA policy model initialises lazily; a
+ * second attempt succeeds. Note the retry keys on the BODY, not the status: Restlet maps `ServerException`
+ * to HTTP 400 with `{"error":"server_error","error_description":"Internal Server Error (500) - ..."}`, so a
+ * status-only check never fires. Every other 4xx is a real answer and is returned untouched.
+ */
+export async function registerResourceSet(request, pat, name, extra = {}) {
+  let response;
+  let used = name;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // A distinct name per attempt: a failed registration can still have taken the name, and names are
+    // unique per resource owner, so reusing it turns the retry into "already exists".
+    used = attempt === 0 ? name : `${name} r${attempt}`;
+    response = await request.post(`${OPENAM_BASE}/oauth2/resource_set`, {
+      headers: { Authorization: `Bearer ${pat}`, "Content-Type": "application/json" },
+      data: { name: used, scopes: ["read", "write"], ...extra },
+    });
+    if (response.status() === 201 || !(await isServerError(response))) {
+      break;
+    }
+    if (attempt < 2) {
+      console.log(`[fixtures] resource_set registration attempt ${attempt + 1} -> server_error, retrying`);
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+  }
+  return { response, name: used };
+}
+
+async function isServerError(response) {
+  if (response.status() >= 500) {
+    return true;
+  }
+  try {
+    return (await response.json()).error === "server_error";
+  } catch (notJson) {
+    return false;
+  }
+}
+
+/**
+ * Blocks until resource-set registration actually works, then cleans up after itself.
+ *
+ * Creating the UMA provider service kicks off asynchronous provisioning of the realm's UMA policy model
+ * (watch the `/internal/policySet` notifications in the Entitlement debug log). Until that settles, every
+ * registration answers `server_error` -- for well over a second, so a per-request retry is not enough. Doing
+ * the waiting once in setup keeps it out of the tests, and on a warm container the first attempt succeeds and
+ * this returns immediately.
+ */
+export async function warmUpResourceSetStore(request, pat) {
+  const deadline = Date.now() + 30_000;
+  for (let attempt = 1; ; attempt++) {
+    const response = await request.post(`${OPENAM_BASE}/oauth2/resource_set`, {
+      headers: { Authorization: `Bearer ${pat}`, "Content-Type": "application/json" },
+      data: { name: uniqueName("warmup"), scopes: ["read"] },
+    });
+    if (response.status() === 201) {
+      if (attempt > 1) {
+        console.log(`[fixtures] resource-set store ready after ${attempt} attempts`);
+      }
+      await deleteResourceSet(request, pat, (await response.json())._id);
+      return;
+    }
+    const body = await response.text();
+    if (!(await isServerError(response))) {
+      // Not a warm-up problem: registration reached a real decision (bad token, missing UMA provider...).
+      // Let the tests report it against their own assertions rather than masking it here.
+      console.log(`[fixtures] resource-set warm-up saw a real answer: ${response.status()} ${body}`);
+      return;
+    }
+    if (Date.now() > deadline) {
+      // Failing here rather than returning: the whole point of this helper is to absorb the wait in setup,
+      // so exhausting the deadline is a setup failure, not something to rediscover one assertion at a time.
+      throw new Error(`resource-set store never became ready: ${response.status()} ${body}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
+
+/** Best-effort cleanup so a container survives many runs; failures here must not fail a test. */
+export async function deleteResourceSet(request, pat, id) {
+  try {
+    await request.delete(`${OPENAM_BASE}/oauth2/resource_set/${id}`, {
+      headers: { Authorization: `Bearer ${pat}`, "If-Match": "*" },
+    });
+  } catch (ignored) {
+    // The suite already reported whatever went wrong; leaking one resource set is not worth a red run.
+  }
+}
+
+/**
+ * A fixed PKCE pair. `ensureOAuth2Provider` pins `codeVerifierEnforced: true`, so every
+ * `response_type=code` request needs a challenge or it fails validation before reaching the real logic.
+ */
+export async function pkce() {
+  const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return { verifier, challenge: Buffer.from(digest).toString("base64url") };
+}
+
+/**
+ * A Playwright request context whose cookie jar holds the given session, and nothing else.
+ *
+ * On /oauth2/authorize the `iPlanetDirectoryPro` HEADER does not authenticate -- only the COOKIE does. See
+ * the 5-E2 block in oauth2-test.spec.mjs and the cookie gotcha in docs/test-infrastructure.md.
+ */
+export function sessionContext(apiRequest, ssoToken, extraCookies = []) {
+  const domain = new URL(OPENAM_BASE).hostname;
+  return apiRequest.newContext({
+    storageState: {
+      cookies: [{ name: "iPlanetDirectoryPro", value: ssoToken }, ...extraCookies].map((cookie) => ({
+        ...cookie, domain, path: "/", expires: -1, httpOnly: false, secure: false, sameSite: "Lax",
+      })),
+      origins: [],
+    },
+  });
+}
+
+/**
+ * Runs a full authorization_code + PKCE exchange and returns the token response.
+ *
+ * @param context a request context whose jar carries the resource owner's session
+ */
+export async function authorizationCodeTokens(context, { clientId, clientSecret, scope, nonce } = {}) {
+  const { verifier, challenge } = await pkce();
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: REDIRECT_URI,
+    scope,
+    state: "fixture-state",
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+  });
+  if (nonce) params.set("nonce", nonce);
+
+  const authorize = await context.get(`${OPENAM_BASE}/oauth2/authorize?${params}`, { maxRedirects: 0 });
+  if (authorize.status() !== 302) {
+    throw new Error(`authorize did not redirect: ${authorize.status()} ${await authorize.text()}`);
+  }
+  const code = new URL(authorize.headers()["location"]).searchParams.get("code");
+
+  const token = await context.post(`${OPENAM_BASE}/oauth2/access_token`, {
+    headers: { Authorization: basicAuth(clientId, clientSecret) },
+    form: { grant_type: "authorization_code", code, redirect_uri: REDIRECT_URI, code_verifier: verifier },
+  });
+  if (!token.ok()) {
+    throw new Error(`token exchange failed: ${token.status()} ${await token.text()}`);
+  }
+  return token.json();
+}
+
+/** A token for the given resource-server client at the requested scope, via the ROPC grant. */
+async function resourceServerToken(request, clientId, username, password, scope) {
+  const response = await request.post(`${OPENAM_BASE}/oauth2/access_token`, {
+    headers: { Authorization: basicAuth(clientId, RS_CLIENT_SECRET) },
+    form: { grant_type: "password", username, password, scope },
+  });
+  if (!response.ok()) {
+    throw new Error(`${scope} token request failed: ${response.status()} ${await response.text()}`);
+  }
+  return (await response.json()).access_token;
+}
+
+/** Protection API token -- what a resource server presents to /oauth2/resource_set and /uma/permission_request. */
+export async function protectionApiToken(request, clientId, username, password) {
+  return resourceServerToken(request, clientId, username, password, "uma_protection");
+}
+
+/** Authorization API token -- what a requesting party presents to /uma/authz_request. */
+export async function authorizationApiToken(request, clientId, username, password) {
+  return resourceServerToken(request, clientId, username, password, "uma_authorization");
+}

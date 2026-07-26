@@ -699,3 +699,105 @@ A `/code-review` over the Phase-4 diff raised five findings; each was re-traced 
 - **F5 — `Endpoints.java` used the `@Deprecated` `ResourceException.getException`** while the sibling
   `ChfAccessTokenProtectionFilter` used `newResourceException` — aligned `Endpoints.java` onto the non-deprecated
   factory (byte-identical output; the review's suggested direction pointed at the deprecated method).
+
+## Post-landing follow-up (2026-07-26) — the deferred e2e smoke found a live regression
+
+4b landed with "Cargo boot + `e2e/uma` smoke deferred" ([plan.md](plan.md)). When that smoke was finally written
+(`e2e/uma/uma-test.spec.mjs`), its **first assertion failed**: the flip had shipped
+
+```
+GET /uma/.well-known/uma-configuration
+-> 500 {"error":"server_error",
+        "error_description":"No context of type org.forgerock.json.resource.http.HttpContext found."}
+```
+
+i.e. the endpoint was **down for every request** from the moment `/uma/*` moved to the CHF servlet.
+
+**Root cause.** `UmaWellKnownConfigurationEndpoint` was re-based onto the `Context` overload
+`UmaUrisFactory.get(Context, Realm)`, which called `context.asContext(HttpContext.class)` unconditionally.
+`HttpContext` is a **CREST** context, created by CREST's HTTP adapter; a plain CHF chain
+(`HttpFrameworkServlet` → `Endpoints.from`) never carries one — it carries the servlet request in the
+`AttributesContext` instead. The Restlet original had used the Restlet-request overload, so the defect was
+introduced exactly at the re-basing. `OAuth2UrisFactory.get(Context, Realm)` had the identical bug one level
+down, which is why fixing only the UMA side still 500'd.
+
+**Why three test layers all missed it.** `UmaRouterIT` case 6 asserts this endpoint returns **200** — and
+passes — because the IT **mocks `UmaUrisFactory`** (`UmaRouterIT.java:184,258`), so the real base-URL
+resolution never executes. `UmaWellKnownConfigurationEndpointTest` mocks it too. The mock stood exactly where
+the bug was. **A layer-2 IT that mocks the collaborator holding the transport assumption cannot detect a
+transport regression** — only a real request can, which is precisely what phase 4 deferred.
+
+**Fix.** Prefer the servlet request, fall back to `HttpContext`, in both factories, via a new shared
+`ChfContexts` helper (**openam-http**, `org.openidentityplatform.openam.http`) that performs the same
+`AttributesContext` lookup `ChfOAuth2Request.getHttpServletRequest()` already used — `ChfOAuth2Request` now
+delegates to it rather than keeping a second copy.
+
+⚠ **Not "purely additive", and the earlier wording here saying so was wrong.** `/json/*` is mapped to the
+*same* `HttpFrameworkServlet` as `/uma/*` (web.xml), and that servlet stashes the servlet request
+unconditionally — so a CREST request carries **both**, and the servlet branch wins there too. The
+`HttpContext` branch is therefore not "the CREST path"; it is reachable only by a chain assembled without a
+servlet request. This changes nothing today because `get(Context, Realm)` has exactly one caller in each
+factory (`UmaWellKnownConfigurationEndpoint` → `UmaUrisFactory` → `OAuth2UrisFactory`), all CHF-routed — but
+anyone adding a CREST caller must know the two `BaseURLProvider` overloads are **not** equivalent (e.g.
+`XForwardedHeadersBaseURLProvider` reads a missing header as `null` via the servlet request and as `""` via
+`HttpContext`, and `ForwardedHeader` parsing is case-sensitive on one path only).
+
+A chain carrying **neither** transport throws a named `ServerException` instead of letting `asContext` raise
+`IllegalArgumentException`, which is the shape the shipped 500 took: an unmapped runtime exception naming a
+CREST type. Two adjacent defects were fixed on the same pass — `UmaUrisFactory.urisMap` was a plain `HashMap`
+read outside `getUmaUris`' monitor (`OAuth2UrisFactory` already used `ConcurrentHashMap`), and the CHF flip
+had just made a **public unauthenticated** endpoint its hottest reader.
+
+**New guards — one per factory, and the second one matters most.** `UmaUrisFactoryTest` (openam-uma) drives
+the *real* factory over a CHF-shaped context — an `AttributesContext` holding a servlet request and **no**
+`HttpContext` — and asserts the servlet-request overload is the one used; a second case pins the no-transport
+failure. But that test **mocks `OAuth2UrisFactory`**, which is exactly where the second half of the bug lived
+— the same blind spot `UmaRouterIT` had, one layer down. So `OAuth2UrisFactoryTest` (openam-oauth2) covers
+that factory directly. Both were **mutation-checked**: re-introducing `context.asContext(HttpContext.class)`
+in `OAuth2UrisFactory` fails both of its cases. Modules: **983 unit** (981 + 2) and **196** (194 + 2).
+The e2e suite is the outer guard, and `/uma/.well-known/uma-configuration` returning 200 is its first row.
+
+**Where the helper lives, and why it is not openam-oauth2.** `ChfContexts` was first written into
+openam-oauth2 next to its first caller, which was wrong: five places hand-roll that same
+`AttributesContext` → `HttpServletRequest.class.getName()` lookup, and three of them —
+`LocalSSOTokenSessionModule:158` (openam-rest), `AuthenticationServiceV1:185,203` and
+`LogoutActionHandler:159` (openam-core-rest) — sit in modules that cannot depend on openam-oauth2. It now
+lives in **openam-http**, which (a) *defines* the contract it decodes (`Endpoints.from`, `HttpRouteProvider`,
+the `@Get`/`@Post` annotations) and (b) is the lowest module every caller reaches: openam-oauth2, openam-uma
+and openam-rest depend on it directly, openam-core-rest through openam-rest.
+
+**Follow-up, deliberately not taken here — and the right shape is not the one first recorded.** The initial
+note here proposed a `Context`-aware `BaseURLProvider` overload resolving servlet-request-then-`HttpContext`
+once. Reviewing what the providers actually *consume* says the transport object is not needed at all:
+
+| provider | what it reads |
+|---|---|
+| `RequestValuesBaseURLProvider` (default) | scheme + host + port — from `HttpServletRequest` getters, or from `URI.create(HttpContext.getPath())` |
+| `XForwardedHeadersBaseURLProvider` | `X-Forwarded-Proto` / `X-Forwarded-Host` headers |
+| `ForwardedHeaderBaseURLProvider` | the `Forwarded` header |
+
+All of it is on the CHF `Request` natively (`getUri()`, `getHeaders()`), with `ClientContext` covering
+`isSecure()`/`getLocalPort()` if ever needed. Both existing overloads exist only because `BaseURLProvider`
+predates CHF. So the target is **`getBaseURL(Request)`** — no servlet object, no CREST `HttpContext`,
+identical on both transports. It would delete the servlet-vs-`HttpContext` branch from both UrisFactories
+outright, and fix `IdentityResourceV1:303,708`, `IdentityResourceV2:362,756` and `ServerInfoResource:161` by
+construction when those are re-based onto CHF.
+
+Note this also side-steps the dependency problem the openam-http placement cannot solve: `BaseURLProvider` is
+in **openam-core**, which openam-http depends on, so openam-core can never call `ChfContexts` — but it does
+not need to if it stops asking for a transport object. Cost: an abstract-method addition across
+`BaseURLProvider` + 5 subclasses in a shared core module. Not done now because phase 5 has not yet proven it
+needs it; revisit when phase 5 has to repeat the branch a third time.
+
+Same paragraph, smaller watch item: the sibling `get(OAuth2Request, Realm)` overloads in **both** factories
+hand `oAuth2Request.getHttpServletRequest()` straight to `BaseURLProvider` with no null check. Under Restlet
+it is never null and under `HttpFrameworkServlet` neither, so this is theoretical today — but 5d-1 routes
+every token issuance through `ChfOAuth2Request` into that overload, and `ChfOAuth2Request.servletAttribute`
+returns null by design for a chain without an `AttributesContext`. Left alone deliberately: it is a hot
+pre-existing path and the only difference a guard would make is the message on a 500 that cannot currently
+happen. Worth a named failure if 5d-1 ever surfaces a synthetic chain.
+
+**Not a regression, recorded next door:** `/uma/permission_request`'s CREST-shaped `401 {code,reason,message}`
+is the deliberate reproduction of Restlet behaviour ([D5](#d5), finding 1) — the e2e suite asserts both that
+shape *and* the endpoints' own UMA-shaped `{error, error_description}`, so a future error-filter change that
+crosses them fails loudly.

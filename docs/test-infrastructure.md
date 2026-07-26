@@ -99,11 +99,16 @@ Two traps here:
 
 | Spec | Covers |
 |---|---|
-| `e2e/oauth2/oauth2-test.spec.mjs` | authorize (code + PKCE S256) → `POST /oauth2/access_token` → `GET /oauth2/userinfo` with a **Bearer header**. Creates the OAuth2 service + a public client `test_client_app` (scope `profile`) via `/json/realms/root/realm-config/…` if absent. |
+| `e2e/oauth2/oauth2-test.spec.mjs` | authorize (code + PKCE S256) → `POST /oauth2/access_token` → `GET /oauth2/userinfo` with a **Bearer header**. Creates the OAuth2 service + a public client `test_client_app` (scope `profile`) via `/json/realms/root/realm-config/…` if absent. Also carries the Restlet-migration **contract locks** §5-E (`/access_token` + cache headers) and §5-E2 (`/authorize`), recorded against live Restlet — see `docs/migration/restlet/`. |
+| `e2e/oauth2/oidc-test.spec.mjs` | OIDC surface: `.well-known/openid-configuration` (root + realm-prefixed), `connect/jwk_uri`, `connect/checkSession`, `connect/endSession`, `idtokeninfo`, and id_token issuance/claims. |
+| `e2e/oauth2/oauth2-endpoints-test.spec.mjs` | `connect/register` (RFC 7591/7592), the device flow (`device/code`, `device/user`), `token/revoke` (incl. that the token really stops validating), and the `resource_set` lifecycle with `If-Match`. |
+| `e2e/oauth2/webfinger-test.spec.mjs` | `/.well-known/webfinger`. **Known broken** (pre-existing, not a migration regression): the success case is `test.fail()`-marked with the root cause — remove that annotation when phase 6 fixes it. |
+| `e2e/uma/uma-test.spec.mjs` | `/uma` protocol endpoints: `uma-configuration` (the regression guard — phase 4 shipped it as a 500), `permission_request`, `authz_request`. Asserts **both** error shapes on purpose: CREST `{code,reason,message}` from the protection filter, UMA `{error,error_description}` from the endpoints. |
 | `e2e/saml/saml-test.spec.mjs` | SAML IdP↔SP flow |
 | `e2e/xacml/xacml-test.spec.mjs` | `/xacml` export/import: headers, realm styles, `?filter=`, import round-trip into a sub realm, and the auth paths (`401`/`403`) that no other layer covers. Creates realm `xacmltest` (via `/json/global-config/realms` — **not** the deprecated `/json/realms/root/realms`) and policy `xacml-e2e-policy` (via `/json` v1) if absent. Authenticates in disposable request contexts; see the cookie gotcha below. Paired with `openam-entitlements`' `XacmlRouterIT`, which covers route composition below the auth filter. |
 | `e2e/xui/xui-httponly.spec.mjs` | XUI cookie flags |
 | `e2e/common/openam-commons.mjs` | shared helpers: `OPENAM_BASE`, `ADMIN_USER`/`ADMIN_PASS`, `USERNAME`/`PASSWORD`, `getAdminToken(request)`, `getAuthToken(request, user, pass)` — all env-overridable |
+| `e2e/common/oauth2-fixtures.mjs` | shared OAuth2/OIDC/UMA fixtures: OAuth2 + UMA provider creation, scope widening, per-spec clients, PKCE, session contexts, PAT/AAT, resource-set helpers. **Clients are per spec file** — Playwright runs spec files in parallel and rewriting a client invalidates its issued tokens. **Shared config is created here, never in one spec's `beforeAll`** — with files running in parallel, any spec that is not the creator races it on a cold container, so every "ensure" is create-if-absent and tolerates a concurrent creator. |
 
 **This is the only layer that exercises a real HTTP request through a real server**, and therefore the only
 one where Restlet's server adapter is in play (see [Gotchas](#gotchas-that-have-actually-bitten)).

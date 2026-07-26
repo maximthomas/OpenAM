@@ -162,6 +162,34 @@ public class OAuth2ErrorTest {
         assertThat(OAuth2Error.of(400, "", "d").asMap()).containsEntry("error", "server_error");
     }
 
+    /**
+     * The four-argument factory keeps the throwable for the log and changes nothing else. Both halves matter:
+     * the cause must reach {@code OAuth2ErrorResponseFactory.log}, and it must <strong>not</strong> reach
+     * {@code asMap} — the client is told the message, never the type or the frames.
+     */
+    @Test
+    public void theFourArgumentFactoryCarriesTheCauseWithoutPuttingItOnTheWire() {
+        IllegalArgumentException cause = new IllegalArgumentException("Invalid display type");
+
+        OAuth2Error error = OAuth2Error.of(400, "invalid_request", "Invalid display type", cause);
+
+        assertThat(error.getCause()).isSameAs(cause);
+        assertThat(error.asMap()).isEqualTo(OAuth2Error.of(400, "invalid_request", "Invalid display type").asMap());
+    }
+
+    /**
+     * ⚠ D7 depends on this: the error it builds must have <em>no</em> redirect target, so {@code toResponse}
+     * takes the page branch by construction rather than by a rule someone has to remember. Adding a cause must
+     * not have quietly opened that door.
+     */
+    @Test
+    public void theFourArgumentFactoryStillCarriesNoRedirectTarget() {
+        OAuth2Error error = OAuth2Error.of(400, "invalid_request", "d", new IllegalArgumentException("x"));
+
+        assertThat(error.getRedirectUri()).isNull();
+        assertThat(error.getParameterLocation()).isEqualTo(UrlLocation.QUERY);
+    }
+
     @Test
     public void asMapIsDetachedFromTheError() {
         OAuth2Error error = OAuth2Error.of(400, "invalid_request", "d");

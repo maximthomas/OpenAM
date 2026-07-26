@@ -19,6 +19,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
@@ -45,6 +47,7 @@ import org.forgerock.openam.services.baseurl.BaseURLProvider;
 import org.forgerock.openam.services.baseurl.BaseURLProviderFactory;
 import org.forgerock.openam.utils.RealmNormaliser;
 import org.forgerock.services.context.RootContext;
+import org.mockito.ArgumentCaptor;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -294,6 +297,26 @@ public class AbstractOAuth2HttpBrowserEndpointTest {
 
         assertThat(response.getHeaders().getFirst("Cache-Control")).isEqualTo("no-store");
         assertThat(response.getHeaders().getFirst("Pragma")).isEqualTo("no-cache");
+    }
+
+    /**
+     * The throwable is carried into the {@link OAuth2Error} for the log, which is the only thing that puts a
+     * stack trace in the provider log for a fault that presents as a 400. Asserted on the error handed to the
+     * factory rather than on the response, because it is deliberately <strong>not</strong> on the wire: the
+     * description a client sees is the message, and the cause is never rendered.
+     */
+    @Test
+    public void theIllegalArgumentCauseIsCarriedForTheLogButNotForTheWire() throws Exception {
+        OAuth2ErrorResponseFactory factory = spy(errorResponseFactory());
+        inject(handler, "errorResponseFactory", factory);
+        IllegalArgumentException thrown = new IllegalArgumentException("Invalid display type");
+
+        Response response = handleUnchecked(thrown);
+
+        ArgumentCaptor<OAuth2Error> error = ArgumentCaptor.forClass(OAuth2Error.class);
+        verify(factory).toResponse(any(), error.capture());
+        assertThat(error.getValue().getCause()).isSameAs(thrown);
+        assertThat(response.getEntity().getString()).doesNotContain("IllegalArgumentException");
     }
 
     // --- the withErrorHeaders seam ---------------------------------------------------------------

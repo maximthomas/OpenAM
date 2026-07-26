@@ -869,7 +869,7 @@ S7–S8 as commit **5b-1b**. Only S3 touches already-shipped code, and it touche
 | **S6a** | ✅ **done** — **`AuthorizeRouteCompositionIT`** | the layer-2 composition guard for S5 | `mvn -o -pl openam-oauth2 verify` green: 3xx passes through `OAuth2ErrorFilter` untouched, the HTML page is not rewritten, UTF-8 bytes reach the wire, PUT → framework 405 → `invalid_request`. **→ commit 5b-1a** (gate + `install`) |
 | **S7** | ✅ **done 2026-07-26** — **D5 — `ConsentPageRenderer`** ([as-built](#as-built-s7)) | the shared consent collaborator, built in the producer's three phases (finding 10), + `ConsentPageRendererTest` | `dataModel(...)` matches `RendererFixtures.authorize()` **key-for-key and type-for-type**; `target` carries context path + query; absent parameters omitted; query-only reads proven with a POST carrying a conflicting form body; non-ASCII `user_name` round-trips UTF-8; `RestletRendererParityTest` still green |
 | **S8** | ✅ **done 2026-07-26** — **D9/D7/D8 — `AuthorizeHandler`** ([as-built](#as-built-s8)) | the handler + `AuthorizeHandlerTest` | success 302 query **and** fragment, `form_post` (composed URI in the model), consent branch, the full collapse table one row per exception, [D7](#d7) IAE rows with **no `Location`**, cache headers on every path, hooks called once in order. **→ commit 5b-1b** (gate + `install` + whole-reactor `install -DskipTests`) |
-| **S9** | **Close out** | As-built filled in (oracle rows, `Accept-Language` outcome, D8's resolution, any plan corrections); [plan.md](plan.md) 5-E2/5b-1 marked done | 5d-1's smoke matrix has [D6](decisions.md) + [D7](#d7) + the double `Set-Cookie` recorded as expected divergences. Proceed to **5b-2**, which consumes `AbstractOAuth2HttpBrowserEndpoint` and `ConsentPageRenderer` unchanged |
+| **S9** | ✅ **done 2026-07-26** — **Close out** | As-built filled in for S4/S7/S8 + three review rounds + both design questions; [plan.md](plan.md) 5-E2/5b-1 marked done; the flip's divergence table written | **[Expected divergences at the flip](plan.md#expected-divergences-at-the-flip)** carries **seven** rows, not the three this step anticipated — [D6](#d6)'s double `Set-Cookie`, [D7](#d7)'s IAE page and [D8](#d8)'s 405 body, plus the `login_hint` cookie-octet skip, the malformed-`q` `Accept-Language` outcome, the uppercase-`Content-Type` widening, and the [hook-throw shape](#div-hook-throw). D8's cache-header row came **off** the list: `OAuth2NoCacheFilter` fixed it rather than recording it. Proceed to **5b-2**, which consumes `AbstractOAuth2HttpBrowserEndpoint` and `ConsentPageRenderer` unchanged |
 
 **Hard ordering constraints** (everything else is preference):
 
@@ -1415,11 +1415,39 @@ as a pinned divergence. What was true is that recording it was a choice, and it 
   own decision, not a review fix.
 - **"`onIllegalArgument` destroys the stack trace."** The mechanism is real (`OAuth2ErrorResponseFactory:378-386`
   logs at DEBUG with a null cause), but the framing — that the D7 move caused it — is not: the pre-move code
-  built the same 400. Threading a cause needs a `withCause` on `OAuth2Error`, which has none. Left as a known
-  gap rather than smuggled in under a review.
-- **"A hook throwing discards an issued authorization."** Structurally true and worth knowing; deferred as its
-  own decision, since the remedies (swallow, or map `RuntimeException` on the browser base) are both behaviour
-  changes and Restlet's `doCatch` answer differs from either.
+  built the same 400. Deferred out of the review as its own decision, then **✅ resolved 2026-07-26
+  (user-approved): thread the cause, leave severity alone.** New `OAuth2Error.of(int, String, String, Throwable)`
+  — a fourth factory rather than a `withCause` wither, because `cause` is `final` and the withers copy-then-assign
+  — and `onIllegalArgument` passes the exception. The severity branch is deliberately untouched: **most
+  exceptions arriving here are client-caused** (a bad parameter, an unknown `?display=`), so escalating any
+  caused error to WARN would both mislabel the common case and hand unauthenticated input a log-flooding lever.
+  DEBUG stays the default and now carries a stack when someone turns it on. Two rows pin it — that the cause
+  reaches the error handed to the factory but *not* `asMap` (the client is told the message, never the type or
+  the frames), and that the four-argument factory still carries **no redirect target**, which is the property
+  D7 depends on.
+- **"A hook throwing discards an issued authorization."** Structurally true; deferred out of the review, then
+  **✅ decided 2026-07-26 (user-approved): record it, change nothing.** <a id="div-hook-throw"></a>
+
+  **The divergence, for the 5d-1 matrix.** `AuthorizeHandler.succeed` runs the after-hooks *after* the
+  representation is built and outside the `try` that guards it (deliberately — [D9](#d9) puts them after the
+  representation, and one that failed to build was not a success). By then
+  `authorizationService.authorize` has already minted and stored the code or token. A hook's
+  `RuntimeException` is neither an `OAuth2Exception` nor an `IllegalArgumentException`, so it passes **both**
+  base mappers and becomes `AnnotatedMethod`'s CREST-JSON 500 — rendered to a browser, where Restlet's
+  `doCatch` produced the contractual HTML `server_error` page. The user agent never receives its redirect
+  either way; only the error's shape differs.
+
+  **Why nothing changes.** Each remedy trades one wrong answer for another: mapping `RuntimeException` on the
+  browser base would restore Restlet's shape but reverse [D3](#d3)'s deliberate boundary that the framework
+  shape is for bug paths, and swallowing the hook failure to return the redirect anyway has the best semantics
+  — the authorization *was* granted — but diverges from Restlet in the opposite direction and makes a hook
+  failure that genuinely matters silent. On a path with no proven trigger, recording beats guessing.
+
+  ⚠ **The one concrete reachability, left as is:** `LoginHintHook.afterAuthorizeSuccess` → `removeCookie` calls
+  `o2request.getHttpServletResponse().addCookie(...)` unguarded, while the sibling read path *is* guarded
+  (`request == null ? null : request.getCookies()`). That asymmetry is real; whether a live chain can present a
+  null servlet response is **not proven either way**, and an earlier review round already rejected adding the
+  guard. If 5d-1's soak ever produces a CREST-JSON body from `/authorize`, this is the first place to look.
 - **"Three spellings of no-store."** Accurate, mild; the proposed remedy touches the token endpoint too.
 
 #### Second review round — S7/S8 (2026-07-26)
@@ -1557,3 +1585,38 @@ rather than trying to assert the CHF one early).
   correctly — it makes it answer *harmlessly*. Pinned by
   `RestletOAuth2RequestTest.theInheritedAcceptedLanguagesAreTheWildcardNotAnEmptyList`, which asserts what the
   one non-overriding subclass inherits. Orphaned the `java.util.Collections` import in `OAuth2Request`, removed.
+
+---
+
+## ⇒ 5b-1 complete (2026-07-26)
+
+`77c37284cf` (5-E2 + 5b-1a + 5b-1b) plus the close-out. **1132 surefire + 18 failsafe**, doclint clean, import
+gate 0, wired to **no route** until 5d-1.
+
+**What this phase produced beyond the plan.** Three things were not on the map and are worth carrying into 5b-2:
+
+1. **Two oracles now exist that did not.** `RestletAcceptLanguageParityTest` and `RestletContentTypeParityTest`
+   drive the *real* Restlet code from a unit test. Both were written because reading the source gave the wrong
+   answer, and both then disagreed with a prediction — the second one on three of eight rows. When a port turns
+   on a library call whose behaviour is not obvious (`MediaType.equals`, `ClientInfo`'s parser), **execute it
+   rather than read it**; the cost is one data-provider table.
+2. **A whole class of defect has a name and a rule** —
+   [chf-patterns §20](chf-patterns.md#20-on-the-browser-base-build-your-errors--never-throw-them-phase-5b-1):
+   on the browser base, errors a handler detects itself must be **built**, not thrown, because the two natural
+   exception types are redirectable and `mayRedirect` keys on type. Two open redirects came from breaking it.
+   The test rule that catches it: **every row asserting a self-built error must stub a `redirect_uri`**, or it
+   passes either way.
+3. **`OAuth2NoCacheFilter` restores something a handler cannot do for itself.** Per-method header stamping
+   cannot reach a response the framework produces without entering a handler. Any later phase that moves a
+   Restlet `Filter`'s behaviour into a handler should ask which responses the filter saw that the handler will
+   not.
+
+**Two review findings were rejected on evidence**, and the evidence is the reusable part: the port builds the
+consent model before validating `?display=` (faithful — `AuthorizeResource:131-132` passes `getDataModel(...)`
+as an *argument*, and Java evaluates arguments first), and `onError` does not build a second `OAuth2Request`
+(`OAuth2RequestFactory.create` caches on the `AttributesContext`).
+
+**Next: 5b-2** — device/user, checkSession, endSession. It consumes `AbstractOAuth2HttpBrowserEndpoint` (both
+mappers, including D7's, inherited without doing anything) and `ConsentPageRenderer` unchanged; the renderer's
+query-only reads were written for exactly that reuse, since 5b-2 renders the same model from inside a `@Post`
+(R-5b1.9).

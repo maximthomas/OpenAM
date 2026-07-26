@@ -206,6 +206,28 @@ public final class OAuth2Error {
     }
 
     /**
+     * As {@link #of(int, String, String)}, but keeping the throwable that prompted the error for the log.
+     * <p>
+     * For the paths that <em>build</em> a status rather than mapping an exception's own, yet still have a
+     * throwable worth recording -- {@code onIllegalArgument} is the case it was added for. Without it, an
+     * {@link IllegalArgumentException} raised anywhere under a browser endpoint is reported as one line naming
+     * neither the frame that threw nor the fault, which is survivable while the cause is a client's
+     * {@code ?display=bogus} and not while it is a mis-wired collaborator.
+     * <p>
+     * A fourth factory rather than a {@code withCause} wither because {@link #cause} is {@code final}: the
+     * withers copy-then-assign, which only works for the fields deliberately left assignable.
+     *
+     * @param statusCode the HTTP status code.
+     * @param error the RFC 6749 error code; {@code null} or empty becomes {@code server_error}.
+     * @param description the human-readable description, may be {@code null}.
+     * @param cause the throwable to record, may be {@code null}. Never rendered and never on the wire.
+     * @return the error, with parameters defaulting to the query string.
+     */
+    public static OAuth2Error of(int statusCode, String error, String description, Throwable cause) {
+        return new OAuth2Error(statusCode, error, description, UrlLocation.QUERY, cause, null, false);
+    }
+
+    /**
      * Decides whether an exception may be redirected to a request-supplied {@code redirect_uri}.
      *
      * @param exception the exception to judge.

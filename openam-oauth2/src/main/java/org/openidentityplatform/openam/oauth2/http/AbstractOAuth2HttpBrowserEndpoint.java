@@ -106,8 +106,12 @@ public abstract class AbstractOAuth2HttpBrowserEndpoint extends AbstractOAuth2Ht
     public Response onIllegalArgument(IllegalArgumentException e, @Contextual Context ctx,
             @Contextual Request request) {
         OAuth2Request o2 = requestFactory.create(ctx, request);
+        // The four-argument of(): the throwable is kept for the log, never for the wire. Most exceptions
+        // arriving here are client-caused (a bad parameter, an unknown ?display=) and stay at debug, but the
+        // ones that are not are internal faults wearing a 400, and without the cause the single line recording
+        // one names neither the frame that threw nor the fault.
         return withErrorHeaders(errorResponseFactory.toResponse(o2,
-                OAuth2Error.of(400, "invalid_request", e.getMessage())
+                OAuth2Error.of(400, "invalid_request", e.getMessage(), e)
                         .withState(o2.<String>getParameter(OAuth2Constants.Params.STATE))));
     }
 }

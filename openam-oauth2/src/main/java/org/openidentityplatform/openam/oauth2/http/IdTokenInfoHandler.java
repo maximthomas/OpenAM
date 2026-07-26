@@ -15,6 +15,7 @@
  */
 package org.openidentityplatform.openam.oauth2.http;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -206,6 +207,11 @@ public class IdTokenInfoHandler extends AbstractOAuth2HttpJsonEndpoint {
         @Override
         public Locale getLocale() {
             return delegate.getLocale();
+        }
+
+        @Override
+        public List<String> getAcceptedLanguages() {
+            return delegate.getAcceptedLanguages();
         }
 
         @Override

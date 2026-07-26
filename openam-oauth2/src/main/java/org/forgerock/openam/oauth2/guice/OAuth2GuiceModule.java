@@ -140,6 +140,7 @@ import org.forgerock.openidconnect.OpenIdConnectTokenStore;
 import org.forgerock.openidconnect.OpenIdResourceOwnerConsentVerifier;
 import org.forgerock.openidconnect.SubjectTypeValidator;
 import org.forgerock.openidconnect.restlet.LoginHintHook;
+import org.openidentityplatform.openam.oauth2.http.ChfAuthorizeRequestHook;
 import org.openidentityplatform.openam.oauth2.http.ChfTokenRequestHook;
 import org.forgerock.openidconnect.ssoprovider.OpenIdConnectSSOProvider;
 import org.forgerock.util.thread.ExecutorServiceFactory;
@@ -235,6 +236,10 @@ public class OAuth2GuiceModule extends AbstractModule {
         final Multibinder<ChfTokenRequestHook> chfTokenRequestHooks = Multibinder.newSetBinder(
                 binder(), ChfTokenRequestHook.class);
         chfTokenRequestHooks.addBinding().to(LoginHintHook.class);
+
+        final Multibinder<ChfAuthorizeRequestHook> chfAuthorizeRequestHooks = Multibinder.newSetBinder(
+                binder(), ChfAuthorizeRequestHook.class);
+        chfAuthorizeRequestHooks.addBinding().to(LoginHintHook.class);
 
         install(new FactoryModuleBuilder()
                 .implement(ResourceSetStore.class, OpenAMResourceSetStore.class)

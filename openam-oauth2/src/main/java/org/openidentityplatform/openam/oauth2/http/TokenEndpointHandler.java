@@ -29,7 +29,6 @@ import java.util.Set;
 
 import jakarta.inject.Inject;
 
-import org.forgerock.http.header.ContentTypeHeader;
 import org.forgerock.http.protocol.Request;
 import org.forgerock.http.protocol.Response;
 import org.forgerock.http.protocol.Status;
@@ -55,8 +54,6 @@ import org.forgerock.services.context.Context;
  */
 public class TokenEndpointHandler extends AbstractOAuth2HttpJsonEndpoint {
 
-    private static final String FORM_URLENCODED = "application/x-www-form-urlencoded";
-
     /** The finder's known access grants -- everything it routes to {@code requestAccessToken}. */
     private static final Set<String> ACCESS_GRANTS = Set.of(
             AUTHORIZATION_CODE, CLIENT_CREDENTIALS, PASSWORD, DEVICE_CODE, JWT_BEARER, SAML2_BEARER);
@@ -74,8 +71,11 @@ public class TokenEndpointHandler extends AbstractOAuth2HttpJsonEndpoint {
      */
     @Post
     public Response token(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception {
-        OAuth2Request o2 = requestFactory.create(ctx, request);
+        // Before the request is built, as the filter ran before the resource: OAuth2RequestFactory.create
+        // performs an unconditional ClientRegistrationStore.get, so validating second would let a flood of
+        // malformed posts cost one client-registration lookup each.
         validateContentType(request);
+        OAuth2Request o2 = requestFactory.create(ctx, request);
         AccessToken token = issue(o2.<String>getParameter(GRANT_TYPE), o2);
         // setEntity(Map) -> setJson -> application/json; charset=UTF-8. noCache() adds the OAuth2Filter's
         // no-store/no-cache after the entity write so it does not clobber them (error path: base onError).
@@ -116,19 +116,13 @@ public class TokenEndpointHandler extends AbstractOAuth2HttpJsonEndpoint {
     }
 
     /**
-     * Reproduces {@code TokenEndpointFilter.validateContentType}: an <em>empty body</em> is never checked (the
-     * filter only inspected a non-empty entity), and a null/empty content type is allowed; otherwise the type must
-     * be {@code application/x-www-form-urlencoded}, matched case-insensitively (media types are, per RFC 7231, and
-     * the Restlet {@code MediaType.equals} was). The charset-safe parse ({@code getType()} strips any
-     * {@code ;charset=...}) is why a bare string compare against the raw header would wrongly reject a
-     * {@code ;charset=UTF-8} body.
+     * {@code TokenEndpointFilter.validateContentType}. The rule is shared with {@code /authorize} -- see
+     * {@link OAuth2ContentTypes#isFormUrlEncoded} -- and this endpoint <em>throws</em> where that one builds
+     * its refusal, because here {@code InvalidRequestException} reaches a JSON base mapper rather than a
+     * browser one that would redirect it.
      */
     private void validateContentType(Request request) throws InvalidRequestException {
-        if (request.getEntity().isRawContentEmpty()) {
-            return;
-        }
-        String type = ContentTypeHeader.valueOf(request).getType();
-        if (type != null && !type.isEmpty() && !FORM_URLENCODED.equalsIgnoreCase(type)) {
+        if (!OAuth2ContentTypes.isFormUrlEncoded(request)) {
             throw new InvalidRequestException("Invalid Content Type");
         }
     }

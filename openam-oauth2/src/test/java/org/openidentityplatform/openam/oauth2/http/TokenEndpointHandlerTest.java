@@ -190,7 +190,13 @@ public class TokenEndpointHandlerTest {
         assertThat(response.getStatus().getCode()).isEqualTo(200);
     }
 
-    /** Media types are case-insensitive (RFC 7231); Restlet's MediaType.equals accepted mixed case, so we must too. */
+    /**
+     * ⚠ A <strong>recorded divergence</strong>, not parity. This row used to claim "Restlet's MediaType.equals
+     * accepted mixed case, so we must too"; {@code RestletContentTypeParityTest} then drove the real filter and
+     * showed the opposite — {@code MediaType.equals} compares names case-sensitively, so Restlet 400'd this
+     * header even though RFC 7231 §3.1.1.1 says it is legal. The acceptance stays because it can only turn a
+     * Restlet 400 into a success and never the reverse; only the false justification is gone.
+     */
     @Test
     public void mixedCaseFormContentTypeIsAccepted() throws Exception {
         grant("authorization_code");
@@ -201,14 +207,21 @@ public class TokenEndpointHandlerTest {
         assertThat(response.getStatus().getCode()).isEqualTo(200);
     }
 
+    /**
+     * ⚠ This row asserted 200 until 2026-07-26, on the reading that a null type means "no opinion". The oracle
+     * says otherwise: Restlet's test is {@code !APPLICATION_WWW_FORM.equals(mediaType)} and {@code equals(null)}
+     * is false, so a body with no {@code Content-Type} was always a 400. The old expectation was the defect
+     * written down as an assertion, which is why the parity table exists.
+     */
     @Test
-    public void noContentTypeIsAccepted() throws Exception {
+    public void noContentTypeIsRejected() throws Exception {
         grant("authorization_code");
         when(accessTokenService.requestAccessToken(o2)).thenReturn(token);
 
-        Response response = post(null, BODY);   // body present, no Content-Type header -> type == null -> allowed
+        Response response = post(null, BODY);   // body present, Content-Type header absent
 
-        assertThat(response.getStatus().getCode()).isEqualTo(200);
+        assertThat(response.getStatus().getCode()).isEqualTo(400);
+        assertThat(response.getEntity().getString()).contains("invalid_request").contains("Invalid Content Type");
     }
 
     /** A non-form content type is rejected only when the body is non-empty (TokenEndpointFilter's entity check). */

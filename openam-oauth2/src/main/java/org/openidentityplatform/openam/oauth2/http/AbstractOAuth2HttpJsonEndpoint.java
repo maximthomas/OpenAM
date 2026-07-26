@@ -15,12 +15,9 @@
  */
 package org.openidentityplatform.openam.oauth2.http;
 
-import jakarta.inject.Inject;
-
 import org.forgerock.http.protocol.Request;
 import org.forgerock.http.protocol.Response;
 import org.forgerock.oauth2.core.OAuth2Request;
-import org.forgerock.oauth2.core.OAuth2RequestFactory;
 import org.forgerock.oauth2.core.exceptions.OAuth2Exception;
 import org.forgerock.openam.http.annotations.Contextual;
 import org.forgerock.openam.http.annotations.ExceptionHandler;
@@ -37,14 +34,11 @@ import org.forgerock.services.context.Context;
  *
  * <p>The framework discovers {@code @ExceptionHandler} on inherited methods, so declaring it once here
  * covers every subclass. ⚠ Subclasses must <strong>not</strong> override {@link #onError} -- Java does not
- * carry an annotation onto an override, so an overriding method would silently lose the mapper.
+ * carry an annotation onto an override, so an overriding method would silently lose the mapper. The browser
+ * rendering lives on the sibling {@link AbstractOAuth2HttpBrowserEndpoint}, not on a subclass of this one, for
+ * the same reason; the shared members are on {@link AbstractOAuth2HttpEndpoint}.
  */
-public abstract class AbstractOAuth2HttpJsonEndpoint {
-
-    @Inject
-    protected OAuth2RequestFactory requestFactory;
-    @Inject
-    protected OAuth2ErrorResponseFactory errorResponseFactory;
+public abstract class AbstractOAuth2HttpJsonEndpoint extends AbstractOAuth2HttpEndpoint {
 
     /**
      * @param e the exception the endpoint method threw (handed over directly by the framework, not wrapped).
@@ -58,26 +52,5 @@ public abstract class AbstractOAuth2HttpJsonEndpoint {
         Response response = errorResponseFactory.toJsonResponse(
                 OAuth2Error.of(e).withState(o2.<String>getParameter("state")));
         return withErrorHeaders(response);
-    }
-
-    /**
-     * Endpoint-specific headers for the error response. Default: none -- most OAuth2 JSON endpoints add no cache
-     * headers on their error path. Only {@code /access_token} (and {@code /authorize}) did, via the Restlet
-     * {@code OAuth2Filter}; {@code TokenEndpointHandler} overrides this to {@link #noCache}.
-     */
-    protected Response withErrorHeaders(Response response) {
-        return response;
-    }
-
-    /**
-     * Stamps {@code Cache-Control: no-store} + {@code Pragma: no-cache} -- the directives the Restlet
-     * {@code OAuth2Filter} added to every {@code /access_token} (and {@code /authorize}) response, success and
-     * error. Only those two endpoints inherited it; the other OAuth2 JSON endpoints set their own cache header
-     * (or none), so this is opt-in per handler, not a base default.
-     */
-    protected static Response noCache(Response response) {
-        response.getHeaders().put("Cache-Control", "no-store");
-        response.getHeaders().put("Pragma", "no-cache");
-        return response;
     }
 }

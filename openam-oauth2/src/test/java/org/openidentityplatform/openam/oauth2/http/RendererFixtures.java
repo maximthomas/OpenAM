@@ -20,8 +20,10 @@ import static org.forgerock.json.JsonValue.field;
 import static org.forgerock.json.JsonValue.json;
 import static org.forgerock.json.JsonValue.object;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.forgerock.json.JsonValue;
@@ -71,7 +73,7 @@ final class RendererFixtures {
      * The consent-page model, from {@code ConsentRequiredResource.getDataModel}. Shared by all four
      * display folders: the producer does not vary by display — only the templates differ in which keys
      * they read (only {@code page/authorize.ftl} reads {@code saveConsentEnabled}; only
-     * {@code wap/authorize.ftl} reads the never-populated {@code display_scope}).
+     * {@code wap/authorize.ftl} reads {@code display_scope}).
      */
     static Map<String, Object> authorize() {
         Map<String, Object> data = new HashMap<>();
@@ -108,24 +110,35 @@ final class RendererFixtures {
     }
 
     /**
-     * Mirrors {@code ConsentRequiredResource.addDisplayScopesAndClaims:110-153}, including its ordering:
-     * the scope object is added to the array <em>before</em> {@code values} is put on it ({@code :119} then
-     * {@code :123}), which works because {@code JsonValue.getObject()} hands back the live underlying map.
+     * Mirrors {@code ConsentRequiredResource.addDisplayScopesAndClaims:110-161}, including its ordering:
+     * the scope object is added to the array <em>before</em> {@code values} is put on it ({@code :123} then
+     * {@code :127}), which works because {@code JsonValue.getObject()} hands back the live underlying map.
      * Reproduced rather than simplified so the emitted JSON text matches production exactly.
      */
     private static void addDisplayScopesAndClaims(Map<String, Object> data) {
         JsonValue scopes = json(array());
+        List<String> scopeNames = new ArrayList<>();
 
         JsonValue profile = json(object(field("name", "View your profile")));
         scopes.add(profile.getObject());
+        scopeNames.add("View your profile");
 
         JsonValue email = json(object(field("name", "View your email address")));
         scopes.add(email.getObject());
+        scopeNames.add("View your email address");
         LinkedHashMap<String, Object> emailClaims = new LinkedHashMap<>();
-        emailClaims.put("Email address", "demo@example.com");
+        // ESAPI-encoded, like every claim description and value: :135-137 pushes BOTH through
+        // encodeForHTML, which turns "@" into "&#x40;". The first cut of this fixture wrote the raw address
+        // -- invisible to the parity test, which feeds the same model to both legs, and caught only when
+        // ConsentPageRenderer (S7) produced the model from the real code instead of by hand.
+        emailClaims.put("Email address", "demo&#x40;example.com");
         email.put("values", emailClaims);
 
-        data.put("display_scopes", scopes.toString());      // :139 — JSON text, not a collection.
+        data.put("display_scopes", scopes.toString());      // :143 — JSON text, not a collection.
+        // :147 — the RAW descriptions, as a List. Added by the CVE-2026-62280 fix (2026-07-20), which is
+        // why the first cut of this fixture predates it; wap/authorize.ftl is the only reader, and it
+        // applies ?html itself. Written after the query copy so a client cannot supply its own.
+        data.put("display_scope", scopeNames);
 
         JsonValue claims = json(array());
         claims.add(object(

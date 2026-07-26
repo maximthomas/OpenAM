@@ -217,6 +217,21 @@ public class RestletOAuth2RequestTest {
         assertThat(request.getBasicAuthCredentials().getClientId()).isNull();
     }
 
+    /**
+     * {@code RestletOAuth2Request} is the one subclass that does not override
+     * {@link OAuth2Request#getAcceptedLanguages()} -- correctly, since the Restlet resources read
+     * {@code ClientInfo} directly and never call it. This pins what it inherits: the wildcard, which is what
+     * S4 proved an absent {@code Accept-Language} produces on the wire. The empty list it used to inherit
+     * would render {@code locale: ""} into the consent page if a shared collaborator were ever handed a
+     * Restlet-backed request -- a value no live request has ever produced.
+     */
+    @Test
+    public void theInheritedAcceptedLanguagesAreTheWildcardNotAnEmptyList() {
+        RestletOAuth2Request request = restletRequest(BASE_URI + "/authorize");
+
+        assertThat(request.getAcceptedLanguages()).containsExactly("*");
+    }
+
     // --- helpers ------------------------------------------------------------------------------
 
     /** Builds a request routed as the Restlet realm router leaves it: {@code realmUrl} is the OAuth2 base. */

@@ -18,7 +18,9 @@ package org.openidentityplatform.openam.oauth2.core;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Enumeration;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -32,6 +34,7 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import org.forgerock.http.header.AcceptLanguageHeader;
 import org.forgerock.http.header.ContentTypeHeader;
+import org.forgerock.http.header.HeaderUtil;
 import org.forgerock.http.protocol.Form;
 import org.forgerock.http.protocol.Request;
 import org.forgerock.http.routing.UriRouterContext;
@@ -61,6 +64,8 @@ public class ChfOAuth2Request extends OAuth2Request {
     private static final String JSON_CONTENT_TYPE = "application/json";
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER = "Bearer";
+    /** Restlet's {@code Language.ALL} name, its default when no {@code Accept-Language} was sent. */
+    private static final String ALL_LANGUAGES = "*";
 
     private final Logger logger = LoggerFactory.getLogger("OAuth2Provider");
     private final Context context;
@@ -70,6 +75,7 @@ public class ChfOAuth2Request extends OAuth2Request {
     private Form queryForm;
     private Form formBody;
     private JsonValue body;
+    private List<String> acceptedLanguages;
 
     /**
      * Constructs a new ChfOAuth2Request.
@@ -155,6 +161,75 @@ public class ChfOAuth2Request extends OAuth2Request {
         }
         // HttpServletRequest#getLocale() falls back to the server default when the header is absent.
         return Locale.getDefault();
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Read from the <strong>servlet</strong> request, not from {@link Request#getHeaders()}: CHF re-parses
+     * {@code Accept-Language} through {@link AcceptLanguageHeader} on the way in, which re-sorts the tags by
+     * quality, synthesises {@code q} values by position and normalises case, so the raw header is
+     * unrecoverable from the CHF request. The servlet request still carries the client's bytes, which is also
+     * where Restlet's own adapter read them -- so this matches
+     * {@code ClientInfo.getAcceptedLanguages()} tag for tag ({@code RestletAcceptLanguageParityTest}).
+     *
+     * <p>Tags are returned in <em>header order</em>: Restlet does not sort by {@code q}, so neither do we.
+     * An absent header yields {@code ["*"]} (Restlet's {@code Language.ALL} default); a present-but-empty one
+     * yields an empty list.
+     *
+     * <p>Falls back to the CHF header when the chain carries no servlet request (unit tests, non-servlet
+     * transports). That branch is <strong>best-effort, not byte-parity</strong> -- it reads the canonicalised
+     * value described above, so ordering, case and the empty-header answer may all differ. Every servlet
+     * deployment takes the first branch.
+     */
+    @Override
+    public List<String> getAcceptedLanguages() {
+        // Cached like the other derived values on this class: the header cannot change within a request, the
+        // consent path reads it per render, and getHeaders() hands back a one-shot Enumeration.
+        if (acceptedLanguages == null) {
+            acceptedLanguages = parseAcceptedLanguages();
+        }
+        return acceptedLanguages;
+    }
+
+    private List<String> parseAcceptedLanguages() {
+        HttpServletRequest servletRequest = getHttpServletRequest();
+        String header = servletRequest != null
+                ? joinHeaderLines(servletRequest.getHeaders(AcceptLanguageHeader.NAME))
+                : request.getHeaders().getFirst(AcceptLanguageHeader.NAME);
+        if (header == null) {
+            return Collections.singletonList(ALL_LANGUAGES);
+        }
+        List<String> tags = new ArrayList<>();
+        // HeaderUtil.split is quoted-string aware INCLUDING the RFC 2616 2.2 backslash escape. The escape is
+        // the part a hand-rolled quote toggle gets wrong, and only that part: the toggle this replaced read
+        // `en;x="a,b",de` correctly, while `en;x="a\",b",de` closed the quote on the escaped `"` and fabricated
+        // a `b"` tag. That second input is the parity row that failed first and drove the swap. (A plain
+        // split(',') mangles both, which is why the toggle existed at all.)
+        for (String element : HeaderUtil.split(header, ',')) {
+            // Everything after the first ';' is q and extension parameters, which only affect an ordering
+            // Restlet does not apply.
+            int semicolon = element.indexOf(';');
+            String tag = (semicolon < 0 ? element : element.substring(0, semicolon)).trim();
+            if (!tag.isEmpty()) {
+                tags.add(tag);
+            }
+        }
+        return Collections.unmodifiableList(tags);
+    }
+
+    /**
+     * Folds repeated header lines into one comma-separated value, the way Restlet's adapter does
+     * ({@code Series.getValues(name)}). {@code HttpServletRequest.getHeader} would return only the first line,
+     * silently dropping every tag a client sent on a second {@code Accept-Language} line.
+     *
+     * @return the joined value, or {@code null} when the request carried no such header at all.
+     */
+    private static String joinHeaderLines(Enumeration<String> values) {
+        if (values == null || !values.hasMoreElements()) {
+            return null;
+        }
+        return String.join(",", Collections.list(values));
     }
 
     /**

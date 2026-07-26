@@ -275,6 +275,45 @@ root.setDefaultRoute(Handlers.chainOf(innerChain, realmContextFilter));
   via `setJson`/`setEntity(Object)` — useful in filters/tests that need to inspect a body that was
   just set programmatically in the same process.
 
+### ⚠ `Headers` re-parses known headers on the way **in** — the raw value is unrecoverable (Phase 5b-1a)
+
+`Headers.put(String, Object)` / `add(String, Object)` look the name up in a static `FACTORIES` map and,
+when one matches, **store the parsed `Header` object instead of the string you passed**
+(`Headers.java:136-145`, `putUsingFactory`). `getFirst(name)` then re-renders that object. So for every
+header commons has a factory for, the value you read is the factory's *canonical* rendering, not the
+client's bytes — and `HttpFrameworkServlet.createRequest` populates the request through exactly this path
+(`request.getHeaders().add(name, list(req.getHeaders(name)))`, `:309-312`), so it applies in production, not
+just in tests. Only headers whose factory **throws** `MalformedHeaderException` fall back to a
+`GenericHeader` and survive verbatim.
+
+Measured for `Accept-Language` (`AcceptLanguageHeader` → `PreferredLocales`), 2026-07-26:
+
+| Client sent | `getFirst("Accept-Language")` returns |
+|---|---|
+| `en-GB,en;q=0.8,fr;q=0.9` | `en-GB;q=1,fr;q=0.9,en;q=0.8` — **re-sorted by quality** |
+| `de,fr` | `de;q=1,fr;q=0.9` — **q values invented by position** |
+| `en-GB, fr ; q=0.5` | `en-GB;q=1,fr;q=0.9` — **the client's 0.5 is discarded** |
+| `en;q=0` | `en;q=1` — a "not acceptable" tag **promoted to preferred** |
+| `EN-gb` | `en-GB;q=1` — case normalised |
+| `` (empty) | `*;q=1` via `add`, absent via `put` |
+| `en;q=bogus` | `en;q=bogus` — parse failed ⇒ `GenericHeader` ⇒ raw survives |
+
+⇒ **If you need a header exactly as the client sent it, read it from the servlet request**
+(`OAuth2Request.getHttpServletRequest()`), which is also where Restlet's own adapter read it, and keep the CHF
+header as a best-effort fallback for non-servlet transports. `ChfOAuth2Request.getAcceptedLanguages()` does
+this; `RestletAcceptLanguageParityTest` is the proof. Nothing about this is specific to `Accept-Language` —
+check `FACTORIES` before trusting any `getFirst`.
+
+> **⚠ Use `getHeaders(name)` (plural), not `getHeader(name)`.** A client may split one logical header over
+> several lines. Restlet's adapter folds them with `getRequestHeaders().getValues(name)`, which **joins with a
+> comma**; `HttpServletRequest.getHeader` returns only the *first* line. Reproduce the fold:
+> `String.join(",", Collections.list(servletRequest.getHeaders(name)))`. A parity test whose fixture is a
+> single `String` cannot reach this case — drive it with a list of header lines.
+>
+> **Read the jar the reactor actually resolves.** OpenAM depends on
+> `org.openidentityplatform.openam.jakarta:org.restlet`, a fork — **not** upstream `org.restlet.jee:2.4.4`.
+> `mvn -o -pl <module> dependency:tree | grep restlet` before `javap`; the two differ where it matters.
+
 ## 7. CHF request-side parameter & body parsing (`ChfOAuth2Request`, Phase 3a)
 
 The read side of a migrated request — every handler in 3b/4/5 that pulls params/body off a raw
@@ -683,4 +722,102 @@ Verified in `commons/http-framework/servlet/.../HttpFrameworkServlet.java:293-32
 **Related gap (Phase 5b-1):** there was no neutral accessor for the *list* of `Accept-Language` tags —
 `OAuth2Request.getLocale()` collapses the header to a single `Locale`. The consent page's `locale` key needs the
 raw preference-ordered tags, so `getAcceptedLanguages()` is added in 5b-1a and A/B'd against Restlet's
-`ClientInfo` parser ([phase-5b-1 D3](phase-5b-1.md#d3)) — planned 2026-07-25, not yet built.
+`ClientInfo` parser ([phase-5b-1 D3](phase-5b-1.md#d3)) — **built 2026-07-26**; the parity table is the
+authority on its behaviour, and it diverges from D3's predictions in four places
+([phase-5b-1 as-built S4](phase-5b-1.md#as-built-s4)).
+
+⇒ **When a neutral accessor needs a base default, use the value an absent header produces — not "empty".**
+`getAcceptedLanguages()` defaults to `List.of("*")`, because its tags are *joined into a page* and an empty
+list renders `locale: ""`, a value no live request produces (a client that sends no `Accept-Language` yields
+`*`). "This transport cannot tell you" and "the client did not ask" both mean *no stated preference*, so they
+should answer alike; consumers already handle the wildcard, and none handle `""`. The alternative — making the
+accessor `abstract` so the compiler forces every transport to answer — is worse here: it obliges the Restlet
+subclass and its decorators to implement a call that never happens, i.e. **new Restlet code written during the
+phase whose purpose is deleting Restlet**. Applies to any further neutral accessor these phases add.
+
+## 19. What the Restlet `OAuth2Filter` did around **every** OAuth2 resource (Phase 5b-1)
+
+`org.forgerock.oauth2.restlet.OAuth2Filter.beforeHandle:58-79`, read while porting `/authorize`. Every ported
+endpoint under `/oauth2` inherits these three behaviours from the filter that wrapped it, and a CHF handler has
+to reproduce them itself — nothing wraps it any more.
+
+1. **`validateMethod`, then `validateContentType` — on every method.** The content-type check is *not* gated on
+   the verb, so a `GET` carrying a non-empty entity is refused exactly as a `POST` is. Reproduce it on **every**
+   verb of the ported handler; the normal bodyless GET early-returns on `isRawContentEmpty()`, so it costs
+   nothing. Checking only the body-bearing verb silently widens what the endpoint accepts.
+   The two subclasses differ only in their verb list — `TokenEndpointFilter` (POST) and `AuthorizeEndpointFilter`
+   (GET or POST) — and carry a **byte-identical** `validateContentType`, so the 5a-1 recipe ports verbatim
+   ([§5](#5-chf-handler-test-scaffolding)).
+
+   ⚠ **Two things about that check are not what a reader predicts, and both were ported wrong before an oracle
+   caught them** (`RestletContentTypeParityTest`, which drives the real filters). The whole check is
+   `!MediaType.APPLICATION_WWW_FORM.equals(entity.getMediaType())`, so *everything* turns on that one `equals`:
+   - **A body with no `Content-Type` at all is a 400, not a pass.** `equals(null)` is false, the negation fires,
+     Restlet threw. Reading a null type as "no opinion" is the natural mistake and it is worse than a wrong
+     status: `ChfOAuth2Request.getParameter` reads a POST body only when the type *is* form, so on `/authorize`
+     the consent form's `decision=allow` arrives as `null`, `consentGiven` becomes `false`, and the resource
+     owner's approval is delivered to the service as a **refusal** — `access_denied` to the client, no error
+     logged anywhere.
+   - **The comparison is case-sensitive.** `MediaType.valueOf` preserves the spelling and `MediaType.equals`
+     compares names, so Restlet 400'd an `APPLICATION/X-WWW-FORM-URLENCODED` that RFC 7231 §3.1.1.1 says is
+     legal. The CHF ports compare case-insensitively — a deliberate widening, since it can only turn a Restlet
+     400 into a success, never the reverse.
+
+   A `;charset=UTF-8` parameter is *not* part of the comparison on either side: Restlet's `ContentType` splits
+   the charset into the representation's character set before `equals` sees it, which `ContentTypeHeader.getType()`
+   matches. The rule now lives once, in `OAuth2ContentTypes.isFormUrlEncoded`, because two independent ports of
+   it drifted into the same defect.
+2. **`Cache-Control: no-store` + `Pragma: no-cache`, unconditionally**, on success *and* error, after the
+   validation. Only `/access_token` and `/authorize` were wrapped by an `OAuth2Filter` subclass, which is why
+   `noCache` is opt-in per handler rather than a base default.
+   ⚠ **No handler can close this one from the inside**, and that is the point: a response the *framework*
+   produces — the 405 for an unannotated verb, the 404, the CREST 500 for an unmatched throwable — never reaches
+   the handler or its `withErrorHeaders`, so per-method stamping cannot cover it. Restlet had no such hole
+   because its filter *wrapped* the resource instead of being called by it. ⇒ **`OAuth2NoCacheFilter`** restores
+   exactly that: a filter that stamps every response, composed on `/authorize` and `/access_token` **only** —
+   applying it to the whole `/oauth2` application would be a widening, for the same reason `noCache` is opt-in.
+   The handlers keep their own `noCache` calls; `Headers.put` makes the overlap idempotent, and it keeps them
+   correct when driven directly, which is how the unit suites drive them.
+3. **It returns `CONTINUE` even after writing an error** — the CONTINUE bug. The ported handler always
+   **returns**; it must never reproduce the fall-through. Whether each filter error actually survived to the
+   wire is an observation, not a derivation: capture it live before porting
+   ([phase-3c-2](phase-3c-2-error-layer.md)).
+
+**Adjacent fact, same phase:** `templates/page/error.ftl` interpolates only `error` and `error_description`.
+The `state` the error producer has always put in its data model reaches **no template**, so the HTML error page
+does not echo `state` — only the *redirect* branch does, where it rides in `asMap()` as a query parameter.
+
+
+## 20. On the browser base, **build** your errors — never throw them (Phase 5b-1)
+
+A handler under `AbstractOAuth2HttpJsonEndpoint` can throw any `OAuth2Exception` safely: that base has one
+rendering, a JSON body at the exception's status. A handler under `AbstractOAuth2HttpBrowserEndpoint`
+**cannot**, and the difference is a security boundary rather than a style choice.
+
+`onError` redirects whenever `OAuth2Error.mayRedirect(e)` is true and the request carries a `redirect_uri`, and
+`mayRedirect` keys on **exception type** against a fixed `NEVER_REDIRECT` list. So the two types a handler
+reaches for when it detects a problem itself are both redirectable:
+
+| Thrown | Reaches the browser base as | Restlet did |
+|---|---|---|
+| `InvalidRequestException` (bad content type, missing parameter) | **302** to the request's raw `redirect_uri` | 400 page — `OAuth2RestletException(status, error, msg, state)`, redirect null (`OAuth2Filter:66-70`) |
+| `ServerException` (template fault, wrapped bug) | **302**, error description in the client's query string | 400 page — `ExceptionHandler.handle(Throwable, …):86-89`, redirect null |
+
+In both cases the request failed **before the client was resolved**, so the `redirect_uri` has been validated by
+nothing: the redirect is an open redirect, and it exfiltrates the error description with it.
+
+⇒ **Rule.** An error a browser handler *detects itself* is built, not thrown:
+
+```java
+return withErrorHeaders(errorResponseFactory.toResponse(o2,
+        OAuth2Error.of(400, "invalid_request", description).withState(o2.<String>getParameter(STATE))));
+```
+
+`OAuth2Error.of(int, String, String)` carries **no** redirect target, so `toResponse` takes the page branch by
+construction — the property is structural, not a guard someone has to remember. Throwing stays correct for
+errors the *core* raises, which is what the collapse in [phase-5b-1 D9](phase-5b-1.md#d9) is about; the
+distinction is who detected the problem, not how severe it is.
+
+**Test rule that follows:** every row asserting a self-built error must stub a `redirect_uri`. Without it the
+response takes the page branch either way and the row passes whichever form the handler used — which is exactly
+how both defects reached review in 5b-1.

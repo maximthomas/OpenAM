@@ -19,7 +19,9 @@ package org.openidentityplatform.openam.oauth2.core;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonMap;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -380,6 +382,95 @@ public class ChfOAuth2RequestTest {
         ChfOAuth2Request request = chfRequest(get("/oauth2/authorize"), endpointContext("authorize", emptyMap()));
 
         assertThat(request.getLocale()).isEqualTo(Locale.getDefault());
+    }
+
+    // --- accepted languages ------------------------------------------------------------------
+
+    /**
+     * The tags the consent page joins into its {@code locale} key. Ordering, case and the {@code *} defaults
+     * are settled against the live Restlet parser in {@code RestletAcceptLanguageParityTest}; these rows pin
+     * the CHF contract on its own terms.
+     */
+    @Test
+    public void acceptedLanguagesAreTheRawTagsInHeaderOrder() throws Exception {
+        ChfOAuth2Request request = requestAcceptingLanguages("en-GB,en;q=0.8,fr;q=0.9");
+
+        assertThat(request.getAcceptedLanguages()).containsExactly("en-GB", "en", "fr");
+    }
+
+    @Test
+    public void acceptedLanguagesPreserveTheClientsSpelling() throws Exception {
+        assertThat(requestAcceptingLanguages("EN-gb").getAcceptedLanguages()).containsExactly("EN-gb");
+    }
+
+    @Test
+    public void acceptedLanguagesAreTheWildcardWhenTheHeaderIsAbsent() throws Exception {
+        assertThat(requestAcceptingLanguages().getAcceptedLanguages()).containsExactly("*");
+    }
+
+    @Test
+    public void acceptedLanguagesAreEmptyWhenTheHeaderIsPresentButEmpty() throws Exception {
+        assertThat(requestAcceptingLanguages("").getAcceptedLanguages()).isEmpty();
+    }
+
+    /** Without a servlet request there is nothing but the canonicalised CHF header to fall back on. */
+    @Test
+    public void acceptedLanguagesFallBackToTheChfHeaderWithoutAServletRequest() throws Exception {
+        Request httpRequest = get("/oauth2/authorize");
+        httpRequest.getHeaders().put("Accept-Language", "fr");
+
+        ChfOAuth2Request request = chfRequest(httpRequest, endpointContext("authorize", emptyMap()));
+
+        assertThat(request.getAcceptedLanguages()).containsExactly("fr");
+    }
+
+    /**
+     * A client may split its tags over several {@code Accept-Language} lines; Restlet's adapter folds them
+     * with a comma, so {@code getHeader} (singular) would silently drop all but the first.
+     */
+    @Test
+    public void acceptedLanguagesFoldRepeatedHeaderLines() throws Exception {
+        ChfOAuth2Request request = requestAcceptingLanguages("en-GB", "en;q=0.8", "fr");
+
+        assertThat(request.getAcceptedLanguages()).containsExactly("en-GB", "en", "fr");
+    }
+
+    /**
+     * {@code getLocale()} has its own contract and its own source -- the CHF header -- and must not shift
+     * with the new accessor. Both are populated here, and differently, so the row fails if either accessor
+     * starts reading the other's source.
+     */
+    @Test
+    public void acceptedLanguagesDoNotAffectGetLocale() throws Exception {
+        Request httpRequest = get("/oauth2/authorize");
+        httpRequest.getHeaders().put("Accept-Language", "fr");           // getLocale()'s source
+        HttpServletRequest servletRequest = mock(HttpServletRequest.class);
+        when(servletRequest.getHeaders("Accept-Language"))
+                .thenReturn(java.util.Collections.enumeration(java.util.List.of("de")));
+        attributesContext.getAttributes().put(HttpServletRequest.class.getName(), servletRequest);
+
+        ChfOAuth2Request request = chfRequest(httpRequest, endpointContext("authorize", emptyMap()));
+
+        assertThat(request.getAcceptedLanguages()).containsExactly("de");
+        assertThat(request.getLocale()).isEqualTo(Locale.forLanguageTag("fr"));
+    }
+
+    /** The tags are a read-only view whatever the request carried -- never mutable on one branch only. */
+    @Test
+    public void acceptedLanguagesAreUnmodifiable() throws Exception {
+        assertThatThrownBy(() -> requestAcceptingLanguages("en").getAcceptedLanguages().add("fr"))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> requestAcceptingLanguages().getAcceptedLanguages().add("fr"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    /** The production shape: the header comes off the servlet request, not off the CHF request. */
+    private ChfOAuth2Request requestAcceptingLanguages(String... headerLines) throws Exception {
+        HttpServletRequest servletRequest = mock(HttpServletRequest.class);
+        when(servletRequest.getHeaders("Accept-Language"))
+                .thenReturn(java.util.Collections.enumeration(java.util.List.of(headerLines)));
+        attributesContext.getAttributes().put(HttpServletRequest.class.getName(), servletRequest);
+        return chfRequest(get("/oauth2/authorize"), endpointContext("authorize", emptyMap()));
     }
 
     // --- servlet request / response -----------------------------------------------------------

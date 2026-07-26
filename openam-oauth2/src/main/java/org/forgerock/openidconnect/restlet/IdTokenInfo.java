@@ -20,6 +20,7 @@ package org.forgerock.openidconnect.restlet;
 import jakarta.inject.Inject;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
@@ -284,6 +285,11 @@ public class IdTokenInfo extends ServerResource {
         @Override
         public Locale getLocale() {
             return delegate.getLocale();
+        }
+
+        @Override
+        public List<String> getAcceptedLanguages() {
+            return delegate.getAcceptedLanguages();
         }
 
         @Override

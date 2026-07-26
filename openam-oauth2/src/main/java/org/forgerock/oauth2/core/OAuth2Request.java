@@ -19,6 +19,7 @@
 package org.forgerock.oauth2.core;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -107,6 +108,29 @@ public abstract class OAuth2Request {
      * @return The Locale object.
      */
     public abstract Locale getLocale();
+
+    /**
+     * Gets the {@code Accept-Language} tags in the client's preference order, <em>raw</em> as the client
+     * spelled them.
+     *
+     * <p>Deliberately not expressed as {@link Locale}s: the consent page interpolates these tags into its
+     * JavaScript for XUI to pick a translation, and a round trip through {@code Locale} normalises case and
+     * loses a {@code *}. This is the neutral replacement for Restlet's
+     * {@code getClientInfo().getAcceptedLanguages()}.
+     *
+     * <p>The default is the wildcard rather than an empty list, so that a transport which cannot answer
+     * degrades to the same value a client that sent no {@code Accept-Language} produces. Consumers join these
+     * tags into the page ({@code ConsentPageRenderer}'s {@code locale} key); an empty list would render
+     * {@code locale: ""}, which no live request has ever produced. {@link RestletOAuth2Request} relies on this:
+     * the Restlet resources read {@code ClientInfo} directly and never call this method, so overriding it
+     * there would be dead code -- but if a shared collaborator is ever handed a Restlet-backed request, the
+     * default it gets is the right one.
+     *
+     * @return The language tags, most-preferred first; never empty unless the client sent an empty header.
+     */
+    public List<String> getAcceptedLanguages() {
+        return List.of("*");
+    }
 
     /**
      * Gets the request path relative to the OAuth2 provider's realm base, with a leading slash and

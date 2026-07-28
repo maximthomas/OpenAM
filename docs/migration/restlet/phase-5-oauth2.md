@@ -369,10 +369,20 @@ Establishes `AbstractOAuth2HttpBrowserEndpoint` (the browser `@ExceptionHandler`
   - **`?display=bogus`** — `renderForDisplay` throws `IllegalArgumentException` (3c-1 D7). 5b must map IAE →
     `invalid_request`, and **decide** the two `IllegalArgumentException` branches of `AuthorizeResource:120-126`
     (one redirects to an unvalidated URI today — [phase-3c-2 finding 4](phase-3c-2-error-layer.md)).
-### 5b-2 — the three mechanical browser endpoints
+### 5b-2 — the three remaining browser-facing endpoints
 
-Extend `AbstractOAuth2HttpBrowserEndpoint` (from 5b-1). All three are near-mechanical relative to
-`AuthorizeHandler`.
+> **Detailed plan: [phase-5b-2.md](phase-5b-2.md)** (2026-07-28). It splits the step **three ways** — **5-E3**
+> (the live-Restlet contract lock for all three, test-only, *first*: three decisions are gated on it), **5b-2a**
+> (`EndSessionHandler` + `CheckSessionHandler`), **5b-2b** (`DeviceCodeVerificationHandler`) — and **supersedes
+> the bullets below** where they differ. Two corrections it makes, both verified against the tree:
+> **(a)** the line "Extend `AbstractOAuth2HttpBrowserEndpoint`. All three are near-mechanical" is **wrong about
+> two of the three**. The `doCatch` arity is the error contract: `EndSession` and
+> `OpenIDConnectCheckSessionEndpoint` call `ExceptionHandler.handle(Throwable, Response)`, which emits **JSON**,
+> so they extend `AbstractOAuth2HttpJsonEndpoint`. Only `DeviceCodeVerificationResource` calls the 4-arg
+> (page/redirect) variant. **(b)** the device flow does **not** simply "share the consent-page path" —
+> `ConsentPageRenderer` as shipped in 5b-1 reads only `realm` from the request attributes, while the device flow
+> seeds its *entire* consent model from attributes, so the shared collaborator needs a phase-1 correction (D2)
+> before it can serve that caller at all.
 
 - **`DeviceCodeVerificationHandler`** (`/device/user`, `@Get`+`@Post`) — `CodeVerificationForm.ftl`/
   `CodeThanks.ftl`; CSRF checked **inline** here (`csrfProtection.isCsrfAttack`), unlike `/authorize` where

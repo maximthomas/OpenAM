@@ -1181,3 +1181,137 @@ their exact assertions** — there, the charset *is* the oracle, not an oversigh
 ⇒ **5b-2a done.** Next: **5b-2b**, starting with the [D2](#d2) `ConsentPageRenderer` correction on its own
 (checklist step 11) — still realm-only in the tree, so the device consent page cannot render correctly until it
 lands.
+
+---
+
+<a id="as-built-5b-2b--landed-2026-07-28"></a>
+## As-built — 5b-2b, landed 2026-07-28 (checklist steps 11–16)
+
+One commit, `021c345061` — the [D2](#d2) correction, the handler, and both test classes. Unlike 5b-2a there was
+nothing worth splitting off: D2 is a three-line change that only the device consent page can exercise, so
+landing it alone would have committed a change no test could fail without.
+
+**Deliverables:**
+
+| File | Change |
+|---|---|
+| `oauth2/http/DeviceCodeVerificationHandler.java` | **new**, 306 L — `@Get` + `@Post`, on `AbstractOAuth2HttpBrowserEndpoint` ([D1](#d1)) |
+| `oauth2/http/ConsentPageRenderer.java` | [D2](#d2) — phase 1 copies all nine keys from the attributes (was: `realm` alone); `QUERY_KEYS` → `MODEL_KEYS`, since both phases now read the same list and a name saying *query* misstates which of Restlet's two bulk copies phase 1 reproduces |
+| `DeviceCodeVerificationHandlerTest` | **new**, 21 `@Test` (one data provider, 3 rows) |
+| `DeviceCodeRouteCompositionIT` | **new**, 7 `@Test` — checklist step 14, including the mandated real-factory row |
+| `ConsentPageRendererTest` | +2 rows: the whole model from seeded attributes, and a phase-order guard (vacuous before D2, meaningful after) |
+
+**Gates.** `openam-oauth2` **1180 surefire + 25 failsafe** green — 1157 + 18 after 5b-2a, and the delta is
+exactly the 21 + 2 new surefire rows and the 7 new failsafe ones, so nothing was quietly disabled. Grep gate on
+every new and changed file: `org.restlet|getCurrent()` → **0**. Whole-reactor `install -DskipTests` green
+(doclint). **Nothing is routed until 5d-1.**
+
+### The plan held; three details it is worth restating in code
+
+Unlike 5b-2a, this step found no gap in its own plan. [D2](#d2), [D3](#d3) and [D4](#d4) went in as written,
+and [finding 7](#7-the-device-verify-control-flow-branch-by-branch) called both of the traps below correctly —
+they are recorded here because the *code* has to keep them true, and neither is visible from the ported method.
+
+1. **The `InvalidGrantException` catch must stay wrapped around `readDeviceCode` alone** (`:138`, and finding 7's
+   closing note). `updateDeviceCode` and `deleteDeviceCode` throw the **same type**; if the catch widened to the
+   method, a store failure at the end of an *authorised* consent would render as "that code is not valid" — a
+   user-visible lie that also hides the fault. As built the catch spans three lines, and every later
+   `InvalidGrantException` reaches the base mapper as an error.
+
+2. **Two of Restlet's guards are constant inside the branch they live in.** `:164-165` computes
+   `!requireConsent || "allow".equals(decision)` and `requireConsent && "on".equals(save_consent)` at a point
+   only reachable when `requireConsent` is true and `decision` is non-empty. Ported as the literals, with a
+   comment saying why: copying the dead disjuncts preserves the *appearance* of a branch that cannot be taken.
+
+3. **Only two of Restlet's five catch clauses survive as code.** The one above, and
+   `ResourceOwnerConsentRequired` — which is not an `OAuth2Exception` and so can never reach an
+   `@ExceptionHandler`. The other three are what the browser base already does.
+
+**Checklist step 13 was already done and is not repeated** — `RestletRendererParityTest` has carried the
+`CodeVerificationForm` / `CodeThanks` goldens since 3c-1 (the correction recorded above the checklist).
+Regenerating them would have been forbidden anyway.
+
+### ⚠ The false green recurred, in a new disguise
+
+Three of the "unusable user code" rows — unknown code, `null`, already issued — were green **for the wrong
+reason** on first write. `readDeviceCode` was stubbed with `anyString()`, `user_code` was never stubbed on the
+mock request, and `anyString()` does **not** match `null`: so `readDeviceCode(null, o2)` ran, matched no stub,
+returned Mockito's default `null`, and all three rows collapsed onto the `deviceCode == null` branch. The
+`InvalidGrantException` and `isIssued()` paths were never executed by anything.
+
+Fixed by stubbing `user_code` to a real value, stubbing `readDeviceCode` by exact value, and adding
+`verify(tokenStore).readDeviceCode(USER_CODE, o2)` so the three rows cannot silently re-collapse. **This is the
+same failure shape as 5b-2a's unstubbed `OpenIDConnectEndSession`**, and it was again caught by reviewing the
+tests rather than by running them: a mock's default return is a *plausible* value, so a row asserting an
+outcome that default also produces is green and mute. Standing lesson for the rest of phase 5: when a row
+asserts a branch, assert the **call that selects it** too.
+
+### The IT was widened past the checklist, and mutation-checked
+
+Step 14 requires the real `OAuth2RequestFactory` in **one** row (finding 14 / R-5b2.3). As built the whole IT
+uses it: once the factory is real, every row also exercises real parameter resolution — query on `GET`, form
+body on `POST`, request attribute ahead of both — instead of a stubbed `getParameter`, and that precedence *is*
+the device flow's behaviour. The only context requirement is an `AttributesContext` in the chain.
+
+The R-5b2.3 row puts `state=wire-state` on the query and `af0ifjsldkj` in the device code, then throws after
+seeding; the 302's query must carry the device code's value. It has to be observed on a **redirect**, because
+`page/error.ftl` never prints `state` — and the `redirect_uri` has to come off the wire, because a `DeviceCode`
+stores none.
+
+**Mutation-checked rather than trusted.** Commenting out the single `seedAttributesFromDeviceCode` call turns
+**5 of the 7** rows red, R-5b2.3 among them (`to contain: state=af0ifjsldkj`). The 405 row and the CSRF-page row
+survive, correctly: neither depends on seeding. Recorded because the suite went green on its first run, which
+after the defect above is not evidence of anything by itself.
+
+Three of its rows are subtler than they read:
+
+- **`aFormPostSurvivesAnAuditShapedBufferedRead`.** The status assertion alone would be a false green: if the
+  entity were consumed by the auditor's read, `decision` would come back absent, the handler would take the
+  *no-decision* branch, and that branch also renders a 200 thanks page. The discriminator is
+  `verify(tokenStore).updateDeviceCode(...)`.
+- **`aNonAsciiConsentPageReachesTheWireAsUtf8`.** Decoding the wire bytes as UTF-8 is what discriminates: an
+  ISO-8859-1 encode substitutes one `'?'` per unmappable character, and those bytes cannot decode back into the
+  name. `AuthorizeRouteCompositionIT`'s UTF-8 row covers the *error* page; this is the consent page.
+- **`theDeviceConsentPageIsBuiltFromTheSeededDeviceCode`** — added after reviewing the class, and **not in the
+  checklist**. [D2](#d2) is the reason 5b-2b touches `ConsentPageRenderer` at all, and until this row it was
+  asserted only against the model *map*. On the device flow there is no query for that model to come from, so
+  `client_id`/`scope`/`state`/`nonce`/`response_type`/`realm`/`ui_locales` reach the page **only** through
+  seeding → phase 1 — and a key missing from `MODEL_KEYS` does not fail, it turns the template's
+  `<#if x??>` false and drops the field silently (finding 2 / R-5b1.2). The row asserts all seven in the
+  rendered HTML, through the real seeding, the real renderer and the real template.
+
+### Research worth not repeating
+
+- **`Custom.REALM` vs `Params.REALM`.** Five nested classes in `OAuth2Constants` declare a `REALM` whose value
+  is `"realm"`, and the Restlet layer mixes them. The tie-break is not style:
+  **`ChfOAuth2Request.attributes()` writes the realm under `Custom.REALM`**, so a reader spelling it any other
+  way reads a different map entry with the same string value. Every CHF-layer read is `Custom.REALM` — 8/8
+  before this step, 10/10 after.
+- **FreeMarker's `?js_string` escapes `/` as `\/`.** Every template in this migration emits its model through
+  it, so a page assertion written against the model value fails on any value containing a slash — a realm, a
+  `redirect_uri`, a form target. `realm: "/alpha"` in the model is `realm: "\/alpha"` on the wire. (It is also
+  why the goldens carry `\/`; nothing is wrong with them.)
+- **`OAuth2Utils.joinStatic(Collection, String)`** already exists, and the instance `join` is a one-line
+  delegate to it — so the scope set and the accepted-language list join without injecting `OAuth2Utils`.
+- **`DeviceCode.setStringProperty` skips nulls**, so every entry of the record's map is a non-empty list. That
+  is what makes the port's `values.iterator().next()` safe, and why `getObject()` can be walked at all.
+  `scope` is the one entry that is a genuine multi-value list; `clientID` is the one key that is renamed on the
+  way out (`client_id`).
+- **A render failure builds a non-redirecting 400 page here**, duplicating ~3 lines of
+  `AuthorizeHandler.serverErrorPage` rather than hoisting them to the committed shared base. Deliberate: this
+  endpoint's `redirect_uri` can only have arrived on the wire unvalidated, so the page must not be able to
+  become a redirect — and moving the method onto the base would change a committed endpoint to save three
+  lines.
+
+### Divergences: none new, one broadened
+
+[Row 1](plan.md#expected-divergences-at-the-flip) now names `/device/user` as well as `/authorize`. This is what
+finding 7 predicted — *"record it as the same divergence row, not a new one"* — and the code confirms the shape
+is identical: `DeviceCodeVerificationResource:186-193` catches `IllegalArgumentException` and **redirects** to
+the raw `redirect_uri` unless the message names `client_id`, while an IAE from `?display=` is raised inside the
+sibling `catch (ResourceOwnerConsentRequired)` and so reaches `doCatch` as a 400 `server_error` page instead.
+[D7](phase-5b-1.md#d7) answers all three with one non-redirecting 400 `invalid_request` page, closing the same
+open redirect. The generalisation is structural, not per-endpoint: D7 lives on the browser base, so it applies
+to every browser endpoint this migration ports.
+
+⇒ **5b-2b done, and 5b-2 with it.** Next: **5c** (`resource_set`).

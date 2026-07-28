@@ -28,15 +28,19 @@
  * Re-run this suite unchanged after the 5d-1 flip: anything that goes red is a regression.
  */
 
+import { createHmac } from "node:crypto";
 import { test, expect, request as apiRequest } from "@playwright/test";
 import { OPENAM_BASE, getAdminToken, getAuthToken, PASSWORD, USERNAME } from "../common/openam-commons.mjs";
 import {
   CLIENT_SESSION_URI, OIDC_CLIENT_SECRET, POST_LOGOUT_REDIRECT_URI, POST_LOGOUT_REDIRECT_URI_WITH_QUERY, REALM,
-  authorizationCodeTokens, basicAuth, ensureOidcClient, ensureProviderConfig, sessionContext,
+  REDIRECT_URI, authorizationCodeTokens, basicAuth, ensureNoSessionUriOidcClient, ensureOidcClient,
+  ensureProviderConfig, sessionContext,
 } from "../common/oauth2-fixtures.mjs";
 
 /** This spec's own client -- spec files run in parallel and rewriting a shared client kills its tokens. */
 const OIDC_CLIENT_ID = "test_client_oidc";
+/** Same realm, no clientSessionURI: the default-configured client of 5-E3 row 6e. */
+const NO_SESSION_URI_CLIENT_ID = "test_client_oidc_nosessionuri";
 
 const NONCE = "n-0S6_WzA2Mj";
 
@@ -52,6 +56,7 @@ test.beforeAll(async ({ request }) => {
   }
   await ensureProviderConfig(adminToken, request);
   await ensureOidcClient(adminToken, request, OIDC_CLIENT_ID);
+  await ensureNoSessionUriOidcClient(adminToken, request, NO_SESSION_URI_CLIENT_ID);
 
   const loginCtx = await apiRequest.newContext();
   try {
@@ -264,10 +269,21 @@ test.describe("OIDC session endpoints", () => {
  */
 test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () => {
 
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+
   /** A crafted JWT. Nothing verifies the signature before the claims are read, so "sig" is enough. */
-  const jwt = (claims) => {
-    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
-    return `${b64({ alg: "HS256", typ: "JWT" })}.${b64(claims)}.c2ln`;
+  const jwt = (claims) => `${b64({ alg: "HS256", typ: "JWT" })}.${b64(claims)}.c2ln`;
+
+  /**
+   * A crafted JWT that actually verifies. `CheckSession.isJwtValid` HMACs the id_token against the client
+   * secret and a false there returns "" early (a 200), so row 6e cannot use `jwt()` -- it has to get past
+   * the signature check to reach the throw. Signing it here rather than running a token flow keeps the row
+   * to one request.
+   */
+  const signedJwt = (claims, secret) => {
+    const signingInput = `${b64({ alg: "HS256", typ: "JWT" })}.${b64(claims)}`;
+    const sig = createHmac("sha256", secret).update(signingInput).digest("base64url");
+    return `${signingInput}.${sig}`;
   };
 
   /** A fresh session + its own id_token: every endSession row ends the session it uses. */
@@ -370,12 +386,36 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
       const body = await response.json();
       console.log(`[5-E3] row6d ${name} -> ${response.status()} ${JSON.stringify(body)}`);
       expect(response.status(), name).toBe(400);
-      expect(response.headers()["content-type"], name).toBe("application/json");
+      expect(response.headers()["content-type"], name).toContain("application/json");
       expect(body.error, name).toBe("server_error");
       expect(body.error_description, name)
         .toBe("Internal Server Error (500) - The server encountered an unexpected condition"
           + " which prevented it from fulfilling the request");
     }
+  });
+
+  test("row 6e: a DEFAULT-configured client 400s on checkSession's own happy path", async ({ request }) => {
+    // The other way into CheckSession.java:115's single throwing exit, and the one that is not an edge case:
+    // the admin API leaves clientSessionURI EMPTY on every client it creates, and
+    // OpenAMClientRegistration.getClientSessionURI:426-434 ends in set.iterator().next() with no emptiness
+    // guard. So a valid id_token from an ordinary client -- exactly what an RP iframe sends, and the
+    // endpoint's entire reason for existing -- is a NoSuchElementException today. Row 6c only gets a 200
+    // because ensureOidcClient sets the attribute explicitly.
+    //
+    // 5b-2 D7's wrap already covers this (same call as row 6d), so this row does NOT guard the port. It
+    // guards the SEPARATE null-guard fix, which could repair the null-registration half and leave this one.
+    // If that fix lands, this row must be changed deliberately -- it is not a passive snapshot.
+    const idToken = signedJwt({ aud: NO_SESSION_URI_CLIENT_ID, realm: "/", sub: "demo" }, OIDC_CLIENT_SECRET);
+    const response = await request.get(`${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession`, {
+      headers: { Referer: `http://rp.invalid/page?id_token=${idToken}` },
+    });
+    const body = await response.json();
+    console.log(`[5-E3] row6e default client -> ${response.status()} ${JSON.stringify(body)}`);
+    expect(response.status()).toBe(400);
+    // toContain, not toBe: CHF emits `application/json; charset=UTF-8` where Restlet emits it bare, and this
+    // file's header says it deliberately does not pin those bytes.
+    expect(response.headers()["content-type"]).toContain("application/json");
+    expect(body.error).toBe("server_error");
   });
 
   test("row 7: every non-page ?display= on checkSession is a 400 (5b-2 D5)", async ({ request }) => {
@@ -390,7 +430,7 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
       const body = await response.json();
       console.log(`[5-E3] row7 display=${display} -> ${response.status()} ${JSON.stringify(body)}`);
       expect(response.status(), display).toBe(400);
-      expect(response.headers()["content-type"], display).toBe("application/json");
+      expect(response.headers()["content-type"], display).toContain("application/json");
       expect(body.error, display).toBe("server_error");
       expect(body.error_description, display)
         .toBe("Bad Request (400) - Server can not serve the content of authorization page");
@@ -441,9 +481,17 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
       });
       console.log(`[5-E3] row8 with state -> ${response.status()} ${response.headers()["location"]}`);
       expect(response.status()).toBe(302);
-      // Verbatim percent-encoding: space -> %20 (not "+"), "/" -> %2F. A CHF composer that encodes either
-      // differently is a byte diff at 5d-1.
-      expect(response.headers()["location"]).toBe(`${POST_LOGOUT_REDIRECT_URI}?state=st%20ate%2F1`);
+      // Space -> %20, never "+". That half IS parity and must not drift.
+      expect(response.headers()["location"]).toContain("state=st%20ate");
+      // ⚠ The slash is a RECORDED DIVERGENCE (plan.md expected-divergences row 9), not parity: Restlet's
+      // Reference emits %2F, CHF's Form.toQueryString leaves "/" bare. Both are legal and parse identically
+      // (RFC 3986 §3.4 puts "/" in the query production), and RedirectUris is shared with /authorize, so the
+      // encoder is not being bent to match. Asserted as an either/or so this row stays GREEN across the flip
+      // -- the file's contract is "re-run unchanged; anything red is a regression", and a row that is
+      // guaranteed to go red for a known-and-accepted reason destroys that signal.
+      expect([`${POST_LOGOUT_REDIRECT_URI}?state=st%20ate%2F1`,   // Restlet, recorded 2026-07-28
+        `${POST_LOGOUT_REDIRECT_URI}?state=st%20ate/1`])          // CHF, after 5d-1
+        .toContain(response.headers()["location"]);
     } finally {
       await withState.ctx.dispose();
     }
@@ -465,9 +513,15 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
   });
 
   test("row 9: an unregistered or relative post_logout_redirect_uri is a 400 JSON", async () => {
+    const mismatch = "The redirection URI provided does not match a pre-registered value.";
     const cases = [
-      ["http://evil.invalid/x", "redirect_uri_mismatch",
-        "The redirection URI provided does not match a pre-registered value."],
+      ["http://evil.invalid/x", "redirect_uri_mismatch", mismatch],
+      // ⚠ The load-bearing case. REDIRECT_URI is registered on this client as an ordinary redirectionURI but
+      // NOT as a post-logout one, so it is the single input that tells the two sets apart. validateRedirect
+      // reads getPostLogoutRedirectUris() (EndSession.java:151); a CHF EndSessionHandler wired to
+      // getRedirectUris() instead still rejects evil.invalid and passes every other row in this file, while
+      // silently permitting logout redirects to every registered callback.
+      [REDIRECT_URI, "redirect_uri_mismatch", mismatch],
       ["/relative/cb", "relative_redirect_uri", "The redirection URI provided is not absolute."],
     ];
     for (const [uri, error, description] of cases) {
@@ -479,7 +533,7 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
         const body = await response.json();
         console.log(`[5-E3] row9 ${uri} -> ${response.status()} ${JSON.stringify(body)}`);
         expect(response.status(), uri).toBe(400);
-        expect(response.headers()["content-type"], uri).toBe("application/json");
+        expect(response.headers()["content-type"], uri).toContain("application/json");
         // JSON, not a page: proof that EndSession's doCatch is the 2-arg overload (5b-2 D1).
         expect(body.error, uri).toBe(error);
         expect(body.error_description, uri).toBe(description);
@@ -503,7 +557,7 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
     const body = await response.json();
     console.log(`[5-E3] row10 malformed hint -> ${response.status()} ${JSON.stringify(body)}`);
     expect(response.status()).toBe(400);
-    expect(response.headers()["content-type"]).toBe("application/json");
+    expect(response.headers()["content-type"]).toContain("application/json");
     expect(body.error).toBe("server_error");
     expect(body.error_description)
       .toBe("Internal Server Error (500) - The server encountered an unexpected condition"
@@ -529,7 +583,7 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
       const body = await response.json();
       console.log(`[5-E3] row11 PUT ${path} -> ${response.status()} ${JSON.stringify(body)}`);
       expect(response.status(), path).toBe(405);
-      expect(response.headers()["content-type"], path).toBe("application/json");
+      expect(response.headers()["content-type"], path).toContain("application/json");
       expect(body.code, path).toBe(405);
       expect(body.reason, path).toBe("Method Not Allowed");
       expect(body.message, path)

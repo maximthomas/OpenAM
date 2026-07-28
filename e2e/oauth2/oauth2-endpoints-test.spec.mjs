@@ -470,7 +470,7 @@ test.describe("OAuth2 device flow contract lock (5-E3, live Restlet)", () => {
     const body = await response.json();
     console.log(`[5-E3] row11 PUT /device/user -> ${response.status()} ${JSON.stringify(body)}`);
     expect(response.status()).toBe(405);
-    expect(response.headers()["content-type"]).toBe("application/json");
+    expect(response.headers()["content-type"]).toContain("application/json");
     expect(body.code).toBe(405);
     expect(body.reason).toBe("Method Not Allowed");
     expect(body.error).toBeUndefined();

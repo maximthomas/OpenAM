@@ -565,6 +565,54 @@ inside a parity migration.
 server errors, which is a monitoring regression in the opposite direction and a worse wire contract than the
 one being replaced.
 
+<a id="d8"></a>
+### D8 — the endSession 302 composes through `RedirectUris` (**gated on 5-E3 row 8**)
+
+```java
+Map<String, String> params = isEmpty(state) ? Map.of() : Map.of("state", state);
+return redirectTo(RedirectUris.compose(redirectUri, params, UrlLocation.QUERY));
+```
+
+`RedirectUris.compose(…, QUERY)` **appends**, which is what `Reference.addQueryParameter` did; the
+percent-encoding parity between the two was proven and closed at 3c-2 ([plan.md](plan.md) risk #3). The
+documented empty-params divergence — an empty map leaves the target untouched — is **the desired behaviour
+here**, matching Restlet's `if (state != null && !state.isEmpty())` guard exactly.
+
+The one thing observation must settle is whether `new Reference(uri).toString()` **normalises** a redirect URI
+that already carries a query or a fragment, where `RedirectUris` emits it verbatim. 5-E3 row 8 registers a
+`post_logout_redirect_uri` with an existing query string and records the exact `Location`. If they differ,
+record it as an expected 5d-1 divergence rather than bending `RedirectUris`, whose contract is shared with
+`/authorize`.
+
+Status is **302** (`MODE_CLIENT_FOUND`); the no-redirect path returns **204 with no entity**, which on CHF is
+`new Response(Status.NO_CONTENT)` — matching the already-recorded e2e row.
+
+<a id="d9"></a>
+### D9 — handler shapes
+
+```java
+// org.openidentityplatform.openam.oauth2.http
+public class DeviceCodeVerificationHandler extends AbstractOAuth2HttpBrowserEndpoint {
+    @Get  public Response userCodeForm(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
+    @Post public Response verify(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
+}
+
+// org.openidentityplatform.openam.openidconnect.http
+public class CheckSessionHandler extends AbstractOAuth2HttpJsonEndpoint {
+    @Get  public Response checkSession(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
+    @Post public Response checkSessionPost(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
+}
+
+public class EndSessionHandler extends AbstractOAuth2HttpJsonEndpoint {
+    @Get  public Response endSession(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
+}
+```
+
+`CheckSessionHandler` keeps **both** verbs (`OpenIDConnectCheckSessionEndpoint` has `@Get` and `@Post`, both
+delegating to the same body). `EndSessionHandler` is GET-only, as today. `DeviceCodeVerificationHandler`'s two
+verbs delegate to one private method, mirroring `userCodeForm()` → `verify(null)`; the GET renders the bare
+form when `user_code` is absent.
+
 <a id="d10"></a>
 ### D10 — `OAuth2ErrorFilter` maps a rewritten **405** to `method_not_allowed` (**decided at review, 2026-07-28**)
 
@@ -624,54 +672,6 @@ Lands in **5b-2a**, with a new `OAuth2ErrorFilterTest` case and a re-run of `Aut
 > `OAuth2HttpRouteProvider` (only the two `/frrest` providers). Build-ahead holds: D10 cannot reach a client
 > until 5d-1 mounts the filter, which also means **no test here proves the value on a real wire** — only the
 > 5d-1 e2e re-run will.
-
-<a id="d8"></a>
-### D8 — the endSession 302 composes through `RedirectUris` (**gated on 5-E3 row 8**)
-
-```java
-Map<String, String> params = isEmpty(state) ? Map.of() : Map.of("state", state);
-return redirectTo(RedirectUris.compose(redirectUri, params, UrlLocation.QUERY));
-```
-
-`RedirectUris.compose(…, QUERY)` **appends**, which is what `Reference.addQueryParameter` did; the
-percent-encoding parity between the two was proven and closed at 3c-2 ([plan.md](plan.md) risk #3). The
-documented empty-params divergence — an empty map leaves the target untouched — is **the desired behaviour
-here**, matching Restlet's `if (state != null && !state.isEmpty())` guard exactly.
-
-The one thing observation must settle is whether `new Reference(uri).toString()` **normalises** a redirect URI
-that already carries a query or a fragment, where `RedirectUris` emits it verbatim. 5-E3 row 8 registers a
-`post_logout_redirect_uri` with an existing query string and records the exact `Location`. If they differ,
-record it as an expected 5d-1 divergence rather than bending `RedirectUris`, whose contract is shared with
-`/authorize`.
-
-Status is **302** (`MODE_CLIENT_FOUND`); the no-redirect path returns **204 with no entity**, which on CHF is
-`new Response(Status.NO_CONTENT)` — matching the already-recorded e2e row.
-
-<a id="d9"></a>
-### D9 — handler shapes
-
-```java
-// org.openidentityplatform.openam.oauth2.http
-public class DeviceCodeVerificationHandler extends AbstractOAuth2HttpBrowserEndpoint {
-    @Get  public Response userCodeForm(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
-    @Post public Response verify(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
-}
-
-// org.openidentityplatform.openam.openidconnect.http
-public class CheckSessionHandler extends AbstractOAuth2HttpJsonEndpoint {
-    @Get  public Response checkSession(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
-    @Post public Response checkSessionPost(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
-}
-
-public class EndSessionHandler extends AbstractOAuth2HttpJsonEndpoint {
-    @Get  public Response endSession(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception
-}
-```
-
-`CheckSessionHandler` keeps **both** verbs (`OpenIDConnectCheckSessionEndpoint` has `@Get` and `@Post`, both
-delegating to the same body). `EndSessionHandler` is GET-only, as today. `DeviceCodeVerificationHandler`'s two
-verbs delegate to one private method, mirroring `userCodeForm()` → `verify(null)`; the GET renders the bare
-form when `user_code` is absent.
 
 ---
 
@@ -744,11 +744,20 @@ form when `user_code` is absent.
   which makes the cache untestable by construction — this is the only place the seeding design is checked at
   the seam where it can actually break.
 
-**Golden coverage.** `RendererFixtures`/`RestletRendererParityTest` already pin `authorize.ftl` across all four
-display folders. Add golden renders for `CodeVerificationForm.ftl`, `CodeThanks.ftl` and `page/checkSession.ftl`
-— **while the Restlet leg is still on the classpath**, so they land as `Restlet == golden == CHF` three-way
-assertions rather than unfalsifiable snapshots ([risk #20](plan.md), [chf-patterns §13](chf-patterns.md)).
-These three templates have no golden today, which is exactly the build-ahead blind spot risk #19 describes.
+**Golden coverage.** ~~Add golden renders for `CodeVerificationForm.ftl`, `CodeThanks.ftl` and
+`page/checkSession.ftl` … These three templates have no golden today.~~
+
+> **Corrected 2026-07-28 (5b-2a).** **All three already exist and are already three-way asserted.**
+> `RestletRendererParityTest`'s table has carried `page/checkSession.html`, `CodeVerificationForm.html` and
+> `CodeThanks.html` since 3c-1 (`8c8ec58d0f`), alongside `authorize.ftl` in all four display folders, and the
+> golden files are in `src/test/resources/golden/`. So checklist step 7's golden item and step 13 are **already
+> done** — nothing to add, and regenerating them would be forbidden anyway once 5d deletes the Restlet leg.
+>
+> What the parity row does *not* cover is the seam: it proves `Restlet renderer == golden == CHF renderer` for
+> a given model, not that the handler builds that model. `CheckSessionHandlerTest`'s
+> `theModelCarriesTheFourKeysWithTheRestletsTypes` closes it by asserting the handler emits the same four keys
+> with the same types as `RendererFixtures.checkSession()` — notably `valid_session` as a **`String`**. The two
+> together are what prove the ported page is byte-identical; neither does it alone.
 
 ---
 
@@ -950,6 +959,7 @@ still mapped to `ForgeRockRest` in `web.xml` with no CHF `HttpRouteProvider` cla
 | 6b | checkSession `GET` vs `POST` | byte-identical |
 | 6c | checkSession with a valid `id_token` in the **`Referer`** query | **200**, page carries `var clientURI = "<clientSessionURI>";` |
 | 6d | checkSession, `Referer` `id_token` with **no `aud`** / **unknown `aud`** / **malformed** | all **400** `application/json` `{"error":"server_error","error_description":"Internal Server Error (500) - …"}` |
+| 6e | checkSession, **signed** id_token from a client with **no** `clientSessionURI` (added 2026-07-28) | **400** `server_error` — the `NoSuchElementException` half of D7's fourth wrap, on the wire. Needs a *verifying* signature: `isJwtValid` HMACs against the client secret and a false there returns `""` early (a **200**), so a crafted-signature JWT cannot reach the throw at all |
 | 7 | checkSession `?display=` | `page` → **200**; `popup`, `touch`, `wap` → **400** `server_error` `"Bad Request (400) - Server can not serve the content of authorization page"`; `bogus` → **400** `server_error` with the generic `"Internal Server Error (500) - …"` |
 | 8 | endSession + registered `post_logout_redirect_uri` | no `state` → **302** to the URI **verbatim** (no trailing `?`); with `state` → `?state=st%20ate%2F1` (space `%20`, `/` `%2F`); URI that already has a query → existing query **preserved verbatim**, state **appended with `&`** |
 | 9 | endSession, unregistered / relative `post_logout_redirect_uri` | **400 JSON** `redirect_uri_mismatch` / `relative_redirect_uri`, with the exact descriptions, no `Location` |
@@ -984,6 +994,30 @@ still mapped to `ForgeRockRest` in `web.xml` with no CHF `HttpRouteProvider` cla
    confirming [D1](#d1)'s split: browser base for the device handler, JSON base for the other two.
 6. **Open question 5 answered.** The `errorCode=not_found` form is a **200**, and — not anticipated — it is a
    200 **anonymously** as well.
+
+### Two guards added 2026-07-28, after review of the D10 commit
+
+Both recorded while the container was still up, because the oracle dies at 5d-1. `npx playwright test oauth2`
+**63 passed** (was 62).
+
+1. **Row 9 gained the case that tells the two URI sets apart.** `EndSession.validateRedirect:151` checks
+   `client.getPostLogoutRedirectUris()`. Row 9's original negatives were `http://evil.invalid/x` (in neither
+   set) and a relative URI — neither of which can catch an `EndSessionHandler` wired to `getRedirectUris()`
+   instead. `REDIRECT_URI` (`http://app.invalid/cb`) is registered as an ordinary `redirectionURI` and **not**
+   as a post-logout one, so it is the single discriminating input; live Restlet answers **400
+   `redirect_uri_mismatch`** for it, and that is now pinned.
+2. **New row 6e — the empty-`clientSessionURI` half of D7's fourth wrap.** ⚠ The review that prompted this
+   claimed the wrap was unguarded; **that was wrong**. `CheckSession.getClientSessionURI:115` has exactly one
+   throwing exit, `return clientRegistration.getClientSessionURI()`, and *both* failure modes leave through it
+   — so row 6d's no-`aud` case already fails if the wrap is dropped. What row 6e adds is narrower and is not
+   about the port: it pins the **empty-set** behaviour so the separate null-guard ticket (checklist step 9)
+   cannot repair the null-registration half and silently leave this one. Same "a test to change deliberately"
+   rationale row 6d already states for the NPE.
+   ⚠ It needs `ensureNoSessionUriOidcClient` — a **confidential** client with a secret and no
+   `clientSessionURI` — and a **genuinely HS256-signed** id_token (`signedJwt` in the spec, `node:crypto`).
+   `isJwtValid` HMAC-verifies against `getClientSecret()` and returns false for an empty secret, and a false
+   there returns `""` early — a **200**. So a public client, or the crafted-signature `jwt()` helper the other
+   rows use, cannot exercise this path at all. The 400 is itself proof the signature verified.
 
 ### Three environment facts the rows had to be written around
 

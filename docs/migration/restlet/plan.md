@@ -384,6 +384,36 @@ wrap** — which is all of them except `/authorize` and `/access_token`:
 diff must be treated as one — without this row, the 5d-1 operator diffing `PUT /oauth2/connect/endSession` would
 correctly follow the rule and revert D10.
 
+| # | What differs | Restlet | CHF | Why |
+|---|---|---|---|---|
+| 9 | A `/` inside a redirect **parameter value** — `state`, `error_description`. **Applies to `/authorize`'s error redirect as well**, not just endSession | `?state=a%2Fb` — `Reference` percent-encodes it | `?state=a/b` — `Form.toQueryString` leaves it bare | Found while porting endSession (5b-2a), confirmed against the **real Restlet** by `RestletErrorParityTest#aSlashInsideAValueIsEncodedByRestletAndNotByChf`. Both are legal and parse identically — RFC 3986 §3.4 puts `/` in the `query` production — so no client can observe it. Recorded rather than fixed, on [D8](phase-5b-2.md#d8)'s own instruction: `RedirectUris` is shared with `/authorize`, so bending the encoder would change bytes on a committed endpoint to buy nothing. ⚠ **`+`, space, `&`, `=` and non-ASCII all still match exactly** — only `/` differs, and only inside a value |
+
+⚠ Row 9 corrects a claim [D8](phase-5b-2.md#d8) made: *"the percent-encoding parity between the two was proven
+and closed at 3c-2."* It was proven for the characters that test's fixture happened to contain (`a b&c=d+e`)
+and no others. The parity harness was right; its input was incomplete.
+
+| # | What differs | Restlet | CHF | Why |
+|---|---|---|---|---|
+| 10 | `state` in the **error body** of `connect/endSession` and `connect/checkSession` when the request carried one | **absent** — verified live 2026-07-28: `GET /oauth2/connect/endSession?state=abc123` answers exactly the body it answers without the parameter. Both Restlet resources build `new OAuth2RestletException(status, error, message, null)` (`EndSession:106`), and the 2-arg `ExceptionHandler.handle` fallback also passes `null`, so `asMap()` never carries it | `{"error":…,"error_description":…,"state":"abc123"}` | `AbstractOAuth2HttpJsonEndpoint.onError:53` does `OAuth2Error.of(e).withState(o2.getParameter("state"))` for **every** JSON endpoint. Not fixable per-endpoint: an override would drop the `@ExceptionHandler` annotation ([D1](phase-5b-2.md#d1)), and changing the shared base would move the five committed 5a handlers. **Additive** — a client reading `error`/`error_description` is unaffected, and `state` echo is what RFC 6749 §4.1.2.1 asks for anyway |
+
+⚠ Row 10 is **not** specific to 5b-2a: the base has behaved this way since 5a-2, so it applies to every CHF
+JSON endpoint. 5b-2a is merely the first step whose Restlet counterpart demonstrably passed `null`, which is
+what made it observable. Worth a deliberate look at 5d-1 across all of them rather than only these two.
+
+### Post-migration tickets — raised by the port, deliberately not fixed in it
+
+Bugs the migration **reproduces faithfully** because it is a parity migration, each with a live-Restlet
+observation and a pinning test that must be changed deliberately when the fix lands. Not tracked in an issue
+tracker on purpose: they have to survive the deletion of the Restlet oracle at 5d-2, and this document is what
+outlives it.
+
+| # | Ticket | Reproduced by | Details |
+|---|---|---|---|
+| T1 | **`CheckSession.getClientSessionURI` throws on its own happy path.** A default-configured client — the admin API leaves `clientSessionURI` **empty on every client it creates** — makes check-session **400** as soon as an RP supplies an `id_token`. ⚠ The fix must cover **both** the `NoSuchElementException` (empty set, the common case) and the `NullPointerException` (null registration, the rarer one); a guard for only the latter repairs the wrong half | `CheckSessionHandler` (5b-2a), as 400 `server_error` | [phase-5-oauth2.md](phase-5-oauth2.md#post-migration-ticket-filed-by-5b-2a-checklist-step-9--checksessiongetclientsessionuri-throws-on-its-own-happy-path) — both triggers tabled with the four tests that pin them (5-E3 rows 6d/6e + two `CheckSessionHandlerTest` rows) |
+| T2 | **Unverified `id_token_hint` signature on `/connect/endSession`** — the client is chosen from the `azp` claim of a JWT nobody verifies | `EndSessionHandler` (5b-2a) | [security-debt list](phase-5-oauth2.md#parity-preserved-security-debts--reproduce-now-fix-later); pinned by `EndSessionHandlerTest#theAzpClaimSelectsTheClientAndNoSignatureIsVerified` |
+| T3 | **301 (permanent, cacheable) login redirect** on unauthenticated `/authorize`, where a 302 would be correct | `AuthorizeHandler` (5b-1) | [security-debt list](phase-5-oauth2.md#parity-preserved-security-debts--reproduce-now-fix-later) |
+| T4 | **`templates/touch/authorize.ftl:56` emits `isplayName`**, so `?display=touch` renders a blank client name in the consent `<h1>` | golden, verbatim | Noted under the divergence table above — **not** a divergence; do not "fix" it during the flip |
+
 ## Phase 6 — WebFinger + stragglers
 
 - `WebFingerHandler` (port of `OpenIDConnectDiscovery`; GET, `resource`/`rel`, JRD JSON)

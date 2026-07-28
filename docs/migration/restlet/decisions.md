@@ -61,8 +61,13 @@ behaviour 3c reproduces. Full rationale: [phase-3c-1-renderer.md](phase-3c-1-ren
   authorize flow is byte-identical (the only shipping popup pair is `authorize.ftl` + `popup.ftl`) and
   nobody can depend on receiving a consent page when they asked for a check-session iframe.
   ⚠ **Consequence:** `checkSession?display=popup` then resolves a non-existent
-  `templates/popup/checkSession.ftl`. Whether that should error or fall back to `page/` is **Phase 5b's
-  call** when it ports `CheckSessionHandler`.
+  `templates/popup/checkSession.ftl`. ~~Whether that should error or fall back to `page/` is **Phase 5b's
+  call** when it ports `CheckSessionHandler`.~~ **Settled 2026-07-28 — it errors**
+  ([phase-5b-2 D5](phase-5b-2.md#d5), landed in 5b-2a): `CheckSessionHandler` collapses it to a 400
+  `server_error`, which is what live Restlet answers for every non-`page` display (5-E3 row 7 — observed, not
+  inferred). A `page/` fallback would have been a **widening of a live 400 into a 200**, and the legacy
+  "200 with the wrong page" was never actually reachable: rendering `popup/authorize.ftl` against the
+  check-session model hits an unguarded `${display_name}` and throws anyway.
 - **D6 — the no-redirect policy becomes an explicit table, unified to the safe union.** Today it is
   emergent from catch ordering + which `OAuth2RestletException` constructor each catch picks — no flag,
   no predicate. `AuthorizeResource`'s GET (`:120-149`) and POST (`:187-206`) lists have **drifted**:

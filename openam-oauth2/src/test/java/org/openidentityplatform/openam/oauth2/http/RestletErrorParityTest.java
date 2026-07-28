@@ -204,6 +204,30 @@ public class RestletErrorParityTest {
                 .contains(encodedDescription, encodedState);
     }
 
+    /**
+     * ⚠ The one character the legs encode differently, found while porting {@code /oauth2/connect/endSession}
+     * (5b-2a) and confirmed here against the real Restlet: a {@code /} inside a parameter <em>value</em>.
+     * Restlet percent-encodes it, CHF's {@code Form.toQueryString} leaves it bare.
+     *
+     * <p>Both are legal and parse identically -- RFC 3986 §3.4 puts {@code /} in the {@code query} production
+     * -- so a client reading {@code state} gets the same string either way. Recorded rather than fixed:
+     * {@link RedirectUris} is shared with {@code /authorize}'s error redirect, so "fixing" the encoder would
+     * change bytes on an already-committed endpoint to buy nothing a client can observe. See
+     * plan.md's expected-divergences table.
+     *
+     * <p>This row exists because the assertion above would have caught it years earlier had its fixture value
+     * contained a slash; asserting the difference explicitly keeps it from being rediscovered as a bug.
+     */
+    @Test
+    public void aSlashInsideAValueIsEncodedByRestletAndNotByChf() {
+        Response restlet = restlet(new OAuth2RestletException(400, "invalid_request", "d",
+                "https://app.example/cb", "a/b"));
+
+        assertThat(restlet.getLocationRef().toString()).contains("state=a%2Fb");
+        assertThat(RedirectUris.compose("https://app.example/cb", params("d", "a/b"), QUERY))
+                .contains("state=a/b");
+    }
+
     // ---------------------------------------------------------------- the D11 divergence
 
     /**

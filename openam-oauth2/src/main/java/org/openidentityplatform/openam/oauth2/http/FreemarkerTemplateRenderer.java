@@ -178,9 +178,15 @@ public class FreemarkerTemplateRenderer {
      * {@code templateName} is honoured here. One caller is affected:
      * {@code OpenIDConnectCheckSessionEndpoint} asks for {@code checkSession.ftl}, which under
      * {@code display=popup} now resolves {@code templates/popup/checkSession.ftl} -- a template that does
-     * not exist -- and therefore throws, where the legacy code returned 200 with the wrong page. Whether
-     * that case should error or fall back to {@code page/} is Phase 5b's decision when it ports the
-     * check-session endpoint.
+     * not exist -- and therefore throws, where the legacy code returned 200 with the wrong page.
+     * <p>
+     * <strong>Decided (phase-5b-2 D5, 2026-07-28): it errors; there is no {@code page/} fallback.</strong>
+     * {@code CheckSessionHandler} collapses this to a 400 {@code server_error}, which is what live Restlet
+     * answers for <em>every</em> non-{@code page} display -- observed, not inferred (5-E3 row 7). The legacy
+     * "200 with the wrong page" was reachable only in theory: rendering {@code popup/authorize.ftl} against
+     * the check-session model hits an unguarded {@code ${display_name}} and throws anyway, surfacing as the
+     * same 400. A {@code page/} fallback would therefore have been a <em>widening</em> of a live 400 into a
+     * 200.
      * <p>
      * Composing a popup needs {@code htmlCode} in the wrapper's model. Unlike the legacy renderer, which put
      * it into the caller's own {@code dataModel} ({@code OAuth2Representation:83}), this renders the wrapper
@@ -194,7 +200,9 @@ public class FreemarkerTemplateRenderer {
      * @throws IllegalArgumentException if {@code display} is non-empty and not a known display type. This
      *     reproduces the legacy behaviour, which {@code AuthorizeResource:120} depends on by type to
      *     produce {@code invalid_request}; defaulting an unknown display to {@code page} would turn a
-     *     rejected request into a rendered consent page. Phase 5b must map this to {@code invalid_request}.
+     *     rejected request into a rendered consent page. Callers map it per endpoint, because live Restlet
+     *     did: {@code AuthorizeHandler} to {@code invalid_request}, {@code CheckSessionHandler} to
+     *     {@code server_error} (5-E3 row 7 recorded both).
      * @throws IOException if the template cannot be found or read.
      * @throws TemplateException if the template fails to render.
      */

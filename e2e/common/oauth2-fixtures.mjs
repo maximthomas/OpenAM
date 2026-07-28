@@ -260,6 +260,33 @@ export async function ensureOidcClient(adminToken, request, clientId) {
 }
 
 /**
+ * A confidential client with NO `clientSessionURI` -- i.e. what the admin API produces by default.
+ *
+ * Exists to pin the empty-set half of the `getClientSessionURI` bug. `CheckSession.getClientSessionURI:115`
+ * has one throwing exit, `return clientRegistration.getClientSessionURI()`, reached two ways: a null
+ * registration (NPE, covered by row 6d's no-aud case) and a registered client whose attribute is empty
+ * (`NoSuchElementException` from `set.iterator().next()`, OpenAMClientRegistration.java:426-434). Both are
+ * covered by the same 5b-2 D7 wrap, so this client does not guard the port -- it guards the separate
+ * null-guard fix, which could repair the NPE half and leave this one with nothing going red.
+ *
+ * ⚠ It needs a secret. `isJwtValid` HMAC-verifies the id_token against `getClientSecret()` and returns false
+ * for an empty one, and a false there returns `""` early -- a 200, never reaching the throw. A public client
+ * therefore cannot exercise this path at all.
+ */
+export async function ensureNoSessionUriOidcClient(adminToken, request, clientId) {
+  await ensureClient(adminToken, request, clientId, {
+    "userpassword": OIDC_CLIENT_SECRET,
+    "com.forgerock.openam.oauth2provider.clientType": "Confidential",
+    "com.forgerock.openam.oauth2provider.redirectionURIs": [`[0]=${REDIRECT_URI}`],
+    "com.forgerock.openam.oauth2provider.scopes": ["[0]=openid", "[1]=profile"],
+    "com.forgerock.openam.oauth2provider.defaultScopes": ["[0]=openid"],
+    "com.forgerock.openam.oauth2provider.idTokenSignedResponseAlg": "HS256",
+    // No clientSessionURI, deliberately. Setting it is what makes this client ordinary.
+    "sunIdentityServerDeviceStatus": "Active",
+  });
+}
+
+/**
  * A device-capable client that REQUIRES consent, for the 5-E3 `/oauth2/device/user` consent rows.
  *
  * Not `test_client_consent` (the 5-E2 fixture): that one has no `device_code` grant, so `/device/code`

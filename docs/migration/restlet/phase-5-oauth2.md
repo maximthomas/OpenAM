@@ -579,6 +579,31 @@ list so they are not forgotten once the Restlet oracle is deleted:
 Neither is fixed inside Phase 5. Both belong on the security backlog and should be linked from
 [decisions.md](decisions.md) so they survive the oracle's deletion at 5d-2.
 
+### Post-migration ticket, filed by 5b-2a (checklist step 9) — `CheckSession.getClientSessionURI` throws on its own happy path
+
+Not a security debt but a **product bug**, recorded here because it has the same "reproduced now, must not be
+lost when the oracle goes" shape. Reproduced verbatim by `CheckSessionHandler` (5b-2 [D7](phase-5b-2.md#d7)),
+which turns it into the same 400 `server_error` Restlet gave rather than the framework's 500.
+
+`CheckSession.getClientSessionURI:115` ends in `return clientRegistration.getClientSessionURI();` and fails two
+ways, both reachable by an ordinary RP:
+
+| Trigger | Throw | Pinned by |
+|---|---|---|
+| id_token in the `Referer` with **no `aud`** — `getClientRegistration` returns `null`, and `:111-115` guards `clientRegistration != null` for the validity check then dereferences it unconditionally | `NullPointerException` | 5-E3 row 6d; `CheckSessionHandlerTest#anNpeFromGetClientSessionUriIs400ServerErrorNot500` |
+| A **registered** client whose `clientSessionURI` is unset — `OpenAMClientRegistration.getClientSessionURI:426-434` ends in `set.iterator().next()` with no emptiness guard | `NoSuchElementException` | 5-E3 row 6e; `CheckSessionHandlerTest#aNoSuchElementFromAnEmptyClientSessionUriIs400ServerErrorNot500` |
+
+⚠ **The second is the one to take seriously, and it is not an edge case.** The admin API leaves
+`com.forgerock.openam.oauth2provider.clientSessionURI` **empty on every client it creates**, so on a
+default-configured deployment check-session 400s the moment an RP actually supplies an `id_token` — the
+endpoint's entire reason for existing. 5-E3 only got a 200 out of row 6c after the fixture set the attribute
+explicitly.
+
+**The fix must cover both rows.** A null-guard that only handles the null registration repairs the rarer half
+and leaves the common one throwing. Both e2e rows and both unit rows must then be changed **deliberately** —
+they are pins, not snapshots. Own commit, own test, own release note, exactly as
+[D2](decisions.md)'s `ServerException` status change was handled.
+
 ## Integration testing
 
 The migration's highest-risk surface is **route composition** — realm routing, the protection filter, the

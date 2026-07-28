@@ -373,6 +373,17 @@ From **5a-2**: `/tokeninfo` sends `Content-Type: application/json` with **no cha
 2026-07-24), and `connect/register` answers **405** to `DELETE registration_client_uri` — a dynamically
 registered client cannot deregister itself. Both are reproduced deliberately; see the 5a-2 row above.
 
+From **5b-2a** ([D10](phase-5b-2.md#d10)), and it applies to **every `/oauth2` route `OAuth2Filter` did not
+wrap** — which is all of them except `/authorize` and `/access_token`:
+
+| # | What differs | Restlet | CHF | Why |
+|---|---|---|---|---|
+| 8 | Unsupported-verb body on a **non-`OAuth2Filter`** route — `device/user`, `connect/checkSession`, `connect/endSession`, `connect/register`'s `DELETE`, `resource_set`, `tokeninfo`, `introspect`, `userinfo` | 405 **CREST** `{"code":405,"reason":"Method Not Allowed","message":"The method specified in the request is not allowed for the resource identified by the request URI"}` — **no `error` field at all** (pinned for the first three by [5-E3 row 11](phase-5b-2.md#as-built-5-e3--recorded-2026-07-28)) | 405 **OAuth2** `{"error":"method_not_allowed","error_description":"Method Not Allowed"}` | The **shape** change comes from mounting `OAuth2ErrorFilter` across the application at all — not from D10, which only chooses the value inside the new shape. Before D10 the same routes would have said `invalid_request`, equally non-CREST and equally undefined by RFC 6749 for a 405. `errorFor` has **no route scope** and deliberately so: a client parsing `/oauth2` errors gets one shape everywhere, which is the filter's whole purpose |
+
+⚠ Row 8 is a **widening in shape, not a regression**. It is here because the table's rule is that an unmatched
+diff must be treated as one — without this row, the 5d-1 operator diffing `PUT /oauth2/connect/endSession` would
+correctly follow the rule and revert D10.
+
 ## Phase 6 — WebFinger + stragglers
 
 - `WebFingerHandler` (port of `OpenIDConnectDiscovery`; GET, `resource`/`rel`, JRD JSON)

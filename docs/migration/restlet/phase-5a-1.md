@@ -540,6 +540,10 @@ changes don't touch that path, so the capture is authoritative for the Restlet c
   handler's framework 405, which `OAuth2ErrorFilter` renders as `invalid_request` (per
   `OAuth2ErrorRouteCompositionIT.aMappedVerbWithNoAnnotatedMethodBecomesInvalidRequest`). Pin the CHF side at
   5d-1.
+  > **Superseded 2026-07-28 by [D10](phase-5b-2.md#d10).** The observation above stands; the CHF prediction does
+  > not. `OAuth2ErrorFilter` now renders a 405 as **`method_not_allowed`**, so the `error` field *matches* and
+  > only `error_description` diverges (`"Method Not Allowed"` vs `"Required Method: POST found: GET"`). The
+  > cited row was renamed to `aMappedVerbWithNoAnnotatedMethodBecomesMethodNotAllowed`.
 - **bad client secret → 401, `WWW-Authenticate: Basic realm="/"`, `error: invalid_client`** ("Client
   authentication failed"). ✅ confirms finding 4 / D14 live. First capture used the *public* client and hit
   `unauthorized_client` (400) — public clients can't use `client_credentials`, so client auth (the challenge

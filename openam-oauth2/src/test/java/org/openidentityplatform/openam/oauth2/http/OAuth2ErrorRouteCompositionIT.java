@@ -132,26 +132,27 @@ public class OAuth2ErrorRouteCompositionIT {
                 entry("error_description", "the code for <client> expired & cannot be reused"));
     }
 
-    /** A mapped verb with no annotated method: {@code AnnotatedMethod}'s own 405. */
+    /** A mapped verb with no annotated method: {@code AnnotatedMethod}'s own 405. D10 since 2026-07-28. */
     @Test
-    public void aMappedVerbWithNoAnnotatedMethodBecomesInvalidRequest() throws Exception {
+    public void aMappedVerbWithNoAnnotatedMethodBecomesMethodNotAllowed() throws Exception {
         Response response = through(new GetOnlyEndpoint(), "PUT");
 
         assertThat(response.getStatus().getCode()).isEqualTo(405);
-        assertThat(bodyOf(response)).containsEntry("error", "invalid_request");
+        assertThat(bodyOf(response)).containsEntry("error", "method_not_allowed");
     }
 
     /**
      * A verb that is not in the framework's map at all: {@code Endpoints}' fallback, a 405 whose CREST body is
      * now 405-coded (it once carried {@code code: 501} against the 405 status). Both 405 paths collapse to one
-     * client-visible shape because the filter derives the error from the wire status.
+     * client-visible shape because the filter derives the error from the wire status -- which is what makes
+     * D10's single {@code case} cover both without knowing which produced the response.
      */
     @Test
-    public void anUnmappedVerbBecomesTheSameInvalidRequest() throws Exception {
+    public void anUnmappedVerbBecomesTheSameMethodNotAllowed() throws Exception {
         Response response = through(new GetOnlyEndpoint(), "HEAD");
 
         assertThat(response.getStatus().getCode()).isEqualTo(405);
-        assertThat(bodyOf(response)).containsEntry("error", "invalid_request");
+        assertThat(bodyOf(response)).containsEntry("error", "method_not_allowed");
     }
 
     /** R-3c.5, through the real chain: the real error page must survive the filter intact. */

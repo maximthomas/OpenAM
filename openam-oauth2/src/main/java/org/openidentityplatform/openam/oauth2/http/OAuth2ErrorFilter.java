@@ -101,6 +101,20 @@ public class OAuth2ErrorFilter implements Filter {
      * {@code invalid_client} rather than RFC 6750's {@code invalid_token} because a 401 whose body this
      * filter had to rewrite came from the framework or an authentication filter, not from a protected
      * resource that would have produced its own bearer-token error.
+     * <p>
+     * {@code method_not_allowed} (D10) is the one exception to that RFC-first reasoning: it is not an RFC 6749
+     * code, but it is the incumbent, and this is a parity migration -- so it wins over the standard. Live
+     * Restlet emits it from {@code AuthorizeEndpointFilter.validateMethod} and
+     * {@code TokenEndpointFilter.validateMethod} (the two concrete {@code OAuth2Filter} subclasses; the base
+     * declaration is abstract), which {@code OAuth2RouterProvider} wraps around {@code /authorize} and
+     * {@code /access_token} alone.
+     * <p>
+     * ⚠ This mapping has <strong>no route scope</strong>, so it also applies to the {@code /oauth2} endpoints
+     * {@code OAuth2Filter} never wrapped, which answered a wrong verb with a CREST {@code {code, reason,
+     * message}} body carrying no {@code error} field at all (pinned by 5-E3 row 11 for {@code device/user},
+     * {@code connect/checkSession} and {@code connect/endSession}). Those diverge at the flip either way --
+     * the shape change comes from mounting this filter, not from the value it chooses -- and
+     * {@code method_not_allowed} is no further from a CREST 405 than {@code invalid_request} was.
      */
     private static String errorFor(Response response) {
         switch (response.getStatus().getCode()) {
@@ -108,11 +122,13 @@ public class OAuth2ErrorFilter implements Filter {
             return "invalid_client";            // RFC 6749 5.2: client authentication failed
         case 403:
             return "access_denied";             // RFC 6749 4.1.2.1
+        case 405:
+            return "method_not_allowed";        // D10: parity with AuthorizeEndpointFilter/TokenEndpointFilter
         case 503:
             return "temporarily_unavailable";   // RFC 6749 4.1.2.1: retry later, not "the provider broke"
         default:
-            // 400, 404, 405 and the rest of 4xx: the request is what was wrong, and nothing narrower is
-            // knowable from a status alone.
+            // 400, 404 and the rest of 4xx: the request is what was wrong, and nothing narrower is knowable
+            // from a status alone.
             return response.getStatus().getCode() >= 500 ? "server_error" : "invalid_request";
         }
     }

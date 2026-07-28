@@ -72,8 +72,9 @@ import org.testng.annotations.Test;
  * <li>a non-ASCII page reaches the wire as UTF-8 bytes (risk #21: the templates are ASCII, so only a
  *     non-ASCII <em>model</em> can catch an ISO-8859-1 encode);
  * <li>{@code PUT} against a {@code @Get}/{@code @Post}-only handler gives the framework 405, rewritten by the
- *     filter to {@code invalid_request} -- the {@code D8} body divergence from live Restlet's
- *     {@code method_not_allowed}, pinned here in process so 5d-1 only has to confirm it.
+ *     filter to {@code method_not_allowed} -- matching live Restlet's {@code error} field since D10, so only
+ *     the {@code error_description} half of the {@code D8} divergence remains, pinned here in process so 5d-1
+ *     only has to confirm it.
  * </ul>
  *
  * <p>A second group drives the <strong>real</strong> {@link AuthorizeHandler} rather than the stand-in, for the
@@ -214,9 +215,12 @@ public class AuthorizeRouteCompositionIT {
     }
 
     /**
-     * D8: the handler declares no verb check, so an unsupported verb is the framework's 405 -- and the filter
-     * rewrites its body code to {@code invalid_request}, where live Restlet's filter said
-     * {@code method_not_allowed}. A recorded body divergence at 5d-1, not a status one.
+     * D8, narrowed by D10: the handler declares no verb check, so an unsupported verb is the framework's 405 --
+     * and the filter now rewrites its body code to {@code method_not_allowed}, the value live Restlet emits
+     * from {@code AuthorizeEndpointFilter.validateMethod:54}. Until 2026-07-28 this row asserted
+     * {@code invalid_request}; what remains of the divergence is the {@code error_description} alone (the
+     * framework's {@code "Method Not Allowed"} against Restlet's
+     * {@code "Required Method: GET or POST found: PUT"}).
      *
      * <p>⚠ The cache headers on this response are the reason {@link OAuth2NoCacheFilter} exists, and this row
      * is what proves it works. The framework's 405 is not a thrown {@code OAuth2Exception}, so it never reaches
@@ -228,11 +232,11 @@ public class AuthorizeRouteCompositionIT {
      * non-{@code OAuth2Exception} throw, none of which enter a handler either.
      */
     @Test
-    public void anUnsupportedVerbIsTheFrameworks405RewrittenToInvalidRequest() throws Exception {
+    public void anUnsupportedVerbIsTheFrameworks405RewrittenToMethodNotAllowed() throws Exception {
         Response response = through(new RedirectUriMismatchException(), "PUT");
 
         assertThat(response.getStatus().getCode()).isEqualTo(405);
-        assertThat(bodyOf(response)).containsEntry("error", "invalid_request");
+        assertThat(bodyOf(response)).containsEntry("error", "method_not_allowed");
         assertThat(response.getHeaders().getFirst("Cache-Control")).isEqualTo("no-store");
         assertThat(response.getHeaders().getFirst("Pragma")).isEqualTo("no-cache");
     }
@@ -261,7 +265,7 @@ public class AuthorizeRouteCompositionIT {
         Response response = throughReal(realHandler(), "PUT");
 
         assertThat(response.getStatus().getCode()).isEqualTo(405);
-        assertThat(bodyOf(response)).containsEntry("error", "invalid_request");
+        assertThat(bodyOf(response)).containsEntry("error", "method_not_allowed");
         // On the real endpoint too, not just the stand-in: the stand-in's verb set is a fixture.
         assertThat(response.getHeaders().getFirst("Cache-Control")).isEqualTo("no-store");
         assertThat(response.getHeaders().getFirst("Pragma")).isEqualTo("no-cache");

@@ -550,7 +550,7 @@ CONTINUE fall-through, exactly as `GET /access_token` did in 5-E:
 
 | Row | Observed on live Restlet | Consequence for `AuthorizeHandler` |
 |---|---|---|
-| 7 — `PUT /oauth2/authorize` | **405** `application/json` `{"error_description":"Required Method: GET or POST found: PUT","error":"method_not_allowed"}` + `no-store`/`no-cache` | **No verb check.** The `@Get`/`@Post`-only handler's framework 405 matches on status; the body code becomes `invalid_request` via `OAuth2ErrorFilter` — a 5d-1 body divergence, not a status one |
+| 7 — `PUT /oauth2/authorize` | **405** `application/json` `{"error_description":"Required Method: GET or POST found: PUT","error":"method_not_allowed"}` + `no-store`/`no-cache` | **No verb check.** The `@Get`/`@Post`-only handler's framework 405 matches on status; the body code becomes `invalid_request` via `OAuth2ErrorFilter` — a 5d-1 body divergence, not a status one. ⚠ **Superseded 2026-07-28 by [D10](phase-5b-2.md#d10)**: the filter now emits `method_not_allowed`, so the `error` field matches too and only `error_description` diverges |
 | 8 — `POST` with `Content-Type: application/json` | **400** `application/json` `{"error_description":"Invalid Content Type","error":"invalid_request"}` + `no-store`/`no-cache` | **Reproduce the content-type check** with the 5a-1 recipe (empty-body early-return, case-insensitive `FORM_URLENCODED` compare) and **return** — never fall through |
 
 The decision tree that produced those answers, kept for the record:
@@ -560,6 +560,8 @@ The decision tree that produced those answers, kept for the record:
   rewritten by `OAuth2ErrorFilter` to `invalid_request` at 5d-1 — the same `method_not_allowed` →
   `invalid_request` body-code divergence 5-E already locked for `GET /access_token`. **No verb check in the
   handler**, whatever the oracle says about the status.
+  (⚠ The rewrite target changed to **`method_not_allowed`** on 2026-07-28 — [D10](phase-5b-2.md#d10). The "no
+  verb check" conclusion is unaffected: it was never contingent on the body code.)
 - **Content type.** If the oracle shows the filter's 400 `invalid_request` **survives** on a JSON-bodied POST,
   reproduce it in the handler with the charset-safe, empty-body-tolerant recipe 5a-1 settled
   (`request.getEntity().isRawContentEmpty()` early-return, then
@@ -866,7 +868,7 @@ S7–S8 as commit **5b-1b**. Only S3 touches already-shipped code, and it touche
 | **S4** | ✅ **done** — **D3 — `getAcceptedLanguages()`** | the accessor on `OAuth2Request` (default empty) + the hand-parse on `ChfOAuth2Request`; `RestletAcceptLanguageParityTest` over the header table | the parity table is green **against Restlet's real parser** — and the implementation was adjusted to match what Restlet does, not the other way round. Anything unmatchable is written into As-built |
 | **S5** | ✅ **done** — **D2 — `AbstractOAuth2HttpBrowserEndpoint`** | the browser `@ExceptionHandler` + `AbstractOAuth2HttpBrowserEndpointTest` driving a trivial subclass through `Endpoints.from` | all three branches asserted — 301 login (incl. the adversarial `redirect_uri=https://evil/` row), 302 **query and fragment** separately, error page per `NEVER_REDIRECT` type; `state` echo; `withErrorHeaders` default and override |
 | **S6** | ✅ **done** — **D4 — the hook seam** | `ChfAuthorizeRequestHook`, `LoginHintHook` fourth impl, `OAuth2GuiceModule` Multibinder, `LoginHintHookTest` extension | CHF before/after cookie behaviour asserted incl. the [D6](#d6) double `Set-Cookie`; existing Restlet-path hook tests untouched and green |
-| **S6a** | ✅ **done** — **`AuthorizeRouteCompositionIT`** | the layer-2 composition guard for S5 | `mvn -o -pl openam-oauth2 verify` green: 3xx passes through `OAuth2ErrorFilter` untouched, the HTML page is not rewritten, UTF-8 bytes reach the wire, PUT → framework 405 → `invalid_request`. **→ commit 5b-1a** (gate + `install`) |
+| **S6a** | ✅ **done** — **`AuthorizeRouteCompositionIT`** | the layer-2 composition guard for S5 | `mvn -o -pl openam-oauth2 verify` green: 3xx passes through `OAuth2ErrorFilter` untouched, the HTML page is not rewritten, UTF-8 bytes reach the wire, PUT → framework 405 → `invalid_request` (→ `method_not_allowed` since [D10](phase-5b-2.md#d10)). **→ commit 5b-1a** (gate + `install`) |
 | **S7** | ✅ **done 2026-07-26** — **D5 — `ConsentPageRenderer`** ([as-built](#as-built-s7)) | the shared consent collaborator, built in the producer's three phases (finding 10), + `ConsentPageRendererTest` | `dataModel(...)` matches `RendererFixtures.authorize()` **key-for-key and type-for-type**; `target` carries context path + query; absent parameters omitted; query-only reads proven with a POST carrying a conflicting form body; non-ASCII `user_name` round-trips UTF-8; `RestletRendererParityTest` still green |
 | **S8** | ✅ **done 2026-07-26** — **D9/D7/D8 — `AuthorizeHandler`** ([as-built](#as-built-s8)) | the handler + `AuthorizeHandlerTest` | success 302 query **and** fragment, `form_post` (composed URI in the model), consent branch, the full collapse table one row per exception, [D7](#d7) IAE rows with **no `Location`**, cache headers on every path, hooks called once in order. **→ commit 5b-1b** (gate + `install` + whole-reactor `install -DskipTests`) |
 | **S9** | ✅ **done 2026-07-26** — **Close out** | As-built filled in for S4/S7/S8 + three review rounds + both design questions; [plan.md](plan.md) 5-E2/5b-1 marked done; the flip's divergence table written | **[Expected divergences at the flip](plan.md#expected-divergences-at-the-flip)** carries **seven** rows, not the three this step anticipated — [D6](#d6)'s double `Set-Cookie`, [D7](#d7)'s IAE page and [D8](#d8)'s 405 body, plus the `login_hint` cookie-octet skip, the malformed-`q` `Accept-Language` outcome, the uppercase-`Content-Type` widening, and the [hook-throw shape](#div-hook-throw). D8's cache-header row came **off** the list: `OAuth2NoCacheFilter` fixed it rather than recording it. Proceed to **5b-2**, which consumes `AbstractOAuth2HttpBrowserEndpoint` and `ConsentPageRenderer` unchanged |
@@ -938,8 +940,9 @@ knowing before writing any further `/authorize` e2e):
 
 1. **[D8](#d8) resolved — both filter errors survive the CONTINUE fall-through.** Rows 7 and 8 recorded a
    **405** and a **400** that stand on the wire, exactly as `GET /access_token` did in 5-E. ⇒ `AuthorizeHandler`
-   gets **no verb check** (the framework 405 matches on status; the body code diverges to `invalid_request`,
-   a 5d-1 body diff) and **must reproduce the content-type check** and return. This is the answer S8 was
+   gets **no verb check** (the framework 405 matches on status; the body code diverged to `invalid_request` —
+   `method_not_allowed` since [D10](phase-5b-2.md#d10), leaving only `error_description` as the 5d-1 body diff)
+   and **must reproduce the content-type check** and return. This is the answer S8 was
    waiting on; 5b-1b is now unblocked on that axis.
 2. **[D6](#d6)'s premise corrected.** Restlet does **not** emit a `Set-Cookie` on a first authorize success
    carrying `login_hint`; it emits one only when the *request* already carried the cookie. The CHF port's

@@ -570,13 +570,20 @@ one being replaced.
 
 ```java
 case 405:
-    return "method_not_allowed";   // parity with OAuth2Filter.validateMethod
+    return "method_not_allowed";   // parity with AuthorizeEndpointFilter/TokenEndpointFilter
 ```
 
 `errorFor` currently sends every rewritten 4xx except 401/403 to `invalid_request` through its `default` branch,
-so at the flip a wrong verb answers `invalid_request` where live Restlet's `OAuth2Filter.validateMethod`
-answered **`method_not_allowed`** — recorded twice already, by [5-E](plan.md) for `GET /access_token` and
-[5-E2 row 7](phase-5b-1.md#d8) for `PUT /authorize`.
+so at the flip a wrong verb answers `invalid_request` where live Restlet answered **`method_not_allowed`** —
+recorded twice already, by [5-E](plan.md) for `GET /access_token` and [5-E2 row 7](phase-5b-1.md#d8) for
+`PUT /authorize`.
+
+> ⚠ **Cite the subclasses, not the base.** `OAuth2Filter.validateMethod` is **abstract** (`OAuth2Filter.java:88`)
+> and emits nothing. The literal comes from `AuthorizeEndpointFilter.validateMethod:54` (`"Required Method: GET
+> or POST found: "`) and `TokenEndpointFilter.validateMethod:54` (`"Required Method: POST found: "`) — the two
+> concrete subclasses, and the reason the parity claim covers exactly two routes. An earlier draft of this
+> decision and of the filter's own javadoc cited the abstract base, which sends a reader chasing the route-scope
+> question to an empty declaration.
 
 > **Corrected by 5-E3 row 11 (2026-07-28).** The original draft of this paragraph went on: *"5b-2 would have
 > added three more endpoints to that list, which is what turned a tolerated one-off into a pattern worth
@@ -602,6 +609,21 @@ turns out to emit `method_not_allowed` today, this decision gets *better*, not w
 
 Lands in **5b-2a**, with a new `OAuth2ErrorFilterTest` case and a re-run of `AuthorizeRouteCompositionIT`
 (whose D8 row asserts the current `invalid_request` body and must be updated in the same commit).
+
+> **As-built 2026-07-28 — the blast radius is 4 test rows across 2 ITs, not 1.** Gate 6 predicted "exactly one
+> intentional edit"; the real set is `AuthorizeRouteCompositionIT`'s two rows (the stand-in handler *and*
+> `theRealHandlerAnswersPutWithTheFrameworks405`) plus `OAuth2ErrorRouteCompositionIT`'s
+> `aMappedVerbWithNoAnnotatedMethod…` and `anUnmappedVerb…`, the latter pair proving one `case` covers **both**
+> framework 405 paths — `AnnotatedMethod`'s own and `Endpoints`' fallback — because `errorFor` keys off the wire
+> status, not the body's `code`. **The gate still passes on its substance**: every moved row is a 405 assertion,
+> nothing at 400/401/403/404/500/503 moved. The plan simply recalled one of the two ITs.
+>
+> Also corrected: gate 6 and [R-5b2.9](#risk-register-extends-phase-5-oauth2mds) call `OAuth2ErrorFilter`
+> "composed on already-committed routes" / "a live-bound path". It is **not bound to any route yet** —
+> `new OAuth2ErrorFilter()` appears in three test files and nowhere else, and `openam-oauth2` has no
+> `OAuth2HttpRouteProvider` (only the two `/frrest` providers). Build-ahead holds: D10 cannot reach a client
+> until 5d-1 mounts the filter, which also means **no test here proves the value on a real wire** — only the
+> 5d-1 e2e re-run will.
 
 <a id="d8"></a>
 ### D8 — the endSession 302 composes through `RedirectUris` (**gated on 5-E3 row 8**)

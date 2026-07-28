@@ -74,13 +74,19 @@ public class OAuth2ErrorFilterTest {
     }
 
     /**
-     * The OAuth2 error is derived from the wire status, not the body's {@code code}, so a 405 collapses to one
-     * client-visible shape however its CREST body is coded. Both inputs here are 405 on the wire: one carries a
-     * mismatched {@code code} of 501 (as the framework's unmapped-verb fallback once emitted, before it was
-     * fixed to a 405-coded body), the other a matching 405 -- both must become {@code invalid_request}.
+     * D10. The OAuth2 error is derived from the wire status, not the body's {@code code}, so a 405 collapses to
+     * one client-visible shape however its CREST body is coded. Both inputs here are 405 on the wire: one
+     * carries a mismatched {@code code} of 501 (as the framework's unmapped-verb fallback once emitted, before
+     * it was fixed to a 405-coded body), the other a matching 405.
+     * <p>
+     * Both must become {@code method_not_allowed} -- the value live Restlet emits from
+     * {@code AuthorizeEndpointFilter.validateMethod:54} and {@code TokenEndpointFilter.validateMethod:54},
+     * which is not an RFC 6749 code but is the incumbent, and this is a parity migration. Until 2026-07-28
+     * this row asserted {@code invalid_request} and recorded the difference as an expected 5d-1 divergence;
+     * D10 closes it for the {@code error} field, leaving only {@code error_description}.
      */
     @Test
-    public void bothFrameworkMethodNotAllowedBodiesBecomeInvalidRequest() throws Exception {
+    public void bothFrameworkMethodNotAllowedBodiesBecomeMethodNotAllowed() throws Exception {
         Response unmappedVerb = through(new Response(Status.METHOD_NOT_ALLOWED)
                 .setEntity(new NotSupportedException("no HEAD here").toJsonValue().getObject()));
         Response noAnnotatedMethod = through(new Response(Status.METHOD_NOT_ALLOWED)
@@ -88,9 +94,9 @@ public class OAuth2ErrorFilterTest {
 
         assertThat(unmappedVerb.getStatus().getCode()).isEqualTo(405);
         assertThat(bodyOf(unmappedVerb)).containsExactly(
-                entry("error", "invalid_request"), entry("error_description", "no HEAD here"));
+                entry("error", "method_not_allowed"), entry("error_description", "no HEAD here"));
         assertThat(bodyOf(noAnnotatedMethod)).containsExactly(
-                entry("error", "invalid_request"), entry("error_description", "no PUT here"));
+                entry("error", "method_not_allowed"), entry("error_description", "no PUT here"));
     }
 
     /**
@@ -104,6 +110,7 @@ public class OAuth2ErrorFilterTest {
             {Status.UNAUTHORIZED, "invalid_client"},           // RFC 6749 5.2
             {Status.FORBIDDEN, "access_denied"},               // RFC 6749 4.1.2.1
             {Status.SERVICE_UNAVAILABLE, "temporarily_unavailable"},
+            {Status.METHOD_NOT_ALLOWED, "method_not_allowed"}, // D10: AuthorizeEndpointFilter/TokenEndpointFilter
             {Status.NOT_FOUND, "invalid_request"},
             {Status.BAD_REQUEST, "invalid_request"},
             {Status.INTERNAL_SERVER_ERROR, "server_error"},

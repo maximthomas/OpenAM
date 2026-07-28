@@ -483,9 +483,9 @@ public class AuthorizeHandlerTest {
 
     /**
      * D8: no verb check in the handler. Two {@code @}-annotated verbs mean PUT gets the framework's own 405,
-     * whose body {@code OAuth2ErrorFilter} rewrites at 5d-1 -- a recorded body divergence from live Restlet's
-     * {@code method_not_allowed}, not a status one. The composition IT pins the rewritten body; this row pins
-     * that the handler itself never runs.
+     * whose body {@code OAuth2ErrorFilter} rewrites at 5d-1 -- since D10 to {@code method_not_allowed}, so the
+     * {@code error} field matches live Restlet and only {@code error_description} diverges; never a status
+     * divergence. The composition IT pins the rewritten body; this row pins that the handler itself never runs.
      */
     @Test
     public void anUnsupportedVerbIsTheFrameworks405() throws Exception {

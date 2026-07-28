@@ -201,6 +201,53 @@ public class ConsentPageRendererTest {
     }
 
     /**
+     * D2 (5b-2b): the device flow's consent page is built from request <em>attributes</em>, not from a query.
+     * {@code DeviceCodeVerificationHandler} seeds the whole device-code record onto the request, and the
+     * consent form it renders is posted back with no query string -- so phase 1 is the only source every one
+     * of these keys has on that path. A realm-only phase 1 drops six of the seven silently: each
+     * {@code <#if x??>} goes false and the consent screen renders with no client, no scopes and no realm at
+     * a perfectly healthy 200.
+     *
+     * <p>{@code realm} is seeded here deliberately as the device code's, not the URL's -- reproducing the
+     * cross-realm override of finding 3 (R-5b2.6).
+     */
+    @Test
+    public void seededAttributesSupplyTheWholeModelWhenThereIsNoQuery() throws Exception {
+        Request request = new Request().setMethod("POST")
+                .setUri("http://openam.example.com:8080/openam/oauth2/device/user");
+        ChfOAuth2Request o2 = chfRequest(request, null);
+        o2.setAttribute("client_id", "test_client_app");
+        o2.setAttribute("scope", "openid profile");
+        o2.setAttribute("state", "af0ifjsldkj");
+        o2.setAttribute("nonce", "n-0S6_WzA2Mj");
+        o2.setAttribute("response_type", "code");
+        o2.setAttribute("ui_locales", "fr");
+        o2.setAttribute("realm", "/alpha");
+
+        Map<String, Object> model = renderer.dataModel(consentRequired(), o2, request);
+
+        assertThat(model).containsEntry("client_id", "test_client_app")
+                .containsEntry("scope", "openid profile")
+                .containsEntry("state", "af0ifjsldkj")
+                .containsEntry("nonce", "n-0S6_WzA2Mj")
+                .containsEntry("response_type", "code")
+                .containsEntry("ui_locales", "fr")
+                .containsEntry("realm", "/alpha");
+    }
+
+    /** Phase 2 still overlays phase 1 for every key, not just the realm the old phase 1 copied. */
+    @Test
+    public void aQueryParameterOverlaysASeededAttribute() throws Exception {
+        Request request = authorizeRequest("scope=from_query");
+        ChfOAuth2Request o2 = chfRequest(request, null);
+        o2.setAttribute("scope", "from_attribute");
+
+        Map<String, Object> model = renderer.dataModel(consentRequired(), o2, request);
+
+        assertThat(model).containsEntry("scope", "from_query");
+    }
+
+    /**
      * CVE-2026-62280: {@code display_scope} is written in phase 3, after the query copy, precisely so a
      * client cannot supply its own. Reversing the phases reintroduces the injection.
      */

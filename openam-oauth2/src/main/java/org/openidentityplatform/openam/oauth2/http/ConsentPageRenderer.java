@@ -62,11 +62,15 @@ import org.owasp.esapi.ESAPI;
 public class ConsentPageRenderer {
 
     /**
-     * The OAuth2 parameters Restlet copied <em>implicitly</em> by bulk-copying the query map. Enumerated here
-     * because CHF has no equivalent bulk copy, and a missing name is invisible: the template's
-     * {@code <#if x??>} simply goes false and the field vanishes from the page (R-5b1.2).
+     * The OAuth2 parameters Restlet copied <em>implicitly</em>, read by phases 1 and 2 alike. Restlet had two
+     * bulk copies, not one: the request attributes and then the query map. On {@code /authorize} only the
+     * second carries anything; on the device flow only the first does, because the handler seeds the whole
+     * device-code record into the attributes and the consent form is posted back with no query at all (D2).
+     *
+     * <p>Enumerated here because CHF has no equivalent bulk copy, and a missing name is invisible: the
+     * template's {@code <#if x??>} simply goes false and the field vanishes from the page (R-5b1.2).
      */
-    private static final List<String> QUERY_KEYS = List.of(
+    private static final List<String> MODEL_KEYS = List.of(
             OAuth2Constants.Custom.REALM,
             OAuth2Constants.Params.REDIRECT_URI,
             OAuth2Constants.Params.SCOPE,
@@ -124,18 +128,21 @@ public class ConsentPageRenderer {
     @VisibleForTesting
     Map<String, Object> dataModel(ResourceOwnerConsentRequired consentRequired, OAuth2Request o2,
             Request request) {
-        // 1. Request attributes -- on CHF, the realm ChfOAuth2Request seeds from the RealmContext.
+        // 1. Request attributes -- on /authorize just the realm ChfOAuth2Request seeds from the RealmContext;
+        // on the device flow the whole device-code record, which is the only source those keys have there (D2).
         Map<String, Object> data = new HashMap<>();
-        Object realm = o2.getAttribute(OAuth2Constants.Custom.REALM);
-        if (realm != null) {
-            data.put(OAuth2Constants.Custom.REALM, realm);
+        for (String key : MODEL_KEYS) {
+            Object value = o2.getAttribute(key);
+            if (value != null) {
+                data.put(key, value);
+            }
         }
 
         // 2. Query overlay -- query wins. Read through getQueryParameter, never getParameter: the producer
         // copied getQuery().getValuesMap(), which is query-only, and 5b-2 renders this same model from a POST
         // whose form body getParameter would read (R-5b1.9). An absent parameter is omitted, not null-valued,
         // so the templates' <#if x??> guards behave as they do today.
-        for (String key : QUERY_KEYS) {
+        for (String key : MODEL_KEYS) {
             String value = o2.getQueryParameter(key);
             if (value != null) {
                 data.put(key, value);

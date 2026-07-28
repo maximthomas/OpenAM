@@ -1051,3 +1051,133 @@ Worth knowing before writing any further device-flow or check-session e2e; all t
 
 ⇒ **5-E3 done. [R-5b2.4](#risk-register-extends-phase-5-oauth2mds)'s unrecoverable-oracle risk is retired for
 all three endpoints.** Next: **5b-2a**, starting with D10 on its own (checklist step 5).
+
+---
+
+<a id="as-built-5b-2a--landed-2026-07-28"></a>
+## As-built — 5b-2a, landed 2026-07-28 (checklist steps 5–10)
+
+Two commits, kept separable exactly as checklist step 5 asked:
+
+| Commit | Scope |
+|---|---|
+| `f1ffda5d28` | **[D10](#d10) alone** — `case 405 → method_not_allowed` in `OAuth2ErrorFilter.errorFor`, plus the javadoc that had argued the other way and the four IT rows it moves |
+| `67c71eb41e` | **The handler pair** — `EndSessionHandler`, `CheckSessionHandler`, their tests, the D5 pointer resolutions and the T1 ticket (steps 6–10) |
+
+⚠ `67c71eb41e`'s message cites the D10 commit as `db70b6490b`. **That hash does not exist on this branch** — the
+commit was rebased before it landed, and the message was not re-written. D10 is **`f1ffda5d28`**; anyone
+following the stale hash will find nothing.
+
+**Deliverables:**
+
+| File | Change |
+|---|---|
+| `openidconnect/http/EndSessionHandler.java` | **new**, 172 L — `@Get` only, on `AbstractOAuth2HttpJsonEndpoint` |
+| `openidconnect/http/CheckSessionHandler.java` | **new**, 143 L — `@Get` + `@Post`, same base, both verbs one body |
+| `oauth2/http/OAuth2ErrorFilter.java` | D10: one `case`, 405 dropped from the `default` comment, +14 javadoc lines recording the route-scope caveat |
+| `oauth2/http/FreemarkerTemplateRenderer.java` | step 8 — the deferred `renderForDisplay` question answered in place (and the per-endpoint IAE mapping corrected) |
+| `EndSessionHandlerTest` / `CheckSessionHandlerTest` | **new**, 339 L / 301 L — **12 + 11** `@Test`, no data providers |
+| `RestletErrorParityTest` | +1 row, `aSlashInsideAValueIsEncodedByRestletAndNotByChf` (divergence row 9, below) |
+| `AuthorizeRouteCompositionIT`, `OAuth2ErrorRouteCompositionIT`, `OAuth2ErrorFilterTest`, `AuthorizeHandlerTest` | D10's blast radius — 4 IT rows + 1 renamed filter test + 1 javadoc |
+| `e2e/oauth2/oidc-test.spec.mjs`, `e2e/common/oauth2-fixtures.mjs`, `e2e/oauth2/oauth2-endpoints-test.spec.mjs` | the two 5-E3 guards added post-review (rows 9 and 6e) + six `toBe`→`toContain` `Content-Type` fixes |
+
+**Gates.** `openam-oauth2` **1157 surefire + 18 failsafe** green — 1132 after 5b-1, 1133 after D10, and the
+delta is exactly the 23 new `@Test` plus the parity row, so nothing was quietly disabled. `e2e/oauth2`
+**63 passed**. Grep gate on the two new handlers: `org.restlet|getCurrent()` → **0** (re-verified against the
+tree while writing this section). Javadoc/doclint clean, whole-reactor `install -DskipTests` green.
+**Nothing is routed until 5d-1.**
+
+### What the plan got wrong, and what each miss cost
+
+1. ⚠ **[D7](#d7)'s wrap list was short by one, and the gap was wire-visible.** D7 tables a single unchecked
+   throw for endSession — `reconstructJwt` inside `validateRedirect` — but `OpenIDConnectEndSession.endSession:68`
+   reconstructs the id_token **itself**, before `validateRedirect` is reached, and on the
+   no-`post_logout_redirect_uri` path `validateRedirect` never runs at all. A malformed `id_token_hint`
+   therefore escaped unchecked and became the framework's **500** where live Restlet answers 400 `server_error`
+   ([5-E3 row 10](#as-built-5-e3--recorded-2026-07-28), both halves).
+   ⚠ **The first unit test for it was a false green**: `OpenIDConnectEndSession` is a mock, so the unstubbed
+   call was a silent no-op and control fell through to the *second*, already-wrapped reconstruction. Stubbing
+   the throw turned it red at 500. Found in review, not by the suite — the same lesson as 5b-1's oracle-found
+   defects, one layer down: **a mock cannot fail on the path the plan forgot to name**.
+   ⇒ two tests now pin it: `aMalformedIdTokenHintIs400ServerErrorNot500` and
+   `aMalformedIdTokenHintIs400EvenWithNoRedirectUri`.
+2. **Statement order inside `validateRedirect` is load-bearing.** The port had hoisted `URI.create` above
+   `clientRegistrationStore.get`; Restlet resolves the client first (`EndSession:142-146`). With **both** inputs
+   bad — an `azp` naming an unregistered client *and* an unparseable target — that silently swapped
+   `invalid_client` for `server_error`. Restored, with a comment saying why.
+3. **The golden claim was wrong in our favour** — struck in place above rather than deleted, because
+   regenerating a golden after 5d is forbidden and acting on the stale text would do exactly that.
+4. **Gate 6's blast-radius prediction** was 1 test row; the truth was 4 across 2 ITs — recorded in the
+   [D10 as-built box](#d10). The gate passed on substance: every moved row is a 405 assertion.
+5. **`OAuth2ErrorFilter` is bound to no route yet**, contra gate 6 and [R-5b2.9](#risk-register-extends-phase-5-oauth2mds),
+   which both call it "a live-bound path". Build-ahead holds — and so no test here proves D10 on a real wire;
+   only the 5d-1 e2e re-run will.
+
+### The wraps as built — typed, not blanket
+
+[D7](#d7) says "narrow", and the first `CheckSessionHandler` draft did not honour it: a single
+`catch (Exception)` spanning four collaborator calls *and* the render — precisely the blanket mapper
+[decisions.md D3](decisions.md) forbids, and a contradiction of the justification written into its sibling two
+files away. As landed:
+
+| Handler | Wrapped call | Caught |
+|---|---|---|
+| `EndSessionHandler` | `openIDConnectEndSession.endSession` | `JwtRuntimeException` |
+| `EndSessionHandler` | `URI.create` on the redirect target | `IllegalArgumentException` |
+| `CheckSessionHandler` | `getClientSessionURI`/`getValidSession` | `NullPointerException`, `NoSuchElementException` |
+| `CheckSessionHandler` | `renderForDisplay` | `IOException`, `TemplateException`, `IllegalArgumentException` |
+
+A fault in `baseURLProviderFactory` therefore stays a **500** instead of being masked as a 400 — which is the
+whole point of D3, and what the blanket draft would have lost.
+
+### Two divergences found here, recorded rather than fixed
+
+Both landed in [plan.md's expected-divergences table](plan.md#expected-divergences-at-the-flip) as **rows 9 and
+10**, and both were settled against the real thing rather than reasoned about:
+
+- **Row 9 — the `/` encoding.** [D8](#d8) claims percent-encoding parity was "proven and closed at 3c-2". It was
+  proven for the characters *that test's fixture happened to contain* (`a b&c=d+e`). Feeding the handler 5-E3's
+  recorded live value `st ate/1` produced `state=st%20ate/1` against Restlet's `st%20ate%2F1`:
+  `Form.toQueryString` does not encode `/` inside a value. Confirmed on **both legs** by the new
+  `RestletErrorParityTest` row while Restlet is still on the classpath. Not fixed, on D8's own instruction —
+  `RedirectUris` is shared with `/authorize`, so bending the encoder changes bytes on a committed endpoint to
+  buy nothing a client can observe (RFC 3986 §3.4 puts `/` in the `query` production). ⇒ **it applies to
+  `/authorize` too; 5b-2a only found it.** e2e row 8 now accepts either encoding so the spec stays re-runnable
+  across the flip.
+- **Row 10 — the `state` echo.** `AbstractOAuth2HttpJsonEndpoint.onError` adds `state` to **every** JSON error
+  body; Restlet's two resources passed `null` (`EndSession:106`) and never emitted it. Settled by probing the
+  live container: `GET /connect/endSession?state=abc123` returns a byte-identical body to the same request
+  without it. Not fixable per-endpoint — an override drops the `@ExceptionHandler` annotation ([D1](#d1)) — and
+  **not specific to this step**: the base has behaved this way since 5a-2, so it applies to every CHF JSON
+  endpoint and deserves one deliberate look across all of them at 5d-1.
+
+### Decisions and pointers closed
+
+- **[D5](#d5) confirmed and both deferred pointers resolved** (step 8): it errors, no `page/` fallback.
+  `FreemarkerTemplateRenderer`'s javadoc had framed a fallback as parity-preserving; it would have been a
+  **widening** of a live 400 into a 200. Also corrected there: the IAE mapping is **per endpoint**
+  (`AuthorizeHandler` → `invalid_request`, `CheckSessionHandler` → `server_error`), not one rule.
+- **[D7](#d7)'s fourth wrap implemented**, and the two "a test to change deliberately" rows exist:
+  `anNpeFromGetClientSessionUriIs400ServerErrorNot500` and
+  `aNoSuchElementFromAnEmptyClientSessionUriIs400ServerErrorNot500`.
+- **Step 9 filed as post-migration ticket
+  [T1](plan.md#post-migration-tickets--raised-by-the-port-deliberately-not-fixed-in-it)** (tabled in full in
+  [phase-5-oauth2.md](phase-5-oauth2.md), summarised in plan.md's post-migration table next to T2–T4). It must cover **both** throws — the
+  `NoSuchElementException` from an empty attribute, which is the admin API's default and therefore the common
+  case, and the `NullPointerException` from a null registration.
+- **The renderer-parity seam closed by test, not by golden**: `theModelCarriesTheFourKeysWithTheRestletsTypes`
+  asserts the handler builds the same four keys with the same **types** as `RendererFixtures.checkSession()` —
+  `valid_session` a `String`, because the template emits it unquoted into JavaScript.
+
+### One e2e-hygiene fix worth carrying forward
+
+Six assertions moved from `toBe` to `toContain` on `Content-Type`. The oidc spec's own header declares those
+bytes out of scope (CHF emits `application/json; charset=UTF-8` where Restlet emits it bare) — but five of its
+rows pinned them exactly, and the device spec's row 11 did too. All six would have gone red at the flip for a
+reason the file had already declared out of scope, destroying the *"re-run unchanged; red is a regression"*
+contract that makes the whole §E apparatus worth anything. ⚠ **The 5-E rows in `oauth2-test.spec.mjs` keep
+their exact assertions** — there, the charset *is* the oracle, not an oversight.
+
+⇒ **5b-2a done.** Next: **5b-2b**, starting with the [D2](#d2) `ConsentPageRenderer` correction on its own
+(checklist step 11) — still realm-only in the tree, so the device consent page cannot render correctly until it
+lands.

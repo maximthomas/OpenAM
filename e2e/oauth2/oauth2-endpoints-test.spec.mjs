@@ -30,13 +30,16 @@ import { test, expect, request as apiRequest } from "@playwright/test";
 import { OPENAM_BASE, getAdminToken, getAuthToken, PASSWORD, USERNAME } from "../common/openam-commons.mjs";
 import {
   RS_CLIENT_SECRET,
-  deleteClient, ensureOidcClient, ensureProviderConfig, ensureResourceServerClient, ensureUmaProvider,
-  protectionApiToken, registerResourceSet, sessionContext, uniqueName, warmUpResourceSetStore,
+  deleteClient, deviceCodeForConsent, ensureDeviceConsentClient, ensureOidcClient, ensureProviderConfig,
+  ensureResourceServerClient, ensureUmaProvider, protectionApiToken, registerResourceSet, sessionContext,
+  uniqueName, warmUpResourceSetStore,
 } from "../common/oauth2-fixtures.mjs";
 
 /** This spec's own clients -- see the note in oauth2-fixtures.mjs about per-file ownership. */
 const OIDC_CLIENT_ID = "test_client_oidc_dev";
 const RS_CLIENT_ID = "test_client_rs_reg";
+/** Consent-requiring, device-capable: the 5-E3 rows that must reach the device consent page. */
+const DEVICE_CONSENT_CLIENT_ID = "test_client_device_consent";
 
 /** Protection API token: the bearer that guards /oauth2/resource_set and authorises dynamic registration. */
 let pat;
@@ -49,6 +52,7 @@ test.beforeAll(async ({ request }) => {
   await ensureProviderConfig(adminToken, request);
   await ensureUmaProvider(adminToken, request);
   await ensureOidcClient(adminToken, request, OIDC_CLIENT_ID);
+  await ensureDeviceConsentClient(adminToken, request, DEVICE_CONSENT_CLIENT_ID);
   await ensureResourceServerClient(adminToken, request, RS_CLIENT_ID);
   pat = await protectionApiToken(request, RS_CLIENT_ID, USERNAME, PASSWORD);
   await warmUpResourceSetStore(request, pat);
@@ -304,6 +308,173 @@ test.describe("OAuth2 device flow", () => {
     } finally {
       await userCtx.dispose();
     }
+  });
+});
+
+/**
+ * Step 5-E3: the contract lock for /oauth2/device/user, recorded against LIVE RESTLET. Restlet stops serving
+ * /oauth2 at the 5d-1 flip, so none of this is recordable afterwards
+ * (docs/migration/restlet/phase-5b-2.md).
+ *
+ * Every value here was OBSERVED FIRST and only then asserted (2026-07-28, openam-e2e:5e3 built from this
+ * tree). Do not "tidy" a string: the exact bytes ARE the oracle for the 5d-1 byte diff.
+ *
+ * Unlike the two OIDC session endpoints, this one is a BROWSER endpoint -- its doCatch calls the 4-arg
+ * ExceptionHandler, so its errors are HTML pages. Row 3 is the proof, and it is why the CHF port extends the
+ * browser base while the other two extend the JSON one.
+ */
+test.describe("OAuth2 device flow contract lock (5-E3, live Restlet)", () => {
+
+  let demoCtx;
+
+  /** The device pages carry their model in a `pageData`/`oauth2Data` literal, exactly like /authorize. */
+  const pageValue = (html, key) =>
+    (new RegExp(`(?:^|[{,\\s])${key}:\\s*"([^"]*)"`).exec(html) ?? [])[1];
+
+  /** Drives a consent-requiring code to the consent page and returns the page plus its scraped csrf. */
+  async function consentPage(request, extra = {}) {
+    const code = await deviceCodeForConsent(request, DEVICE_CONSENT_CLIENT_ID, extra);
+    const page = await demoCtx.get(
+      `${OPENAM_BASE}/oauth2/device/user?${new URLSearchParams({ user_code: code.user_code })}`,
+      { maxRedirects: 0 });
+    const html = await page.text();
+    return { code, page, html, csrf: pageValue(html, "csrf") };
+  }
+
+  test.beforeAll(async () => {
+    const loginCtx = await apiRequest.newContext();
+    let ssoToken;
+    try {
+      ssoToken = await getAuthToken(loginCtx, USERNAME, PASSWORD);
+    } finally {
+      await loginCtx.dispose();
+    }
+    demoCtx = await sessionContext(apiRequest, ssoToken);
+  });
+
+  test.afterAll(async () => {
+    await demoCtx?.dispose();
+  });
+
+  test("row 1: an unknown user_code is a 200 form page carrying errorCode", async () => {
+    // The one place this provider reports a failure with a 200: readDeviceCode's InvalidGrantException is
+    // swallowed and re-rendered as the code-entry form with an error marker.
+    const anonCtx = await apiRequest.newContext();
+    try {
+      for (const [who, ctx] of [["authenticated", demoCtx], ["anonymous", anonCtx]]) {
+        const response = await ctx.get(`${OPENAM_BASE}/oauth2/device/user?user_code=ZZZZZZZZ`,
+          { maxRedirects: 0 });
+        const html = await response.text();
+        console.log(`[5-E3] row1 unknown code (${who}) -> ${response.status()}`);
+        expect(response.status(), who).toBe(200);
+        expect(response.headers()["content-type"], who).toBe("text/html;charset=UTF-8");
+        expect(html, who).toContain('errorCode: "not_found"');
+        // NOTE: the anonymous case is a 200 too -- the code lookup fails BEFORE any session check, so an
+        // unknown code never reaches the 301-to-login that a valid code triggers.
+        expect(response.headers()["location"], who).toBeUndefined();
+        // finding 8: no cache headers on this endpoint, ever.
+        expect(response.headers()["cache-control"], who).toBeUndefined();
+        expect(response.headers()["pragma"], who).toBeUndefined();
+      }
+    } finally {
+      await anonCtx.dispose();
+    }
+  });
+
+  test("row 4: the device consent page carries a model built ENTIRELY from request attributes", async ({ request }) => {
+    // ⚠ This is the 5b-2 finding-2 / D2 oracle, and the reason ConsentPageRenderer's phase 1 cannot stay
+    // realm-only. The device-flow GET carries ONLY user_code in the query, so every key below reached the
+    // page through phase 1 -- the request ATTRIBUTES that addRequestParamsFromDeviceCode seeded from the
+    // stored device code. A CHF renderer that copies only `realm` in phase 1 renders this page with every
+    // <#if x??> false: a 200 that looks fine to a status assertion and is useless to a user.
+    const { code, page, html, csrf } = await consentPage(request, {
+      state: "devstate", nonce: "devnonce", ui_locales: "fr-CA",
+    });
+    console.log(`[5-E3] row4 consent page -> ${page.status()} bytes=${html.length}`);
+
+    expect(page.status()).toBe(200);
+    expect(page.headers()["content-type"]).toBe("text/html;charset=UTF-8");
+
+    expect(csrf).toBeTruthy();
+    // Seeded from the device code, NOT from the query -- the query has only user_code.
+    expect(pageValue(html, "clientId")).toBe(DEVICE_CONSENT_CLIENT_ID);
+    expect(pageValue(html, "scope")).toBe("openid profile");
+    expect(pageValue(html, "state")).toBe("devstate");
+    expect(pageValue(html, "nonce")).toBe("devnonce");
+    expect(pageValue(html, "responseType")).toBe("code");
+    // `ui_locales` OVERRIDES the Accept-Language-derived locale (page/authorize.ftl:43 prefers it), so a
+    // renderer that drops the key silently changes the page's language rather than merely losing a field.
+    expect(pageValue(html, "locale")).toBe("fr-CA");
+    // realm rides along on the same attribute map, at the TOP level of pageData rather than inside oauth2Data.
+    expect(html).toContain('realm: "\\/"');
+
+    // Device-specific model keys /authorize never sets.
+    expect(pageValue(html, "userCode")).toBe(code.user_code);
+    expect(pageValue(html, "userName")).toBe("Demo Demo");
+    expect(pageValue(html, "displayName")).toBe(DEVICE_CONSENT_CLIENT_ID);
+    expect(html).toContain("isSaveConsentEnabled: true");
+    expect(html).toContain('displayScopes: [ { "name": "openid" }');
+    // The form posts back to the device endpoint carrying the user_code, with the context path included.
+    expect(pageValue(html, "formTarget"))
+      .toBe(`\\/openam/oauth2/device/user?user_code=${code.user_code}`);
+  });
+
+  test("row 2: decision=allow and decision=deny both render the thanks page", async ({ request }) => {
+    for (const decision of ["allow", "deny"]) {
+      const { code, csrf } = await consentPage(request);
+      const response = await demoCtx.post(`${OPENAM_BASE}/oauth2/device/user`, {
+        form: { decision, save_consent: "off", csrf, user_code: code.user_code },
+        maxRedirects: 0,
+      });
+      const html = await response.text();
+      console.log(`[5-E3] row2 decision=${decision} -> ${response.status()}`);
+      expect(response.status(), decision).toBe(200);
+      expect(response.headers()["content-type"], decision).toBe("text/html;charset=UTF-8");
+      // BOTH decisions land on the thanks page: the allow/deny branch only chooses between updating and
+      // deleting the device code, and the method then falls through to the same render. `deny` is NOT an
+      // error page and NOT a redirect -- the difference is invisible on the wire and only observable by
+      // polling /access_token afterwards.
+      expect(html, decision).toContain("done: true");
+      // Pre-existing quirk, reproduced deliberately: CodeThanks.ftl renders `realm : "${realm?js_string}/XUI"`,
+      // so the realm arrives with /XUI appended. The CHF golden must keep this.
+      expect(html, decision).toContain('realm : "\\//XUI"');
+    }
+  });
+
+  test("row 3: a CSRF failure is an HTML error PAGE, not JSON (the 4-arg doCatch)", async ({ request }) => {
+    // Closes 5b-2 open question 4. DeviceCodeVerificationResource.doCatch calls the 4-arg
+    // ExceptionHandler.handle, which renders page/error.ftl -- so unlike endSession/checkSession, this
+    // endpoint's errors are pages. That is what pins DeviceCodeVerificationHandler to the BROWSER base.
+    for (const [name, csrf] of [["missing", undefined], ["wrong", "not-the-token"]]) {
+      const { code } = await consentPage(request);
+      const form = { decision: "allow", save_consent: "off", user_code: code.user_code };
+      if (csrf) form.csrf = csrf;
+      const response = await demoCtx.post(`${OPENAM_BASE}/oauth2/device/user`, { form, maxRedirects: 0 });
+      const html = await response.text();
+      console.log(`[5-E3] row3 csrf ${name} -> ${response.status()} ct=${response.headers()["content-type"]}`);
+
+      expect(response.status(), name).toBe(400);
+      expect(response.headers()["content-type"], name).toBe("text/html;charset=UTF-8");
+      expect(html, name).toContain("<title>OAuth2 Error Page</title>");
+      expect(html, name).toContain('message: "bad_request"');
+      // No redirect: the error is rendered, never sent anywhere.
+      expect(response.headers()["location"], name).toBeUndefined();
+    }
+  });
+
+  test("row 11: PUT on /device/user is Restlet's own 405 with a CREST body", async ({ request }) => {
+    // Same shape as the two OIDC session endpoints (see the 5-E3 block in oidc-test.spec.mjs): no
+    // OAuth2Filter wrapper, so no OAuth2-shaped 405. This body is CREST, not `method_not_allowed`.
+    const response = await request.fetch(`${OPENAM_BASE}/oauth2/device/user`,
+      { method: "PUT", maxRedirects: 0 });
+    const body = await response.json();
+    console.log(`[5-E3] row11 PUT /device/user -> ${response.status()} ${JSON.stringify(body)}`);
+    expect(response.status()).toBe(405);
+    expect(response.headers()["content-type"]).toBe("application/json");
+    expect(body.code).toBe(405);
+    expect(body.reason).toBe("Method Not Allowed");
+    expect(body.error).toBeUndefined();
+    expect(response.headers()["cache-control"]).toBeUndefined();
   });
 });
 

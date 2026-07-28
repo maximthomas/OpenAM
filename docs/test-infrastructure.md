@@ -113,6 +113,48 @@ Two traps here:
 **This is the only layer that exercises a real HTTP request through a real server**, and therefore the only
 one where Restlet's server adapter is in play (see [Gotchas](#gotchas-that-have-actually-bitten)).
 
+## Running layer 4 locally against a WAR built from your tree
+
+The recipe the §E contract-lock steps use (5-E2, 5-E3). Reproduces CI's `build-docker` leg closely enough that
+the recorded bytes are the ones CI would see. Budget ~40 min cold, almost all of it Maven.
+
+```bash
+# 1. the artifacts (the Dockerfile COPYs all three)
+mvn install -DskipTests -Dmaven.javadoc.skip=true -Dmaven.source.skip=true
+
+# 2. a MINIMAL docker context -- never build with the repo root as context, it tars ~10G of target/
+mkdir -p ctx/openam-server/target ctx/openam-distribution/openam-distribution-{ssoadmintools,ssoconfiguratortools}/target
+ln <war> <ssoadmintools zip> <ssoconfiguratortools zip> into the matching ctx/ paths   # hard links, not copies
+sed -E '/^#COPY openam-(server|distribution)\//s/^#//' \
+    openam-distribution/openam-distribution-docker/Dockerfile > ctx/Dockerfile   # the same sed CI applies
+docker build --build-arg VERSION=<project version> -t openam-e2e:<tag> ctx/
+
+# 3. boot + configure exactly as build.yml does (opendj-idp + openam-idp on the test-openam network,
+#    the ssoconfiguratortools conf.file, then create the demo user over REST)
+# 4. npx playwright test oauth2
+```
+
+`/etc/hosts` must map `openam.example.org` to `127.0.0.1` — `OPENAM_BASE` defaults to
+`http://openam.example.org:8080/openam` and the `COOKIE_DOMAIN=example.org` session cookie will not attach to
+`localhost`.
+
+**Copy the artifacts into a clean context dir rather than pointing the Dockerfile at `target/`.** Both `COPY`
+lines are globs (`OpenAM-*.war`, `*.zip`), so a `target/` still holding a previous version's artifacts silently
+copies **both** and the image gets whichever the glob expands to first.
+
+### Two build hazards that cost a cycle each (2026-07-28)
+
+- **Never `-T1C` this reactor.** `transform-jakarta/jato-shaded` consumes the root `jato-shaded` artifact
+  through `maven-dependency-plugin` configuration rather than a declared `<dependency>`, so the reactor DAG has
+  no edge between them and the parallel builder can start the consumer first. It then fails resolving
+  `…:jato-shaded:jar:<version>` from the *remote* repo — and Maven **caches that miss**, so the obvious
+  `-rf` retry fails again with "resolution is not reattempted". Recovery: delete
+  `~/.m2/repository/org/openidentityplatform/external/com/iplanet/jato/jato-shaded/<version>/` and resume
+  serially from `-rf org.openidentityplatform.external.com.iplanet.jato:jato-shaded`.
+- **A half-installed `node_modules` fails the frontend module, not the network.** `openam-ui-js-sdk` died with
+  `ERR_MODULE_NOT_FOUND` for a file *inside* an installed package. `rm -rf` that module's `node_modules` and
+  resume. Note this rewrites `package-lock.json` — revert it, it is not part of your change.
+
 ## CI (`.github/workflows/build.yml`)
 
 Two jobs. There is **no separate IT job** — ITs are folded into the build via `verify` + the profile.

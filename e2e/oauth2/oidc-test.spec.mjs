@@ -31,7 +31,7 @@
 import { test, expect, request as apiRequest } from "@playwright/test";
 import { OPENAM_BASE, getAdminToken, getAuthToken, PASSWORD, USERNAME } from "../common/openam-commons.mjs";
 import {
-  OIDC_CLIENT_SECRET, REALM,
+  CLIENT_SESSION_URI, OIDC_CLIENT_SECRET, POST_LOGOUT_REDIRECT_URI, POST_LOGOUT_REDIRECT_URI_WITH_QUERY, REALM,
   authorizationCodeTokens, basicAuth, ensureOidcClient, ensureProviderConfig, sessionContext,
 } from "../common/oauth2-fixtures.mjs";
 
@@ -243,6 +243,303 @@ test.describe("OIDC session endpoints", () => {
       expect((await response.body()).length).toBe(0);
     } finally {
       await ctx.dispose();
+    }
+  });
+});
+
+/**
+ * Step 5-E3: the contract lock for /oauth2/connect/checkSession and /oauth2/connect/endSession, recorded
+ * against LIVE RESTLET. Restlet stops serving /oauth2 at the 5d-1 flip, so none of this is recordable
+ * afterwards -- and phase 5b-2's D5, D7 and D8 are DECIDED by what is below
+ * (docs/migration/restlet/phase-5b-2.md).
+ *
+ * Every value here was OBSERVED FIRST and only then asserted (2026-07-28, openam-e2e:5e3 built from this
+ * tree; `Server: Restlet-Framework/2.4.4` on every realm-prefixed row). Do not "tidy" a string: the exact
+ * bytes ARE the oracle for the 5d-1 byte diff. Where an observation contradicted the plan, the comment says
+ * so rather than quietly matching the code.
+ *
+ * Both endpoints answer errors as JSON, which is the single most load-bearing fact in 5b-2: their doCatch
+ * calls the 2-arg ExceptionHandler.handle. A CHF port that put them on the browser base would answer every
+ * row below with an HTML page instead.
+ */
+test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () => {
+
+  /** A crafted JWT. Nothing verifies the signature before the claims are read, so "sig" is enough. */
+  const jwt = (claims) => {
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    return `${b64({ alg: "HS256", typ: "JWT" })}.${b64(claims)}.c2ln`;
+  };
+
+  /** A fresh session + its own id_token: every endSession row ends the session it uses. */
+  async function ownSession(nonce) {
+    const loginCtx = await apiRequest.newContext();
+    let ssoToken;
+    try {
+      ssoToken = await getAuthToken(loginCtx, USERNAME, PASSWORD);
+    } finally {
+      await loginCtx.dispose();
+    }
+    const ctx = await sessionContext(apiRequest, ssoToken);
+    const tokens = await authorizationCodeTokens(ctx, {
+      clientId: OIDC_CLIENT_ID, clientSecret: OIDC_CLIENT_SECRET, scope: "openid", nonce,
+    });
+    return { ctx, tokens };
+  }
+
+  const endSession = (ctx, params) =>
+    ctx.get(`${OPENAM_BASE}/oauth2/connect/endSession?${new URLSearchParams(params)}`, { maxRedirects: 0 });
+
+  // ---------------------------------------------------------------- checkSession
+
+  test("row 6: the bare path is the JSP and the realm-prefixed path is the Restlet FTL", async ({ request }) => {
+    // 5b-2 D6 keeps the JSP on the bare path and mounts CheckSessionHandler on the realm-prefixed one, so
+    // proving WHICH page answers WHICH url is the whole point of this row.
+    const jsp = await request.get(`${OPENAM_BASE}/oauth2/connect/checkSession`);
+    const ftl = await request.get(`${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession`);
+    const jspHtml = await jsp.text();
+    const ftlHtml = await ftl.text();
+    console.log(`[5-E3] row6 jsp server=${jsp.headers()["server"]} ftl server=${ftl.headers()["server"]}`);
+
+    expect(jsp.status()).toBe(200);
+    expect(ftl.status()).toBe(200);
+    expect(jsp.headers()["content-type"]).toBe("text/html;charset=UTF-8");
+    expect(ftl.headers()["content-type"]).toBe("text/html;charset=UTF-8");
+
+    // Discriminator 1 -- the script src. The JSP is container-served and uses a RELATIVE path; the FTL
+    // interpolates the absolute baseUrl. This one survives the flip, so it is the durable oracle.
+    expect(jspHtml).toContain('<script src="../../js/sha256.js">');
+    expect(ftlHtml).toContain(`<script src="${OPENAM_BASE}/js/sha256.js">`);
+
+    // Discriminator 2 -- only valid BEFORE the flip: Restlet stamps its banner, the JSP does not.
+    expect(jsp.headers()["server"]).toBeUndefined();
+    expect(ftl.headers()["server"]).toBe("Restlet-Framework/2.4.4");
+
+    // ⚠ NOT cosmetic. The JSP emits a quoted STRING, so `!validSession` is false even when the session is
+    // invalid and getBrowserState() reads the cookie regardless; the FTL's `?js_string` escapes without
+    // adding quotes, so it emits a bare boolean literal and the guard actually works. The CHF port inherits
+    // the FTL, i.e. the CORRECT behaviour -- record the difference so the 5d-1 diff on the bare path (which
+    // keeps the JSP) is not mistaken for a regression.
+    expect(jspHtml).toContain('var validSession = "false";');
+    expect(ftlHtml).toContain("var validSession = false;");
+
+    // finding 8: no cache headers on either page, ever.
+    for (const response of [jsp, ftl]) {
+      expect(response.headers()["cache-control"]).toBeUndefined();
+      expect(response.headers()["pragma"]).toBeUndefined();
+    }
+  });
+
+  test("row 6b: checkSession answers GET and POST identically", async ({ request }) => {
+    const get = await request.get(`${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession`);
+    const post = await request.post(`${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession`, { form: {} });
+    console.log(`[5-E3] row6b GET=${get.status()} POST=${post.status()}`);
+    expect(post.status()).toBe(200);
+    expect(await post.text()).toBe(await get.text());
+  });
+
+  test("row 6c: an id_token in the REFERER supplies client_uri", async ({ request }) => {
+    // CheckSession.getIDToken reads id_token from the Referer query string (CheckSession.java:191-218), NOT
+    // from a request parameter -- that is how the RP iframe passes it, and it is the only way to reach the
+    // model's client_uri at all.
+    const response = await request.get(`${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession`, {
+      headers: { Referer: `http://rp.invalid/page?id_token=${tokens.id_token}` },
+    });
+    const html = await response.text();
+    console.log(`[5-E3] row6c valid id_token -> ${response.status()}`);
+    expect(response.status()).toBe(200);
+    // The registered clientSessionURI reaches the page as the postMessage origin check.
+    expect(html).toContain(`var clientURI = "${CLIENT_SESSION_URI}";`);
+  });
+
+  test("row 6d: every unusable id_token in the Referer is a 400 server_error JSON", async ({ request }) => {
+    // The three unchecked throws behind CheckSession, all client-reachable, all landing on the same wire
+    // shape via the 2-arg ExceptionHandler -> ServerException (400 "server_error"). 5b-2 D7 wraps these at
+    // source so the CHF port reproduces the 400 rather than letting CHF answer 500.
+    const cases = {
+      // getClientRegistration returns null when there is no `aud`, and getClientSessionURI then dereferences
+      // it unguarded (CheckSession.java:111-115) -- a genuine NPE, pinned here so the separate null-guard
+      // fix has a test to change deliberately.
+      "no aud claim (the CheckSession NPE)": jwt({ iss: "x", sub: "demo" }),
+      "unknown aud": jwt({ aud: "no_such_client", realm: "/" }),
+      "malformed jwt": "not.a-jwt",
+    };
+    for (const [name, idToken] of Object.entries(cases)) {
+      const response = await request.get(`${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession`, {
+        headers: { Referer: `http://rp.invalid/page?id_token=${idToken}` },
+      });
+      const body = await response.json();
+      console.log(`[5-E3] row6d ${name} -> ${response.status()} ${JSON.stringify(body)}`);
+      expect(response.status(), name).toBe(400);
+      expect(response.headers()["content-type"], name).toBe("application/json");
+      expect(body.error, name).toBe("server_error");
+      expect(body.error_description, name)
+        .toBe("Internal Server Error (500) - The server encountered an unexpected condition"
+          + " which prevented it from fulfilling the request");
+    }
+  });
+
+  test("row 7: every non-page ?display= on checkSession is a 400 (5b-2 D5)", async ({ request }) => {
+    // OBSERVED, and it CORRECTED the reading that produced it: `popup` was expected to render, because
+    // OAuth2Representation special-cases popup and templates/popup/authorize.ftl DOES exist. It renders that
+    // template against the CHECK-SESSION model, which has no display_name, so FreeMarker throws, getText()
+    // fails and the IOException becomes the same ResourceException as a missing template. touch/wap have no
+    // checkSession.ftl at all. Same status, same body, three different mechanisms.
+    for (const display of ["popup", "touch", "wap"]) {
+      const response = await request.get(
+        `${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession?display=${display}`);
+      const body = await response.json();
+      console.log(`[5-E3] row7 display=${display} -> ${response.status()} ${JSON.stringify(body)}`);
+      expect(response.status(), display).toBe(400);
+      expect(response.headers()["content-type"], display).toBe("application/json");
+      expect(body.error, display).toBe("server_error");
+      expect(body.error_description, display)
+        .toBe("Bad Request (400) - Server can not serve the content of authorization page");
+    }
+
+    // `page` is the only value that renders -- and it is also the no-display default.
+    const page = await request.get(
+      `${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession?display=page`);
+    expect(page.status()).toBe(200);
+    expect(page.headers()["content-type"]).toBe("text/html;charset=UTF-8");
+
+    // An unknown value dies EARLIER, in Enum.valueOf, so it carries the generic message rather than the
+    // "can not serve the content" one. D5 keeps display resolution and lets both stay 400s.
+    const bogus = await request.get(
+      `${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession?display=bogus`);
+    const bogusBody = await bogus.json();
+    console.log(`[5-E3] row7 display=bogus -> ${bogus.status()} ${JSON.stringify(bogusBody)}`);
+    expect(bogus.status()).toBe(400);
+    expect(bogusBody.error).toBe("server_error");
+    expect(bogusBody.error_description)
+      .toBe("Internal Server Error (500) - The server encountered an unexpected condition"
+        + " which prevented it from fulfilling the request");
+  });
+
+  // ---------------------------------------------------------------- endSession
+
+  test("row 8: a registered post_logout_redirect_uri redirects, and state goes in the QUERY", async () => {
+    // Gates D8. Restlet composes with `new Reference(uri).addQueryParameter("state", v)`; the CHF port uses
+    // RedirectUris.compose, so these three shapes are exactly what it has to reproduce.
+    const noState = await ownSession("5e3-8a");
+    try {
+      const response = await endSession(noState.ctx, {
+        id_token_hint: noState.tokens.id_token, post_logout_redirect_uri: POST_LOGOUT_REDIRECT_URI,
+      });
+      console.log(`[5-E3] row8 no state -> ${response.status()} ${response.headers()["location"]}`);
+      expect(response.status()).toBe(302);
+      // No state => the URI is emitted VERBATIM. Not even a trailing "?".
+      expect(response.headers()["location"]).toBe(POST_LOGOUT_REDIRECT_URI);
+    } finally {
+      await noState.ctx.dispose();
+    }
+
+    const withState = await ownSession("5e3-8b");
+    try {
+      const response = await endSession(withState.ctx, {
+        id_token_hint: withState.tokens.id_token, post_logout_redirect_uri: POST_LOGOUT_REDIRECT_URI,
+        state: "st ate/1",
+      });
+      console.log(`[5-E3] row8 with state -> ${response.status()} ${response.headers()["location"]}`);
+      expect(response.status()).toBe(302);
+      // Verbatim percent-encoding: space -> %20 (not "+"), "/" -> %2F. A CHF composer that encodes either
+      // differently is a byte diff at 5d-1.
+      expect(response.headers()["location"]).toBe(`${POST_LOGOUT_REDIRECT_URI}?state=st%20ate%2F1`);
+    } finally {
+      await withState.ctx.dispose();
+    }
+
+    const withQuery = await ownSession("5e3-8c");
+    try {
+      const response = await endSession(withQuery.ctx, {
+        id_token_hint: withQuery.tokens.id_token,
+        post_logout_redirect_uri: POST_LOGOUT_REDIRECT_URI_WITH_QUERY, state: "s2",
+      });
+      console.log(`[5-E3] row8 existing query -> ${response.status()} ${response.headers()["location"]}`);
+      expect(response.status()).toBe(302);
+      // The open question D8 asked: an existing query is preserved VERBATIM and state is APPENDED with "&".
+      // No normalisation, no reordering, no re-encoding of the existing pair.
+      expect(response.headers()["location"]).toBe(`${POST_LOGOUT_REDIRECT_URI_WITH_QUERY}&state=s2`);
+    } finally {
+      await withQuery.ctx.dispose();
+    }
+  });
+
+  test("row 9: an unregistered or relative post_logout_redirect_uri is a 400 JSON", async () => {
+    const cases = [
+      ["http://evil.invalid/x", "redirect_uri_mismatch",
+        "The redirection URI provided does not match a pre-registered value."],
+      ["/relative/cb", "relative_redirect_uri", "The redirection URI provided is not absolute."],
+    ];
+    for (const [uri, error, description] of cases) {
+      const { ctx, tokens: own } = await ownSession(`5e3-9-${error}`);
+      try {
+        const response = await endSession(ctx, {
+          id_token_hint: own.id_token, post_logout_redirect_uri: uri,
+        });
+        const body = await response.json();
+        console.log(`[5-E3] row9 ${uri} -> ${response.status()} ${JSON.stringify(body)}`);
+        expect(response.status(), uri).toBe(400);
+        expect(response.headers()["content-type"], uri).toBe("application/json");
+        // JSON, not a page: proof that EndSession's doCatch is the 2-arg overload (5b-2 D1).
+        expect(body.error, uri).toBe(error);
+        expect(body.error_description, uri).toBe(description);
+        expect(response.headers()["location"], uri).toBeUndefined();
+      } finally {
+        await ctx.dispose();
+      }
+    }
+  });
+
+  test("row 10: a malformed id_token_hint is a 400 server_error (5b-2 D7)", async ({ request }) => {
+    // JwtReconstruction throws UNCHECKED, so this never reaches the OAuth2Exception catch -- it lands in
+    // doCatch, which wraps it as ServerException: status 400, error "server_error". D7 reproduces the 400 at
+    // source rather than letting CHF's default 500 stand, and this row is why that is parity and not a
+    // re-litigation of decisions.md D3: the path is reachable by any client, so it is contract, not a bug.
+    // Reached only when a post_logout_redirect_uri is present -- without one the endpoint returns before
+    // validateRedirect ever reconstructs the JWT, which is the second case below.
+    const response = await request.get(`${OPENAM_BASE}/oauth2/connect/endSession?${new URLSearchParams({
+      id_token_hint: "not.a-jwt", post_logout_redirect_uri: POST_LOGOUT_REDIRECT_URI,
+    })}`, { maxRedirects: 0 });
+    const body = await response.json();
+    console.log(`[5-E3] row10 malformed hint -> ${response.status()} ${JSON.stringify(body)}`);
+    expect(response.status()).toBe(400);
+    expect(response.headers()["content-type"]).toBe("application/json");
+    expect(body.error).toBe("server_error");
+    expect(body.error_description)
+      .toBe("Internal Server Error (500) - The server encountered an unexpected condition"
+        + " which prevented it from fulfilling the request");
+
+    // A URI that URI.create cannot parse dies the same way -- an unchecked IllegalArgumentException.
+    const garbage = await request.get(`${OPENAM_BASE}/oauth2/connect/endSession?${new URLSearchParams({
+      id_token_hint: "not.a-jwt", post_logout_redirect_uri: "ht tp://%%%",
+    })}`, { maxRedirects: 0 });
+    console.log(`[5-E3] row10 garbage uri -> ${garbage.status()} ${JSON.stringify(await garbage.json())}`);
+    expect(garbage.status()).toBe(400);
+    expect((await garbage.json()).error).toBe("server_error");
+  });
+
+  test("row 11: PUT on either endpoint is Restlet's own 405 with a CREST body", async ({ request }) => {
+    // Closes 5b-2 open question 6, and the answer LIMITS D10 rather than supporting it. Neither endpoint is
+    // wrapped by OAuth2Filter, so there is no validateMethod and no OAuth2-shaped 405 here: the framework
+    // answers with a CREST {code, reason, message} body. That is NOT `method_not_allowed`, so after the flip
+    // these two diverge in body shape whatever OAuth2ErrorFilter maps 405 to -- D10 stays justified by
+    // /authorize and /access_token (which DO emit method_not_allowed today), not by these.
+    for (const path of [`/oauth2/realms/${REALM}/connect/checkSession`, "/oauth2/connect/endSession"]) {
+      const response = await request.fetch(`${OPENAM_BASE}${path}`, { method: "PUT", maxRedirects: 0 });
+      const body = await response.json();
+      console.log(`[5-E3] row11 PUT ${path} -> ${response.status()} ${JSON.stringify(body)}`);
+      expect(response.status(), path).toBe(405);
+      expect(response.headers()["content-type"], path).toBe("application/json");
+      expect(body.code, path).toBe(405);
+      expect(body.reason, path).toBe("Method Not Allowed");
+      expect(body.message, path)
+        .toBe("The method specified in the request is not allowed for the resource identified by the request URI");
+      // No OAuth2 error shape at all -- neither field exists.
+      expect(body.error, path).toBeUndefined();
+      expect(body.error_description, path).toBeUndefined();
+      // finding 8 again, on the error path this time.
+      expect(response.headers()["cache-control"], path).toBeUndefined();
+      expect(response.headers()["pragma"], path).toBeUndefined();
     }
   });
 });

@@ -28,6 +28,26 @@ export const SCOPE = "profile";
 export const REDIRECT_URI = "http://app.invalid/cb";
 
 /*
+ * The two post-logout redirect URIs the 5-E3 endSession rows use. EndSession.validateRedirect does an exact
+ * `Set<URI>.contains` on the REGISTERED set, so the with-query variant has to be registered verbatim -- it is
+ * not a prefix match, and registering only the bare URI would make the with-query row a redirect_uri_mismatch.
+ */
+export const POST_LOGOUT_REDIRECT_URI = "http://app.invalid/logout";
+export const POST_LOGOUT_REDIRECT_URI_WITH_QUERY = "http://app.invalid/logout?ui=1";
+
+/*
+ * The RP origin /oauth2/connect/checkSession compares postMessage senders against.
+ *
+ * ⚠ This must be NON-EMPTY on any client whose id_token is handed to checkSession.
+ * `OpenAMClientRegistration.getClientSessionURI()` ends in `set.iterator().next()` with no emptiness guard
+ * (OpenAMClientRegistration.java:426-434), so an unset attribute throws NoSuchElementException -- which the
+ * endpoint's doCatch turns into a 400 server_error. Since the admin API leaves the attribute empty by
+ * default, the endpoint's whole reason for existing 400s for a default-configured client. Observed 2026-07-28;
+ * see the 5-E3 rows in oidc-test.spec.mjs.
+ */
+export const CLIENT_SESSION_URI = "http://rp.invalid";
+
+/*
  * Client ids are PER SPEC FILE, not shared. Playwright runs spec files in parallel, and rewriting a client
  * invalidates the tokens already issued against it -- so two files sharing one client flake as soon as their
  * beforeAll hooks interleave. Each file owning its own clients removes the coupling entirely.
@@ -215,6 +235,12 @@ export async function ensureOidcClient(adminToken, request, clientId) {
     "userpassword": OIDC_CLIENT_SECRET,
     "com.forgerock.openam.oauth2provider.clientType": "Confidential",
     "com.forgerock.openam.oauth2provider.redirectionURIs": [`[0]=${REDIRECT_URI}`],
+    // Additive for the 5-E3 rows; no existing row reads either. See the constants above for why both the
+    // bare and the with-query post-logout URI have to be registered, and why clientSessionURI must be set.
+    "com.forgerock.openam.oauth2provider.postLogoutRedirectURI": [
+      `[0]=${POST_LOGOUT_REDIRECT_URI}`, `[1]=${POST_LOGOUT_REDIRECT_URI_WITH_QUERY}`,
+    ],
+    "com.forgerock.openam.oauth2provider.clientSessionURI": CLIENT_SESSION_URI,
     "com.forgerock.openam.oauth2provider.scopes": ["[0]=openid", "[1]=profile"],
     "com.forgerock.openam.oauth2provider.defaultScopes": ["[0]=openid"],
     "com.forgerock.openam.oauth2provider.grantTypes": [
@@ -231,6 +257,63 @@ export async function ensureOidcClient(adminToken, request, clientId) {
     "isConsentImplied": true,
     "sunIdentityServerDeviceStatus": "Active",
   });
+}
+
+/**
+ * A device-capable client that REQUIRES consent, for the 5-E3 `/oauth2/device/user` consent rows.
+ *
+ * Not `test_client_consent` (the 5-E2 fixture): that one has no `device_code` grant, so `/device/code`
+ * refuses it, and it is a file-local const in oauth2-test.spec.mjs rather than an export.
+ *
+ * `isConsentImplied:false` is the point -- the provider is created with `clientsCanSkipConsent:true`, and
+ * `requireConsent = !clientsCanSkipConsent || !isConsentImplied()`, so this flag alone decides whether
+ * DeviceCodeVerificationResource reaches the consent page or skips straight to the thanks page.
+ */
+export async function ensureDeviceConsentClient(adminToken, request, clientId) {
+  await ensureClient(adminToken, request, clientId, {
+    "com.forgerock.openam.oauth2provider.clientType": "Public",
+    "com.forgerock.openam.oauth2provider.redirectionURIs": [`[0]=${REDIRECT_URI}`],
+    "com.forgerock.openam.oauth2provider.scopes": ["[0]=openid", "[1]=profile"],
+    "com.forgerock.openam.oauth2provider.defaultScopes": ["[0]=openid"],
+    "com.forgerock.openam.oauth2provider.grantTypes": [
+      "[0]=authorization_code", "[1]=urn:ietf:params:oauth:grant-type:device_code",
+    ],
+    // device_code is a GRANT type, not a response type -- see deviceCodeForConsent() for what /device/code
+    // has to be given instead.
+    "com.forgerock.openam.oauth2provider.responseTypes": ["[0]=code", "[1]=token"],
+    "com.forgerock.openam.oauth2provider.tokenEndPointAuthMethod": "none",
+    "isConsentImplied": false,
+    "sunIdentityServerDeviceStatus": "Active",
+  });
+}
+
+/**
+ * Mints a device code that can actually reach the consent page, and returns the parsed /device/code response.
+ *
+ * Two non-obvious constraints, both discovered by observation (5-E3, 2026-07-28) and both invisible until a
+ * client requires consent -- which is why the pre-5-E3 device rows never hit them:
+ *
+ *   1. `/device/code` stores `response_type` VERBATIM and `/device/user` replays it through
+ *      `authorizationService.authorize`. The provider only has handlers for code/token/id_token/none, so the
+ *      conventional `response_type=device_code` fails the consent path with `unsupported_response_type`.
+ *   2. This provider pins `codeVerifierEnforced:true`, so `response_type=code` additionally needs a PKCE
+ *      challenge. `/device/code` accepts and stores `code_challenge`/`code_challenge_method`
+ *      (DeviceCodeResource.java:119-120) and the attribute seeding replays them.
+ *
+ * A consent-implied client sidesteps both, because `authorize()` is never called on that path.
+ */
+export async function deviceCodeForConsent(request, clientId, extra = {}) {
+  const { challenge } = await pkce();
+  const response = await request.post(`${OPENAM_BASE}/oauth2/device/code`, {
+    form: {
+      client_id: clientId, scope: "openid profile", response_type: "code",
+      code_challenge: challenge, code_challenge_method: "S256", ...extra,
+    },
+  });
+  if (!response.ok()) {
+    throw new Error(`device/code failed: ${response.status()} ${await response.text()}`);
+  }
+  return response.json();
 }
 
 export async function ensureResourceServerClient(adminToken, request, clientId) {

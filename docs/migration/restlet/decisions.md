@@ -185,6 +185,48 @@ routed around in-phase and fixed here only when a phase actually requires the co
   in 5d's audit smoke (the pre/post-flip `http/request/path` diff surfaces it); fix in its own openam-audit-core
   commit with a test.
 
+- **`openam-http`'s `@Consumes`, `@Payload` and `@PayloadTranslator` are dead API.** All three are declared
+  under `org.forgerock.openam.http.annotations`, retained at runtime and documented as if they worked —
+  `@Consumes` as *"the content type that is consumed by the method"* — but
+  `grep -rn "Consumes\|Payload\|PayloadTranslator" openam-http/src/main/java` outside their own declarations
+  returns **nothing**. `AnnotatedMethod` binds only `@Contextual` parameters and the `Request`; `Endpoints.from`
+  dispatches on verb alone. ⇒ **no media-type validation and no payload binding anywhere in the CHF endpoint
+  framework**, and a future port that writes `@Consumes("application/json")` gets silence rather than a 415.
+  Found 2026-07-29 planning Phase 5c ([finding 9](phase-5c.md#9--openam-https-consumespayload-annotations-are-dead-api)).
+  **In-tree (ours), no release cycle. Proposed fix:** either implement `@Consumes` (~20 lines in
+  `AnnotatedMethod`: compare the parsed request media type, 415 on mismatch) or delete all three. **Status:
+  deferred** — the choice is gated on [5c's D7](phase-5c.md#d7), which records what live Restlet does with a
+  wrong `Content-Type` on `/oauth2/resource_set`; either way it lands in its own commit, never bundled into a
+  port.
+
+- **`Endpoints.from` has no conditional-request (`If-Match` / `If-None-Match` / ETag) support.** Restlet's
+  `ServerResource` evaluated preconditions for its resources ([chf-patterns §21](chf-patterns.md#21-restlets-conditional-request-machinery-phase-5c)),
+  so a resource whose own Java only checks *"was `If-Match` sent"* nonetheless had full match enforcement. CHF
+  offers nothing equivalent. Found 2026-07-29 planning Phase 5c. **Proposed fix (if ever needed):** an optional
+  ETag-producing method discovered the way `@ExceptionHandler` already is. **Status: deferred** — `/oauth2/resource_set`
+  is the codebase's **only** consumer, so [5c D6](phase-5c.md#d6) implements a ~60-line tested helper in the
+  OAuth2 package rather than designing a framework hook for one caller. Revisit if a second endpoint needs ETags.
+
+- **`Endpoints.from` does not map `HEAD` to the `GET` method.** Its verb map is built from
+  `{DELETE, GET, POST, PUT}` (`Endpoints.java:60-63`), so `HEAD` takes the unmapped-verb branch and answers
+  **405** — where Restlet's `ServerResource.doHandle(Method, Form, Representation)` rewrites `HEAD` → `GET`
+  before annotation lookup and answers **200 with no body**. Found 2026-07-29 reviewing Phase 5c
+  ([finding 13](phase-5c.md#13--head-is-served-by-restlet-and-405d-by-chf--and-it-is-not-a-5c-problem)).
+  **In-tree (ours), no release cycle. Proposed fix:** `methods.put("HEAD", methods.get("GET"))` — body
+  suppression is already the servlet container's job. **Blast radius:** additive; endpoints that 405 today
+  start answering. **Status: open, owner 5d-1** — this is a **Phase-5-wide** divergence affecting every ported
+  endpoint with a `@Get`, so it is fixed (or written into the divergence table) once, for all 15 endpoints,
+  not per step. [5-E4 row 15](phase-5c.md#10--what-e2e-already-records-and-what-5-e4-must-add) records the
+  incumbent behaviour while the oracle still exists.
+
+- **Commons `UriRouteMatcher` cannot express a trailing-slash route.** `createRegex` strips the template's
+  trailing slash while `Paths.getPathElements` preserves the request's, so `EQUALS "foo/"` matches nothing
+  ([chf-patterns §22](chf-patterns.md#22-chf-uri-template-matching--trailing-slashes-variables-and-head-phase-5c-review)).
+  Found 2026-07-29 reviewing Phase 5c, where `/oauth2/resource_set/` is a live URL. **Commons — costs a release
+  cycle, and changing trailing-slash semantics would move every CHF route in the ecosystem. Status: routed
+  around, permanently** — the nested-router shape of [5c D9](phase-5c.md#d9) expresses the same family
+  correctly and is the pattern any later phase should copy.
+
 ## Cutover lever
 
 The `OpenAM` `HttpFrameworkServlet` in

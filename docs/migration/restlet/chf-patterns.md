@@ -821,3 +821,68 @@ distinction is who detected the problem, not how severe it is.
 **Test rule that follows:** every row asserting a self-built error must stub a `redirect_uri`. Without it the
 response takes the page branch either way and the row passes whichever form the handler used — which is exactly
 how both defects reached review in 5b-1.
+
+## 21. Restlet's conditional-request machinery (Phase 5c)
+
+Disassembled from the resolved fork (`org.openidentityplatform.openam.jakarta:org.restlet:16.2.0-SNAPSHOT`)
+on 2026-07-29 while planning [Phase 5c](phase-5c.md) — the only endpoint in the migration that uses HTTP
+conditional requests. Recorded here because the mechanism is invisible in the endpoint's own source and the
+Restlet oracle dies at 5d-2.
+
+- **`ServerResource` evaluates preconditions itself, before the annotated method runs.** The constructor sets
+  `conditional = true`, `existing = true`, `negotiated = true`, `annotated = true`. `handle()` then does
+  `if (isConditional()) doConditionalHandle()`, and `doConditionalHandle()` runs the precondition logic
+  whenever `getConditions().hasSome()` — i.e. whenever `If-Match` or `If-None-Match` is on the request.
+- **To get the current ETag it invokes the `@Get` method.** With `existing == true` the info branch calls
+  `doGetInfo(Variant)` → `doHandle(MethodAnnotationInfo, Variant)`, which dispatches to the resource's own
+  `@Get`. So a conditional `PUT`/`DELETE` performs the read as a side effect, and a failure *of the read*
+  (e.g. `NotFoundException`) is what the client sees.
+- **Tag comparison ignores weakness.** `Conditions.getStatus(Method, RepresentationInfo)` compares with
+  `Tag.equals(obj, /* checkWeakness */ false)`, so `If-Match: "x"` and `If-Match: W/"x"` both match a tag named
+  `x`. `*` matches any existing entity. A mismatch yields **412** with **no entity**; `If-None-Match` matching
+  yields **304**.
+- ⇒ **A resource whose Java only asks `!getConditions().getMatch().isEmpty()` still has full `If-Match`
+  enforcement** — the presence check is the endpoint's, the matching is the framework's. Porting only the
+  visible half is a silent loss of lost-update protection. `Endpoints.from` has **no** conditional-request
+  support (`Endpoints.java:60-63` dispatches on verb alone), so the CHF side must evaluate preconditions
+  explicitly ([phase-5c D6](phase-5c.md#d6)).
+
+Related: `Filter.handle` returns `CONTINUE`/`SKIP`/`STOP` as `0`/`1`/`2`. `STOP` skips **only that filter's
+own** `afterHandle`; an enclosing filter's `doHandle` still returns `CONTINUE`, so **its** `afterHandle` runs
+and sees the inner filter's bare status. That ordering is why `/oauth2/resource_set`'s 401 comes out
+OAuth2-shaped while `/uma`'s comes out CREST-shaped ([phase-5c finding 1](phase-5c.md#1--the-resource_set-401-is-oauth2-shaped-not-crest--the-4a-filter-cannot-be-reused-unchanged)) —
+a per-route fact that §16's general rule does not settle on its own.
+
+**`openam-http` gaps this exposed** (both in the
+[CHF cleanup backlog](decisions.md#chf-cleanup-backlog)): `@Consumes`, `@Payload` and `@PayloadTranslator` are
+declared, documented and **read by no code**, so there is no media-type validation and no payload binding; and
+there is no conditional-request/ETag support at all.
+
+## 22. CHF URI-template matching — trailing slashes, variables, and `HEAD` (Phase 5c review)
+
+Read from commons `org.forgerock.http.routing.UriRouteMatcher`
+(`../commons/commons/http-framework/core`) on 2026-07-29 while reviewing [Phase 5c](phase-5c.md). These decide
+what a `newHttpRoute` / `addRoute` template can and cannot express, so check them **before** transcribing a
+Restlet `router.attach` table.
+
+- **A template's trailing slash is stripped; the request URI's is not.** `UriTemplateParser.createRegex`
+  (`:194`) starts with `removeTrailingSlash(removeLeadingSlash(uriTemplate))`, so `EQUALS "foo/"` and
+  `EQUALS "foo"` compile to the **same** regex. But `evaluate` (`:94-119`) matches
+  `joinPath(getPathElements(uri))`, and `Paths.getPathElements` splits with `split(rawPath, -1)` — limit `-1`
+  **keeps trailing empty elements** — so the URI `foo/` stays `"foo/"`. ⇒ **`EQUALS "foo/"` matches nothing,
+  and no `EQUALS` template matches a request path ending in `/`.** A Restlet router that attached `/foo` and
+  `/foo/` separately cannot be transcribed route-for-route.
+- **A template variable compiles to `([^/]+)`** (`:212`) — it never matches an empty segment, so
+  `EQUALS "foo/{id}"` does **not** cover `foo/`.
+- **`EQUALS ""` compiles to `(\Q\E)` and matches an empty remaining URI.** Combined with a
+  `STARTS_WITH "foo"` parent (regex `(\Qfoo\E)(/(.*))?`, remaining `""` for both `foo` and `foo/`), a nested
+  router expresses the whole `foo` / `foo/` / `foo/{id}` family — the fix [phase-5c D9](phase-5c.md#d9) uses.
+- **Nested `UriRouterContext`s compose.** `ChfOAuth2Request.attributes()` merges the template variables of
+  every `UriRouterContext` in the chain, so a variable bound by a child router is still visible to
+  `getParameter`/`getAttribute`.
+- ⚠ **`HEAD` is not routed.** `Endpoints.from` builds its verb map from `{DELETE, GET, POST, PUT}`
+  (`Endpoints.java:60-63`), so `HEAD` takes the unmapped-verb branch and answers **405** — while Restlet's
+  `ServerResource.doHandle(Method, Form, Representation)` rewrites `HEAD` → `GET` before annotation lookup and
+  answers **200 with no body**. This affects **every** endpoint this migration ports that has a `@Get`, not
+  just the one that found it; the fix is two lines
+  ([phase-5c C3](phase-5c.md#framework-items-openam-http-is-ours)) and the decision belongs to 5d-1.

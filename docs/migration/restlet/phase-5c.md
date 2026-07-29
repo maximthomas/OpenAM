@@ -685,6 +685,46 @@ vary four lines of rendering.
 **Blast radius:** `/uma` is live. The commit's gate is `mvn -o -pl openam-uma test` **plus** the 11-row
 `e2e/uma` suite, whose `:152` row asserts the CREST shape explicitly.
 
+<a id="as-built-s3"></a>
+#### As built — S3, 2026-07-29
+
+The overload landed as D2 specified: `ErrorShape` nested in the filter, the three-argument constructor
+delegating with `CREST`, `crestError` narrowed from `Exception` to `OAuth2Exception` (every call site already
+passed one) so the `OAUTH2` branch can read `getStatusCode()`/`getError()`. 9 new rows, 18 in the class;
+`openam-oauth2` **1226 surefire**, `openam-uma` **196**, both green.
+
+⚠ **The 401's `error_description` was measured, not derived.** D2 prescribed `e.getMessage()` but no row had
+ever pinned the string. Probed against the live container 2026-07-29:
+
+```
+POST /oauth2/resource_set  (no token, and again with a bogus token)
+  401  Content-Type: application/json          <- bare, no charset
+  {"error_description":"The access token provided is expired, revoked, malformed, or invalid for other reasons.","error":"invalid_token"}
+  no WWW-Authenticate
+```
+
+Three things fell out of that probe:
+
+- the value is `InvalidTokenException`'s constructor message, so D2's `getMessage()` is right;
+- ⚠ Restlet emits `error_description` **first** — its `setExceptionResponse` uses a `HashMap`. `OAuth2Error.asMap`
+  is a `LinkedHashMap` with `error` first. Key order in a JSON object is not a contract and the migration
+  already decided this ([`OAuth2Error.asMap`'s javadoc](../../../openam-oauth2/src/main/java/org/openidentityplatform/openam/oauth2/http/OAuth2Error.java));
+  noted only so a byte-diff at 5d-1 is not mistaken for a defect;
+- the same probe confirmed the **bare** `Content-Type` on the 401, so the `OAUTH2` branch re-stamps it exactly
+  as [S2](#as-built-s2) does — and confirmed [D5](phase-4-uma.md)'s no-challenge rule holds in this shape too.
+
+Mutation-checked three ways — taking the status from `crestError`'s `code` instead of the exception turns
+**1** row red (finding 14's path, and the natural implementation), defaulting the three-argument constructor
+to `OAUTH2` turns **8** red including the dedicated additivity row, and dropping the bare-`Content-Type`
+stamp turns **1**.
+
+**The blast radius was gated for real, not by unit test alone.** This is the first 5c step whose class is on a
+live route, so the WAR and an `openam-e2e:5c1` image were rebuilt from this tree and the suites re-run on a
+fresh container: `npx playwright test oauth2 uma` in one pass = **94 passed**, unchanged, with
+`uma-test.spec.mjs:152` green **without edit** — D2's own criterion for "the overload is additive". Probed
+directly on the rebuilt container, the live `/uma` 401 is byte-identical to the pre-change probe
+(`{"code":401,...}` under `application/json;charset=UTF-8`), and `resource_set`'s stays Restlet's until 5d-1.
+
 <a id="d3"></a>
 ### D3 — a CHF `ResourceSetErrorFilter`, scoped to the three routes, mounted **inside** `OAuth2ErrorFilter`
 
@@ -726,6 +766,41 @@ this endpoint's spec-defined error onto the generic one.
 ⚠ **`resource_set` is the one `/oauth2` route that keeps a non-generic error vocabulary** — the same carve-out
 UMA got in [phase-4 D4](phase-4-uma.md), for the same reason
 ([draft-hardjono-oauth-resource-reg-04 §3](https://tools.ietf.org/html/draft-hardjono-oauth-resource-reg-04#section-3)).
+
+<a id="as-built-s2"></a>
+#### As built — S2, 2026-07-29
+
+`ResourceSetErrorFilter` landed with D3's table unchanged, 16 unit rows, `openam-oauth2` **1217 surefire**
+(was 1201). Two things the decision did not settle:
+
+- ⚠ **The `Content-Type` must be re-stamped bare.** `Entity.setJson` writes
+  `application/json; charset=UTF-8`, while 5-E4 row 14 measured **bare `application/json`** on 200, 201, 204,
+  400, 401, 404, 405 and 412 — and the gate asserts it with `toBe`, not `toContain`
+  (`oauth2-endpoints-test.spec.mjs:838`). One line after `setEntity` closes it.
+  **Decided 2026-07-29: bare, scoped to this endpoint.** This **binds [D8](#d8)** — 5c-2's handler must do the
+  same on its own 200/201/204, or the endpoint contradicts itself. ⚠ The one exception is row 7's in-band
+  duplicate-name 400, which really does send `;charset=UTF-8`.
+  The migration-wide charset diff (`/tokeninfo`, `/authorize`) is **not** retired by this and stays flagged
+  for 5d-1, as `oauth2-test.spec.mjs:493-496` and `oauth2-test.spec.mjs:741` already record. ⚠ Note that
+  [plan.md](plan.md)'s 5a-2 paragraph reads as though the no-charset form were *reproduced*; it is not —
+  the e2e comments are the accurate record.
+- **The guard needs a body carrying `error` *and* `code` to be testable at all.** Every realistic
+  already-shaped body lacks `code`, so the CREST clause alone spares it and the `containsKey("error")` clause
+  is unreachable — a mutation that deletes it passes the whole suite. Kept anyway, matching
+  `OAuth2ErrorFilter`, because this filter's output feeds another rewriting filter and idempotency should be
+  structural rather than an accident of which keys today's producers use; one synthetic row now defends it.
+
+Mutation-checked four ways — dropping the idempotency clause turns **1** row red (only after that row was
+added), dropping the bare-`Content-Type` re-stamp **3**, letting the catch-all keep the incoming status **3**,
+and dropping the empty-or-CREST guard **3**.
+
+⚠ **One row added in review** (17 now): a **412 carrying the representation**. 5-E4 row 3b measured that a
+losing `If-Match` on a `GET` answers 412 with the full body, so the shape [D6](#d6)'s handler must produce is
+one this filter has to *leave alone* — and it does, because the representation is neither CREST- nor
+OAuth2-shaped, so the guard spares it before the 412 branch is reached. Nothing pinned that: a guard loosened
+to "rewrite every 412" passed all 16 original rows, and the only thing that would have caught it was an IT
+still unwritten at 5c-2 S6. With the row, that mutation turns **1** red and dropping the guard entirely turns
+**5** (was 3 — the recount is the two rows added since).
 
 <a id="d4"></a>
 ### D4 — the missing-`If-Match` rejection is a `ServerException`, not a 412 (**gated on 5-E4 rows 4, 6**)
@@ -797,7 +872,9 @@ boolean noneMatches(String currentEtagValue);
 Matching rules copied from the disassembled `Conditions.getStatus`
 ([finding 2](#2--restlets-conditional-request-machinery-is-load-bearing-and-chf-has-none)): `*` matches any
 existing entity; otherwise compare **tag names only**, so `W/"x"` ≡ `"x"`; a comma-separated list matches if
-any member does.
+any member does. ⚠ Both of those are *too loose* — see the [S1 review correction](#as-built--s1-2026-07-29):
+the wildcard holds only as the **first** element and only strong, and name-only comparison is `If-Match`'s
+rule alone, not `If-None-Match`'s. The signature above is what shipped; the sentence is not.
 
 ⚠ **Three amendments from 5-E4, all measured** ([as-built](#as-built-5-e4--recorded-2026-07-29)). The version
 above would have diverged on each:
@@ -808,7 +885,12 @@ above would have diverged on each:
   Restlet answers 400. Pinned by row 1b.
 - **`noneMatches` must NOT treat `*` as a match.** `If-None-Match: *` answers **200** on live Restlet, not
   the 304 RFC 7232 §3.2 asks for, so carrying the `*`-matches-anything rule across from `matches()` would
-  invert it. Pinned by row 3.
+  invert it. Pinned by row 3. (The mechanism, found later: Restlet's `noneMatch` wildcard test is reachable
+  only when the current tag is `null`.)
+- **`noneMatches` must also compare weakness**, which `matches` must not. Unmeasured, read off
+  `Conditions.getStatus` during the S1 review: `If-None-Match` is compared with
+  `checkWeakness = GET || HEAD`. The endpoint's tag is weak ⇒ only `W/"<name>"` yields the 304; the strong
+  form yields 200 and the body.
 - **The 304 carries the `ETag` and no `Content-Type`.**
 
 Handler use:
@@ -845,6 +927,52 @@ the OAuth2 package, fully unit-tested, is the proportionate answer.
 **before** 5c-2 lands, not after — the handler's shape depends on it. Recorded in the
 [framework backlog](#framework-items-openam-http-is-ours).
 
+#### As built — S1, 2026-07-29
+
+`HttpConditions` landed with D6's signature unchanged (`of`/`hasIfMatch`/`matches`/`noneMatches`), ~50 lines,
+21 unit rows. Three things the design note did not anticipate, all from disassembling the fork's parser
+([chf-patterns §21b](chf-patterns.md#21b) has the full read-out — do **not** reopen the jar):
+
+- ⚠ **The tag splitter is not quote-aware**, so a comma always ends an element and a tag name containing one
+  can never match. Commons' `HeaderUtil.split` **is** quote-aware, so the obvious reuse is a behaviour
+  change; mutation-checked, it turns two rows red.
+- **`*` and `"*"` parse to the same tag** — but see the correction below: that is a fact about the *parser*
+  and it does not license dropping the weak flag.
+- **`If-Match: "` (a lone quote) makes Restlet throw** `StringIndexOutOfBoundsException` out of its reader —
+  unmeasured, presumed a 500. Decided 2026-07-29: **drop it as invalid**, i.e. treat it as absent like any
+  other garbage. A footnote, not a divergence row; reproducing a crash is not a contract.
+
+Mutation-checked three ways — `hasIfMatch()` reporting presence instead of parse turns **7** rows red,
+`noneMatches` honouring `*` turns **1**, quote-aware splitting turns **2**. `openam-oauth2` **1201 surefire**
+(was 1180).
+
+##### ⚠ Corrected in review, same day — two divergences, both from reading the parser and not the comparator
+
+S1 disassembled `TagReader` → `Tag.parse` and stopped there. The rules that decide what a parsed list *means*
+live in `Conditions.getStatus`, which was never opened, and all 21 rows passed over both holes:
+
+1. **The wildcard is positional and strong-only.** `all = getMatch().get(0).equals(Tag.ALL)` — one test, on
+   the first element, with weakness checked (`Tag.equals(Object)` is the 1-argument form). The helper asked
+   "does the list contain `*`", so `If-Match: W/"stale", *` and `If-Match: W/*` both **applied an update
+   Restlet answers 412 to** — the lost-update hole D6 exists to close, reintroduced in the class written to
+   close it.
+2. **`If-None-Match` compares weakness.** Its comparison passes `checkWeakness = GET || HEAD`, and those are
+   the only verbs that reach it, so weakness always counts — while `If-Match`'s passes `false`. The endpoint's
+   tag is weak, so `If-None-Match: "<name>"` must answer **200 with the body**; the helper answered a bodiless
+   **304**. The class javadoc's "weakness is ignored", chf-patterns §21's bullet and the test row
+   `ifNoneMatchIgnoresWeakness` all asserted the wrong half of an asymmetry nobody had looked for.
+
+Neither divergence was measured at 5-E4 — no row sent `W/*`, a trailing `*`, or the strong form of the tag in
+`If-None-Match` — so the oracle would not have caught them either. The bytecode is now recorded in
+[chf-patterns §21b's comparator section](chf-patterns.md#21b-comparator).
+
+Fixed by giving the helper Restlet's own two-field `Tag` (name + weak) instead of a name with `*` as a
+sentinel: `matches` keeps the name-only comparison, `noneMatches` compares both fields, and each wildcard test
+is `list.get(0)`. A `null`/unparseable current tag now yields `matched = all` as it does in Restlet, where it
+previously threw `NullPointerException`. **27 rows** (was 21), mutation-checked twice more — restoring
+"contains `*`, weakness ignored" turns **2** red, restoring the name-only `noneMatches` turns **1**.
+`openam-oauth2` finishes the review at **1233 surefire**, 0 failures.
+
 <a id="d7"></a>
 ### D7 — media-type behaviour is **recorded, then decided** (**gated on 5-E4 row 12**)
 
@@ -875,6 +1003,10 @@ public class ResourceSetRegistrationHandler extends AbstractOAuth2HttpJsonEndpoi
 
 The base class is `AbstractOAuth2HttpJsonEndpoint` per [D1](#d1), so the four methods may `throw` and the
 inherited `onError` renders the OAuth2 JSON body — and none of them may override it.
+
+⚠ **Re-stamp `Content-Type` to bare `application/json` after every `setEntity`**, per
+[S2's as-built](#as-built-s2) — except row 7's in-band duplicate-name 400, which sends `;charset=UTF-8`.
+`setJson` adds the charset; 5-E4 row 14 asserts its absence exactly.
 
 Collaborators by constructor `@Inject`, mirroring the Restlet endpoint minus `ExceptionHandler` and
 `JacksonRepresentationFactory` ([finding 11](#11--every-collaborator-is-already-transport-neutral)). Business
@@ -1224,11 +1356,20 @@ Raised by the port, deliberately **not** fixed in it — same treatment as
 1. **5-E4** — write the 17 items (20 rows); run against a **freshly built** container from this tree, oauth2 and uma in **one pass**; `playwright test oauth2 uma` = 94 (83 + 11).
 2. Record the as-built: the four gated decisions' outcomes, verbatim bodies, and anything that contradicts
    this plan.
-3. **5c-1 S1** — `HttpConditions` + `HttpConditionsTest`.
-4. **5c-1 S2** — `ResourceSetErrorFilter` + `ResourceSetErrorFilterTest` (incl. the `OAuth2ErrorFilter`
-   idempotency row).
-5. **5c-1 S3** — `ChfAccessTokenProtectionFilter` `ErrorShape` overload + extended test; **run `openam-uma`
-   tests and `e2e/uma`**; commit.
+3. ~~**5c-1 S1** — `HttpConditions` + `HttpConditionsTest`.~~ **done 2026-07-29** — 21 rows, mutation-checked
+   three ways, 1201 surefire ([as built](#as-built--s1-2026-07-29)). Not yet committed: 5c-1 is one commit.
+   ⚠ **Corrected in review the same day**: the comparator half of `Conditions.getStatus` had not been read, and
+   two divergences (positional/strong wildcard, weakness in `If-None-Match`) got through all 21 rows. Now 27
+   rows, 1232 surefire.
+4. ~~**5c-1 S2** — `ResourceSetErrorFilter` + `ResourceSetErrorFilterTest` (incl. the `OAuth2ErrorFilter`
+   idempotency row).~~ **done 2026-07-29** — 16 rows, mutation-checked four ways, 1217 surefire
+   ([as built](#as-built-s2)). The bare-`Content-Type` decision there **binds S4**.
+5. ~~**5c-1 S3** — `ChfAccessTokenProtectionFilter` `ErrorShape` overload + extended test; **run `openam-uma`
+   tests and `e2e/uma`**; commit.~~ **done 2026-07-29** — 18 rows, mutation-checked three ways,
+   `openam-oauth2` **1226** + `openam-uma` **196**, and on a rebuilt `openam-e2e:5c1` container
+   `oauth2 uma` = **94 passed** with `uma-test.spec.mjs:152` unedited ([as built](#as-built-s3)).
+   ⚠ Unlike S1/S2 this class is on a live route, so the gate needed a **rebuilt image** — the 5-E4 container
+   does not exercise the change.
 6. **5c-2 S4** — `ResourceSetRegistrationHandler`, business logic ported verbatim.
 7. **5c-2 S5** — port `ResourceSetRegistrationEndpointTest`; add the conditional and ETag rows.
 8. **5c-2 S6** — `ResourceSetRouteCompositionIT`, all 13 rows; mutation-check three of them (rows 8, 10 and 13).

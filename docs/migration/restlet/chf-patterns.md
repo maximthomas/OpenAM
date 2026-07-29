@@ -837,10 +837,14 @@ Restlet oracle dies at 5d-2.
   `doGetInfo(Variant)` → `doHandle(MethodAnnotationInfo, Variant)`, which dispatches to the resource's own
   `@Get`. So a conditional `PUT`/`DELETE` performs the read as a side effect, and a failure *of the read*
   (e.g. `NotFoundException`) is what the client sees.
-- **Tag comparison ignores weakness.** `Conditions.getStatus(Method, RepresentationInfo)` compares with
-  `Tag.equals(obj, /* checkWeakness */ false)`, so `If-Match: "x"` and `If-Match: W/"x"` both match a tag named
-  `x`. `*` matches any existing entity. A mismatch yields **412** with **no entity**; `If-None-Match` matching
-  yields **304**.
+- **The two headers are compared by *different* rules.** `Conditions.getStatus(Method, RepresentationInfo)`
+  compares `If-Match` with `Tag.equals(obj, /* checkWeakness */ false)` — names only, so `If-Match: "x"` and
+  `If-Match: W/"x"` both match a tag named `x` — but compares `If-None-Match` with
+  `checkWeakness = GET || HEAD`, so there **weakness matters**, on the only two verbs that ever consult it.
+  ⚠ And the wildcard is a single positional test, `getMatch().get(0).equals(Tag.ALL)`: `*` counts only as the
+  **first** parsed element and only in its **strong** form. Line-by-line in [§21b](#21b) — this bullet said
+  "ignores weakness, `*` matches any existing entity" until 2026-07-29 and both halves were too broad.
+  A mismatch yields **412** with **no entity**; `If-None-Match` matching yields **304**.
 - ⇒ **A resource whose Java only asks `!getConditions().getMatch().isEmpty()` still has full `If-Match`
   enforcement** — the presence check is the endpoint's, the matching is the framework's. Porting only the
   visible half is a silent loss of lost-update protection. `Endpoints.from` has **no** conditional-request
@@ -858,6 +862,7 @@ a per-route fact that §16's general rule does not settle on its own.
 declared, documented and **read by no code**, so there is no media-type validation and no payload binding; and
 there is no conditional-request/ETag support at all.
 
+<a id="21a"></a>
 ### 21a. …and what it actually does on the wire (5-E4, measured 2026-07-29)
 
 The disassembly above is right about the mechanism. Three things it does **not** tell you, all recorded
@@ -877,6 +882,88 @@ against a live container and all load-bearing for any reimplementation
 ⚠ The unparseable row is the trap: a garbage `If-Match` takes the *no-header* path, not the *mismatch* path,
 so an implementation that reports "present but unmatched" for garbage answers 412 where Restlet answers
 whatever the endpoint does with a missing header.
+
+<a id="21c"></a>
+### 21c. ⚠ `Content-Type` on the wire is not the string CHF wrote (measured 2026-07-29)
+
+Not conditional-request specific, but it is where it was found, and it makes two correct assertions look
+contradictory. `Entity.setJson` writes the constant `"application/json; charset=UTF-8"` — **with a space**
+(`Entity.java:71`). The container re-renders it: a live `/uma/permission_request` 401, served by CHF through
+`ChfAccessTokenProtectionFilter` today, comes back as **`application/json;charset=UTF-8`** — *no* space.
+
+⇒ a unit test asserting `"application/json; charset=UTF-8"` on a `Response` and an e2e asserting
+`"application/json;charset=UTF-8"` on the wire are **both right**, and neither is evidence against the other.
+Check which side of the servlet boundary an assertion sits on before "fixing" one to match the other.
+
+⇒ the corollary that matters at 5d-1: writing a **bare** `application/json` after `setEntity` really does
+reach the wire bare, so matching Restlet's no-charset form costs one line and no divergence row
+([phase-5c S2](phase-5c.md#as-built-s2)).
+
+<a id="21b"></a>
+### 21b. The tag parser itself, line by line (disassembled 2026-07-29 while writing `HttpConditions`)
+
+The table above is the *behaviour*; this is the code that produces it, so nobody has to open the jar again.
+`TagReader.readValue` → `HeaderReader.readRawValue` → `Tag.parse`, then `HeaderReader.addValues` collects.
+Two of these are not derivable from the measured rows:
+
+- ⚠ **The splitter is not quote-aware.** `readRawValue` reads characters until a comma or EOF with **no**
+  quote tracking, so a comma always ends an element — even inside `"…"`. `If-Match: "a,b"` splits into `"a`
+  and `b"`, *neither* of which parses, so the whole header is dropped and reads as absent. ⇒ a tag whose name
+  contains a comma can never be expressed and never matches. Commons' `HeaderUtil.split` **does** honour
+  quotes, so reaching for it as the obvious reuse is a behaviour change, not a cleanup.
+- ⚠ **`*` and `"*"` are the same tag.** `Tag.parse` checks the quoted form *first*, so `"*"` yields a tag
+  **named** `*` — indistinguishable from the wildcard `*`, which yields the same. Restlet cannot tell them
+  apart. ⚠ But do **not** conclude from this that a tag can be reduced to its name: `W/*` also parses, to a
+  *weak* tag named `*`, and the wildcard test below rejects it. The parser conflates `*` and `"*"`; the
+  comparator still needs the weak flag.
+- Leading spaces are skipped and trailing linear whitespace stripped per element; an empty element yields
+  `null`.
+- `Tag.parse` strips a leading `W/`, then accepts `"…"` (name = the inner text, `W/` recorded as the weak
+  flag) or `*`, and otherwise **logs a warning and returns `null`** — no exception, which is why garbage
+  vanishes silently.
+- `addValues` → `canAdd` drops `null`s **and duplicates**, and its loop catches only `IOException`. So one
+  garbage member does not poison the rest of a list, and an all-garbage header leaves an empty list. The
+  duplicate test is `Collection.contains`, i.e. the weakness-checked `Tag.equals(Object)`, so `"x"` and
+  `W/"x"` both survive in one list.
+- ⚠ **A lone `"` throws.** `startsWith("\"") && endsWith("\"")` is true for the single character `"`, so
+  `Tag.parse` does `substring(1, 0)` → `StringIndexOutOfBoundsException`, which is **not** an `IOException`
+  and so escapes `addValues`. Unmeasured; presumed to surface as a 500. `HttpConditions` deliberately drops it
+  as invalid instead of reproducing the crash (decided 2026-07-29).
+
+<a id="21b-comparator"></a>
+#### …and the comparator, which is a *different* class (disassembled 2026-07-29, after the first cut of `HttpConditions` got it wrong)
+
+The parser above says how a header becomes a `List<Tag>`. What that list *means* is `Conditions.getStatus`,
+and reading only the parser is how S1 shipped two divergences that its 21 rows all passed. Three facts, none
+of them derivable from `Tag.parse` and none covered by the measured table:
+
+```java
+// Conditions.getStatus(Method, boolean entityExists, Tag actualTag, Date modificationDate)
+boolean all = getMatch().size() > 0 && getMatch().get(0).equals(Tag.ALL);   // 1-arg equals => weakness checked
+if (entityExists) {
+    if (!all && actualTag != null) {
+        for (Tag t : getMatch())    matched = t.equals(actualTag, false);              // If-Match: names only
+    } else  matched = all;
+} else { failed = all; }
+...
+for (Tag t : getNoneMatch())        matched = t.equals(actualTag, GET.equals(m) || HEAD.equals(m));
+```
+
+- ⚠ **The wildcard is positional.** `all` is computed from `get(0)` alone, so `If-Match: "stale", *` is *not*
+  a wildcard — the fallback loop then compares names, and no real tag is named `*`, so it **412**s. An
+  implementation asking "does the list contain `*`" silently applies an update Restlet refuses.
+- ⚠ **The wildcard is strong-only.** `Tag.ALL` is `Tag.parse("*")` (weak = false) and `Tag.equals(Object)` is
+  `equals(o, /* checkWeakness */ true)`, so `If-Match: W/*` fails the test and then fails the name loop too.
+- ⚠ **`If-None-Match` compares weakness; `If-Match` does not.** The second argument is
+  `GET.equals(method) || HEAD.equals(method)` — and GET/HEAD are the only verbs that reach the `noneMatch`
+  branch at all, so in practice it is **always `true`**. `/oauth2/resource_set` answers a *weak* `ETag`, so
+  `If-None-Match: "<name>"` (the strong form) gets **200 and the full body**, not a 304. Only the verbatim
+  `W/"<name>"` produces the 304 that [§21a](#21a)'s table records.
+- The `noneMatch` wildcard is `Tag.ALL.equals(getNoneMatch().get(0))` reached **only when `actualTag` is
+  `null`** — which is the mechanism behind the measured "`If-None-Match: *` answers 200": with a real tag
+  present, that branch is unreachable and `*` falls through to the name comparison.
+- `If-Modified-Since` also participates, but only where `modificationDate != null`; this endpoint sets a tag
+  and no modification date, so every date branch collapses to "not modified-since" and no 304 comes from it.
 
 **`HEAD` and `PATCH` are dispatched through other methods' annotations.** `HEAD` is rewritten to `GET` before
 the annotation lookup (§22 records the CHF side), and — measured, not disassembled — **`PATCH` reaches the

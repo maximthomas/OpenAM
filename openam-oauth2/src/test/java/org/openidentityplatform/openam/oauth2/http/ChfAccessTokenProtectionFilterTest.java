@@ -204,6 +204,135 @@ public class ChfAccessTokenProtectionFilterTest {
         verify(next, never()).handle(any(), any());
     }
 
+    // --- OAUTH2 shape (D2) ------------------------------------------------------------------
+    //
+    // Every row above stays exactly as it was: CREST is the default and /uma is live on it. What follows is
+    // the opt-in shape /oauth2/resource_set needs, measured against live Restlet 2026-07-29 -- its 401 is
+    // `{"error_description":"...","error":"invalid_token"}` under a bare `application/json`, with no bearer
+    // challenge, where the same failure on /uma is `{code, reason, message}`.
+
+    @Test
+    public void oauth2ShapeRendersTheOAuth2ErrorBodyAndNoCrestKeys() throws Exception {
+        givenBearer(null);
+
+        Response response = runOAuth2(SCOPE);
+
+        assertThat(response.getStatus().getCode()).isEqualTo(401);
+        assertThat(bodyOf(response)).containsOnlyKeys("error", "error_description")
+                .contains(entry("error", "invalid_token"), entry("error_description", INVALID_TOKEN_MESSAGE));
+        verify(next, never()).handle(any(), any());
+    }
+
+    @Test
+    public void theOAuth2ShapeIsBareApplicationJsonAndCarriesNoBearerChallenge() throws Exception {
+        givenBearer(null);
+
+        Response response = runOAuth2(SCOPE);
+
+        // 5-E4 row 14 measured 401 as bare application/json; setEntity(Map) would add "; charset=UTF-8".
+        assertThat(response.getHeaders().getFirst("Content-Type")).isEqualTo("application/json");
+        // D5 still holds in this shape: Restlet sent no challenge here either.
+        assertThat(response.getHeaders().getFirst("WWW-Authenticate")).isNull();
+    }
+
+    /**
+     * Finding 14, and the reason this is not a four-line rendering swap. The call site reports a
+     * {@code ServerException} as <strong>500</strong>, but {@code ServerException} is
+     * {@code super(400, "server_error", ...)}, and producer B took the wire status from the exception -- so a
+     * token-store failure reaches a {@code resource_set} client as a <strong>400</strong> while the identical
+     * failure on {@code /uma} stays a 500. Reusing {@code crestError}'s {@code code} argument here would be
+     * the natural implementation and would be wrong on exactly this path.
+     */
+    @Test
+    public void oauth2ShapeTakesTheStatusFromTheExceptionSoAServerExceptionIs400NotTheReported500()
+            throws Exception {
+        givenBearer("tok");
+        when(tokenStore.readAccessToken(oAuth2Request, "tok")).thenThrow(new ServerException("boom"));
+
+        Response response = runOAuth2(SCOPE);
+
+        assertThat(response.getStatus().getCode()).isEqualTo(400);
+        assertThat(bodyOf(response)).contains(
+                entry("error", "server_error"), entry("error_description", "boom"));
+    }
+
+    @Test
+    public void oauth2ShapeRendersNotFoundAs404NotFound() throws Exception {
+        givenBearer("tok");
+        when(tokenStore.readAccessToken(oAuth2Request, "tok")).thenThrow(new NotFoundException("no such token"));
+
+        Response response = runOAuth2(SCOPE);
+
+        assertThat(response.getStatus().getCode()).isEqualTo(404);
+        assertThat(bodyOf(response)).contains(
+                entry("error", "not_found"), entry("error_description", "no such token"));
+    }
+
+    @Test
+    public void oauth2ShapeRendersAMissingScopeAs403InsufficientScope() throws Exception {
+        givenBearer("tok");
+        AccessToken wrongScope = accessToken(false, "other");
+        when(tokenStore.readAccessToken(oAuth2Request, "tok")).thenReturn(wrongScope);
+
+        Response response = runOAuth2(SCOPE);
+
+        assertThat(response.getStatus().getCode()).isEqualTo(403);
+        assertThat(bodyOf(response)).contains(entry("error", "insufficient_scope"),
+                entry("error_description", "The resource requested requires scope: " + SCOPE));
+    }
+
+    @Test
+    public void oauth2ShapeRendersAnInvalidGrantAs401InvalidToken() throws Exception {
+        givenBearer("tok");
+        when(tokenStore.readAccessToken(oAuth2Request, "tok")).thenThrow(new InvalidGrantException("nope"));
+
+        Response response = runOAuth2(SCOPE);
+
+        // The caught exception is discarded in favour of InvalidTokenException, in both shapes.
+        assertThat(response.getStatus().getCode()).isEqualTo(401);
+        assertThat(bodyOf(response)).contains(
+                entry("error", "invalid_token"), entry("error_description", INVALID_TOKEN_MESSAGE));
+    }
+
+    @Test
+    public void oauth2ShapeRendersAnExpiredTokenAs401InvalidToken() throws Exception {
+        givenBearer("tok");
+        AccessToken expired = accessToken(true, SCOPE);
+        when(tokenStore.readAccessToken(oAuth2Request, "tok")).thenReturn(expired);
+
+        Response response = runOAuth2(SCOPE);
+
+        assertThat(response.getStatus().getCode()).isEqualTo(401);
+        assertThat(bodyOf(response)).containsEntry("error", "invalid_token");
+    }
+
+    @Test
+    public void theShapeDoesNotLeakIntoTheSuccessPath() throws Exception {
+        givenBearer("tok");
+        AccessToken token = accessToken(false, SCOPE);
+        when(tokenStore.readAccessToken(oAuth2Request, "tok")).thenReturn(token);
+
+        Response response = runOAuth2(SCOPE);
+
+        assertThat(response).isSameAs(nextResponse);
+        assertThat(oAuth2Request.getToken(AccessToken.class)).isSameAs(token);
+    }
+
+    /**
+     * The additive guarantee UMA depends on: the three-argument constructor must still render CREST. If this
+     * row ever needs editing, the overload was not additive and phase-4 D5 has been broken.
+     */
+    @Test
+    public void theThreeArgumentConstructorStillRendersCrest() throws Exception {
+        givenBearer("tok");
+        when(tokenStore.readAccessToken(oAuth2Request, "tok")).thenThrow(new ServerException("boom"));
+
+        Response response = run(SCOPE);
+
+        assertThat(response.getStatus().getCode()).isEqualTo(500);
+        assertThat(bodyOf(response)).containsOnlyKeys("code", "reason", "message");
+    }
+
     // --- helpers ----------------------------------------------------------------------------
 
     private void givenBearer(String token) throws Exception {
@@ -218,6 +347,12 @@ public class ChfAccessTokenProtectionFilterTest {
 
     private Response run(String requiredScope) {
         return new ChfAccessTokenProtectionFilter(requiredScope, tokenStore, requestFactory)
+                .filter(context, request, next).getOrThrowUninterruptibly();
+    }
+
+    private Response runOAuth2(String requiredScope) {
+        return new ChfAccessTokenProtectionFilter(requiredScope, tokenStore, requestFactory,
+                ChfAccessTokenProtectionFilter.ErrorShape.OAUTH2)
                 .filter(context, request, next).getOrThrowUninterruptibly();
     }
 

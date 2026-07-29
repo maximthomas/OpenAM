@@ -19,6 +19,7 @@ import static org.forgerock.util.promise.Promises.newResultPromise;
 
 import org.forgerock.http.Filter;
 import org.forgerock.http.Handler;
+import org.forgerock.http.header.ContentTypeHeader;
 import org.forgerock.http.protocol.Request;
 import org.forgerock.http.protocol.Response;
 import org.forgerock.http.protocol.Status;
@@ -31,6 +32,7 @@ import org.forgerock.oauth2.core.exceptions.InsufficientScopeException;
 import org.forgerock.oauth2.core.exceptions.InvalidGrantException;
 import org.forgerock.oauth2.core.exceptions.InvalidTokenException;
 import org.forgerock.oauth2.core.exceptions.NotFoundException;
+import org.forgerock.oauth2.core.exceptions.OAuth2Exception;
 import org.forgerock.oauth2.core.exceptions.ServerException;
 import org.forgerock.services.context.Context;
 import org.forgerock.util.promise.NeverThrowsException;
@@ -47,10 +49,25 @@ import com.sun.identity.shared.debug.Debug;
  */
 public class ChfAccessTokenProtectionFilter implements Filter {
 
+    /**
+     * Which error vocabulary a route's rejections are rendered in.
+     * <p>
+     * A <strong>route</strong> property, not a scope property. {@code resource_set} passes a {@code null}
+     * required scope, but so could a future UMA route, so keying the shape off {@code requiredScope == null}
+     * would be a coincidence dressed as a rule.
+     */
+    public enum ErrorShape {
+        /** {@code {code, reason, message}} -- what the Restlet app's {@code StatusFilter} rendered for /uma. */
+        CREST,
+        /** {@code {error, error_description}} -- what {@code /oauth2/resource_set}'s own filter rendered. */
+        OAUTH2
+    }
+
     private final Debug debug = Debug.getInstance("UmaProvider");
     private final String requiredScope;
     private final TokenStore tokenStore;
     private final OAuth2RequestFactory requestFactory;
+    private final ErrorShape errorShape;
 
     /**
      * @param requiredScope The scope the access token must carry; {@code null} skips the scope check.
@@ -59,9 +76,21 @@ public class ChfAccessTokenProtectionFilter implements Filter {
      */
     public ChfAccessTokenProtectionFilter(String requiredScope, TokenStore tokenStore,
             OAuth2RequestFactory requestFactory) {
+        this(requiredScope, tokenStore, requestFactory, ErrorShape.CREST);
+    }
+
+    /**
+     * @param requiredScope The scope the access token must carry; {@code null} skips the scope check.
+     * @param tokenStore The token store the bearer token is read from.
+     * @param requestFactory Builds (and caches) the {@link org.forgerock.oauth2.core.OAuth2Request}.
+     * @param errorShape The vocabulary rejections are rendered in.
+     */
+    public ChfAccessTokenProtectionFilter(String requiredScope, TokenStore tokenStore,
+            OAuth2RequestFactory requestFactory, ErrorShape errorShape) {
         this.requiredScope = requiredScope;
         this.tokenStore = tokenStore;
         this.requestFactory = requestFactory;
+        this.errorShape = errorShape;
     }
 
     @Override
@@ -95,11 +124,28 @@ public class ChfAccessTokenProtectionFilter implements Filter {
     }
 
     /**
-     * Reproduces the CREST {@code {code, reason, message}} body the Restlet {@code StatusFilter} rendered
-     * for the filter's bare error status -- deliberately no OAuth2 {@code error} field and no
-     * {@code WWW-Authenticate} (D5). {@code setEntity(Map)} supplies {@code application/json; charset=UTF-8}.
+     * Renders a rejection in the route's chosen vocabulary.
+     * <p>
+     * {@link ErrorShape#CREST} reproduces the {@code {code, reason, message}} body the Restlet
+     * {@code StatusFilter} rendered for the filter's bare error status, <strong>at the code the call site
+     * passed</strong> -- deliberately no OAuth2 {@code error} field and no {@code WWW-Authenticate} (D5).
+     * {@code setEntity(Map)} supplies {@code application/json; charset=UTF-8}.
+     * <p>
+     * ⚠ {@link ErrorShape#OAUTH2} <strong>ignores {@code code}</strong> and takes the status from the
+     * exception, as {@code ResourceSetRegistrationExceptionFilter.setExceptionResponse} did. The two disagree
+     * on exactly one path and it is wire-visible: a {@code ServerException} is reported here as 500 but is
+     * {@code super(400, "server_error", ...)}, so a token-store failure reaches a {@code resource_set} client
+     * as a <strong>400</strong> while the identical failure on {@code /uma} stays a 500.
      */
-    private Promise<Response, NeverThrowsException> crestError(int code, Exception exception) {
+    private Promise<Response, NeverThrowsException> crestError(int code, OAuth2Exception exception) {
+        if (errorShape == ErrorShape.OAUTH2) {
+            Response response = new Response(Status.valueOf(exception.getStatusCode()));
+            response.setEntity(OAuth2Error.of(exception.getStatusCode(), exception.getError(),
+                    exception.getMessage()).asMap());
+            // 5-E4 row 14: the endpoint's errors are bare application/json; setJson adds the charset.
+            response.getHeaders().put(ContentTypeHeader.NAME, "application/json");
+            return newResultPromise(response);
+        }
         Response response = new Response(Status.valueOf(code));
         response.setEntity(ResourceException.newResourceException(code, exception.getMessage()).toJsonValue().getObject());
         return newResultPromise(response);

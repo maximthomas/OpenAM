@@ -858,6 +858,33 @@ a per-route fact that §16's general rule does not settle on its own.
 declared, documented and **read by no code**, so there is no media-type validation and no payload binding; and
 there is no conditional-request/ETag support at all.
 
+### 21a. …and what it actually does on the wire (5-E4, measured 2026-07-29)
+
+The disassembly above is right about the mechanism. Three things it does **not** tell you, all recorded
+against a live container and all load-bearing for any reimplementation
+([5-E4 as-built](phase-5c.md#as-built-5-e4--recorded-2026-07-29)):
+
+| Header | Wire behaviour |
+|---|---|
+| `If-Match: *`, the exact weak tag, or its strong form | match |
+| `If-Match` as a **comma list** — any position, with or without a space after the comma | match; the list is parsed |
+| `If-Match` that parses but does not match, on **`PUT`/`DELETE`** — including `""` | **412**. ⚠ The conditional layer leaves it **entity-less**; whatever body the client sees is the enclosing filter's — on `/oauth2/resource_set` that is `{"error":"precondition_failed"}` from `ResourceSetRegistrationExceptionFilter`, not from Restlet. ⚠ **Not so on `GET`** — see the `If-Match` row below, where the entity is already populated and the filter's 412 branch never fires |
+| `If-Match` that does **not parse** — unquoted token, empty header, `!!!` | ⚠ **indistinguishable from an absent header.** The parser drops what it cannot read, `getConditions().getMatch()` comes back empty, and a resource whose Java asks *"is this conditional?"* concludes **no** |
+| `If-None-Match: <current>` | **304**, **carrying the `ETag`**, with **no `Content-Type`** and **no `Content-Length`** — on `GET` and on `HEAD`. ⚠ Body emptiness is *not* part of this record: an HTTP client never surfaces a 304 entity, so it cannot be observed and no row asserts it |
+| `If-None-Match: *` | **200.** RFC 7232 §3.2 asks for 304 when a representation exists; Restlet does not do it |
+| `If-Match` on a **`GET`** | `*` → 200; a stale tag → **412 carrying the full representation and the `ETag`** |
+
+⚠ The unparseable row is the trap: a garbage `If-Match` takes the *no-header* path, not the *mismatch* path,
+so an implementation that reports "present but unmatched" for garbage answers 412 where Restlet answers
+whatever the endpoint does with a missing header.
+
+**`HEAD` and `PATCH` are dispatched through other methods' annotations.** `HEAD` is rewritten to `GET` before
+the annotation lookup (§22 records the CHF side), and — measured, not disassembled — **`PATCH` reaches the
+`@Put` method**: on `/oauth2/resource_set` a `PATCH` performs a full replace and answers 200. A verb Restlet
+has no mapping for at all (`OPTIONS`, `PROPFIND`, `LOCK`, `COPY`) is the one that gets the framework 405, with
+`Allow: POST, PUT, GET, DELETE`. `Endpoints.from` maps `{DELETE, GET, POST, PUT}` and nothing else, so both
+`HEAD` and `PATCH` become 405s at a port.
+
 ## 22. CHF URI-template matching — trailing slashes, variables, and `HEAD` (Phase 5c review)
 
 Read from commons `org.forgerock.http.routing.UriRouteMatcher`

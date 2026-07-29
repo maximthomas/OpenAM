@@ -195,9 +195,15 @@ routed around in-phase and fixed here only when a phase actually requires the co
   Found 2026-07-29 planning Phase 5c ([finding 9](phase-5c.md#9--openam-https-consumespayload-annotations-are-dead-api)).
   **In-tree (ours), no release cycle. Proposed fix:** either implement `@Consumes` (~20 lines in
   `AnnotatedMethod`: compare the parsed request media type, 415 on mismatch) or delete all three. **Status:
-  deferred** — the choice is gated on [5c's D7](phase-5c.md#d7), which records what live Restlet does with a
-  wrong `Content-Type` on `/oauth2/resource_set`; either way it lands in its own commit, never bundled into a
-  port.
+  gate answered 2026-07-29 → delete.** [5-E4 row 12](phase-5c.md#as-built-5-e4--recorded-2026-07-29) measured
+  the incumbent: live Restlet enforces **nothing** on `/oauth2/resource_set` — `text/plain` and
+  `application/xml` both answer **201**, as does an **absent** `Content-Type`. All three are **asserted** by
+  row 12 — the absent case through `node:http` rather than Playwright, which always supplies a
+  `Content-Type` and would have made a row claiming to test absence pass for the wrong reason. The row
+  asserts that no `Content-Type` actually went out, so the evidence this deletion rests on survives the
+  flip. Only an unparseable *body* fails. So there is no
+  behaviour to preserve, implementing `@Consumes` would be a **new** restriction rather than parity, and
+  deleting the three annotations costs no oracle. Still its own commit, never bundled into a port.
 
 - **`Endpoints.from` has no conditional-request (`If-Match` / `If-None-Match` / ETag) support.** Restlet's
   `ServerResource` evaluated preconditions for its resources ([chf-patterns §21](chf-patterns.md#21-restlets-conditional-request-machinery-phase-5c)),
@@ -216,8 +222,22 @@ routed around in-phase and fixed here only when a phase actually requires the co
   suppression is already the servlet container's job. **Blast radius:** additive; endpoints that 405 today
   start answering. **Status: open, owner 5d-1** — this is a **Phase-5-wide** divergence affecting every ported
   endpoint with a `@Get`, so it is fixed (or written into the divergence table) once, for all 15 endpoints,
-  not per step. [5-E4 row 15](phase-5c.md#10--what-e2e-already-records-and-what-5-e4-must-add) records the
-  incumbent behaviour while the oracle still exists.
+  not per step. **Incumbent recorded 2026-07-29** —
+  [5-E4 row 15](phase-5c.md#as-built-5-e4--recorded-2026-07-29): `HEAD` on `/oauth2/resource_set/{rsid}` and on
+  both collection forms answers **200**, `application/json`, no `Content-Length`, with headers identical to the
+  same URL's `GET` — the item form carrying the `ETag` — and it honours `If-None-Match` (→ 304). *Body*
+  emptiness is not part of the oracle: an HTTP client discards a HEAD entity regardless, so it cannot be
+  observed and no row asserts it. The oracle now exists in the suite; the decision does not.
+
+- **`Endpoints.from` does not map `PATCH` at all — and Restlet routes it to `@Put`.** Same shape as the `HEAD`
+  item above and found the same way, but **measured rather than disassembled**: on live Restlet a `PATCH` to
+  `/oauth2/resource_set/{rsid}` reaches `updateResourceSet` and performs a **full replace**, answering 200
+  ([5-E4 row 11](phase-5c.md#as-built-5-e4--recorded-2026-07-29)). CHF's verb map has no `PATCH` entry, so the
+  port answers 405. **In-tree (ours). Proposed fix:** none obviously right — aliasing `PATCH` to `PUT` would
+  bake in a Restlet quirk that is wrong by RFC 5789 (a `PATCH` is not a replace), while dropping it changes a
+  working call into an error. **Status: open, owner 5d-1.** Unlike `HEAD` this is **not** Phase-5-wide: it bites
+  wherever a `@Put` exists, which on the ported surface is `/oauth2/resource_set` alone. Most likely outcome is
+  a divergence row rather than a framework change.
 
 - **Commons `UriRouteMatcher` cannot express a trailing-slash route.** `createRegex` strips the template's
   trailing slash while `Paths.getPathElements` preserves the request's, so `EQUALS "foo/"` matches nothing

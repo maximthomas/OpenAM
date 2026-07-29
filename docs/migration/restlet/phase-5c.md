@@ -45,7 +45,7 @@ it edits a class that is live on `/uma` today. That is why it is its own commit.
 
 | Step | Scope | New / changed | Risk |
 |---|---|---|---|
-| **5-E4** | **The live-Restlet contract lock.** **17 items / 18 rows** (row 2 splits into 2a/2b) added to `e2e/oauth2/oauth2-endpoints-test.spec.mjs` (`/oauth2/resource_set registration` describe), written **by observation**. Test-only, no main code. Gates D3, D4, D5, D6, D7, D9 | e2e spec only (0 main) | **High** — unrecoverable after 5d-1 |
+| **5-E4** | **The live-Restlet contract lock.** **17 items / 20 rows** (items 1, 2 and 3 each split in two) added to `e2e/oauth2/oauth2-endpoints-test.spec.mjs` as their own describe, written **by observation**. Test-only, no main code. Gates D3, D4, D5, D6, D7, D9 | e2e spec only (0 main) | **High** — unrecoverable after 5d-1 |
 | **5c-1** | **Error-shape substrate.** `ChfAccessTokenProtectionFilter` gains an opt-in error renderer (D2); new CHF `ResourceSetErrorFilter` (D3); new `HttpConditions` conditional-request helper (D6) | 1 modified (**live**) + 2 new + 3 tests | **Med-High** — the modified class is on the live `/uma` path |
 | **5c-2** | **The handler.** `ResourceSetRegistrationHandler` + ported unit tests + `ResourceSetRouteCompositionIT` | 1 new + 2 tests + 1 IT | **Med** |
 
@@ -182,7 +182,9 @@ pairs with the filter's `412` branch. It does not — the two are unrelated path
 
 - the throw goes to producer **A**. `toOAuth2RestletException` (`ExceptionHandler:160-176`) tests
   `instanceof OAuth2RestletException` (no), `getCause() instanceof OAuth2RestletException` (the cause is
-  **`null`** — the 4th constructor argument), `getCause() instanceof OAuth2Exception` (no), and falls to
+  **`null`**, and necessarily so: the overload is `ResourceException(int, String, String, String)` whose 4th
+  parameter is the **URI** — the cause-carrying form is the 5-arg one, so this throw cannot have a cause),
+  `getCause() instanceof OAuth2Exception` (no), and falls to
   `new ServerException(throwable)` → **400**, error **`server_error`**
   ([chf-patterns §17](chf-patterns.md#17-oauth2exception--http-status-quirks-phase-5a-2b): `ServerException`
   is 400, not 500), message preserved;
@@ -190,11 +192,16 @@ pairs with the filter's `412` branch. It does not — the two are unrelated path
   ([finding 2](#2--restlets-conditional-request-machinery-is-load-bearing-and-chf-has-none)).
 
 Confirmed live (`oauth2-endpoints-test.spec.mjs:97-104`): `PUT` without `If-Match` → **400**, `error_description`
-contains `Require If-Match header to update Resource Set`. The spec does not currently assert `error`;
-**5-E4 row 4 must pin it** so the port is not free to choose.
+contains `Require If-Match header to update Resource Set`. That lifecycle row asserts no `error` field, which
+is why **5-E4 row 4 pins it** — done: `server_error`, plus the full formatted `error_description` above.
 
-⇒ the port throws `ServerException("Require If-Match header to update Resource Set")` and lets the JSON base
-map it. Neither `512` nor `precondition_failed` appears on this path.
+⇒ the port throws a `ServerException` and lets the JSON base map it. ⚠ **Corrected 2026-07-29 by 5-E4 row 4**:
+the message must be the Restlet `ResourceException`'s *formatted* one —
+`"precondition_failed (512) - Require If-Match header to update Resource Set"` — because producer A passes
+`throwable.getMessage()` through untouched. This section originally prescribed the bare sentence, which would
+have dropped the `precondition_failed (512) - ` prefix; see [D4](#d4) and the
+[as-built](#as-built-5-e4--recorded-2026-07-29). So `512` never reaches the *status*, but both `512` and
+`precondition_failed` do reach the wire, inside `error_description`.
 
 <a id="5--etag-emission-and-format"></a>
 ### 5. ETag emission and format
@@ -724,13 +731,25 @@ UMA got in [phase-4 D4](phase-4-uma.md), for the same reason
 ### D4 — the missing-`If-Match` rejection is a `ServerException`, not a 412 (**gated on 5-E4 rows 4, 6**)
 
 ```java
-throw new ServerException("Require If-Match header to update Resource Set");   // -> 400 server_error
+// ⚠ CORRECTED by 5-E4 — the prefix is part of the wire contract, see below.
+throw new ServerException("precondition_failed (512) - Require If-Match header to update Resource Set");
 ```
 
-Per [finding 4](#4--the-512-throw-never-reaches-the-wire-as-512): 400 + `server_error` + the verbatim message
+⚠ **The message above is not the endpoint's string.** 5-E4 row 4 measured the live
+`error_description` as `precondition_failed (512) - Require If-Match header to update Resource Set` — Restlet's
+`ResourceException.getMessage()` formats as `"<reason> (<code>) - <description>"`, and producer A passes
+`throwable.getMessage()` through untouched. This decision originally proposed throwing the bare sentence, which
+would have dropped the prefix and changed bytes on a path the existing e2e already exercises
+([as-built](#as-built-5-e4--recorded-2026-07-29), correction 2). The general rule, which the handler should
+encode once rather than per throw site: **every non-`OAuth2Exception` throwable on this endpoint reaches the
+wire as 400 `server_error` with `error_description` = the Restlet `ResourceException`'s formatted message.**
+
+Per [finding 4](#4--the-512-throw-never-reaches-the-wire-as-512): 400 + `server_error` + the message
 is what live Restlet emits, and `ServerException` is the exception whose `getStatusCode()` is 400
-([chf-patterns §17](chf-patterns.md#17-oauth2exception--http-status-quirks-phase-5a-2b)). The delete twin keeps
-its own wording (`"Require If-Match header to delete Resource Set"`).
+([chf-patterns §17](chf-patterns.md#17-oauth2exception--http-status-quirks-phase-5a-2b)). The delete twin takes
+the **same treatment**: `"precondition_failed (512) - Require If-Match header to delete Resource Set"` — prefix
+included, only the verb word differing. 5-E4 row 6 pins it, so dropping the prefix on the destructive verb is
+a red row at the flip just as it is on `PUT`.
 
 ⚠ Do **not** "fix" this to 428 `Precondition Required` or to the 412 the filter can produce. It is a wire
 contract a resource server may branch on, and it is a parity migration; if it is worth changing it is worth a
@@ -780,12 +799,29 @@ Matching rules copied from the disassembled `Conditions.getStatus`
 existing entity; otherwise compare **tag names only**, so `W/"x"` ≡ `"x"`; a comma-separated list matches if
 any member does.
 
+⚠ **Three amendments from 5-E4, all measured** ([as-built](#as-built-5-e4--recorded-2026-07-29)). The version
+above would have diverged on each:
+
+- **`hasIfMatch()` is "did it parse", not "was the header sent".** An `If-Match` Restlet cannot parse —
+  unquoted, empty, `!!!` — leaves an **empty** match list, so `isConditionalRequest()` says *no*, and the
+  request takes D4's missing-header 400. A helper that reports *present but unmatched* answers 412 where
+  Restlet answers 400. Pinned by row 1b.
+- **`noneMatches` must NOT treat `*` as a match.** `If-None-Match: *` answers **200** on live Restlet, not
+  the 304 RFC 7232 §3.2 asks for, so carrying the `*`-matches-anything rule across from `matches()` would
+  invert it. Pinned by row 3.
+- **The 304 carries the `ETag` and no `Content-Type`.**
+
 Handler use:
 
 - `PUT`/`DELETE`: `if (!c.hasIfMatch()) throw ServerException(...)` (D4); then compute the **current** ETag
   and `if (!c.matches(etag)) return precondition-failed` — a **412 whose body `ResourceSetErrorFilter`
   supplies**, so the two filters' contracts stay in one place rather than being duplicated inline;
-- `GET` read: `if (c.noneMatches(etag)) return 304` with no body.
+- `GET` read: `if (c.noneMatches(etag)) return 304` — **with the `ETag` set and no `Content-Type`**, and with
+  `*` deliberately *not* matching;
+- ⚠ `GET` read also honours **`If-Match`**: `*` → 200, a non-matching tag → **412 carrying the full
+  representation and the `ETag`** (a 412 with a 200-shaped body). Restlet does this because its conditional
+  layer runs the `@Get` to obtain the tag and then fails the precondition with the representation already in
+  hand. A handler that only consults `If-Match` on `PUT`/`DELETE` answers 200 here. **Pinned by row 3b.**
 
 ⚠ **"the current ETag" means `readResourceSet`'s tag, not the store row's.** Extract one
 `currentEtag(rsid, owner)` helper that rebuilds the read model — `store.read`, `umaLabelsStore` labels,
@@ -914,7 +950,7 @@ error filter; everything else relies on the root `OAuth2ErrorFilter`.
 ### 5-E4 — test-only
 
 - `e2e/oauth2/oauth2-endpoints-test.spec.mjs` — extend the `/oauth2/resource_set registration` describe with
-  [finding 10](#10--what-e2e-already-records-and-what-5-e4-must-add)'s 17 items (18 rows -- row 2 splits into 2a/2b).
+  [finding 10](#10--what-e2e-already-records-and-what-5-e4-must-add)'s 17 items (20 rows -- items 1, 2 and 3 each split in two).
 - Label every new row `(5-E4, live Restlet)` so the 5d-1 re-run can select them.
 - Reuse the existing `RS_CLIENT_ID` / `protectionApiToken` / `registerResourceSet` fixtures
   (`e2e/common/oauth2-fixtures.mjs`); add a helper that returns the raw `ETag` header so rows 1–3 can
@@ -955,7 +991,7 @@ Baseline to beat, from the 5b-2b as-built: **1180 surefire + 25 failsafe** in `o
 
 | Gate | 5-E4 | 5c-1 | 5c-2 |
 |---|---|---|---|
-| `npx playwright test oauth2` | **81 passed** (63 + 18), all against **live Restlet** | 81 (unchanged) | 81 (unchanged) |
+| `npx playwright test oauth2 uma` (one pass, fresh container) | **94 passed** — oauth2 **83** (63 + 20) + uma **11**, all against **live Restlet** | 94 (unchanged) | 94 (unchanged) |
 | `npx playwright test uma` | 11 | **11 — the load-bearing gate for D2** | 11 |
 | `mvn -o -pl openam-oauth2 test` | 1180 (unchanged) | ≥ 1180 + ~25 | ≥ 1180 + ~55 |
 | `mvn -o -pl openam-uma test` | — | **green, count unchanged** | — |
@@ -1185,7 +1221,7 @@ Raised by the port, deliberately **not** fixed in it — same treatment as
 
 ## Checklist
 
-1. **5-E4** — write the 17 items (18 rows); run against a container built from this tree; `playwright test oauth2` = 81.
+1. **5-E4** — write the 17 items (20 rows); run against a **freshly built** container from this tree, oauth2 and uma in **one pass**; `playwright test oauth2 uma` = 94 (83 + 11).
 2. Record the as-built: the four gated decisions' outcomes, verbatim bodies, and anything that contradicts
    this plan.
 3. **5c-1 S1** — `HttpConditions` + `HttpConditionsTest`.
@@ -1199,8 +1235,258 @@ Raised by the port, deliberately **not** fixed in it — same treatment as
 9. **5c-2 S7** — full gates; commit.
 10. Update [plan.md](plan.md)'s phase table row 5c, the expected-divergence table, and the post-migration
     ticket table (T5–T7).
-11. **Hand off to 5d-1 explicitly** — three items 5c records but cannot close:
+11. **Hand off to 5d-1 explicitly** — the items 5c records but cannot close:
     [R-5c.12](#risk-register-extends-the-phase-5-register) (`OAuth2RouterIT` must drive the real provider over
     all three URL forms), [C3](#framework-items-openam-http-is-ours) (`HEAD`, decided once for all 15
-    endpoints), and 5-E4 rows 15/17. Put them in the 5c as-built, not only here: the as-built is what the flip
-    reads.
+    endpoints), 5-E4 rows 15/17, and the two the gate itself turned up — **`PATCH`** and the **vanishing
+    `Allow` header** on a 405. The as-built's [Handed to 5d-1](#handed-to-5d-1) list is authoritative and has
+    all four; put them there, not only here, because the as-built is what the flip reads.
+
+---
+
+<a id="as-built-5-e4--recorded-2026-07-29"></a>
+## As-built — 5-E4, recorded 2026-07-29 (test-only)
+
+Captured against a live container built from this tree: `openam-e2e:5e4` (the repo
+`openam-distribution/openam-distribution-docker/Dockerfile` with its three `#COPY` lines uncommented, exactly
+CI's `build-docker` sed) over a full `mvn install -DskipTests` of the working tree, plus
+`openidentityplatform/opendj:latest` on the `test-openam` network, configured with CI's `conf.file`. Restlet
+still serves `/oauth2`: the endpoint under test is reached through `OAuth2RouterProvider:131-133`, and no CHF
+`HttpRouteProvider` claims those paths.
+
+⚠ The image's banner reads `Build 32f2b9572d (2026-July-27)` — that is the branch's merge base, which is what
+the build-number plugin stamps. It is **not** the provenance of the classes: `WEB-INF/lib/openam-oauth2-*.jar`
+carries `org/openidentityplatform/openam/oauth2/http/` compiled from this working tree.
+
+**Deliverables — e2e only, zero main-source lines:**
+
+| File | Change |
+|---|---|
+| `e2e/oauth2/oauth2-endpoints-test.spec.mjs` | new describe `/oauth2/resource_set contract lock (5-E4, live Restlet)` — **20 rows** (17 items; item 1 splits into 1/1b, item 2 into 2a/2b, item 3 into 3/3b); `ADMIN_USER`/`ADMIN_PASS` imported for row 10's second resource owner, and `node:http` for the one request Playwright cannot express |
+
+`npx playwright test oauth2 uma` — **94 passed**: oauth2 **83** (63 before) and uma **11**, unchanged. Run in
+one pass on a freshly built container; see the note below on why that matters. No existing row edited, no
+fixture changed.
+
+⚠ **Deviation from the plan, deliberate.** The plan said to extend the existing
+`/oauth2/resource_set registration` describe. The rows went into a **separate** describe instead, matching the
+5-E2/5-E3 precedent: the label `(5-E4, live Restlet)` then rides on every row's full title, which is what makes
+`-g "5-E4"` a usable selector at the 5d-1 re-run, and it keeps the byte oracle from mixing with the
+lifecycle rows that are deliberately shape-only.
+
+### The recorded rows
+
+| # | Request | Recorded |
+|---|---|---|
+| 1 | `PUT` `If-Match: W/"12345"` and `If-Match: "12345"` (stale) | **412** `{"error":"precondition_failed"}` — that field and nothing else, `application/json`, **no `ETag`**. Identical for the weak and the strong form |
+| 2a | `PUT`/`DELETE` `If-Match: <the ETag a GET returned>`, verbatim including `W/` | **200** / **204**. Weakness is ignored, and the `PUT` answers a new tag on the same response |
+| 1b | `If-Match` in eleven forms, each against a freshly read tag | the parsing table below — and three outcomes, not two: **200** (parsed, matched), **412** (parsed, no match) and **400** (⚠ *did not parse*, so byte-identical to the missing-header answer of row 4) |
+| 2b | the same, using the ETag the **`POST`** returned | **200 if the client's label order matches the store's, 412 if it does not.** ⚠ The store's order is neither sorted nor the client's — see below |
+| 3 | `GET`/`HEAD` `If-None-Match: <current>` | **304**, **carrying the `ETag`**, **no `Content-Type` at all**, **no `Content-Length`**. Stale tag → 200. `If-None-Match: *` → **200**, not the 304 RFC 7232 §3.2 asks for. (Body emptiness is unobservable on a 304 for the same reason as row 15, so only headers are asserted) |
+| 3b | `If-Match` on a **`GET`** | `*` → 200. A non-matching tag → **412 carrying the full representation and the `ETag`** — a 200-shaped body under an error status, produced by no other path on this endpoint |
+| 4 | `PUT` without `If-Match` | **400** `{"error":"server_error","error_description":"precondition_failed (512) - Require If-Match header to update Resource Set"}` |
+| 5 | the `ETag` bytes on `POST`/`PUT`/`GET` | `W/"<signed decimal>"` — weak, quoted, `Integer.toString`, negatives included. The **list** carries no `ETag` |
+| 6 | `DELETE` without `If-Match` | the same 400 `server_error`, `…Require If-Match header to **delete** Resource Set` |
+| 7 | `POST` a duplicate name for the same owner | **400** `{"error":"Bad Request","error_description":"A shared item with the name 'X' already exists"}` — a reason **phrase** in the `error` field, and the **only** response on the endpoint with `Content-Type: application/json;charset=UTF-8` |
+| 8 | `POST` an invalid description | **400** `bad_request`; `Invalid Resource Set Description. Missing required attribute, 'name'.` / `…, 'scopes'.` / `Required attribute, 'scopes', must be an array of Strings.` An empty object `{}` gives the `'name'` message |
+| 9 | `PUT`/`DELETE` on `/resource_set` **and** `/resource_set/` | three answers by `If-Match` form, identical for both URLs and both verbs: `*` → **400** `server_error` `Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request`; a concrete tag → **412** `precondition_failed`; absent → the row-4/6 400 |
+| 10 | `GET`/`PUT`/`DELETE` an rsid owned by another resource owner | **404** `not_found`, `Resource set does not exist with id <id>` — the same answer as a nonexistent id, for all three verbs. Never 403 |
+| 11 | an unmapped verb | `OPTIONS`, `PROPFIND` → **405** `{"error":"unsupported_method_type"}` + **`Allow: POST, PUT, GET, DELETE`**. ⚠ `PATCH` is **not** unmapped — see below |
+| 12 | `POST` with `Content-Type: text/plain` / `application/xml` / absent | **201** in all three. The media type is ignored entirely; only an unparseable body fails, with **400** `bad_request` `A JSONObject text must begin with '{' at 1 [character 2 line 1]` |
+| 13 | cache headers, every verb, 2xx **and** 4xx | **none** — no `Cache-Control`, `Pragma` or `Expires`, on 201/200/304/400/404/405/412/401 |
+| 14 | `Content-Type` | bare **`application/json`** on 200, 201, **204**, 400, 401, 404, 405 and 412. Two exceptions: the 304 sends **none**, and row 7's in-band 400 sends `;charset=UTF-8` |
+| 15 | `HEAD` on the item and both collection forms | **200**, `application/json`, **no `Content-Length`**, headers identical to the same URL's `GET`; the item form carries the `ETag`, the collection forms do not. `HEAD` also honours `If-None-Match` → 304. ⚠ *Body* emptiness is **not** recorded — an HTTP client discards a HEAD entity whatever the server sent, so it is unobservable and no row claims it |
+| 16 | `POST` to `/resource_set/{rsid}` | **201** with a **new** `_id`; the rsid in the URL is ignored |
+| 17 | `GET /oauth2/resource_set/a/b` | **404 CREST** `{"code":404,"reason":"Not Found","message":"No mapping organization found for organization identifier: /resource_set"}` — no `error` field. Identical with a valid bearer, a bogus bearer and no bearer, so it is raised **before** authentication |
+
+### `If-Match` parsing — the actual specification for [D6](#d6)'s helper
+
+Every line of this table is asserted by **row 1b**, each against a freshly read tag (a successful `PUT` moves
+it, so a shared fixture would make every line after the first assert a stale tag). ⚠ It was prose only in the
+first draft of this as-built, which was a real gap: Restlet's parser dies at the flip, so a `HttpConditions`
+that 412s on garbage, or that cannot parse a comma list, would have gone green at 5d-1 with nothing left to
+check it against.
+
+| Header | Outcome | Why it matters |
+|---|---|---|
+| `*` | **match** | what every existing e2e row uses |
+| `W/"<current>"` (verbatim) | **match** | the round trip a well-behaved client performs |
+| `"<current>"` (strong form of the same tag) | **match** | weakness is ignored on both sides of the comparison |
+| `W/"nope", W/"<current>"` | **match** | comma lists are parsed; position does not matter |
+| `W/"<current>", W/"nope"` | **match** | |
+| `W/"nope",W/"<current>"` (no space) | **match** | |
+| `W/"nope", W/"nope2"` | **412** | |
+| `""` (a quoted empty string) | **412** | it parses as a *tag*, so it reaches the comparison and loses |
+| `<current>` **unquoted** | **treated as ABSENT** → the row-4 400 | ⚠ |
+| the header present but empty | **treated as ABSENT** → the row-4 400 | ⚠ |
+| `!!!` | **treated as ABSENT** → the row-4 400 | ⚠ |
+
+⚠ The last three are the trap. An unparseable `If-Match` does **not** 412 — Restlet's parser drops what it
+cannot read, the match list comes out empty, and `isConditionalRequest()` (`:301-303`) then reports *"no
+`If-Match` at all"*. So a garbage header and a missing header are indistinguishable on the wire, and a
+`HttpConditions` that returned "present but unmatched" for garbage would 412 where live Restlet 400s.
+
+### What this gate found that the plan had wrong
+
+Six corrections, all wire-visible. Every one of them would have shipped as a silent behaviour change.
+
+1. ⚠ **`PATCH` is a working full update, not a 405.** The plan's row 11 predicted the framework's 405. Restlet
+   routes `PATCH` to the `@Put` method: it 200s and really replaces the resource set (verified by reading it
+   back — `scopes` went from `["read","write"]` to `["read"]`). `Endpoints.from` maps only
+   `{DELETE, GET, POST, PUT}`, so **the port turns a working update into a 405**. This is a divergence, and
+   arguably a fix, but it is not the port's to make silently. The 405 *shape* the row was written for is real
+   and was recorded off `OPTIONS`/`PROPFIND` instead.
+2. ⚠ **The 400's `error_description` carries the Restlet exception's formatted message**, not the endpoint's
+   string: `"precondition_failed (512) - Require If-Match header to update Resource Set"`, i.e.
+   `"<reason> (<code>) - <description>"`. [D4](#d4) proposed throwing
+   `ServerException("Require If-Match header to update Resource Set")`, which would drop the
+   `precondition_failed (512) - ` prefix — a byte change on a path the existing e2e already exercises. The
+   general rule this exposes, and the one the port should encode: **every non-`OAuth2Exception` throwable on
+   this endpoint reaches the wire as 400 `server_error` with `error_description` = the Restlet
+   `ResourceException`'s formatted message.** Row 9's collection case is the same rule with a different
+   message ([finding 4](#4--the-512-throw-never-reaches-the-wire-as-512) had the mechanism right and the
+   string wrong).
+3. ⚠ **The 304 carries the `ETag`.** The plan predicted the opposite — *"expected to carry no `ETag`"* — and
+   asked for the absence to be recorded. It carries the validator and omits `Content-Type`. And
+   `If-None-Match: *` answers **200**, where RFC 7232 §3.2 asks for 304.
+4. ⚠ **The collection with `If-Match: *` is a 500-derived 400, not a 404.** The plan predicted
+   `store.read(null, owner)` → `NotFoundException` → 404
+   ([finding 6](#6--rsid-the-three-attachments-and-the-list-vs-read-split)). It is
+   `Internal Server Error (500) - …` wrapped into the row-4 400 shape. The *reasoning* — that `*` lets the
+   conditional layer pass and a concrete tag does not — held exactly.
+5. ⚠ **Media types are not enforced at all, so [finding 3](#3--three-error-producers-one-endpoint--and-only-one-of-them-is-the-endpoint)'s
+   predicted NPE never fires on this path.** `text/plain`, `application/xml` and a missing `Content-Type` all
+   create a resource set. [D7](#d7)'s third outcome is the one that happened: accept, no divergence, and the
+   `@Consumes` question ([C1](#framework-items-openam-http-is-ours)) is answered — there is nothing to
+   reproduce, so deleting the dead annotations costs no parity.
+6. ⚠ **Row 17's answer is right and its reasoning was wrong.** The CREST 404 is not Restlet's router: the
+   extra segment is read as a **realm** by the layer above the OAuth2 router
+   (`No mapping organization found for organization identifier: /resource_set`), and it fires **before the
+   protection filter** — a bogus bearer changes nothing. [D9](#d9)'s conclusion stands (the error filter
+   belongs on the handler, not around the router) and is now pinned by an oracle that also constrains the CHF
+   chain from answering 401 there.
+
+Two further facts no planned row asked for. Both were prose in the first draft of this as-built and are now
+asserted, for the reason row 1b exists: prose does not survive the flip.
+
+- **A labels-less `PUT` wipes the labels.** `updateLabelsForExistingResourceSet` is driven from the request
+  body, so an update that does not resend `labels` deletes them — changing the `GET` body *and*, since
+  labels are in the hash, the `ETag`. **Asserted in row 2a**; the first draft argued it needed no test
+  because the logic is ported verbatim, which is precisely the assumption this gate exists to distrust.
+- **`If-Match` on a `GET`** behaves like a conditional read: `*` → 200; a stale tag → **412 carrying the full
+  representation and the `ETag`**. **Asserted in row 3b.** A handler that consults `If-Match` only on
+  `PUT`/`DELETE` answers 200 here — a silent 412 → 200 change with no oracle left to catch it.
+
+### The gated decisions, settled
+
+| Decision | Gated on | Outcome |
+|---|---|---|
+| [D3](#d3) | row 12 | **stands, but row 12 did not exercise it.** Media types never reach producer B's `else`, so the `else` branch's 500/`server_error` mapping is still untested by observation. Rows 4/6/9 show the *equivalent* path through producer **A** landing on 400 `server_error`, which is what the filter's table should be read against |
+| [D4](#d4) | rows 4, 6 | **stands with correction 2** — the thrown message must carry the `precondition_failed (512) - ` prefix, or an expected-divergence row is owed |
+| [D5](#d5) | row 5 | **confirmed verbatim.** `W/"<signed decimal>"`, weak, on POST/PUT/GET; no tag on the list. The dead `!isDefined(LABELS)` branch stays reproduced, unexercised as [finding 18](#18--the-extension-point-sees-a-description-without-labels-and-without-an-id) established |
+| [D6](#d6) | rows 1, 1b, 2a, 2b, 3, 3b | **confirmed on the central claim, amended four times.** Restlet does the matching; the helper's real spec is the `If-Match` table above. D6 has been edited in place for all four: unparseable-is-absent, `noneMatches` must not honour `*`, the 304's headers, and `If-Match` on a `GET` |
+| [D7](#d7) | row 12 | **resolved to the third outcome** — Restlet accepts any media type; accept it, no divergence, no 415 path to build |
+| [D9](#d9) | row 17 | **confirmed**, with correction 6's mechanism |
+
+[Finding 17](#17--the-conditional-comparison-tag-comes-from-the-read-model-labels-and-all) is no longer a
+hazard argued from source: row 2b **demonstrates** it. A port that hashes the bare `store.read` result, or
+that hashes the client's `labels` rather than the store's, passes the matching-order case and fails the
+opposite-order one. That is the mutation check R-5c.11 asked for, available before a line of the handler exists.
+
+<a id="the-label-order-is-not-sorted"></a>
+#### ⚠ …and the label order is **not** sorted — it is per-JVM
+
+The first draft of this as-built said the store returns labels *sorted*. It does not, and a port that
+implements sorting emits ETags Restlet never emitted. The real mechanism, from source:
+
+- `UmaLabelsStore.query` returns a **`new HashSet<>()`** (`:256-278`);
+- `ResourceSetLabel.hashCode()` (`:98-104`) mixes in `type.hashCode()`, and `LabelType` is an **`enum`**, so
+  that term is `Object`'s **identity** hash — a fresh value on every JVM start;
+- `readResourceSet` (`:235-245`) copies the names out in **set-iteration order** and Jackson serialises the
+  list as-is.
+
+⇒ the order is stable *within* a container and can **flip when it restarts**. Verified rather than reasoned:
+the same two labels read back `["alpha","beta"]` before a `docker restart openam-idp` and `["beta","alpha"]`
+after it, on the same data.
+
+Two consequences, and the second is a genuine incumbent defect:
+
+1. **Any row that hard-codes an order is a coin flip per restart.** Row 2b therefore *discovers* the store's
+   order first and drives both directions off it, and row 5 uses an **unlabelled** resource set so its
+   POST-tag-equals-GET-tag assertion holds unconditionally. Both were hard-coded in the first draft and both
+   would have failed on the very next container start.
+2. **A restart silently invalidates every cached ETag for a resource set with ≥ 2 labels** — `List.hashCode`
+   is order-sensitive, so the tag changes although nothing about the resource set did. Reproduced for free by
+   a port that hashes the read model, and worth a post-migration ticket in its own right; it is not something
+   the port introduces or can fix without changing the tag.
+
+<a id="run-this-gate-against-a-fresh-container"></a>
+### ⚠ Run this gate against a **fresh** container — and why the teardown cannot be trusted
+
+Found while acting on a review comment about the describe leaking resource sets. The teardown that was
+supposed to fix it reports, on a freshly built container after one full run, something like:
+
+```
+[5-E4] teardown: 3/31 deleted; 28 could not be removed (statuses 400, 404)
+[5-E4] teardown: 4/32 deleted; 28 could not be removed (statuses 400, 404)
+```
+
+(two consecutive fresh-container runs — the totals move by one or two because a few rows race the client
+rewrite described below; the *undeletable* count does not move, which is the point.)
+
+The 404s are rows that deleted their own fixture. The **400s are the endpoint refusing to delete its own
+resource sets**, and the cause is in the server, not the test:
+
+- `UmaResourceSetRegistrationHook.resourceSetCreated` / `resourceSetDeleted` resolve the client's UMA
+  **resource type**, and throw `EntitlementException: Resource Type <id> does not exist in realm /` when it
+  has been replaced (45 occurrences in `debug/UmaProvider` after one run);
+- the shared fixtures rewrite the OAuth2 client on **every** run — `ensureClient` is an unconditional full
+  `PUT`, deliberately (*"a client left over from an earlier revision of these fixtures … would otherwise
+  survive"*) — which mints a new resource-type id and orphans the policies of every resource set created
+  before it;
+- `resourceSetCreated` throws **after** `store.create` has persisted the row, so a *failed* create still
+  leaves a resource set behind. The owner's list grows while `POST` answers 400.
+
+⇒ two practical consequences:
+
+1. **Run the suites in ONE pass against a freshly built container** — `npx playwright test oauth2 uma`, or the
+   unqualified `npx playwright test` CI's `build-docker` leg uses. Playwright runs spec *files* in parallel,
+   so a single pass is fine: **94 passed** (83 + 11) that way, repeatedly. What does *not* work is running
+   them **sequentially** against the same container: `oauth2` then `uma` fails `uma`'s
+   `warmUpResourceSetStore` with `Internal Server Error (500)`, and further runs degrade until every
+   `POST /oauth2/resource_set` answers 400. Reproduced four times here, and the cause of two intermediate gate
+   runs in this step going red for reasons that had nothing to do with the rows. ⚠ If a `uma` row fails right
+   after an `oauth2` run, rebuild the container before believing it.
+2. **The teardown mitigates, it does not guarantee.** It is kept because deleting a handful is better than deleting 0
+   and because it *reports* — a teardown built on `deleteResourceSet` (which swallows every error) made the
+   describe look tidy while removing nothing, which is how the leak survived a first fix.
+
+⚠ The underlying behaviour is a **product** defect worth a ticket independent of this migration: rewriting an
+OAuth2 client makes every resource set registered against it permanently undeletable through its own API, and
+the endpoint reports that as a 400 `server_error`. 5c reproduces it for free — the hook call is ported
+verbatim — so it is neither introduced nor fixed here.
+
+### Handed to 5d-1
+
+**Four** items 5c records and cannot close. They belong in the flip's checklist, not in a 5c gate:
+
+1. **Row 15 — `HEAD`.** 200 today, 405 after the flip, on **all 15** ported endpoints, not just this one
+   ([finding 13](#13--head-is-served-by-restlet-and-405d-by-chf--and-it-is-not-a-5c-problem),
+   [C3](#framework-items-openam-http-is-ours)). Decide once, for all of them, before the flip — afterwards
+   there is no oracle left to ask.
+2. **Row 17 — the pre-authentication CREST 404.** No 5c class produces it; only the assembled 5d-1 route can
+   be checked against it.
+3. **`PATCH`** — new, from correction 1. Same shape as `HEAD`: a verb Restlet serves and `Endpoints.from`
+   does not. Unlike `HEAD` it is **not** Phase-5-wide — it matters wherever a `@Put` exists, which on the
+   ported surface is this endpoint alone.
+4. **The `Allow` header on a 405 disappears.** Verified in `openam-http`: `Endpoints.from`'s unmapped-verb
+   branch builds `new Response(Status.METHOD_NOT_ALLOWED)` with a CREST entity and **no `Allow`**, and nothing
+   downstream adds one — whereas Restlet sends `Allow: POST, PUT, GET, DELETE` (row 11). RFC 7231 §6.5.5 makes
+   `Allow` **mandatory** on a 405, so this is a spec regression, not a cosmetic one, and it is
+   **Phase-5-wide** like `HEAD`: every ported endpoint 405s some verb. ⚠ [D3](#d3) keeps the 405 *body*
+   identical, so a body diff at the flip shows nothing — the header is the entire divergence. Row 11 asserts
+   the header is present *before* asserting its contents, so this reports as a missing `Allow` rather than as
+   a `TypeError`. **Fix (two lines, beside the `HEAD` one) or record; owner 5d-1.**
+
+Rows 15 and 17 are the two the whole-phase exit criteria exempt from needing a CHF-side assertion. Row 11's
+`PATCH` half joins them: it is recorded here and answered there.

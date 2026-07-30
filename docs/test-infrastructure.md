@@ -332,12 +332,17 @@ now ends `-finding-7`, while `plan.md` (×2) and `phase-5b-2.md` (×2) still lin
 <a id="commit-shas-cited-in-docs-go-stale-silently"></a>
 ### Commit SHAs cited in docs go stale silently
 
-⚠ **Commits in this working copy get `--amend`ed by something outside the editing session**, roughly a minute
-or two after they are made. The reflog shows it after 5-E4, 5c-1 (twice), 5c-2 and 5b-2b; the tree and the
-message are byte-identical and **only the committer timestamp moves**, so the amended commit is indistinguishable
-except by SHA. The original becomes an orphan, still resolvable by `git cat-file` — which is why a stale citation
-looks fine to every casual check — until it is garbage-collected. The old `backup/accidental-amend-2026-07-29`
-tag was this same phenomenon.
+⚠ **Commits on this branch have repeatedly been `--amend`ed shortly after being made** — the reflog shows
+`commit (amend)` after 5-E4, 5c-1 (twice), 5c-2 and 5b-2b. Where it has been checked the tree and message are
+byte-identical and **only the committer timestamp moves**, so the amended commit is indistinguishable except by
+SHA. The original becomes an orphan, still resolvable by `git cat-file` — which is why a stale citation looks
+fine to every casual check — until it is garbage-collected. The old `backup/accidental-amend-2026-07-29` tag
+was this same phenomenon, and its name suggests the amends are hand-made rather than automated.
+
+⚠ **What has *not* been established is the cause, or that it always happens.** There are no hooks in
+`.git/hooks` and no `core.hooksPath`, and two commits made on 2026-07-30 were watched for three minutes and
+never amended. So treat this as *a SHA you wrote down may since have been orphaned*, not as a rule that every
+commit gets rewritten.
 
 Consequences for these documents, which cite commits constantly: **the SHA reported by `git commit` is not
 necessarily the SHA that survives**, so re-read it from `git log` before writing it down, and prefer citing a

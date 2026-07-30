@@ -306,6 +306,17 @@ for d in docs/migration/restlet/*.md; do
 done
 ```
 
+⚠ That loop only sees **cross-file** links. Same-file `](#anchor)` links need their own pass over the same slug
+set — a real blind spot, since most anchors in these documents are same-file:
+
+```bash
+slugs=$( { grep -oP '<a id="\K[^"]+' "$d"
+           grep -oP '^#{1,6} \K.*' "$d" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9 -]//g; s/ /-/g'; } )
+grep -oE '\]\(#[^)]+\)' "$d" | sed 's/^](#//; s/)$//' | sort -u | while read -r a; do
+  grep -qxF -- "$a" <<<"$slugs" || echo "MISSING $a"
+done
+```
+
 ⚠ **The `--` in that `grep -qxF --` is load-bearing, and leaving it out makes the script lie rather than fail.**
 GitHub slugs a heading that starts with an emoji to a **leading hyphen** (`##### ⚠ Corrected in review…` →
 `#-corrected-in-review…`), and this tree uses that form. Without `--`, `grep` parses such an anchor as a bundle

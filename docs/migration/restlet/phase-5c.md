@@ -1498,11 +1498,14 @@ not evidence unless the run in front of you produced it.
 **Whole-phase exit criteria (before 5d-1 may start):**
 
 1. All three steps' gates green.
-2. Every 5-E4 row has a corresponding CHF-side assertion — unit, IT or both — **except the two whose decision
+2. ~~Every 5-E4 row has a corresponding CHF-side assertion — unit, IT or both — **except the two whose decision
    owner is 5d-1**: row 15 (`HEAD`, a Phase-5-wide question, [C3](#framework-items-openam-http-is-ours)) and
    row 17 (the router-level 404, which no 5c class produces). Those two are recorded now and *answered* at the
    flip; list them explicitly in the as-built so they are not mistaken for oversights. Any other recorded row
-   without a port-side test is an oracle that will expire unused at 5d-2.
+   without a port-side test is an oracle that will expire unused at 5d-2.~~
+   **done 2026-07-30** — the full map is [here](#exit-criterion-2-map). 18 rows were already covered, 15 and 17
+   are the exempt pair, and **7 had no CHF assertion**: rows 2b, 8, 10, 12, 13, 18's `DELETE` half and 20's
+   `POST` half. All seven now have one; **1281 surefire**, handler unchanged.
 3. The [expected-divergence table](plan.md#expected-divergences-at-the-flip) has a row for each deliberate
    difference this step introduces (candidates: D3's `else` branch, D7's media-type outcome, and any
    `ETag`/`Content-Type` byte difference row 5/14 exposes).
@@ -1777,8 +1780,8 @@ deliberate decision rather than a port's side effect.
 9. ~~**5c-2 S7** — full gates; commit.~~ **gates done 2026-07-30** — all seven green, `openam-e2e:5c2`
    `oauth2 uma` = **99 passed** in one pass ([as built](#as-built-s7)). Commit still outstanding.
 10. ~~Update [plan.md](plan.md)'s phase table row 5c, the expected-divergence table, and the post-migration
-    ticket table (T5–T7).~~ **done 2026-07-30** — row 5c carries the 5c-1 and 5c-2 as-built (5c-2 marked
-    **not yet committed**); tickets **T5–T8** propagated, T8 included because it was raised after this item was
+    ticket table (T5–T7).~~ **done 2026-07-30** — row 5c carries the 5c-1 and 5c-2 as-built (5c-2 committed as
+    `fc5d4a1421`); tickets **T5–T8** propagated, T8 included because it was raised after this item was
     written; and **two** divergence rows of 5c-2's own — 12 ([D3](#d3)'s throwable-less `else`, the only
     behavioural one) and 13 (response-body key order) — plus a **Phase-5-wide row 11** the review turned up.
     The table also states *why* the list is short, so a later reader does not mistake it for an unfinished job:
@@ -2074,6 +2077,52 @@ resource sets**, and the cause is in the server, not the test:
 OAuth2 client makes every resource set registered against it permanently undeletable through its own API, and
 the endpoint reports that as a 400 `server_error`. 5c reproduces it for free — the hook call is ported
 verbatim — so it is neither introduced nor fixed here.
+
+<a id="exit-criterion-2-map"></a>
+### Exit criterion 2 — every 5-E4 row mapped to a CHF-side assertion (2026-07-30)
+
+The oracle dies at the flip, so a recorded row with no port-side test is a measurement that expires unused.
+Mapping all **25** rows found **18 already covered**, **2 exempt**, and **7 with no CHF assertion at all**.
+
+| Row | CHF-side assertion |
+|---|---|
+| 1 stale `If-Match` → 412 | `anUpdateWithAStaleIfMatchIsABare412`, `aDeleteWithAStaleIfMatchDeletesNothing`, IT `aStalePreconditionIs412WithTheFiltersBody` |
+| 1b `If-Match` parsing | 18 `HttpConditionsTest` rows |
+| 2a matching `If-Match` round trip | `anUpdateWithAMatchingIfMatchAnswers200AndTheNewTag`, IT row 13 |
+| **2b POST tag vs store label order** | **new** — `theCreatesEtagGoesStaleWhenTheStoreReadsTheLabelsBackInAnotherOrder` |
+| 3 `If-None-Match` → 304 + ETag | `aGetWithAMatchingIfNoneMatchIs304CarryingTheEtagAndNoBody` |
+| 3b GET honours `If-Match` | `aGetWithAStaleIfMatchIs412CarryingTheRepresentationAndTheEtag` |
+| 4 PUT without `If-Match` | `anUpdateWithoutIfMatchIs400ServerErrorCarryingRestletsFormattedMessage` |
+| 5 ETag shape | `ResourceSetRegistrationHandlerTest:468,719`; `aListAnswersTheIdsAndNoEtag` |
+| 6 DELETE without `If-Match` | `aDeleteWithoutIfMatchIs400WithTheDeleteWording` |
+| 7 duplicate name | `aDuplicateNameIsAnInBand400CarryingAReasonPhraseAndTheOneCharset` |
+| **8 validator rejections verbatim** | **new** — `aValidatorRejectionPassesThroughAsItsOwnBadRequest` |
+| 9 collection write, three answers | `aConditionalWriteOnTheCollectionGivesRow9sThreeAnswers` |
+| **10 another owner → 404** | **new** — `anotherOwnersResourceSetIs404NotFoundAndNot403` |
+| 11 405 `unsupported_method_type` | IT `anUnmappedVerbKeepsTheResourceSetVocabularyThroughBothFilters` |
+| **12 media type ignored** | **new** — `theRequestsMediaTypeIsIgnoredEntirelyAndOnlyTheBodyCanFail` (body half already covered) |
+| **13 no cache headers** | **new** — `noResponseOnThisEndpointCarriesACacheHeader` |
+| 14 bare `application/json` | `theRewrittenBodyIsBareApplicationJson` + the 204 and duplicate-name rows |
+| 15 `HEAD` | ⚠ **exempt** — [handed to 5d-1](#handed-to-5d-1) |
+| 16 POST at item URL | `anUnconditionalPostAtAnItemUrlDoesNotReadThatResourceSet` |
+| 17 router 404 | ⚠ **exempt** — [handed to 5d-1](#handed-to-5d-1) |
+| **18 `If-None-Match` on DELETE** | **new** — `aDeleteWithAMatchingIfNoneMatchIs412AndDeletesNothing` (PUT half already covered) |
+| 19 POST is conditional | `aCreateIsConditionalToo` |
+| **20 POST + `If-None-Match: *`** | **new** — `aCreateWithAWildcardIfNoneMatchIs412BecauseTheCollectionHasNoTag` (GET halves covered) |
+| 21 weakness by verb | `aGetWithTheStrongForm…`, `anUpdateWithTheStrongForm…`, 5 `HttpConditionsTest` rows |
+| 22 `org.json` leniency | `theBodyParserIsLenient…`, `aDuplicateKeyIsRejected…`, `anUnparseableBodyIs400…` |
+
+All seven new rows passed on the first run — they characterise a handler that was already correct. **1281
+surefire** (was 1274), 38 failsafe, and the handler is byte-identical to `fc5d4a1421`.
+
+⚠ **The mutation check earned its keep, on my own test.** Two mutations were run against the new rows:
+dropping the `If-None-Match` arm of the precondition gate killed rows 18 and 20 (plus two existing rows), but
+**sorting labels on create — the one "fix" [R-5c.11](#risk-register-extends-the-phase-5-register) forbids —
+survived row 2b's first draft**, because the fixture posted `["alpha","beta"]`, which is *already sorted*, so
+the mutation was a no-op against it. The row asserted both tags and still could not see the thing it existed to
+catch. Fixed by making the client's order descending (`["zeta","alpha"]`) against the store's ascending one;
+the mutation now dies on the exact assertion. **A characterisation row that passes first time proves nothing
+until a mutation kills it** — and the fixture, not just the assertion, decides whether it can.
 
 ### Handed to 5d-1
 

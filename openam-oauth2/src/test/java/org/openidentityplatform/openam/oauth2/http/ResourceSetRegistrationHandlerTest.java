@@ -44,6 +44,7 @@ import org.forgerock.oauth2.core.OAuth2ProviderSettingsFactory;
 import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.OAuth2RequestFactory;
 import org.forgerock.oauth2.core.exceptions.BadRequestException;
+import org.forgerock.oauth2.core.exceptions.NotFoundException;
 import org.forgerock.oauth2.core.exceptions.ServerException;
 import org.forgerock.oauth2.resources.ResourceSetStore;
 import org.forgerock.oauth2.restlet.resources.ResourceSetDescriptionValidator;
@@ -885,6 +886,196 @@ public class ResourceSetRegistrationHandlerTest {
 
         // 5-E4 row 18 measured this on a PUT (412); on a GET the same both-headers request is the 304.
         assertThat(response.getStatus().getCode()).isEqualTo(304);
+    }
+
+    // ------------------------------------------------------- exit criterion 2: the rows that had no CHF test
+    //
+    // Written 2026-07-30 while mapping every 5-E4 row to a port-side assertion (phase-5c whole-phase exit
+    // criterion 2). Seven rows had none. They are characterisation rows against a handler that already exists,
+    // so each was expected to pass on the first run -- the point is not to change behaviour but to stop the
+    // live-Restlet oracle expiring unused at 5d-2, when there is no longer anything to re-measure against.
+
+    /**
+     * Row 8 — the validator's rejection reaches the wire <em>verbatim</em>.
+     * <p>
+     * The validator itself is untouched legacy code with its own suite; what the port owes is that its
+     * {@link BadRequestException} passes through unconverted. ⚠ It must NOT become the generic 400
+     * {@code server_error} the catch-all produces — {@code guarded} funnels every *other* throwable there
+     * (see {@link #anUnexpectedRuntimeExceptionBecomesA400ServerErrorNotA500}), so this row is what keeps
+     * {@code bad_request} distinguishable from a crash.
+     */
+    @Test
+    public void aValidatorRejectionPassesThroughAsItsOwnBadRequest() throws Exception {
+        onCollection();
+        when(validator.validate(any()))
+                .thenThrow(new BadRequestException("Invalid Resource Set Description. "
+                        + "Missing required attribute, 'name'."));
+
+        assertThatThrownBy(() -> handler.create(new RootContext(), withBody(request(), created("photo album"))))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Invalid Resource Set Description. Missing required attribute, 'name'.");
+        verify(store, never()).create(any(), any());
+    }
+
+    /**
+     * Row 10 — another resource owner's token gets <b>404</b>, not 403.
+     * <p>
+     * The distinction is the store's, not the handler's: {@code OpenAMResourceSetStore.read} scopes by owner
+     * and raises {@code NotFoundException} rather than an authorisation error, so someone else's resource set
+     * is indistinguishable from one that never existed. The handler's job is to leave that alone — an
+     * "improvement" to 403 here would leak the existence of other owners' resource sets.
+     */
+    @Test
+    public void anotherOwnersResourceSetIs404NotFoundAndNot403() throws Exception {
+        onItem();
+        when(store.read(RSID, OWNER))
+                .thenThrow(new NotFoundException("Resource set does not exist with id " + RSID));
+
+        assertThatThrownBy(() -> handler.readOrList(new RootContext(), request()))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Resource set does not exist with id " + RSID);
+    }
+
+    /**
+     * Row 13 — no cache headers on any verb or any status.
+     * <p>
+     * ⚠ This is an <em>absence</em>, which is why it needs its own row: `/access_token` and the browser
+     * endpoints all stamp `no-store`, and the shared base class is one edit away from stamping it here too.
+     * Nothing would fail; the endpoint would just quietly acquire a header Restlet never sent.
+     */
+    @Test
+    public void noResponseOnThisEndpointCarriesACacheHeader() throws Exception {
+        ResourceSetDescription resourceSet = readableWithLabels("alpha");
+        onItem();
+        String etag = etagOf(resourceSet, List.of("alpha"));
+
+        assertNoCacheHeaders(handler.readOrList(new RootContext(), request()), "200 read");
+        assertNoCacheHeaders(handler.readOrList(new RootContext(), request("If-None-Match", etag)), "304");
+        assertNoCacheHeaders(handler.readOrList(new RootContext(), request("If-Match", "W/\"1\"")), "412");
+        assertNoCacheHeaders(handler.update(new RootContext(),
+                withBody(request("If-Match", etag), created("renamed"))), "200 update");
+        assertNoCacheHeaders(handler.delete(new RootContext(), request("If-Match", etag)), "204");
+
+        onCollection();
+        when(store.query(any())).thenReturn(new LinkedHashSet<>());
+        assignedOnCreate("new-id", null);
+        assertNoCacheHeaders(handler.create(new RootContext(),
+                withBody(request(), created("photo album"))), "201");
+    }
+
+    private static void assertNoCacheHeaders(Response response, String where) {
+        assertThat(response.getHeaders().getFirst("Cache-Control")).as("Cache-Control on " + where).isNull();
+        assertThat(response.getHeaders().getFirst("Pragma")).as("Pragma on " + where).isNull();
+        assertThat(response.getHeaders().getFirst("Expires")).as("Expires on " + where).isNull();
+    }
+
+    /**
+     * Row 12 — the request's media type is ignored <em>entirely</em>; only the body can fail.
+     * <p>
+     * Restlet declared {@code @Post("json")} and enforced nothing, so {@code text/plain}, {@code application/xml}
+     * and an absent {@code Content-Type} all create. ⚠ The port must not "tidy" this into a 415: the e2e row
+     * measured all three answering 201 against live Restlet, and resource servers rely on it.
+     */
+    @Test
+    public void theRequestsMediaTypeIsIgnoredEntirelyAndOnlyTheBodyCanFail() throws Exception {
+        String body = "{\"name\":\"photo album\",\"scopes\":[\"read\"]}";
+        for (String contentType : new String[] {"text/plain", "application/xml", null}) {
+            setup();                                    // a fresh handler and stores per media type
+            onCollection();
+            when(store.query(any())).thenReturn(new LinkedHashSet<>());
+            assignedOnCreate("new-id", null);
+            Request request = contentType == null ? request() : request("Content-Type", contentType);
+            request.getEntity().setString(body);
+
+            Response response = handler.create(new RootContext(), request);
+
+            assertThat(response.getStatus().getCode()).as("Content-Type: " + contentType).isEqualTo(201);
+        }
+    }
+
+    /**
+     * Row 18, the {@code DELETE} half — {@code If-None-Match} is evaluated on a delete too, and a match there
+     * is a 412. The three sibling rows all drive {@code PUT}; {@code delete} reaches the same gate by its own
+     * call to {@code preconditions}, and nothing but this row would notice if that call were dropped.
+     */
+    @Test
+    public void aDeleteWithAMatchingIfNoneMatchIs412AndDeletesNothing() throws Exception {
+        ResourceSetDescription resourceSet = readableWithLabels("alpha");
+        onItem();
+        String etag = etagOf(resourceSet, List.of("alpha"));
+
+        // If-Match passes; If-None-Match is still consulted and still refuses.
+        Response response = handler.delete(new RootContext(), request("If-Match", etag, "If-None-Match", etag));
+
+        assertThat(response.getStatus().getCode()).isEqualTo(412);
+        verify(store, never()).delete(anyString(), anyString());
+    }
+
+    /**
+     * Row 20 — the RFC 7232 "create only if it does not exist" idiom is <b>refused</b> by this endpoint.
+     * <p>
+     * {@code If-None-Match: *} against the tag-less collection representation <em>matches</em> (the wildcard
+     * branch is reached precisely when there is no current tag), and a none-match match on a non-GET is a 412.
+     * So the one header a client would reach for to make a create idempotent is the one that guarantees it
+     * fails. Deliberate parity, not a defect to fix here.
+     */
+    @Test
+    public void aCreateWithAWildcardIfNoneMatchIs412BecauseTheCollectionHasNoTag() throws Exception {
+        onCollection();
+
+        Response response = handler.create(new RootContext(),
+                withBody(request("If-None-Match", "*"), created("photo album")));
+
+        assertThat(response.getStatus().getCode()).isEqualTo(412);
+        verify(store, never()).create(any(), any());
+    }
+
+    /**
+     * Row 2b — the {@code POST}'s ETag is already stale unless the client's label order happens to match the
+     * store's.
+     * <p>
+     * The create hashes the description it just built, whose {@code labels} are in the order the <em>client</em>
+     * sent; the read hashes one whose {@code labels} come back from {@code UmaLabelsStore} in its own order.
+     * {@code List.hashCode} is order-sensitive, so the two tags differ and the client's next conditional write
+     * 412s — with a tag the server itself issued. ⚠ Reproduced deliberately (R-5c.11): "fixing" it by sorting
+     * would emit tags Restlet never emitted.
+     */
+    @Test
+    public void theCreatesEtagGoesStaleWhenTheStoreReadsTheLabelsBackInAnotherOrder() throws Exception {
+        onCollection();
+        when(store.query(any())).thenReturn(new LinkedHashSet<>());
+        assignedOnCreate(RSID, null);
+
+        // ⚠ The client's order is DESCENDING and the store's is ascending, deliberately. With an already
+        // sorted fixture a handler that sorted on create would produce the identical tag and slip through --
+        // measured: that mutation survived the first draft of this row. Sorting is the one "fix" R-5c.11
+        // forbids, so the fixture has to be able to see it.
+        Response created = handler.create(new RootContext(),
+                withBody(request(), created("photo album", "zeta", "alpha")));
+        String postEtag = created.getHeaders().getFirst("ETag");
+
+        // The same resource set read back, with the label store returning the two labels in ITS order.
+        ResourceSetDescription resourceSet = readableWithLabels("alpha", "zeta");
+        onItem();
+        String getEtag = handler.readOrList(new RootContext(), request()).getHeaders().getFirst("ETag");
+
+        // Both tags pinned to the order each side actually used, not merely asserted to differ.
+        assertThat(postEtag).as("the POST hashes the CLIENT's order")
+                .isEqualTo(etagOfPosted(List.of("zeta", "alpha")));
+        assertThat(getEtag).as("the GET hashes the STORE's order")
+                .isEqualTo(etagOf(resourceSet, List.of("alpha", "zeta")));
+        assertThat(getEtag).as("so the tag the POST handed out is already stale").isNotEqualTo(postEtag);
+    }
+
+    /** The tag the {@code create} path hashes: the description it built, with labels in the CLIENT's order. */
+    private static String etagOfPosted(List<String> labels) {
+        Map<String, Object> description = new LinkedHashMap<>();
+        description.put("name", "photo album");
+        description.put("scopes", List.of("read"));
+        description.put("labels", labels);
+        ResourceSetDescription model = new ResourceSetDescription(RSID, CLIENT, OWNER, description);
+        model.setRealm(REALM);
+        return "W/\"" + model.hashCode() + "\"";
     }
 
 }

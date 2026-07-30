@@ -1187,7 +1187,7 @@ lands.
 <a id="as-built-5b-2b--landed-2026-07-28"></a>
 ## As-built — 5b-2b, landed 2026-07-28 (checklist steps 11–16)
 
-One commit, `021c345061` — the [D2](#d2) correction, the handler, and both test classes. Unlike 5b-2a there was
+One commit, `06f9251ce6` — the [D2](#d2) correction, the handler, and both test classes. Unlike 5b-2a there was
 nothing worth splitting off: D2 is a three-line change that only the device consent page can exercise, so
 landing it alone would have committed a change no test could fail without.
 

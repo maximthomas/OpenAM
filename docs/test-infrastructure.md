@@ -329,6 +329,30 @@ As of 2026-07-30 the real hits are four citations of one stale anchor: the
 `Parity-preserved security debts` heading in `phase-5-oauth2.md` gained a trailing `(finding #7)`, so its slug
 now ends `-finding-7`, while `plan.md` (×2) and `phase-5b-2.md` (×2) still link to the older form.
 
+<a id="commit-shas-cited-in-docs-go-stale-silently"></a>
+### Commit SHAs cited in docs go stale silently
+
+⚠ **Commits in this working copy get `--amend`ed by something outside the editing session**, roughly a minute
+or two after they are made. The reflog shows it after 5-E4, 5c-1 (twice), 5c-2 and 5b-2b; the tree and the
+message are byte-identical and **only the committer timestamp moves**, so the amended commit is indistinguishable
+except by SHA. The original becomes an orphan, still resolvable by `git cat-file` — which is why a stale citation
+looks fine to every casual check — until it is garbage-collected. The old `backup/accidental-amend-2026-07-29`
+tag was this same phenomenon.
+
+Consequences for these documents, which cite commits constantly: **the SHA reported by `git commit` is not
+necessarily the SHA that survives**, so re-read it from `git log` before writing it down, and prefer citing a
+commit from a *later* commit. Audit the whole tree with:
+
+```bash
+grep -rhoE '\b[0-9a-f]{10}\b' docs/migration/restlet/*.md docs/test-infrastructure.md | sort -u | while read -r s; do
+  git cat-file -t "$s" >/dev/null 2>&1 || continue
+  git merge-base --is-ancestor "$s" HEAD 2>/dev/null || echo "ORPHAN $s $(git log -1 --format=%s $s)"
+done
+```
+
+Found two live instances the first time it was run (2026-07-30): `fc5d4a1421` for 5c-2, written minutes earlier,
+and `021c345061` for 5b-2b, which had been wrong in committed docs since 5b-2b landed.
+
 ## Gotchas that have actually bitten
 
 - ⚠ **Playwright does not send a string `data` verbatim when the request carries a JSON `Content-Type`**

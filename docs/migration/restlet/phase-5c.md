@@ -1781,7 +1781,7 @@ deliberate decision rather than a port's side effect.
    `oauth2 uma` = **99 passed** in one pass ([as built](#as-built-s7)). Commit still outstanding.
 10. ~~Update [plan.md](plan.md)'s phase table row 5c, the expected-divergence table, and the post-migration
     ticket table (T5–T7).~~ **done 2026-07-30** — row 5c carries the 5c-1 and 5c-2 as-built (5c-2 committed as
-    `fc5d4a1421`); tickets **T5–T8** propagated, T8 included because it was raised after this item was
+    `cfc213ae11`); tickets **T5–T8** propagated, T8 included because it was raised after this item was
     written; and **two** divergence rows of 5c-2's own — 12 ([D3](#d3)'s throwable-less `else`, the only
     behavioural one) and 13 (response-body key order) — plus a **Phase-5-wide row 11** the review turned up.
     The table also states *why* the list is short, so a later reader does not mistake it for an unfinished job:
@@ -2113,7 +2113,7 @@ Mapping all **25** rows found **18 already covered**, **2 exempt**, and **7 with
 | 22 `org.json` leniency | `theBodyParserIsLenient…`, `aDuplicateKeyIsRejected…`, `anUnparseableBodyIs400…` |
 
 All seven new rows passed on the first run — they characterise a handler that was already correct. **1281
-surefire** (was 1274), 38 failsafe, and the handler is byte-identical to `fc5d4a1421`.
+surefire** (was 1274), 38 failsafe, and the handler is byte-identical to `cfc213ae11`.
 
 ⚠ **The mutation check earned its keep, on my own test.** Two mutations were run against the new rows:
 dropping the `If-None-Match` arm of the precondition gate killed rows 18 and 20 (plus two existing rows), but

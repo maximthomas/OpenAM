@@ -918,6 +918,250 @@ test.describe("/oauth2/resource_set contract lock (5-E4, live Restlet)", () => {
     expect(guarded.status()).toBe(401);
     expect((await guarded.json()).error).toBe("invalid_token");
   });
+
+  test("row 22: the body parser is org.json, and org.json is LENIENT", async () => {
+    // ⚠ Added 2026-07-29 while porting the handler, to settle whether the CHF side may simply use Jackson.
+    // It may not: `@Post createResourceSet(JsonRepresentation)` reaches `new JSONObject(<raw body>)`
+    // (JsonConverter wraps the representation; JsonRepresentation.getJsonText returns its raw text), and
+    // org.json accepts three things Jackson rejects while rejecting one thing Jackson accepts. So the choice
+    // of parser is a wire contract, not an implementation detail -- and none of it is recordable after 5d-1.
+    //
+    // ⚠ THIS ROW MUST USE A RAW CLIENT. Playwright does not send a string `data` verbatim when the request
+    // carries a json Content-Type: measured, the very same single-quoted body answers 201 sent as
+    // `text/plain` and 400 sent as `application/json`, because the client re-encodes what is not already
+    // valid JSON. Written with `request.post` this row asserts Playwright's behaviour, not OpenAM's --
+    // it read as a clean 400 for three rows that are really 201s.
+    function rawPost(body) {
+      return new Promise((resolve, reject) => {
+        const target = new URL(RS);
+        const req = httpRequest({
+          hostname: target.hostname, port: target.port, path: target.pathname, method: "POST",
+          headers: {
+            Authorization: `Bearer ${pat}`, "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        }, (res) => {
+          let text = "";
+          res.setEncoding("utf8");
+          res.on("data", (c) => { text += c; });
+          res.on("end", () => resolve({ status: res.statusCode, text }));
+        });
+        req.on("error", reject);
+        req.end(body);
+      });
+    }
+    // Three forms org.json ACCEPTS and every strict parser rejects. A CHF port built on Jackson answers 400
+    // to all three, turning working resource servers off on upgrade -- silently, since the status a client
+    // sees is a plausible 400 either way.
+    for (const [label, body] of [
+      ["strict (control)", `{"name":"${uniqueName("5e4 strict")}","scopes":["read"]}`],
+      ["single-quoted strings", `{'name':'${uniqueName("5e4 sq")}','scopes':['read']}`],
+      ["unquoted keys", `{name:"${uniqueName("5e4 uk")}",scopes:["read"]}`],
+      ["a trailing comma", `{"name":"${uniqueName("5e4 tc")}","scopes":["read"],}`],
+    ]) {
+      const r = await rawPost(body);
+      console.log(`[5-E4] row22 ${label} -> ${r.status} ${r.text}`);
+      expect(r.status, label).toBe(201);
+      created.push(JSON.parse(r.text)._id);
+    }
+
+    // ...and one org.json REJECTS and Jackson accepts, last-one-wins. A Jackson port creates here.
+    const duplicate = await rawPost(`{"name":"${uniqueName("5e4 dk")}","name":"other","scopes":["read"]}`);
+    console.log(`[5-E4] row22 duplicate keys -> ${duplicate.status} ${duplicate.text}`);
+    expect(duplicate.status).toBe(400);
+    expect(JSON.parse(duplicate.text).error).toBe("bad_request");
+    expect(JSON.parse(duplicate.text).error_description)
+        .toBe('Duplicate key "name" at 33 [character 34 line 1]');
+
+    // The two both reject, with the message row 12 already locks -- note it is the SAME message whatever the
+    // text is, because it only reports that the first character was not `{`.
+    for (const [label, body] of [["a top-level array", "[1,2]"], ["not json at all", "hello"]]) {
+      const r = await rawPost(body);
+      console.log(`[5-E4] row22 ${label} -> ${r.status} ${r.text}`);
+      expect(r.status, label).toBe(400);
+      expect(JSON.parse(r.text).error_description, label)
+          .toBe("A JSONObject text must begin with '{' at 1 [character 2 line 1]");
+    }
+  });
+
+  test("row 18: If-None-Match is evaluated on PUT and DELETE too, and a match there is a 412", async ({ request }) => {
+    // ⚠ Added 2026-07-29, while planning the handler: D6 gave If-None-Match to the GET path alone, on the
+    // reasonable-looking grounds that only GET/HEAD can answer 304. Restlet evaluates it on EVERY verb --
+    // `doConditionalHandle` runs before the annotated method whenever either header is present -- and on a
+    // non-GET a match is a 412, not a 304. A handler that consults If-None-Match only on GET performs the
+    // update instead. Not covered by any row 1-17.
+    const matching = await newResourceSet(request, "5e4 inm put");
+    const matchingTag = await currentEtag(request, matching.id);
+    const refused = await request.put(`${RS}/${matching.id}`, {
+      headers: { ...bearer(), "If-None-Match": matchingTag },
+      data: { name: `${matching.name} x`, scopes: ["read"] },
+    });
+    const refusedBody = await refused.json();
+    console.log(`[5-E4] row18 PUT If-None-Match:<current> -> ${refused.status()} ${JSON.stringify(refusedBody)}`);
+    expect(refused.status()).toBe(412);
+    expect(refusedBody).toEqual({ error: "precondition_failed" });
+    // And it really did not update: the tag still matches what it was.
+    expect(await currentEtag(request, matching.id)).toBe(matchingTag);
+
+    // A NON-matching If-None-Match lets the precondition pass -- and then the endpoint's own
+    // `isConditionalRequest()` finds no If-Match and takes row 4's path. So the two headers do not substitute
+    // for one another: If-None-Match can only ever refuse a write here, never authorise one.
+    const stale = await newResourceSet(request, "5e4 inm put stale");
+    const rejected = await request.put(`${RS}/${stale.id}`, {
+      headers: { ...bearer(), "If-None-Match": 'W/"12345"' },
+      data: { name: `${stale.name} x`, scopes: ["read"] },
+    });
+    const rejectedBody = await rejected.json();
+    console.log(`[5-E4] row18 PUT If-None-Match:<stale> -> ${rejected.status()} ${JSON.stringify(rejectedBody)}`);
+    expect(rejected.status()).toBe(400);
+    expect(rejectedBody).toEqual({
+      error: "server_error",
+      error_description: "precondition_failed (512) - Require If-Match header to update Resource Set",
+    });
+
+    const doomed = await newResourceSet(request, "5e4 inm delete");
+    const doomedTag = await currentEtag(request, doomed.id);
+    const undeleted = await request.delete(`${RS}/${doomed.id}`, {
+      headers: { ...bearer(), "If-None-Match": doomedTag },
+    });
+    console.log(`[5-E4] row18 DELETE If-None-Match:<current> -> ${undeleted.status()}`);
+    expect(undeleted.status()).toBe(412);
+    expect(await undeleted.json()).toEqual({ error: "precondition_failed" });
+    expect((await request.get(`${RS}/${doomed.id}`, { headers: bearer() })).status()).toBe(200);
+
+    // ⚠ And a WINNING If-Match does not stop If-None-Match being consulted -- both are evaluated, in that
+    // order, and either can fail the request. A client that round-trips the tag into both headers (harmless
+    // under RFC 7232, where If-None-Match on a write means "only if absent") is refused.
+    const both = await newResourceSet(request, "5e4 inm both");
+    const bothTag = await currentEtag(request, both.id);
+    const conflicted = await request.put(`${RS}/${both.id}`, {
+      headers: { ...bearer(), "If-Match": bothTag, "If-None-Match": bothTag },
+      data: { name: `${both.name} x`, scopes: ["read"] },
+    });
+    console.log(`[5-E4] row18 PUT If-Match + If-None-Match, both <current> -> ${conflicted.status()}`);
+    expect(conflicted.status()).toBe(412);
+    expect(await conflicted.json()).toEqual({ error: "precondition_failed" });
+  });
+
+  test("row 19: POST is conditional as well -- If-Match is evaluated before a create", async ({ request }) => {
+    // ⚠ Added 2026-07-29 with row 18, and for the same reason: `doConditionalHandle` does not care which verb
+    // it is guarding. D6 assigned conditional evaluation to GET/PUT/DELETE, so a port would create here where
+    // Restlet answers 412.
+    const star = await track(await request.post(RS, {
+      headers: { ...bearer(), "If-Match": "*" }, data: { name: uniqueName("5e4 post star"), scopes: ["read"] },
+    }));
+    console.log(`[5-E4] row19 POST collection If-Match:* -> ${star.status()}`);
+    expect(star.status()).toBe(201);
+
+    // The collection representation carries NO tag (row 5), so `*` is the only If-Match that can ever pass
+    // here: the wildcard is the one comparison that does not need a current tag. See row 20.
+    const stale = await request.post(RS, {
+      headers: { ...bearer(), "If-Match": 'W/"12345"' },
+      data: { name: uniqueName("5e4 post stale"), scopes: ["read"] },
+    });
+    console.log(`[5-E4] row19 POST collection If-Match:<stale> -> ${stale.status()}`);
+    expect(stale.status()).toBe(412);
+    expect(await stale.json()).toEqual({ error: "precondition_failed" });
+
+    // At the ITEM url the tag exists, so a matching If-Match passes and the create goes through -- with a new
+    // id, exactly as row 16's unconditional POST does.
+    const host = await newResourceSet(request, "5e4 post host");
+    const hostTag = await currentEtag(request, host.id);
+    const created201 = await track(await request.post(`${RS}/${host.id}`, {
+      headers: { ...bearer(), "If-Match": hostTag },
+      data: { name: uniqueName("5e4 post at item"), scopes: ["read"] },
+    }));
+    console.log(`[5-E4] row19 POST item If-Match:<its own tag> -> ${created201.status()}`);
+    expect(created201.status()).toBe(201);
+    expect((await created201.json())._id).not.toBe(host.id);
+
+    const staleAtItem = await request.post(`${RS}/${host.id}`, {
+      headers: { ...bearer(), "If-Match": 'W/"12345"' },
+      data: { name: uniqueName("5e4 post at item stale"), scopes: ["read"] },
+    });
+    console.log(`[5-E4] row19 POST item If-Match:<stale> -> ${staleAtItem.status()}`);
+    expect(staleAtItem.status()).toBe(412);
+  });
+
+  test("row 20: the collection representation carries no tag, which flips three conditional answers", async ({ request }) => {
+    // ⚠ Added 2026-07-29. Rows 1-3b all measure the ITEM url. The collection's representation has no Tag at
+    // all (row 5), and Restlet's comparator branches on exactly that: with no current tag the If-Match
+    // fallback loop is skipped and the answer is the wildcard flag alone, while the If-None-Match wildcard --
+    // dead on an item, which is why row 3 records `*` -> 200 -- becomes the only live branch. So the same
+    // header gets OPPOSITE answers at the two urls, and a port with one code path for both cannot have both.
+
+    // 412 carrying the full list. The exception filter only fills an EMPTY entity, and the conditional layer
+    // ran the @Get to obtain the tag, so the array is already in hand -- the same shape as row 3b's item 412.
+    const stale = await request.get(RS, { headers: { ...bearer(), "If-Match": 'W/"12345"' } });
+    const staleBody = await stale.json();
+    console.log(`[5-E4] row20 GET collection If-Match:<stale> -> ${stale.status()} ${staleBody.length} ids`);
+    expect(stale.status()).toBe(412);
+    expect(Array.isArray(staleBody)).toBe(true);        // NOT {"error":"precondition_failed"}
+    expect(stale.headers()["content-type"]).toBe("application/json");
+    expect(stale.headers()["etag"]).toBeUndefined();
+
+    // ⚠ 304 where the item url answers 200 (row 3). This is the ONE place Restlet's noneMatch wildcard is
+    // reachable, and it is reachable on the wire.
+    const star = await request.get(RS, { headers: { ...bearer(), "If-None-Match": "*" } });
+    console.log(`[5-E4] row20 GET collection If-None-Match:* -> ${star.status()}`
+      + ` ct=${star.headers()["content-type"]}`);
+    expect(star.status()).toBe(304);
+    expect(star.headers()["content-type"]).toBeUndefined();
+    expect(star.headers()["etag"]).toBeUndefined();     // no tag to echo, unlike row 3's item 304
+
+    // ...and a concrete tag cannot match a representation that has none, so this is a plain 200.
+    const concrete = await request.get(RS, { headers: { ...bearer(), "If-None-Match": 'W/"12345"' } });
+    console.log(`[5-E4] row20 GET collection If-None-Match:<concrete> -> ${concrete.status()}`);
+    expect(concrete.status()).toBe(200);
+
+    // ⚠ And the RFC 7232 "create only if it does not exist" idiom is REFUSED by this endpoint: on a POST the
+    // wildcard matches the tag-less collection, and a noneMatch match on a non-GET is a 412.
+    const createIfAbsent = await request.post(RS, {
+      headers: { ...bearer(), "If-None-Match": "*" },
+      data: { name: uniqueName("5e4 create if absent"), scopes: ["read"] },
+    });
+    console.log(`[5-E4] row20 POST collection If-None-Match:* -> ${createIfAbsent.status()}`);
+    expect(createIfAbsent.status()).toBe(412);
+    expect(await createIfAbsent.json()).toEqual({ error: "precondition_failed" });
+  });
+
+  test("row 21: whether If-None-Match compares weakness depends on the VERB", async ({ request }) => {
+    // ⚠ Added 2026-07-29 with rows 18-20. Restlet compares If-None-Match with
+    // `checkWeakness = GET.equals(method) || HEAD.equals(method)`. Until row 18 that second argument looked
+    // like a constant `true` -- the S1 review read it off the bytecode and concluded GET/HEAD were the only
+    // verbs that could reach the comparison at all. They are not, so the flag really does vary, and the SAME
+    // header gets opposite answers on a GET and on a PUT. This endpoint's tag is weak, which is what makes
+    // the difference observable at all.
+    const item = await newResourceSet(request, "5e4 inm weakness");
+    const weak = await currentEtag(request, item.id);
+    expect(weak).toMatch(/^W\/"-?\d+"$/);
+    const strong = weak.replace(/^W\//, "");
+
+    // GET: weakness IS compared, so the strong form does not match and the client gets the full body.
+    // (This also converts the S1 review's bytecode-only claim into a measured row.)
+    const read = await request.get(`${RS}/${item.id}`, { headers: { ...bearer(), "If-None-Match": strong } });
+    console.log(`[5-E4] row21 GET If-None-Match:${strong} (strong form of ${weak}) -> ${read.status()}`);
+    expect(read.status()).toBe(200);
+    expect((await read.json())._id).toBe(item.id);
+
+    // PUT: weakness is NOT compared, so the very same header matches -- and a noneMatch match on a non-GET
+    // is row 18's 412. A helper with one weakness rule for both verbs cannot produce both of these.
+    const write = await request.put(`${RS}/${item.id}`, {
+      headers: { ...bearer(), "If-None-Match": strong }, data: { name: `${item.name} x`, scopes: ["read"] },
+    });
+    console.log(`[5-E4] row21 PUT If-None-Match:${strong} -> ${write.status()}`);
+    expect(write.status()).toBe(412);
+    expect(await write.json()).toEqual({ error: "precondition_failed" });
+
+    // And the wildcard is strong-only on the noneMatch side too, exactly as it is for If-Match: `W/*` is a
+    // weak tag named `*`, not Tag.ALL, so it fails the wildcard test and row 20's 412 does not happen.
+    const weakStar = await track(await request.post(RS, {
+      headers: { ...bearer(), "If-None-Match": "W/*" },
+      data: { name: uniqueName("5e4 weak star"), scopes: ["read"] },
+    }));
+    console.log(`[5-E4] row21 POST collection If-None-Match:W/* -> ${weakStar.status()}`);
+    expect(weakStar.status()).toBe(201);
+  });
 });
 
 test.describe("/oauth2/connect/register dynamic client registration", () => {

@@ -122,6 +122,20 @@
             <artifactId>org.restlet.ext.json</artifactId>
         </dependency>
 
+        <!--
+          Used directly by ResourceSetRegistrationHandler, which parses the request body with JSONObject
+          because org.json's LENIENCY is the wire contract, not just its error message: single-quoted
+          strings, unquoted keys and trailing commas all create a resource set today, and duplicate keys are
+          rejected (5-E4 row 22). Declared rather than inherited: it arrives transitively through openam-core
+          today, and a port that relied on that would be one dependency change away from breaking a contract.
+          Moving to Jackson is filed as T8 in docs/migration/restlet/phase-5c.md: after the flip, with a
+          release note, not as a side effect.
+        -->
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+        </dependency>
+
         <!-- Restlet -->
         <dependency>
             <groupId>org.openidentityplatform.openam.jakarta</groupId>

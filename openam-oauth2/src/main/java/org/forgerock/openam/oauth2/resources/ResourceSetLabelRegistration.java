@@ -12,7 +12,7 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Copyright 2015-2016 ForgeRock AS.
- * Portions copyright 2025 3A Systems LLC.
+ * Portions copyright 2025-2026 3A Systems LLC.
  */
 
 package org.forgerock.openam.oauth2.resources;
@@ -60,7 +60,7 @@ public class ResourceSetLabelRegistration {
      *
      * @param resourceSet The new resource set.
      */
-    void updateLabelsForNewResourceSet(ResourceSetDescription resourceSet) {
+    public void updateLabelsForNewResourceSet(ResourceSetDescription resourceSet) {
         JsonValue labels = resourceSet.getDescription().get(OAuth2Constants.ResourceSets.LABELS);
         if (!labels.isNull() && labels.size() > 0) {
             updateLabels(resourceSet, labels.asCollection(String.class), Collections.<String>emptySet());
@@ -73,7 +73,7 @@ public class ResourceSetLabelRegistration {
      *
      * @param resourceSet The updated resource set.
      */
-    void updateLabelsForExistingResourceSet(ResourceSetDescription resourceSet) {
+    public void updateLabelsForExistingResourceSet(ResourceSetDescription resourceSet) {
         JsonValue newLabels = resourceSet.getDescription().get(OAuth2Constants.ResourceSets.LABELS);
         if (newLabels.isNull()) {
             newLabels = json(array());
@@ -101,7 +101,7 @@ public class ResourceSetLabelRegistration {
      *
      * @param resourceSet The deleted resource set.
      */
-    void updateLabelsForDeletedResourceSet(ResourceSetDescription resourceSet) {
+    public void updateLabelsForDeletedResourceSet(ResourceSetDescription resourceSet) {
         JsonValue labels = resourceSet.getDescription().get(OAuth2Constants.ResourceSets.LABELS);
         if (!labels.isNull() && labels.size() > 0) {
             updateLabels(resourceSet, Collections.<String>emptySet(), labels.asCollection(String.class));

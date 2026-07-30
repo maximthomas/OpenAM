@@ -754,8 +754,17 @@ before the filter runs), adjust this row and record the difference; do not adjus
 which rewrites any ≥400 JSON body that has `code` and no `error` (`OAuth2ErrorFilter:77`). So:
 
 ```
-OAuth2ErrorFilter( … router … ResourceSetErrorFilter( audit( protect( Endpoints.from(handler) ) ) ) )
+OAuth2ErrorFilter( … router … audit( ResourceSetErrorFilter( protect( Endpoints.from(handler) ) ) ) )
 ```
+
+⚠ **Corrected 2026-07-30 (S7 review).** This line originally read
+`ResourceSetErrorFilter( audit( protect( … ) ) )`, putting audit *inside* the error filter — which contradicts
+[D9](#d9)'s code block, the shape `ResourceSetRouteCompositionIT` gates, and the one 5d-1 will build. The
+ordering of those two is **not** cosmetic: `AbstractHttpAccessAuditFilter.filter` audits the **response**
+(`auditAccessFailure(request, context, response)`), and `OAuth2HttpAccessAuditFilter` is constructed with a
+response-body auditor, so whichever filter is inner decides whether the audit log records the OAuth2-shaped
+body the client received or the CREST one it did not. Audit **outermost** is correct — you audit what was
+sent. The argument below is unaffected by the swap; only the diagram was wrong.
 
 `ResourceSetErrorFilter` runs first on the way out and always leaves an `error` key, so `OAuth2ErrorFilter`
 sees an already-OAuth2-shaped body and returns it untouched — **idempotent by construction**, which is exactly
@@ -869,6 +878,12 @@ boolean matches(String currentEtagValue);         // "*" matches; weakness ignor
 boolean noneMatches(String currentEtagValue);
 ```
 
+⚠ **`noneMatches` gained a second parameter at S4** — `noneMatches(String currentEtagValue, boolean
+checkWeakness)`, with **no** one-argument convenience. Row 21 measured the flag varying by verb
+(`GET`/`HEAD` compare weakness, every other verb does not), so a default would be a hidden verb assumption of
+exactly the kind that produced the S1 divergences. `hasIfNoneMatch()` was added alongside it, because a
+non-`GET` now has to distinguish "no `If-None-Match`" from "one that did not match".
+
 Matching rules copied from the disassembled `Conditions.getStatus`
 ([finding 2](#2--restlets-conditional-request-machinery-is-load-bearing-and-chf-has-none)): `*` matches any
 existing entity; otherwise compare **tag names only**, so `W/"x"` ≡ `"x"`; a comma-separated list matches if
@@ -887,23 +902,50 @@ above would have diverged on each:
   the 304 RFC 7232 §3.2 asks for, so carrying the `*`-matches-anything rule across from `matches()` would
   invert it. Pinned by row 3. (The mechanism, found later: Restlet's `noneMatch` wildcard test is reachable
   only when the current tag is `null`.)
-- **`noneMatches` must also compare weakness**, which `matches` must not. Unmeasured, read off
-  `Conditions.getStatus` during the S1 review: `If-None-Match` is compared with
-  `checkWeakness = GET || HEAD`. The endpoint's tag is weak ⇒ only `W/"<name>"` yields the 304; the strong
-  form yields 200 and the body.
+- **`noneMatches` must also compare weakness *on a `GET`*, which `matches` never does.** Read off
+  `Conditions.getStatus` during the S1 review, and **measured at S4 by row 21**: the flag is
+  `checkWeakness = GET || HEAD`, so on a `GET` only `W/"<name>"` yields the 304 and the strong form yields 200
+  and the body — while on a `PUT` the *same* strong form matches, and matching there is a 412.
+  ⚠ The S1 review recorded this as "weakness always counts, because GET/HEAD are the only verbs that reach
+  the comparison". The conclusion was right for the `GET` and the reason was wrong, which is why the helper
+  shipped a one-argument `noneMatches`.
 - **The 304 carries the `ETag` and no `Content-Type`.**
 
-Handler use:
+<a id="d6-uniform"></a>
+#### ⚠ Handler use — **corrected 2026-07-29 by rows 18–20**, measured while planning S4
 
-- `PUT`/`DELETE`: `if (!c.hasIfMatch()) throw ServerException(...)` (D4); then compute the **current** ETag
-  and `if (!c.matches(etag)) return precondition-failed` — a **412 whose body `ResourceSetErrorFilter`
-  supplies**, so the two filters' contracts stay in one place rather than being duplicated inline;
-- `GET` read: `if (c.noneMatches(etag)) return 304` — **with the `ETag` set and no `Content-Type`**, and with
-  `*` deliberately *not* matching;
-- ⚠ `GET` read also honours **`If-Match`**: `*` → 200, a non-matching tag → **412 carrying the full
-  representation and the `ETag`** (a 412 with a 200-shaped body). Restlet does this because its conditional
-  layer runs the `@Get` to obtain the tag and then fails the precondition with the representation already in
-  hand. A handler that only consults `If-Match` on `PUT`/`DELETE` answers 200 here. **Pinned by row 3b.**
+The version of this section that shipped with the plan gave each verb its own conditional rules: `If-Match` on
+`PUT`/`DELETE`/`GET`, `If-None-Match` on `GET` alone. **That is not what Restlet does.**
+`doConditionalHandle` runs *before* the annotated method **whatever the verb is**, so one precondition pass
+guards all four — and the three rows added at S4 measure every branch of it:
+
+```java
+// ONE pre-check, shared by @Post, @Get, @Put and @Delete -- Restlet's doConditionalHandle, in the handler.
+String tag = readOrListTag(o2);        // the tag the @Get would answer: null at the COLLECTION url
+HttpConditions c = HttpConditions.of(request);
+if (c.hasIfMatch()   && !c.matches(tag))     -> 412
+if (c.hasIfNoneMatch() && c.noneMatches(tag)) -> GET: 304 (+ ETag, no Content-Type); any other verb: 412
+// only then does the verb's own body run -- including PUT/DELETE's missing-If-Match throw (D4)
+```
+
+| Fact | Row | What a per-verb port would have done |
+|---|---|---|
+| `If-None-Match` matching on `PUT`/`DELETE` → **412**, never 304 | 18 | performed the write |
+| `If-None-Match` *not* matching on `PUT` → falls through to D4's **400** | 18 | — (it agrees) |
+| a **winning `If-Match` does not stop `If-None-Match`** — both are evaluated, in that order | 18 | performed the write |
+| `POST` is conditional too: `If-Match: *` → 201, a stale tag → **412** | 19 | created |
+| the **collection** representation has *no tag*, so `matches(null)` = "was the wildcard first" | 20, 9 | — |
+| ⇒ `GET` collection + stale `If-Match` → **412 carrying the whole id array**, no `ETag` | 20 | 200 |
+| ⇒ `GET` collection + `If-None-Match: *` → **304** — the opposite of row 3's item answer | 20 | 200 |
+| ⇒ `POST` collection + `If-None-Match: *` → **412**; the RFC "create only if absent" idiom is refused | 20 | created |
+| `If-None-Match` weakness is compared **only on `GET`/`HEAD`**: the strong form of the weak tag is 200 on a `GET` and **412 on a `PUT`** | 21 | one answer for both |
+| `If-None-Match: W/*` is not the wildcard, just as `If-Match: W/*` is not | 21 | — |
+
+⚠ **The 412's body is not one shape.** On `PUT`/`DELETE`/`POST` the handler returns a **bare** 412 and
+[`ResourceSetErrorFilter`](#d3) fills in `{"error":"precondition_failed"}`. On a `GET` the representation is
+already in hand — Restlet ran the `@Get` to get the tag — so the 412 carries **the full body and the `ETag`**
+(item, row 3b) or **the id array and no `ETag`** (collection, row 20), and the filter's empty-entity guard
+spares both. Getting this wrong in either direction is invisible to a status-only test.
 
 ⚠ **"the current ETag" means `readResourceSet`'s tag, not the store row's.** Extract one
 `currentEtag(rsid, owner)` helper that rebuilds the read model — `store.read`, `umaLabelsStore` labels,
@@ -1036,6 +1078,301 @@ to add a post-handler body reader (a response auditor that echoes the request, a
 silent corruption, and because the reason it is safe is three non-obvious facts deep. Do not manufacture a
 test for it; do not skip the copy either.
 
+<a id="as-built-s4"></a>
+#### As built — S4, 2026-07-29
+
+`ResourceSetRegistrationHandler` landed with D8's four annotated methods, ~320 lines including javadoc, **32
+unit rows**. `openam-oauth2` **1270 surefire** (was 1233), `openam-uma` **196** unchanged, javadoc clean,
+`grep -c org.restlet` on the new class **0**, and the route gate finds the class named in no file but its own.
+
+**The one structural departure from D8, and it is the whole shape of the class.** D8 (and D6) gave each verb
+its own conditional rules. Rows 18–21, measured before a line was written, show Restlet running **one
+verb-independent precondition gate**, so the handler has `preconditions(o2, request)` called first by
+`@Post`, `@Put` and `@Delete` alike, and the `@Get` doing the same comparisons inline because its two
+outcomes differ (a 304, and a 412 that *carries* the body). Three things fall out of that gate that no
+per-verb version produces, and each is a mutation-checked row:
+
+- a `POST` with a stale `If-Match` is a 412 and never reaches `store.create`;
+- `If-None-Match` is evaluated on writes, where a match is a 412 — with `checkWeakness = false`, so the
+  strong form of the weak tag matches on a `PUT` and not on a `GET`;
+- the gate is entered only when a conditional header was **sent**. Not an optimisation: computing a tag
+  unconditionally would read the addressed resource set on every request, and row 16's create-at-an-item-URL
+  would 404 instead of creating.
+
+**Three decisions the plan did not cover:**
+
+- ⚠ **The body is parsed with `org.json` first, then Jackson over its re-serialisation** — Restlet's `toMap`
+  verbatim. **Challenged at review, and the challenge is what produced row 22**: "why not just use Jackson?"
+  is the obvious simplification, and the answer turned out to be much stronger than the error-message parity
+  the decision was originally made for. `@Post createResourceSet(JsonRepresentation)` reaches
+  `new JSONObject(<raw body>)` — `JsonConverter.toObject` wraps the representation and
+  `JsonRepresentation.getJsonText()` returns its raw text, both read from the fork's bytecode — so the
+  endpoint inherits **org.json's leniency**, measured: single-quoted strings, unquoted keys and a trailing
+  comma all **create**. A Jackson port answers 400 to all three, switching off resource servers that work
+  today, and the status a client sees (400 `bad_request`) is plausible enough that nobody would suspect the
+  parser. In the other direction Jackson accepts duplicate keys last-one-wins where org.json **rejects**
+  them. So the parser is a wire contract on at least five inputs, not just a message.
+  Two smaller reasons remain: `JsonValueBuilder`'s wrapper throws an **unchecked** `JsonException`, which the
+  runtime-exception guard would turn into row 9's `server_error` rather than 400 `bad_request`; and parsing
+  from `Entity.getString()` yields a fresh map, which settles D8's "copy the parsed body" caution **by
+  construction** (`getString()` brackets its read with `push()`/`pop()`, so it disturbs no other reader).
+  ⇒ `org.json:json` is now a **declared** dependency of `openam-oauth2`; it arrived transitively through
+  `openam-core` before, which is one dependency change away from breaking a wire contract.
+  ⚠ Moving to a strict parser is defensible on its own merits, and is filed as **[T8](#t8)** — to be done
+  after 5d-1, deliberately, with its own divergence row and release note, rather than as an invisible side
+  effect of a port.
+- ⚠ **`ResourceSetLabelRegistration`'s three `updateLabelsFor*` methods were package-private** and visible to
+  the Restlet endpoint only because it sits in the same package. Widened to `public` (the only main-source
+  callers are that endpoint and this handler). A one-word change; the alternative was putting a
+  migration-authored class in `org.forgerock.openam.oauth2.resources`, against the naming convention.
+- **`guarded` logs the throwable it swallows.** The wire message is the engine's generic 500 sentence, so
+  without the log the original exception would be lost entirely — Restlet's `ExceptionHandler` logged it too.
+
+**Mutation-checked six ways**, each mutation being a plausible implementation rather than a random edit —
+the first three are literally what D6/D8 prescribed:
+
+| Mutation | Rows red |
+|---|---|
+| the runtime-exception guard no longer maps to 400 `server_error` | **2** |
+| conditional evaluation restricted to `GET`/`PUT`/`DELETE` (D6's rule) | **1** |
+| `If-None-Match` given to the `GET` path alone (D6's rule) | **2** |
+| the tag hashed from the bare `store.read` rather than the read model ([finding 17](#17--the-conditional-comparison-tag-comes-from-the-read-model-labels-and-all)) | **9** |
+| the "was either header sent" guard dropped | **3** |
+| the `labels` strip/re-add "tidied" away ([finding 18](#18--the-extension-point-sees-a-description-without-labels-and-without-an-id)) | **1** |
+| the body parsed with **Jackson only** instead of org.json-then-Jackson | **3** |
+
+**Still open at the end of S4:** S5 (port `ResourceSetRegistrationEndpointTest`'s cases), S6
+(`ResourceSetRouteCompositionIT`) and S7 (the full gates). The class is routed **nowhere** until 5d-1, so no
+wire behaviour changed and the 99-row e2e gate is unaffected.
+
+<a id="as-built-s5"></a>
+#### As built — S5, 2026-07-29
+
+**Four rows, not six.** The plan said "port `ResourceSetRegistrationEndpointTest`'s six cases"; diffing them
+against S4's 32 rows first showed two already covered end to end (`shouldReadResourceSetDescription`,
+`shouldDeleteResourceSetDescription`) and the other four covered only in part. So S5 added what the legacy
+suite asserts and S4 did not, rather than re-asserting what was already held. **36 unit rows**,
+`openam-oauth2` **1274 surefire** (was 1270), 0 failures.
+
+| Legacy case | Already held by S4 | Added at S5 |
+|---|---|---|
+| `shouldCreateResourceSetDescription` | 201 body, hook, label registration, before/after ordering | the description handed to `store.create` — client and owner **from the token**, fields from the **validated** map |
+| `shouldNotCreateExistingResourceSetDescription` | the in-band 400, its charset, `never().create` | the duplicate query's **shape**, and that the extension point is never entered |
+| `shouldUpdateResourceSetDescription` | 200, the new tag, `store.update` called | the description handed to `store.update` — id/client/owner preserved, body applied |
+| `shouldListResourceSetDescriptions` | the id array | the list query's **shape** |
+| `shouldReadResourceSetDescription`, `shouldDeleteResourceSetDescription` | in full | — |
+
+**The gap worth naming.** Both query rows exist because every other row stubs `store.query(any())`, which
+makes the filter's *contents* unasserted — and both mutations there are silent data leaks rather than
+failures: a duplicate check without `clientId`/`resourceOwnerId` lets one tenant's name block another's, and
+a list query without `resourceOwnerId` returns **every owner's** resource sets to anyone holding a PAT for
+the client. Likewise the create row: swapping `clientId` and `resourceOwnerId` in the constructor is two
+same-shaped strings in the wrong order, invisible to all 32 earlier rows.
+
+The query shape is read with `BaseQueryFilterVisitor` (the legacy suite's own tool) rather than by matching
+`QueryFilter.toString()`: every visit method it does not override **throws**, so an `or`, a `not` or a
+`startsWith` anywhere in the filter fails the row instead of being flattened into a passing map. That is
+strictly stronger than legacy's `doesNotContain(" or ")` and shorter.
+
+**Mutation-checked five ways**, all restored byte-identically afterwards:
+
+| Mutation | Rows red |
+|---|---|
+| `clientId` and `resourceOwnerId` swapped on create | **1** |
+| duplicate check by `name` alone | **1** |
+| description built from the raw body, skipping the validator | **2** |
+| list query drops `resourceOwnerId` | **1** |
+| the update never applies the validated body | **2** |
+
+**Two facts the rows pinned that no plan section had:**
+
+- ⚠ **`ResourceSetDescription.update(Map)` replaces the description outright — it does not merge.** A `PUT`
+  that omits a field *deletes* it. 5-E4 row 2a measured this for `labels` and read as a labels quirk; it is
+  the general rule, and the S5 row now holds it on an ordinary field (`scopes`).
+- **`org.json`'s `JSONObject` is `HashMap`-backed, so a request body's key order does not survive the parse.**
+  Harmless on this endpoint — no response echoes the parsed body — and recorded as a row in [T8](#t8),
+  because Jackson *would* preserve it.
+
+**Still open at the end of S5:** S6 (`ResourceSetRouteCompositionIT`) and S7 (the full gates). Still routed
+nowhere; the 99-row e2e gate is still unaffected.
+
+<a id="as-built-s6"></a>
+#### As built — S6, 2026-07-29
+
+`ResourceSetRouteCompositionIT` landed with **all 13 named rows**, mutation-checked on the three the plan
+asked for (8, 10 and 13). The chain and the nested router are D9 verbatim, with one extra `STARTS_WITH
+"oauth2"` parent standing in for the endpoint router the provider supplies at 5d-1; context stack is
+`RootContext -> ClientContext -> RequestAuditContext -> AttributesContext -> RealmContext`.
+
+**⚠ Row 4 as the plan specified it was wrong, and the measurement is why.** The plan says "`PATCH` yields
+`unsupported_method_type`" — written before [5-E4 correction 1](#the-recorded-rows) measured Restlet routing
+`PATCH` to the `@Put` method, where it 200s and really replaces the resource set. The row uses **`PROPFIND`**,
+which row 11 did measure as a 405. A row written to the plan would have asserted a 405 the incumbent does not
+produce, and — because `Endpoints.from` *does* 405 there — it would have **passed**, locking in a divergence
+as if it were parity.
+
+**Two things the rows now hold that were previously only prose:**
+
+- **The vanishing `Allow` header is asserted, not remembered.** Restlet sent
+  `Allow: POST, PUT, GET, DELETE` on that 405 and `Endpoints.from` sends nothing; row 4 asserts the header is
+  **null** with a comment saying that line is what will fail when 5d-1 closes the gap. A handoff item that
+  announces itself beats one that depends on someone rereading this document.
+- **D9's filter placement is demonstrated by counterfactual.** Row 9 asserts the router's no-match 404 stays
+  CREST — then builds the same router wrapped by `ResourceSetErrorFilter` and shows the identical 404 becoming
+  a **500 `server_error`**. That is the bug the placement exists to avoid, executed rather than argued.
+
+**⚠ Row 13 cannot replay the `GET`'s ETag.** The obvious way to write "take the tag from a `GET`, replay it as
+`If-Match`" is self-consistent under exactly the mutation the row exists to catch: a handler that hashed the
+bare `store.read` emits and expects the *same* wrong tag, so the round trip succeeds and the row passes. The
+row therefore **computes** the expected tag from the read model (description + the two labels) and asserts the
+`GET` returned that value. Verified: with the tag replayed the mutation stays green; with it computed the
+mutation turns the row red.
+
+| Mutation | Rows red |
+|---|---|
+| the three routes as **sibling `EQUALS`** matchers ([finding 12](#12--the-trailing-slash-route-cannot-be-expressed-with-equals-in-chf)'s shape) | **1** (row 8) |
+| the `OAUTH2` error shape takes the status the **call site** passed rather than the exception's | **1** (row 10) |
+| the conditional tag hashes the bare `store.read`, labels never folded in | **1** (row 13) |
+
+**Two in-process facts worth carrying forward:** `Entity.getJson()` hands back the very collection the handler
+set — no serialization round-trip — so a list assertion must compare membership, not type; and
+`-DskipTests=true` skips **failsafe as well as surefire**, so a `verify` run with it reports `BUILD SUCCESS`
+having executed no IT at all (both recorded in [test-infrastructure.md](../../test-infrastructure.md)).
+
+**Still open at the end of S6:** S7 only — the full gates and the commit.
+
+<a id="as-built-s7"></a>
+#### As built — S7 (the gates), 2026-07-30
+
+All seven gates green, nothing rewritten to make them pass.
+
+| Gate | Measured |
+|---|---|
+| `mvn -o install -DskipTests -am -pl openam-oauth2` | `BUILD SUCCESS` |
+| `mvn -o -pl openam-oauth2 javadoc:javadoc` | `BUILD SUCCESS`, zero `.java` warnings |
+| Restlet import gate, all five 5c main classes | **0** |
+| Route gate | `ResourceSetRegistrationHandler` named in its own file only |
+| `mvn -o -pl openam-oauth2 test` | **1274** (S5) |
+| `mvn -o -pl openam-oauth2 verify` failsafe | **38**, 0 failures (S6) |
+| `npx playwright test oauth2 uma`, one pass on `openam-e2e:5c2` | **99 passed** (15.9 s) |
+
+**The e2e gate is a formality here and the reason is worth stating**, because it is the argument 5d-1 will *not*
+be able to make. The whole 5c-2 main-source delta is wire-inert: `ResourceSetRegistrationHandler` is routed
+nowhere, `HttpConditions` is referenced by that class and nothing else (grepped over `openam-*/src/main`), and
+the only edit to a live class — `ResourceSetLabelRegistration` — widens three methods from package-private to
+`public` and touches no logic. The image was still rebuilt from this tree rather than reusing `openam-e2e:5c1`,
+because provenance is the point of the gate and 5c-1 set that precedent.
+
+**Provenance, proved rather than asserted.** The 5-E4 as-built already warns that the container's banner
+carries the *merge base*, not the classes. The check that does work: `docker cp` the deployed jar out and
+checksum it against the module's own output — `openam-oauth2-16.2.0-SNAPSHOT.jar` was
+`8d851c8c38efcfee7ec5610bea70aef2` in all three places (module `target/`, inside the WAR, and in
+`openam-idp:/usr/local/tomcat/webapps/openam/WEB-INF/lib/`). ⚠ The image has **no `jar` and no `unzip`**, so
+listing the archive in place is not an option. Both distribution zips were rebuilt too, not just the WAR:
+`SSOAdminTools.zip` bundles `openam-oauth2`, so reusing the 07-29 zips would have put mixed provenance behind
+the gate.
+
+**⚠ The one-pass rule caught its author.** Having recorded it at 5-E4, I still ran `uma` a second time against
+the same container to split the 99 into 88 + 11, and got the exact documented failure —
+`warmUpResourceSetStore` → `resource-set store never became ready: 400 server_error`, with
+`EntitlementException: Resource Type <id> does not exist in realm /` underneath. A third run degraded further
+(45 passed, 2 failed, 52 not run). Nothing regressed: the same container and the same bytes had just passed all
+99. Two small additions to what [that section](#run-this-gate-against-a-fresh-container) already says — the
+exception also lands in `debug/Entitlement`, not only `debug/UmaProvider`; and the suite counts are **not
+separable after the fact**, so if the per-suite split matters it has to be read from the one pass's own output
+(don't `tail` it away, as I did) rather than re-measured.
+
+<a id="s7-review-findings"></a>
+##### Review of the finished change — four things the gates could not catch
+
+All seven gates were green **before** this review, which is the point: none of the four is a test failure.
+Two are wire-visible differences no single-stack test can see, one is a doc that contradicted the code 5d-1
+will be written from, and one is an instruction that would have broken the build's dependency hygiene.
+
+1. ⚠ **Every charset-bearing `Content-Type` gains a space on CHF — Phase-5-wide, and already shipped.**
+   Restlet sends `application/json;charset=UTF-8` and `text/html;charset=UTF-8`; CHF sends both **with a space
+   after the `;`**. The cause is not in any handler: commons `ContentTypeHeader.getValues()` builds
+   `sb.append("; charset=")` unconditionally, so the header is **re-rendered** whatever a handler stamps.
+   Now [divergence row 11](plan.md#expected-divergences-at-the-flip).
+
+   ⚠ **My first attempt at this was wrong and the test caught it.** I read it as a 5c-2-only difference on the
+   duplicate-name 400 and "fixed" it by stamping `application/json;charset=UTF-8` explicitly — the class
+   already stamps `Content-Type` on every other status, so it looked like a one-line win over a divergence row.
+   The unit row came back `expected "application/json;charset=UTF-8" but was "application/json; charset=UTF-8"`
+   **with the new literal compiled in**, which is what sent me to `ContentTypeHeader` and turned a local
+   cosmetic difference into a cross-cutting one. Reverted; the test now asserts what CHF really emits.
+
+   The blast radius is wider than this endpoint: `FreemarkerTemplateRenderer` and **nine-plus committed
+   unit/IT rows** pin the spaced form for the 5b-1 and 5b-2b browser endpoints today, while 5-E2 row 2 recorded
+   Restlet's *"**no space** after the `;`"* at the time and no divergence row was ever written. So the affected
+   oracles — 5-E2 rows 2/3/4, the 5-E3 device-page rows and 5-E4 row 7 — all go red at the flip on
+   `Content-Type` alone. Fixing it means changing commons for one space that RFC 7231 §3.1.1.1 explicitly
+   permits; recording it is the proportionate call.
+2. **Response-body key order changes** — `createJsonResponse` copied into a `HashMap`, the port uses a
+   `LinkedHashMap`. Semantically nothing (RFC 8259 §4), and *not* worth fixing: matching it would mean
+   reproducing hash order on purpose. Recorded as [divergence row 13](plan.md#expected-divergences-at-the-flip),
+   derived from the two sources and labelled as **not measured**.
+3. ⚠ **[D3](#d3)'s ordering diagram contradicted [D9](#d9), on a line 5d-1 builds from.** It read
+   `ResourceSetErrorFilter( audit( protect( … ) ) )` — audit *inside* the error filter — where D9's code block,
+   the composition IT and S6's gate all have **audit outermost**. Not cosmetic:
+   `AbstractHttpAccessAuditFilter.filter` audits the *response*, and `OAuth2HttpAccessAuditFilter` carries a
+   response-body auditor, so the inner filter decides whether the audit record holds the OAuth2-shaped body the
+   client got or the CREST body it never saw. D3 predates D9's revision and was simply left stale. Corrected,
+   with the reason, so the next reader cannot pick the wrong one.
+4. **[T8](#t8) told its own implementer to delete a dependency five live classes need.** *"drop the
+   `org.json:json` dependency … if nothing else needs it"* — `RealmOAuth2ProviderSettings`,
+   `ClaimsParameterValidator`, `StatefulTokenStore`, `OpenAMScopeValidator` and `TokenRevocationResource` all
+   import `org.json`, and none dies at 5d-2. Worse, removing the declaration would **not** fail the build —
+   the module resolves `org.json` transitively through `openam-core` — so the mistake would have been silent
+   and would have restored the exact fragility the `<dependency>` comment exists to prevent. Corrected in
+   place.
+
+**What this says about the gate set.** Items 1 and 2 are wire-visible differences that a full green build, 1274
+unit rows, 38 ITs and 99 e2e rows passed over — because every one of those runs one stack or the other, never
+both. A CHF test asserting `text/html; charset=UTF-8` and an e2e row asserting `text/html;charset=UTF-8` are
+**both green today** and describe the same header; nothing in the gate set compares them. The only instrument
+that catches this class before 5d-1 is reading the two sides together and asking what the *oracle* will say —
+which is what the divergence table is for, and why finding row 11 four handlers late is the real lesson here.
+
+**Second pass, 2026-07-30.** Re-reviewed after the four fixes, sweeping the surface the first pass had not read
+end to end (`ResourceSetRouteCompositionIT`, the five new e2e rows, the `pom.xml`/`HttpConditions`/
+`ResourceSetLabelRegistration` diffs) and re-checking every cross-reference the renumbering touched. Two defects,
+both cosmetic and both in the new test sources: the IT's two `<a href>`s into this file climbed **eight** `..`
+where the package needs **nine**, so both resolved to a non-existent `openam-oauth2/docs/…` (the two sibling
+test classes in the same package get it right); and `ResourceSetRegistrationHandlerTest` imported `JsonValue`
+without using it. Both fixed.
+
+⚠ **The second one is a note on method, not on the import.** I had already written *"no unused imports"* into
+this paragraph off a careful read-through of all five files — and it was wrong. `javac` does not warn on unused
+imports and no gate in the set checks them, so the claim survived a green build twice. Checking it took one
+shell loop over `import` lines; asserting it by eye took longer and got the wrong answer. Anything claimed in
+an as-built that a five-line script can decide should be decided by the script.
+
+Verified clean otherwise: anchors all resolve, divergence rows 11/12/13 agree everywhere they are cited,
+[D3](#d3)'s corrected diagram now matches [D9](#d9) *and* the IT *and* the handler, and no widened or added API
+lacks a caller **and** a test — `hasIfNoneMatch()` has both, and `matches(null)`, `noneMatches(null, ·)` and
+`withEtag(…, null)` are exactly what makes the tag-less collection answer 5-E4 rows 19–21 the way Restlet does.
+
+**Third pass, 2026-07-30.** Nothing further in 5c-2's own change: 36 + 13 test methods all carry an assertion or
+a `verify`, no duplicate method names, no unused imports, and every markdown link and anchor in the four edited
+docs resolves. What it did produce is a lesson about the sweeps themselves — see the `--` trap below.
+
+⚠ **Seven pre-existing instances left alone.** Running each check over the whole tree rather than only 5c-2's
+files found the same mistakes in already-committed code: `EndSessionHandlerTest:56` has the identical
+off-by-one doc link (5b-2); `TokenRevocationHandler` / `TokenRevocationHandlerTest` carry an unused
+`ClientRegistration` / `JsonValue` import (5a); and **four** citations — `plan.md` ×2, `phase-5b-2.md` ×2 —
+point at `phase-5-oauth2.md#parity-preserved-security-debts--reproduce-now-fix-later`, whose heading has since
+gained a trailing `(finding #7)`, so the live slug ends `-finding-7`. All seven are out of this commit's scope —
+noted here rather than folded into unrelated phases' diffs. The sweeps themselves are the reusable part, in
+[test-infrastructure.md](../../test-infrastructure.md#unused-imports-are-not-caught-by-any-gate).
+
+⚠ **One of the three findings above was my own tooling, not the docs.** The first run of the anchor sweep
+reported a *correct* link as broken, because the anchor began with `-` (GitHub slugs a `⚠`-prefixed heading to a
+leading hyphen) and `grep -qxF "$anchor"` parsed it as options instead of a pattern. Two passes in a row have
+now had a verification step be wrong in the same direction as the thing it was checking — first "no unused
+imports" asserted by eye, then a sweep that mis-answered. The rule that falls out: **reproduce a sweep's failure
+by hand once before editing anything**, and treat the checker as suspect until it has caught something real.
+
 <a id="d9"></a>
 ### D9 — routing at 5d-1: a **nested** router, not three sibling matchers (**revised at review, 2026-07-29**)
 
@@ -1107,8 +1444,13 @@ OAuth2-shape rows.
 ### 5c-2
 
 **New:** `ResourceSetRegistrationHandler`.
-**Tests:** `ResourceSetRegistrationHandlerTest` — port of `ResourceSetRegistrationEndpointTest`'s cases onto
-constructed CHF `Request`/context chains, plus the conditional rows D6 adds;
+**Modified:** `ResourceSetLabelRegistration` — its three `updateLabelsFor*` methods widened from
+package-private to `public` ([S4 as-built](#as-built-s4)); `openam-oauth2/pom.xml` — `org.json:json` declared
+rather than inherited; `HttpConditions` — `noneMatches` gained its `checkWeakness` parameter and
+`hasIfNoneMatch()` was added, both forced by [row 21](#as-built-5-e4-rows-18-21).
+**Tests:** `ResourceSetRegistrationHandlerTest` — **36 rows**: the conditional and representation rows the
+gate forces (S4), plus what `ResourceSetRegistrationEndpointTest` asserts and those did not — the two store
+queries' shapes and the descriptions handed to `store.create`/`store.update` ([S5 as-built](#as-built-s5));
 `ResourceSetRouteCompositionIT` — see below.
 **Unmodified, deliberately:** `AbstractOAuth2HttpJsonEndpoint`, `OAuth2ErrorFilter`, every collaborator.
 
@@ -1123,15 +1465,15 @@ Baseline to beat, from the 5b-2b as-built: **1180 surefire + 25 failsafe** in `o
 
 | Gate | 5-E4 | 5c-1 | 5c-2 |
 |---|---|---|---|
-| `npx playwright test oauth2 uma` (one pass, fresh container) | **94 passed** — oauth2 **83** (63 + 20) + uma **11**, all against **live Restlet** | 94 (unchanged) | 94 (unchanged) |
-| `npx playwright test uma` | 11 | **11 — the load-bearing gate for D2** | 11 |
-| `mvn -o -pl openam-oauth2 test` | 1180 (unchanged) | ≥ 1180 + ~25 | ≥ 1180 + ~55 |
+| `npx playwright test oauth2 uma` (one pass, fresh container) | **94 passed** — oauth2 **83** (63 + 20) + uma **11**, all against **live Restlet** | 94 (unchanged) | **99** — rows 18–22 added at S4 ([why](#as-built-5-e4-rows-18-21)); as built **99 passed** on `openam-e2e:5c2` (S7) |
+| `npx playwright test uma` | 11 | **11 — the load-bearing gate for D2** | 11 — folded into the one pass above; ⚠ **not runnable as a second pass** ([why](#run-this-gate-against-a-fresh-container)) |
+| `mvn -o -pl openam-oauth2 test` | 1180 (unchanged) | ≥ 1180 + ~25 | ≥ 1180 + ~55 — as built **1274** (S5) |
 | `mvn -o -pl openam-uma test` | — | **green, count unchanged** | — |
-| `mvn -o -pl openam-oauth2 verify` (failsafe) | 25 | 25 | **25 + ~13** |
-| `mvn -o install -DskipTests -am -pl openam-oauth2` | — | clean | clean |
-| doclint (`mvn -o -pl openam-oauth2 javadoc:javadoc`) | — | clean | clean |
-| Restlet import gate: `grep -rn "org\.restlet" <new/changed main classes>` | — | **0** | **0** |
-| Route gate: `grep -rn "ResourceSetRegistrationHandler" --include=*.java openam-*/src/main` | — | — | **only its own file** (build-ahead: routed nowhere until 5d-1) |
+| `mvn -o -pl openam-oauth2 verify` (failsafe) | 25 | 25 | **25 + ~13** — as built **38**, 0 failures (S6) |
+| `mvn -o install -DskipTests -am -pl openam-oauth2` | — | clean | clean — as built **BUILD SUCCESS** (S7) |
+| doclint (`mvn -o -pl openam-oauth2 javadoc:javadoc`) | — | clean | clean — as built **BUILD SUCCESS**, zero `.java` warnings (S7) |
+| Restlet import gate: `grep -rn "org\.restlet" <new/changed main classes>` | — | **0** | **0** — as built **0** over all five 5c main classes (S7) |
+| Route gate: `grep -rn "ResourceSetRegistrationHandler" --include=*.java openam-*/src/main` | — | — | **only its own file** (build-ahead: routed nowhere until 5d-1) — as built ✅ (S7) |
 
 ⚠ Build with `-am` — a same-version SNAPSHOT schema jar left in `~/.m2` by another branch produces false
 compile errors — and be wary of `target/` surefire reports that survived a branch switch: a green report is
@@ -1348,6 +1690,59 @@ Raised by the port, deliberately **not** fixed in it — same treatment as
 | **T5** | **The missing-`If-Match` rejection is a 400 `server_error`**, not a 412/428, and it is built by throwing a status the code never uses (`512`). Semantically wrong on the wire and confusing in the source | `ResourceSetRegistrationHandler` (5c-2), per [D4](#d4) |
 | **T6** | **The duplicate-name rejection puts a reason phrase in the `error` field** — `{"error":"Bad Request"}` (`:150-155`), where every other error on the endpoint uses a snake_case code | `ResourceSetRegistrationHandler` (5c-2), per [D8](#d8) |
 | **T7** | **`ResourceSetRegistrationExceptionFilter.setExceptionResponse` NPEs on a throwable-less error status** (`:80-87`) — a latent 500 on the live Restlet endpoint. Dies with the class at 5d-2; recorded so the CHF replacement's differing behaviour is understood as a fix, not a drift | closed by [D3](#d3) |
+| **T8** | **`/oauth2/resource_set` parses request bodies with `org.json`, which is lenient** — see below | `ResourceSetRegistrationHandler` (5c-2), deliberately |
+
+<a id="t8"></a>
+### T8 — move the request-body parse from `org.json` to Jackson
+
+**Why it is a ticket and not a 5c change.** The port reproduces the incumbent parser because 5-E4
+[row 22](#the-recorded-rows) measured it deciding **five** wire outcomes, not just an error string. Changing
+it inside the migration would ship an unrelated behaviour change under cover of a port, on a path where the
+symptom (a plausible `400 bad_request`) points nowhere near the cause. After 5d-1 it can be done on its own
+merits, with its own divergence row and its own release note.
+
+**What changes on the wire**, all measured against live Restlet:
+
+| Request body | Today | After T8 |
+|---|---|---|
+| `{'name':'x','scopes':['read']}` (single-quoted) | **201** | 400 |
+| `{name:"x",scopes:["read"]}` (unquoted keys) | **201** | 400 |
+| `{"name":"x","scopes":["read"],}` (trailing comma) | **201** | 400 |
+| `{"name":"a","name":"b"}` (duplicate keys) | **400** `Duplicate key "name" at 33 [character 34 line 1]` | **201**, last value wins |
+| `[1,2]`, `hello` | 400 `A JSONObject text must begin with '{' at 1 [character 2 line 1]` | 400, a Jackson message |
+| key order **within** the parsed body | not preserved — `JSONObject` is `HashMap`-backed | preserved (Jackson → `LinkedHashMap`) |
+
+⇒ **the first three are the reason this needs a release note.** A resource server that has been sending
+sloppy-but-accepted JSON since 13.0.0 stops working at upgrade, and nothing in the response suggests the
+parser changed. The duplicate-key row moves the other way — silently accepting what is now rejected — which
+is arguably worse and argues for keeping *that* check explicitly rather than inheriting whatever Jackson does.
+
+The last row is **harmless here and worth knowing anyway** (found at S5, by an assertion that wrongly assumed
+order): this endpoint never echoes the request body — a create/update answers `_id` and the policy URI, and
+a read is built from the *store's* description — so no response's key order comes from the parse. A future
+handler that does echo a parsed body would silently change its field order the day T8 lands.
+
+**Shape of the change** (small, and the tests already exist):
+
+- replace `new JSONObject(json).toString()` → Jackson with a single `JsonValueBuilder.toJsonValue(json)`;
+- ⚠ catch **`JsonException`**, which is *unchecked* — left uncaught it reaches
+  `ResourceSetRegistrationHandler.guarded` and becomes row 9's 400 `server_error` instead of the
+  400 `bad_request` this path owes;
+- decide explicitly whether duplicate keys stay rejected; if yes, that check has to be written, not inherited;
+- update **5-E4 row 22** and the two unit rows (`theBodyParserIsLenientTheWayOrgJsonIsLenient`,
+  `aDuplicateKeyIsRejectedWithOrgJsonsMessageWhereJacksonWouldTakeTheLastOne`) — they are the executable
+  statement of what T8 changes, so they should be *edited with the ticket*, never relaxed to make it pass;
+- ⚠ **keep** the `org.json:json` dependency in `openam-oauth2/pom.xml`. An earlier draft of this line said to
+  drop it "if nothing else needs it", which reads as an invitation and is wrong: **five other main classes in
+  this module import `org.json`** — `RealmOAuth2ProviderSettings`, `ClaimsParameterValidator`,
+  `StatefulTokenStore`, `OpenAMScopeValidator`, `TokenRevocationResource` — and none of them dies at 5d-2.
+  (A sixth, `ResourceSetRegistrationEndpoint`, does.) Removing the declaration would not even fail the build,
+  because the module resolves `org.json` transitively through `openam-core`; it would silently restore exactly
+  the fragility the `<dependency>` comment was added to prevent. T8 removes **a use**, not the dependency.
+
+**Upside:** one JSON library on the path instead of two, one parse instead of two, and the project's normal
+`JsonValueBuilder` idiom. The cost is entirely in the compatibility break above, which is why it wants a
+deliberate decision rather than a port's side effect.
 
 ---
 
@@ -1371,17 +1766,36 @@ Raised by the port, deliberately **not** fixed in it — same treatment as
    ⚠ Unlike S1/S2 this class is on a live route, so the gate needed a **rebuilt image** — the 5-E4 container
    does not exercise the change.
 6. **5c-2 S4** — `ResourceSetRegistrationHandler`, business logic ported verbatim.
-7. **5c-2 S5** — port `ResourceSetRegistrationEndpointTest`; add the conditional and ETag rows.
-8. **5c-2 S6** — `ResourceSetRouteCompositionIT`, all 13 rows; mutation-check three of them (rows 8, 10 and 13).
-9. **5c-2 S7** — full gates; commit.
-10. Update [plan.md](plan.md)'s phase table row 5c, the expected-divergence table, and the post-migration
-    ticket table (T5–T7).
-11. **Hand off to 5d-1 explicitly** — the items 5c records but cannot close:
+7. ~~**5c-2 S5** — port `ResourceSetRegistrationEndpointTest`; add the conditional and ETag rows.~~
+   **done 2026-07-29** — **four** rows, not six: two of the legacy cases were already held in full by S4 and
+   the rest only in part. 36 unit rows, `openam-oauth2` **1274** surefire, mutation-checked five ways
+   ([as built](#as-built-s5)). The conditional and ETag rows were already in place from S4.
+8. ~~**5c-2 S6** — `ResourceSetRouteCompositionIT`, all 13 rows; mutation-check three of them (rows 8, 10 and
+   13).~~ **done 2026-07-29** — all 13, the three mutations each turning exactly their own row red
+   ([as built](#as-built-s6)). ⚠ Row 4 had to depart from the plan's wording: `PATCH` is not an unmapped verb
+   ([5-E4 correction 1](#the-recorded-rows)), so the row uses `PROPFIND`.
+9. ~~**5c-2 S7** — full gates; commit.~~ **gates done 2026-07-30** — all seven green, `openam-e2e:5c2`
+   `oauth2 uma` = **99 passed** in one pass ([as built](#as-built-s7)). Commit still outstanding.
+10. ~~Update [plan.md](plan.md)'s phase table row 5c, the expected-divergence table, and the post-migration
+    ticket table (T5–T7).~~ **done 2026-07-30** — row 5c carries the 5c-1 and 5c-2 as-built (5c-2 marked
+    **not yet committed**); tickets **T5–T8** propagated, T8 included because it was raised after this item was
+    written; and **two** divergence rows of 5c-2's own — 12 ([D3](#d3)'s throwable-less `else`, the only
+    behavioural one) and 13 (response-body key order) — plus a **Phase-5-wide row 11** the review turned up.
+    The table also states *why* the list is short, so a later reader does not mistake it for an unfinished job:
+    everything else 5c was tempted to improve is reproduced deliberately, and `PATCH` + the `Allow` header are
+    5d-1's verb-mapping decisions, not 5c divergences. ⚠ **All three rows were missed on the first pass** and
+    found by reviewing the finished change against the incumbent — see [the review](#s7-review-findings).
+11. ~~**Hand off to 5d-1 explicitly** — the items 5c records but cannot close:
     [R-5c.12](#risk-register-extends-the-phase-5-register) (`OAuth2RouterIT` must drive the real provider over
     all three URL forms), [C3](#framework-items-openam-http-is-ours) (`HEAD`, decided once for all 15
     endpoints), 5-E4 rows 15/17, and the two the gate itself turned up — **`PATCH`** and the **vanishing
     `Allow` header** on a 405. The as-built's [Handed to 5d-1](#handed-to-5d-1) list is authoritative and has
-    all four; put them there, not only here, because the as-built is what the flip reads.
+    all four; put them there, not only here, because the as-built is what the flip reads.~~
+    **done 2026-07-30** — [Handed to 5d-1](#handed-to-5d-1) holds all four and was already authoritative;
+    [plan.md](plan.md)'s 5d-1 row said *"three items"* and listed neither `PATCH` nor the `Allow` header, so it
+    now says **five** (the nested router and R-5c.12 are counted separately there) and carries both, each with
+    the reason it cannot wait: `PATCH` is not Phase-5-wide but `Allow` is, and a body byte-diff at the flip
+    will show **nothing** for either.
 
 ---
 
@@ -1403,7 +1817,7 @@ carries `org/openidentityplatform/openam/oauth2/http/` compiled from this workin
 
 | File | Change |
 |---|---|
-| `e2e/oauth2/oauth2-endpoints-test.spec.mjs` | new describe `/oauth2/resource_set contract lock (5-E4, live Restlet)` — **20 rows** (17 items; item 1 splits into 1/1b, item 2 into 2a/2b, item 3 into 3/3b); `ADMIN_USER`/`ADMIN_PASS` imported for row 10's second resource owner, and `node:http` for the one request Playwright cannot express |
+| `e2e/oauth2/oauth2-endpoints-test.spec.mjs` | new describe `/oauth2/resource_set contract lock (5-E4, live Restlet)` — **20 rows** (17 items; item 1 splits into 1/1b, item 2 into 2a/2b, item 3 into 3/3b), **25 after S4 added rows 18–22**; `ADMIN_USER`/`ADMIN_PASS` imported for row 10's second resource owner, and `node:http` for the one request Playwright cannot express |
 
 `npx playwright test oauth2 uma` — **94 passed**: oauth2 **83** (63 before) and uma **11**, unchanged. Run in
 one pass on a freshly built container; see the note below on why that matters. No existing row edited, no
@@ -1439,6 +1853,60 @@ lifecycle rows that are deliberately shape-only.
 | 15 | `HEAD` on the item and both collection forms | **200**, `application/json`, **no `Content-Length`**, headers identical to the same URL's `GET`; the item form carries the `ETag`, the collection forms do not. `HEAD` also honours `If-None-Match` → 304. ⚠ *Body* emptiness is **not** recorded — an HTTP client discards a HEAD entity whatever the server sent, so it is unobservable and no row claims it |
 | 16 | `POST` to `/resource_set/{rsid}` | **201** with a **new** `_id`; the rsid in the URL is ignored |
 | 17 | `GET /oauth2/resource_set/a/b` | **404 CREST** `{"code":404,"reason":"Not Found","message":"No mapping organization found for organization identifier: /resource_set"}` — no `error` field. Identical with a valid bearer, a bogus bearer and no bearer, so it is raised **before** authentication |
+| 18 | `If-None-Match` on `PUT`/`DELETE` | matching → **412** `precondition_failed` (never 304, and the write does not happen); non-matching → falls through to row 4's **400**. ⚠ `If-Match: <current>` **plus** `If-None-Match: <current>` is also **412** — a winning `If-Match` does not stop the second header being evaluated |
+| 19 | `If-Match` on a `POST` | evaluated like every other verb: `*` → **201**; a stale tag → **412**, at the collection and item URLs alike. A matching tag at the item URL → **201** with a new `_id` |
+| 20 | the same headers at the **collection** URL, whose representation has no tag | stale `If-Match` → **412 carrying the whole id array**, `application/json`, **no `ETag`**; `If-None-Match: *` → **304** (the *opposite* of row 3's item answer, and the only place Restlet's `noneMatch` wildcard is live); `If-None-Match: <concrete>` → 200; `POST` + `If-None-Match: *` → **412**, so the RFC 7232 create-if-absent idiom is refused |
+| 21 | `If-None-Match: "<strong form of the weak current tag>"` | **200 on a `GET`, 412 on a `PUT`** — the `checkWeakness` flag is `GET‖HEAD` and genuinely varies. `If-None-Match: W/*` is **not** the wildcard (a `POST` carrying it → 201) |
+| 22 | request bodies that are not strict JSON | the parser is **`org.json`, and it is lenient**: single-quoted strings, unquoted keys and a trailing comma all **201**. Duplicate keys are **400** `Duplicate key "name" at 33 [character 34 line 1]`; a top-level array and plain text are **400** with row 12's message. ⚠ Must be measured with a **raw client** — see below |
+
+<a id="as-built-5-e4-rows-18-21"></a>
+#### ⚠ Rows 18–22, added 2026-07-29 while planning and building 5c-2 S4
+
+Not part of the original gate. D6 assigned conditional evaluation **per verb** — `If-Match` to
+`GET`/`PUT`/`DELETE`, `If-None-Match` to `GET` — and S4 stopped to check that against the oracle before
+building a handler around it, because `doConditionalHandle` is verb-independent in the bytecode and the plan's
+rules were not. **Every one of rows 18–21 contradicts the per-verb model**, and row 21 contradicts a
+claim [the S1 review itself introduced](#-corrected-in-review-same-day--two-divergences-both-from-reading-the-parser-and-not-the-comparator)
+(that `GET`/`HEAD` are the only verbs reaching the `noneMatch` comparison, so its weakness flag is constant).
+
+**Row 22 arrived later and from a different question** — a review challenge to the handler's body parsing
+(*"why not simply use Jackson?"*), which turned out to be a wire contract on five inputs rather than a style
+choice. See the [S4 as-built](#as-built-s4). ⚠ It is also the row that exposed the Playwright body-encoding
+trap now recorded in [test-infrastructure](../../test-infrastructure.md#gotchas-that-have-actually-bitten):
+written with the usual `request.post`, it asserted the **test client's** behaviour and read as a clean 400
+for three requests the server really answers 201 to.
+
+Measured against `openam-e2e:5c1` — the image the 5c-1 gate built from this tree, with Restlet still serving
+`/oauth2`, so it is the same oracle `:5e4` was. `npx playwright test oauth2 uma` on a **freshly recreated**
+container: **99 passed** (94 + these 5), no existing row edited.
+
+⚠ **Recreating the container was necessary, and the failure that forced it is the one the
+[fresh-container note](#run-this-gate-against-a-fresh-container) predicts.** After ~40 resource sets had
+accumulated, `warmUpResourceSetStore` began failing every create with
+`400 {"error":"server_error","error_description":"Internal Server Error (500) - …"}` — which is incidentally a
+third independent sighting of the row-9 rule below. `docker restart` does **not** clear it (the orphaned
+policies are in the store, not in memory); recreating both containers from the existing image does, and costs
+~3 minutes because no Maven or `docker build` is involved. The recipe is
+[`.github/workflows/build.yml`'s `build-docker` leg](../../test-infrastructure.md#running-layer-4-locally-against-a-war-built-from-your-tree)
+run against an image that already exists.
+
+<a id="the-runtime-exception-rule"></a>
+#### ⚠ Row 9's real mechanism: **any** runtime exception is a 400 `server_error`
+
+Traced at S4, because the port has to reproduce it deliberately. Row 9's
+`Internal Server Error (500) - The server encountered an unexpected condition which prevented it from
+fulfilling the request` is not a message this endpoint produces. `store.read(null, owner)` throws a raw
+runtime exception, Restlet wraps it as `ResourceException(Status.SERVER_ERROR_INTERNAL, cause)` — whose
+`getMessage()` formats as `"<reason> (<code>) - <description>"` from the **status**, since no description was
+given — and `ExceptionHandler.toOAuth2RestletException`'s `else` then does `new ServerException(throwable)`,
+i.e. **400 `server_error`** with that string ([finding 4](#4--the-512-throw-never-reaches-the-wire-as-512)).
+
+⇒ **on this endpoint, every non-`OAuth2Exception` throwable is a 400 `server_error`**, and the description is
+the generic 500 sentence unless the throw site supplied one (D4's two `ResourceException(512, …)` throws are
+the case that does). `AbstractOAuth2HttpJsonEndpoint` deliberately lets an unexpected throwable fall to the
+framework's CREST 500, so the CHF handler must catch `RuntimeException` itself and rethrow
+`ServerException(<that exact sentence>)`. **Decided 2026-07-29: reproduce.** Row 9 is already in the oracle,
+the alternative costs an e2e edit plus a divergence row at 5d-1, and the guard is six lines.
 
 ### `If-Match` parsing — the actual specification for [D6](#d6)'s helper
 

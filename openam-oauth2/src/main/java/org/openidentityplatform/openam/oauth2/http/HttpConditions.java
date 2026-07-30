@@ -40,9 +40,11 @@ import org.forgerock.http.protocol.Request;
  * would be an unreviewable behaviour change:
  * <ul>
  * <li><b>{@code If-Match} ignores weakness</b> ({@code tag.equals(actual, false)}), so {@code W/"x"} and
- *     {@code "x"} are the same tag -- but <b>{@code If-None-Match} does not</b>: Restlet compares it with
- *     {@code checkWeakness = GET || HEAD}, and GET/HEAD are the only verbs that consult it. The endpoint's
- *     own tag is weak, so only the {@code W/} form of it can produce a 304.</li>
+ *     {@code "x"} are the same tag -- but <b>{@code If-None-Match} compares it on {@code GET}/{@code HEAD}
+ *     and not on any other verb</b>, because Restlet passes {@code checkWeakness = GET || HEAD}. The
+ *     endpoint's own tag is weak, so the strong form of it answers <b>200 on a {@code GET} and 412 on a
+ *     {@code PUT}</b> -- measured, 5-E4 row 21. That is the whole reason
+ *     {@link #noneMatches(String, boolean)} takes the flag rather than assuming it.</li>
  * <li><b>{@code *} counts only as the first parsed element, and only in its strong form.</b> The wildcard is
  *     {@code getMatch().get(0).equals(Tag.ALL)} -- one positional test, with weakness checked. Elsewhere in
  *     the list a {@code *} is just a tag named {@code *}, which no real tag is called, so
@@ -55,9 +57,18 @@ import org.forgerock.http.protocol.Request;
  *     can never be expressed -- and never matches.</li>
  * <li><b>{@code *} does not satisfy {@code If-None-Match}</b> against a real tag. RFC 7232 3.2 asks for 304
  *     when a representation exists; Restlet reaches its wildcard test only when the current tag is
- *     {@code null}, so it answers 200, measured.</li>
+ *     {@code null}, so it answers 200, measured. ⚠ The tag-less case is not theoretical -- it is this
+ *     endpoint's <em>collection</em> URL, where the very same header answers <b>304</b> (row 20).</li>
  * </ul>
- * One deliberate divergence: {@code If-Match: "} (a lone quote) makes Restlet's {@code Tag.parse} do
+ *
+ * <h2>⚠ The caller decides nothing about <em>which</em> verbs are conditional</h2>
+ * Restlet's {@code doConditionalHandle} runs before the annotated method <b>whatever the verb is</b>, so both
+ * headers are evaluated on {@code POST}, {@code PUT} and {@code DELETE} exactly as on {@code GET} -- and both
+ * are evaluated on the same request, so a winning {@code If-Match} does not stop {@code If-None-Match} failing
+ * it (5-E4 rows 18-20). Only the <em>consequence</em> of a match differs: 304 on {@code GET}/{@code HEAD},
+ * 412 everywhere else. A caller that attaches these checks per verb reproduces none of that.
+ *
+ * <p>One deliberate divergence: {@code If-Match: "} (a lone quote) makes Restlet's {@code Tag.parse} do
  * {@code substring(1, 0)} and throw, which escapes its reader. We drop it as invalid.
  */
 public final class HttpConditions {
@@ -95,7 +106,8 @@ public final class HttpConditions {
             return false;
         }
         for (Tag tag : ifMatch) {
-            if (tag.name.equals(current.name)) {
+            // Restlet's If-Match loop passes checkWeakness = false, unconditionally.
+            if (tag.matches(current, false)) {
                 return true;
             }
         }
@@ -103,19 +115,34 @@ public final class HttpConditions {
     }
 
     /**
-     * Whether {@code If-None-Match} is satisfied by the current tag, i.e. whether to answer 304.
-     * <p>
-     * Weakness <em>is</em> compared here, unlike {@link #matches}: Restlet passes
-     * {@code checkWeakness = GET || HEAD} and only GET/HEAD ever ask. The wildcard test it does have is
-     * reached only when the current tag is {@code null}.
+     * Whether the request carries an {@code If-None-Match} that <em>parsed</em>. Same rule as
+     * {@link #hasIfMatch()}, and a caller on a write verb needs it: "no {@code If-None-Match}" and "one that
+     * did not match" are different requests, only the first of which was never conditional.
      */
-    public boolean noneMatches(String currentEtag) {
+    public boolean hasIfNoneMatch() {
+        return !ifNoneMatch.isEmpty();
+    }
+
+    /**
+     * Whether {@code If-None-Match} is satisfied by the current tag -- a 304 on a {@code GET}, a 412 on
+     * anything else.
+     * <p>
+     * The wildcard test Restlet has here is reached <em>only</em> when the current tag is {@code null}, which
+     * is why {@code *} loses against a real tag and wins against the tag-less collection representation.
+     *
+     * @param checkWeakness Restlet's second comparison argument, literally
+     *     {@code GET.equals(method) || HEAD.equals(method)}. It has no default on purpose: 5-E4 row 21
+     *     measured the strong form of this endpoint's weak tag answering <b>200 on a {@code GET} and 412 on a
+     *     {@code PUT}</b>, so a caller that does not say which verb it is cannot be given a right answer.
+     *     {@link #matches} takes no such parameter because {@code If-Match} passes {@code false} always.
+     */
+    public boolean noneMatches(String currentEtag, boolean checkWeakness) {
         Tag current = Tag.parse(currentEtag);
         if (current == null) {
             return isAll(ifNoneMatch);
         }
         for (Tag tag : ifNoneMatch) {
-            if (tag.equals(current)) {
+            if (tag.matches(current, checkWeakness)) {
                 return true;
             }
         }
@@ -176,14 +203,15 @@ public final class HttpConditions {
             return !weak && "*".equals(name);
         }
 
+        /** {@code Tag.equals(Object other, boolean checkWeakness)} -- names always, weakness only if asked. */
+        private boolean matches(Tag that, boolean checkWeakness) {
+            return name.equals(that.name) && (!checkWeakness || weak == that.weak);
+        }
+
         /** {@code Tag.equals(Object)}, which is {@code equals(o, checkWeakness = true)}. */
         @Override
         public boolean equals(Object object) {
-            if (!(object instanceof Tag)) {
-                return false;
-            }
-            Tag that = (Tag) object;
-            return weak == that.weak && name.equals(that.name);
+            return object instanceof Tag && matches((Tag) object, true);
         }
 
         @Override

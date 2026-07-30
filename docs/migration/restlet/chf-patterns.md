@@ -879,6 +879,23 @@ against a live container and all load-bearing for any reimplementation
 | `If-None-Match: *` | **200.** RFC 7232 §3.2 asks for 304 when a representation exists; Restlet does not do it |
 | `If-Match` on a **`GET`** | `*` → 200; a stale tag → **412 carrying the full representation and the `ETag`** |
 
+⚠ **Four more 5-E4 rows (18–21), six behaviours, measured 2026-07-29 while planning the CHF handler.**
+Everything above
+is the *item* URL and the two verbs the plan expected to be conditional; none of that is where the mechanism
+actually stops:
+
+| Request | Wire behaviour |
+|---|---|
+| `If-None-Match` matching, on **`PUT`/`DELETE`** | **412** — never a 304, which only `GET`/`HEAD` can answer. A non-matching one falls through to whatever the verb does with a missing `If-Match` |
+| a **winning `If-Match` plus a matching `If-None-Match`** | **412.** Both headers are evaluated, in that order; the first does not short-circuit the second |
+| `If-Match` on a **`POST`** | evaluated like any other verb: `*` → the create proceeds, a stale tag → **412** |
+| the same headers against a **tag-less representation** (here: the collection URL) | the answers invert. Stale `If-Match` → **412 carrying the whole body**; `If-None-Match: *` → **304**, where an item answers 200; `If-None-Match: <concrete>` → 200 |
+| `If-None-Match: "<strong form of a weak tag>"` | **200 on a `GET`, 412 on a `PUT`** — the weakness flag is `GET‖HEAD`, so it genuinely varies by verb |
+| `If-None-Match: W/*` | not the wildcard, exactly as `If-Match: W/*` is not |
+
+⇒ **the precondition pass is one verb-independent gate**, and a reimplementation that attaches conditional
+rules per verb gets six of these wrong. `HEAD` is `GET` here, so it needs no separate rule.
+
 ⚠ The unparseable row is the trap: a garbage `If-Match` takes the *no-header* path, not the *mismatch* path,
 so an implementation that reports "present but unmatched" for garbage answers 412 where Restlet answers
 whatever the endpoint does with a missing header.
@@ -955,10 +972,15 @@ for (Tag t : getNoneMatch())        matched = t.equals(actualTag, GET.equals(m) 
 - ⚠ **The wildcard is strong-only.** `Tag.ALL` is `Tag.parse("*")` (weak = false) and `Tag.equals(Object)` is
   `equals(o, /* checkWeakness */ true)`, so `If-Match: W/*` fails the test and then fails the name loop too.
 - ⚠ **`If-None-Match` compares weakness; `If-Match` does not.** The second argument is
-  `GET.equals(method) || HEAD.equals(method)` — and GET/HEAD are the only verbs that reach the `noneMatch`
-  branch at all, so in practice it is **always `true`**. `/oauth2/resource_set` answers a *weak* `ETag`, so
-  `If-None-Match: "<name>"` (the strong form) gets **200 and the full body**, not a 304. Only the verbatim
+  `GET.equals(method) || HEAD.equals(method)`. `/oauth2/resource_set` answers a *weak* `ETag`, so on a `GET`
+  `If-None-Match: "<name>"` (the strong form) gets **200 and the full body**, not a 304; only the verbatim
   `W/"<name>"` produces the 304 that [§21a](#21a)'s table records.
+  ⚠ **This bullet claimed until 2026-07-29 that GET/HEAD are the only verbs reaching the `noneMatch` branch,
+  so that the flag is "in practice always `true`". Both halves are wrong, and they were measured wrong**
+  ([phase-5c row 18](phase-5c.md#as-built-5-e4-rows-18-21), row 21): `doConditionalHandle` guards **every**
+  verb, so a `PUT`/`DELETE`/`POST` reaches the comparison too — with the flag `false`, i.e. **names only**. So
+  the strong form of this endpoint's weak tag is a **200 on a `GET` and a 412 on a `PUT`**, and any
+  reimplementation needs the flag as a *parameter*, not a constant.
 - The `noneMatch` wildcard is `Tag.ALL.equals(getNoneMatch().get(0))` reached **only when `actualTag` is
   `null`** — which is the mechanism behind the measured "`If-None-Match: *` answers 200": with a real tag
   present, that branch is unreachable and `*` falls through to the name comparison.

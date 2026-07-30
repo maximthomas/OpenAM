@@ -142,6 +142,21 @@ docker build --build-arg VERSION=<project version> -t openam-e2e:<tag> ctx/
 lines are globs (`OpenAM-*.war`, `*.zip`), so a `target/` still holding a previous version's artifacts silently
 copies **both** and the image gets whichever the glob expands to first.
 
+**Rebuild the two distribution zips, not only the WAR.** `SSOAdminTools.zip` bundles the product jars, so a
+module change reaches the image by two paths and a stale zip puts mixed provenance behind the gate. One
+invocation covers all three:
+`mvn -o install -DskipTests -Dmaven.javadoc.skip=true -Dmaven.source.skip=true -am -pl openam-server,openam-distribution/openam-distribution-ssoadmintools,openam-distribution/openam-distribution-ssoconfiguratortools`.
+
+**To prove what the *running* container actually deployed, checksum the jar — do not read the banner.** The
+build-number plugin stamps the branch's **merge base**, so the login banner says nothing about which classes
+are in `WEB-INF/lib`. And the image ships **neither `jar` nor `unzip`**, so listing the archive in place fails.
+What works:
+
+```bash
+docker cp openam-idp:/usr/local/tomcat/webapps/openam/WEB-INF/lib/<module>-<version>.jar /tmp/deployed.jar
+md5sum /tmp/deployed.jar <module>/target/<module>-<version>.jar        # must match
+```
+
 ### Two build hazards that cost a cycle each (2026-07-28)
 
 - **Never `-T1C` this reactor.** `transform-jakarta/jato-shaded` consumes the root `jato-shaded` artifact
@@ -240,10 +255,101 @@ Recorded so they're not rediscovered:
 - `openam-oauth2/src/test/.../OpenAMClientRegistrationJwksUriIntegrationTest.java` is named "Integration" but
   ends in `Test`, so it is a **surefire unit test**. Naming here is not a reliable signal of layer.
 
+<a id="unused-imports-are-not-caught-by-any-gate"></a>
+### Unused imports are not caught by any gate
+
+`javac` does not warn on them, the build has no checkstyle/PMD step, and `javadoc:javadoc` ignores them — so an
+unused import survives a full green `verify` **and** the doclint gate indefinitely. Reviewing for them by eye is
+unreliable (it produced a confidently wrong "none here" during the 5c-2 review). Decide it with a script:
+
+```bash
+find <module>/src -path '*org/openidentityplatform/*' -name '*.java' | sort | while read -r f; do
+  body=$(grep -v '^import ' "$f")
+  out=$(grep '^import ' "$f" | sed 's/^import static //; s/^import //; s/;$//' | while read -r imp; do
+    sym=${imp##*.}; [ "$sym" = "*" ] && continue
+    grep -qw "$sym" <<<"$body" || echo "   UNUSED: $imp"
+  done)
+  [ -n "$out" ] && { echo "== $f"; echo "$out"; }
+done
+```
+
+`grep -w` on the simple name is what makes it usable: it will not match `JsonValue` inside `JsonValueBuilder`,
+so there are no false "used" verdicts from prefix collisions. Two caveats — it skips `import x.*` (no simple
+name to test), and a name that appears **only inside a comment or a javadoc `{@link}`** counts as used, which
+is the conservative direction. As of 2026-07-30 the `openam-oauth2` migration tree has three real hits, all
+pre-existing: `TokenRevocationHandler` (`ClientRegistration`), `TokenRevocationHandlerTest` (`JsonValue`).
+
+The same shape catches the other silent class of defect — **relative doc links from Java sources**. From
+`src/{main,test}/java/org/openidentityplatform/openam/<area>/<pkg>/` the repo root is **nine** `..`, not eight;
+miscount it and nothing fails. Resolve them instead of counting:
+
+```bash
+grep -rnoE '(\.\./)+docs/[^"< )]*' --include=*.java <module>/src | while IFS=: read -r f l link; do
+  echo "$f:$l -> $(cd "$(dirname "$f")" && readlink -m "$link")"
+done      # then eyeball for any path that is not under the repo root
+```
+
+And the same for **markdown-to-markdown links**, which additionally have anchors to get wrong:
+
+```bash
+for d in docs/migration/restlet/*.md; do
+  grep -oE '\]\([^)#][^)]*\.md(#[^)]*)?\)' "$d" | sed 's/^](//; s/)$//' | sort -u | while read -r link; do
+    file=${link%%#*}; anchor=${link#*#}
+    target=$(cd "$(dirname "$d")" && readlink -m "$file")
+    if [ ! -f "$target" ]; then echo "MISSING FILE  $d -> $link"
+    elif [ "$anchor" != "$link" ]; then
+      slugs=$( { grep -oP '<a id="\K[^"]+' "$target"
+                 grep -oP '^#{1,6} \K.*' "$target" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9 -]//g; s/ /-/g'; } )
+      grep -qxF -- "$anchor" <<<"$slugs" || echo "MISSING ANCHOR $d -> $link"
+    fi
+  done
+done
+```
+
+⚠ **The `--` in that `grep -qxF --` is load-bearing, and leaving it out makes the script lie rather than fail.**
+GitHub slugs a heading that starts with an emoji to a **leading hyphen** (`##### ⚠ Corrected in review…` →
+`#-corrected-in-review…`), and this tree uses that form. Without `--`, `grep` parses such an anchor as a bundle
+of short options and the test misreports — the first run of this sweep produced one false "MISSING ANCHOR"
+against a link that was perfectly correct, which cost a round of chasing a non-bug. Two rules follow: pass `--`
+before any variable that can start with `-`, and when a sweep reports a failure, **reproduce it by hand once**
+before editing anything.
+
+As of 2026-07-30 the real hits are four citations of one stale anchor: the
+`Parity-preserved security debts` heading in `phase-5-oauth2.md` gained a trailing `(finding #7)`, so its slug
+now ends `-finding-7`, while `plan.md` (×2) and `phase-5b-2.md` (×2) still link to the older form.
+
 ## Gotchas that have actually bitten
 
+- ⚠ **Playwright does not send a string `data` verbatim when the request carries a JSON `Content-Type`**
+  (measured 2026-07-29). The same single-quoted body — valid to a lenient parser, invalid to a strict one —
+  answers **201** sent as `text/plain` and **400** sent as `application/json`, against one unchanged server.
+  The client evidently passes through what is already valid JSON and re-encodes what is not, so the server
+  never sees the bytes the test spelled out. ⇒ **any row that asserts how the server treats a deliberately
+  malformed or non-standard body must use a raw client** (`node:http`, as
+  `oauth2-endpoints-test.spec.mjs`'s `postWithoutContentType` and 5-E4 row 22 do). Written the natural way,
+  such a row asserts Playwright's behaviour while looking exactly like a server assertion: three rows read as
+  a clean `400 bad_request` for requests the server actually answers **201** to, and that reading nearly
+  became a decision to reimplement the endpoint's parser.
+- ⚠ **Which surefire report is the fresh one depends on how you invoked the run.** A full `mvn test` rewrites
+  `target/surefire-reports/TEST-TestSuite.xml` (TestNG's whole-suite report). A `mvn test -Dtest=SomeClass`
+  run does **not** — it leaves that file untouched at its previous contents and writes only
+  `target/surefire-reports/junitreports/TEST-<fqcn>.xml`. Read the wrong one after a focused run and you get
+  the previous full run's counts, which look plausible and are stale by hours; this is the same trap as
+  leftover reports from another branch, one directory up. ⇒ **check the mtime**, and for mutation checking —
+  where the whole point is to see the count go from green to red — read the per-class file under
+  `junitreports/`. Also note the attribute order in those files: `<testcase classname="…" name="…">`, so a
+  regex anchored on `<testcase name=` matches nothing and silently reports zero failures.
 - **`mvn test` skips `*IT.java`.** Failsafe is bound at the root, so `verify` is the only goal that runs
   layer 2. Inner-loop `mvn test` gives false confidence.
+- ⚠ **`-DskipTests=true` on a `verify` run skips failsafe too**, and the build still reports `BUILD SUCCESS`
+  having run **no** IT. Combined with the report-freshness trap above this reads as a clean green: the
+  `failsafe-reports` left in `target/` are from whenever an IT last actually ran, possibly another branch and
+  possibly with failures. To run one IT and no unit tests:
+  `mvn -o -pl <module> verify -Dtest=NoSuchUnitTest -Dit.test=<TheIT> -Dsurefire.failIfNoSpecifiedTests=false
+  -Dfailsafe.failIfNoSpecifiedTests=false`.
+- **In process, `Entity.getJson()` returns the object the producer set** — there is no serialization round
+  trip inside a CHF chain. A handler that does `setEntity(someSet)` gives the test back that `HashSet`, not the
+  `List` the wire would show, so assert membership (`containsExactly`) rather than equality against a literal.
 - **`mvn -pl <module>` cannot see cross-module callers.** Sibling modules resolve each other from `~/.m2`, so
   a single-module build happily compiles against a stale installed jar. `mvn -o -pl openam-oauth2 install
   -DskipTests` before `mvn -o -pl openam-oauth2,openam-uma test`, and run a whole-reactor build before
@@ -271,6 +377,17 @@ Recorded so they're not rediscovered:
   identity. **Authenticate in a disposable `apiRequest.newContext()` and dispose it**, as `e2e/xacml` does,
   so the shared fixture's jar stays empty and each request carries the identity in its header. See
   [the write-up](migration/restlet/phase-2-integration-tests.md#the-cookie-that-outranks-the-header).
+- ⚠ **An `e2e` container is good for ONE pass of `oauth2`/`uma`.** The shared fixtures rewrite the OAuth2
+  client unconditionally on every run, which mints a new UMA resource-type id and orphans the policies of
+  every resource set created before it. A second pass therefore dies in `warmUpResourceSetStore` with
+  `resource-set store never became ready: 400 server_error`, over
+  `EntitlementException: Resource Type <id> does not exist in realm /` (logged in **`debug/Entitlement`** and
+  `debug/UmaProvider`), and each further pass degrades. Run `npx playwright test oauth2 uma` — or CI's
+  unqualified `npx playwright test` — **once**, against a freshly built container, and rebuild before
+  believing any red that follows an earlier run. Corollary: the per-suite counts are not separable after the
+  fact, so capture the one pass's full output rather than `tail`-ing it and re-measuring. Full analysis, incl.
+  the underlying product defect, in
+  [phase-5c.md](migration/restlet/phase-5c.md#run-this-gate-against-a-fresh-container).
 
 ## Choosing a layer
 

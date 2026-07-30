@@ -40,6 +40,14 @@ public class HttpConditionsTest {
     /** The tag the endpoint would have computed; the exact wire form 5-E4 row 5 recorded. */
     private static final String CURRENT = "W/\"-1234567\"";
 
+    /**
+     * Restlet's {@code checkWeakness} argument to the {@code If-None-Match} comparison, which is literally
+     * {@code GET.equals(method) || HEAD.equals(method)}. 5-E4 row 21 measured it varying: the strong form of
+     * this endpoint's weak tag is a 200 on a {@code GET} and a 412 on a {@code PUT}.
+     */
+    private static final boolean ON_GET = true;
+    private static final boolean ON_WRITE = false;
+
     private static HttpConditions ifMatch(String headerValue) {
         Request request = new Request();
         request.getHeaders().put("If-Match", headerValue);
@@ -182,35 +190,61 @@ public class HttpConditionsTest {
 
     @Test
     public void ifNoneMatchOnTheCurrentTagMatches() {
-        assertThat(ifNoneMatch(CURRENT).noneMatches(CURRENT)).isTrue();
+        assertThat(ifNoneMatch(CURRENT).noneMatches(CURRENT, ON_GET)).isTrue();
     }
 
     @Test
     public void ifNoneMatchOnAStaleTagDoesNotMatch() {
-        assertThat(ifNoneMatch("W/\"stale\"").noneMatches(CURRENT)).isFalse();
+        assertThat(ifNoneMatch("W/\"stale\"").noneMatches(CURRENT, ON_GET)).isFalse();
     }
 
     @Test
     public void ifNoneMatchWildcardDoesNotMatch() {
         // Measured: If-None-Match: * answers 200, not the 304 RFC 7232 3.2 asks for.
-        assertThat(ifNoneMatch("*").noneMatches(CURRENT)).isFalse();
+        assertThat(ifNoneMatch("*").noneMatches(CURRENT, ON_GET)).isFalse();
     }
 
     /**
-     * The asymmetry, and the reason this helper cannot share one comparison. {@code If-Match} is compared
-     * with {@code Tag.equals(actual, false)}; {@code If-None-Match} with
-     * {@code Tag.equals(actual, GET || HEAD)}, and GET/HEAD are the only verbs that consult it -- so weakness
-     * <em>is</em> compared. This endpoint's tag is weak, so the strong form of it never produces a 304, and a
-     * client that stores the tag without its {@code W/} gets the full representation, not an empty 304.
+     * The asymmetry, and the reason this helper cannot share one comparison. {@code If-Match} is always
+     * compared with {@code Tag.equals(actual, false)}; {@code If-None-Match} with
+     * {@code Tag.equals(actual, GET || HEAD)}. This endpoint's tag is weak, so on a {@code GET} the strong
+     * form of it never produces a 304 and a client that stored the tag without its {@code W/} gets the full
+     * representation. <b>5-E4 row 21 measured exactly this</b> -- it was a bytecode-only claim until S4.
      */
     @Test
-    public void ifNoneMatchComparesWeaknessSoTheStrongFormOfTheWeakTagDoesNotMatch() {
-        assertThat(ifNoneMatch("\"-1234567\"").noneMatches(CURRENT)).isFalse();
+    public void onAGetIfNoneMatchComparesWeaknessSoTheStrongFormOfTheWeakTagDoesNotMatch() {
+        assertThat(ifNoneMatch("\"-1234567\"").noneMatches(CURRENT, ON_GET)).isFalse();
+    }
+
+    /**
+     * ...and the same header on any other verb compares <em>names only</em>, so it does match -- and a
+     * match there is a 412, not a 304 (row 18). The one argument carries that whole difference, which is why
+     * it has no default: a helper with one weakness rule cannot produce both wire answers.
+     */
+    @Test
+    public void onAWriteIfNoneMatchComparesNamesOnlySoTheStrongFormDoesMatch() {
+        assertThat(ifNoneMatch("\"-1234567\"").noneMatches(CURRENT, ON_WRITE)).isTrue();
+    }
+
+    @Test
+    public void theVerbatimWeakTagMatchesIfNoneMatchOnEitherVerb() {
+        assertThat(ifNoneMatch(CURRENT).noneMatches(CURRENT, ON_WRITE)).isTrue();
     }
 
     @Test
     public void anAbsentIfNoneMatchNeverMatches() {
-        assertThat(HttpConditions.of(new Request()).noneMatches(CURRENT)).isFalse();
+        assertThat(HttpConditions.of(new Request()).noneMatches(CURRENT, ON_GET)).isFalse();
+        assertThat(HttpConditions.of(new Request()).hasIfNoneMatch()).isFalse();
+    }
+
+    @Test
+    public void hasIfNoneMatchIsAlsoDidItParse() {
+        // The same rule hasIfMatch() follows -- and the caller needs it, because on a write "no If-None-Match"
+        // and "one that did not match" take different paths: the second falls through to the missing-If-Match
+        // rejection, the first was never conditional at all.
+        assertThat(ifNoneMatch(CURRENT).hasIfNoneMatch()).isTrue();
+        assertThat(ifNoneMatch("!!!").hasIfNoneMatch()).isFalse();
+        assertThat(ifNoneMatch("").hasIfNoneMatch()).isFalse();
     }
 
     // ---------------------------------------------------------- no current tag: only the wildcard is left
@@ -225,8 +259,18 @@ public class HttpConditionsTest {
     @Test
     public void withNoCurrentTagIfNoneMatchReachesItsWildcardTest() {
         // The one place Restlet's noneMatch wildcard is live -- which is why `*` loses against a real tag.
-        assertThat(ifNoneMatch("*").noneMatches(null)).isTrue();
-        assertThat(ifNoneMatch(CURRENT).noneMatches(null)).isFalse();
+        // ⚠ Not hypothetical: this IS the collection url, whose representation carries no tag. Measured on
+        // both sides by 5-E4 row 20 -- `GET /resource_set` with If-None-Match: * answers 304, and a POST
+        // carrying it answers 412, where the same header against an item answers 200.
+        assertThat(ifNoneMatch("*").noneMatches(null, ON_GET)).isTrue();
+        assertThat(ifNoneMatch("*").noneMatches(null, ON_WRITE)).isTrue();
+        assertThat(ifNoneMatch(CURRENT).noneMatches(null, ON_GET)).isFalse();
+    }
+
+    @Test
+    public void theWeakWildcardIsNotTheWildcardForIfNoneMatchEither() {
+        // Row 21's third case: a POST carrying `If-None-Match: W/*` creates, where `*` would have 412'd.
+        assertThat(ifNoneMatch("W/*").noneMatches(null, ON_WRITE)).isFalse();
     }
 
     // ---------------------------------------------------------- the two headers are independent
@@ -239,6 +283,22 @@ public class HttpConditionsTest {
 
     @Test
     public void ifMatchIsNotConsultedByNoneMatches() {
-        assertThat(ifMatch(CURRENT).noneMatches(CURRENT)).isFalse();
+        assertThat(ifMatch(CURRENT).noneMatches(CURRENT, ON_GET)).isFalse();
+    }
+
+    /**
+     * ⚠ Both headers on one request are evaluated independently and <em>both</em> can fail it -- a winning
+     * {@code If-Match} does not stop {@code If-None-Match} being consulted. Measured by 5-E4 row 18: a
+     * {@code PUT} carrying the current tag in both headers is a 412, not the update the client meant.
+     */
+    @Test
+    public void bothHeadersAreEvaluatedIndependently() {
+        Request request = new Request();
+        request.getHeaders().put("If-Match", CURRENT);
+        request.getHeaders().put("If-None-Match", CURRENT);
+        HttpConditions conditions = HttpConditions.of(request);
+
+        assertThat(conditions.matches(CURRENT)).isTrue();
+        assertThat(conditions.noneMatches(CURRENT, ON_WRITE)).isTrue();
     }
 }

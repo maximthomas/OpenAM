@@ -1363,7 +1363,10 @@ off-by-one doc link (5b-2); `TokenRevocationHandler` / `TokenRevocationHandlerTe
 `ClientRegistration` / `JsonValue` import (5a); and **four** citations — `plan.md` ×2, `phase-5b-2.md` ×2 —
 point at `phase-5-oauth2.md#parity-preserved-security-debts--reproduce-now-fix-later`, whose heading has since
 gained a trailing `(finding #7)`, so the live slug ends `-finding-7`. All seven are out of this commit's scope —
-noted here rather than folded into unrelated phases' diffs. The sweeps themselves are the reusable part, in
+noted here rather than folded into unrelated phases' diffs. **Update 2026-07-30:** the four stale anchors were
+fixed during [5d-1](phase-5d-1.md)'s review pass, whose own anchor sweep re-found them — the first sweep had
+dismissed them as tool false positives, because it collapsed whitespace where GitHub emits one hyphen per
+space, hiding every `—`-derived double-hyphen slug. The other three items stand. The sweeps themselves are the reusable part, in
 [test-infrastructure.md](../../test-infrastructure.md#unused-imports-are-not-caught-by-any-gate).
 
 ⚠ **One of the three findings above was my own tooling, not the docs.** The first run of the anchor sweep

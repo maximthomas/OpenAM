@@ -24,7 +24,7 @@ transport onto CHF. It is the last of the four Phase-3 sub-phases.
 >   `DocsAccessAuditFilter`). Modifying it is exactly the kind of shared-class edit 3a/3b treated as live —
 >   there **is** a live guard (the `/json` audit path + `AbstractHttpAccessAuditFilterTest` must stay green), and
 >   "behaviour-neutral for `/json`" is a claim to **verify**, not assert. It is verified below
->   ([finding 5](#5-the-chf-base-audits-3xx-as-failed-restlet-audits-it-as-success) / [D2](#d2--3xx-classified-as-success-fix-in-the-base)):
+>   ([finding 5](#5--the-chf-base-audits-3xx-as-failed-restlet-audits-it-as-success) / [D2](#d2--3xx-classified-as-success-fix-in-the-base)):
 >   authenticate emits only 200/401/4xx/5xx and docs only 200/404 — **no 3xx** — and the new hook paths are
 >   dormant for `/json` (detail hooks return null, context overloads delegate). So the base change is neutral
 >   for `/json` *today*, but it is a modification to live code, reviewed and guarded as such.

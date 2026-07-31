@@ -348,7 +348,7 @@ client-controlled, so this is **not** one of the bug paths [D3](decisions.md) se
 the narrow handler-level wrap of D7.
 
 ⚠ **The `azp` claim is trusted without verifying the id_token signature** (`:142-144`) — already on the
-[parity-preserved security-debt list](phase-5-oauth2.md#parity-preserved-security-debts--reproduce-now-fix-later).
+[parity-preserved security-debt list](phase-5-oauth2.md#parity-preserved-security-debts--reproduce-now-fix-later-finding-7).
 Reproduce verbatim; do not fix inside this migration.
 
 <a id="11--no-openam-http-change-is-required"></a>
@@ -839,7 +839,7 @@ that is what layer 4 already provides at a fraction of the cost.
 | **R-5b2.5** | **`?display=` on check-session** — a plausible-looking `page/` fallback would be a *widening* of a live 400 into a 200 | D5 is explicitly gated on 5-E3 row 7; do not implement before it is recorded |
 | **R-5b2.6** | **Device-code realm override** (finding 3): dropping the `realm` attribute write resolves the client in the URL's realm instead of the code's, breaking cross-realm device flows | `seedsDeviceCodeAttributes` asserts `realm` is written; 5-E3 could add a sub-realm row if the fixture allows |
 | **R-5b2.7** | **`no-store` creep** — adding `OAuth2NoCacheFilter` or a `noCache` call to any of these three would emit headers Restlet never sent (finding 8) | 5-E3 row 5 records their absence; the 5d-1 byte-diff catches it |
-| **R-5b2.8** | **Unverified `id_token_hint` signature** reproduced (finding 10). Correct for this migration, wrong forever | Named in `EndSessionHandlerTest`; already on the [security-debt list](phase-5-oauth2.md#parity-preserved-security-debts--reproduce-now-fix-later) |
+| **R-5b2.8** | **Unverified `id_token_hint` signature** reproduced (finding 10). Correct for this migration, wrong forever | Named in `EndSessionHandlerTest`; already on the [security-debt list](phase-5-oauth2.md#parity-preserved-security-debts--reproduce-now-fix-later-finding-7) |
 
 ---
 

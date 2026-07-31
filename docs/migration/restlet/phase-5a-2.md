@@ -14,7 +14,7 @@ annotation dispatcher).
 ## Context
 
 5a-2 ports the **nine mechanical JSON endpoints** — everything in [Group A](phase-5-oauth2.md#group-a--json-endpoints-5a)
-except `/access_token` (done in 5a-1). Each is the same [conversion-template](phase-5-oauth2.md#the-conversion-template)
+except `/access_token` (done in 5a-1). Each is the same [conversion-template](phase-5-oauth2.md#the-conversion-template-applies-to-every-5a5b5c-handler)
 shape: `extends ServerResource`, `@Inject` a transport-free service + `OAuth2RequestFactory` + the Restlet
 `ExceptionHandler`, one verb method doing `requestFactory.create(getRequest())` → one service call returning a
 `JsonValue` → wrap in a `Representation`, plus a uniform `doCatch(Throwable) → exceptionHandler.handle(...)`.

@@ -1123,7 +1123,7 @@ class's own javadoc argues against.
 ### Still open
 
 - **§E, the e2e contract lock.** Deferred, not cancelled, and it must be written **against live Restlet** —
-  its value is entirely that the oracle expires at 5d ([R-3c.8](#risks-extends-planmds-register), plan.md risk #20).
+  its value is entirely that the oracle expires at 5d ([R-3c.8](#risks-extends-planmds-register-shares-r-3c123-with-3c-1), plan.md risk #20).
 - **[D3](#d3--uncaught-bug-path-400-vs-500-diverge--keep-500) and [D6](#d6--isredirectable-unified-to-the-safe-union-fix) land silently at the 5d flip** (R-3c.11), as designed. Both are in
   [decisions.md](decisions.md) and belong in 5d's smoke matrix.
 - **Finding 4's two `IllegalArgumentException` branches** remain 5b's to port deliberately — including

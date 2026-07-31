@@ -424,6 +424,29 @@ they are distinct attachments (risk #8).
 
 ## Sub-phase 5d — the flip, split into 5d-1 (flip) + 5d-2 (delete)
 
+> **Detailed 5d-1 plan: [phase-5d-1.md](phase-5d-1.md)** (2026-07-30). It splits 5d-1 **four ways** — **5-E5**
+> (the last live-Restlet gate: realm styles, `HEAD`/`Allow` beyond `resource_set`, unrouted paths,
+> `X-HTTP-Method-Override`) → **5d-1a** (`openam-http` verb fixes, own commit) → **5d-1b** (the provider +
+> `OAuth2RouterIT`, services registered, **still unflipped**) → **5d-1c** (the one web.xml line) — and
+> **supersedes the bullets below** where they differ. Four corrections it makes, all verified against the tree:
+> **(a)** the hook re-sign of **D5-2 is already done** — `LoginHintHook` implements all four interfaces and
+> `OAuth2GuiceModule:236-242` binds both CHF Multibinders, so 5d-1 does no hook work; **(b)** the provider's
+> package is `org.openidentityplatform.openam.oauth2.http`, not `org.forgerock.openam.oauth2.rest` — the
+> new-class convention post-dates this section, and 4b already moved `UmaHttpRouteProvider` the same way;
+> **(c)** `Endpoints.from(Class)` resolves **all 15 handlers when the router is built**, and that router is the
+> whole CHF servlet's — so registering the provider in `META-INF/services` risks `/json`, not `/oauth2`, and
+> must be soaked in its own commit before the mapping moves; **(d)** the `resource_set` mounting is
+> [5c D9](phase-5c.md#d9)'s **nested** router, which this section's *"register all three CHF routes"* cannot
+> express. **A second review pass (same day) added two behavioural findings, both from reading the *Restlet*
+> side rather than the CHF side:** **(e)** ⚠ the flip gives `/oauth2` **host validation it has never had** —
+> `RealmContextFilter` rejects a `Host` outside the configured FQDN map with a 400, and `HostnameFilter` 400s
+> a host that is not a realm alias, so `/oauth2/realms/root/authorize` behind a proxy that does not rewrite
+> `Host` **works today and 400s after the flip** ([finding 16](phase-5d-1.md#16--the-flip-adds-host-validation-to-oauth2-that-restlet-never-did),
+> R-5d1.9 — no e2e row can see it, so it needs a release-note line); **(f)** the `/oauth2` Restlet router *is*
+> a realm router whose default route consumes any unmatched element as a sub-realm, which is why it never
+> emits a plain routing 404 and why a bad `?realm=` is a **404** there against CHF's **400**
+> ([finding 15](phase-5d-1.md#15--the-realm-layer-has-its-own-404-and-400-and-they-are-crest-shaped)).
+
 The flip is **two commits** (finding #3), because the original one-commit 5d bundled an *irreversible*
 ~40-class deletion with the mapping move — so a regression in the flip could only be backed out by resurrecting
 40 files. Split:

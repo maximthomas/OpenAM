@@ -1016,9 +1016,99 @@ Restlet `router.attach` table.
 - **Nested `UriRouterContext`s compose.** `ChfOAuth2Request.attributes()` merges the template variables of
   every `UriRouterContext` in the chain, so a variable bound by a child router is still visible to
   `getParameter`/`getAttribute`.
+- ⚠ **Restlet's `Router.attach` picks its matching mode *from the target*, not from the router's default —
+  so "is this route exact?" is a per-row question when transcribing a `router.attach` table.** Disassembled
+  from the fork 2026-07-30 and **corrected during 5d-1's review** (the first reading claimed the mode was
+  always `EQUALS`, which cannot be true: `/oauth2/realms/root/.well-known/openid-configuration` is green in
+  e2e today and an `EQUALS` `/realms/{realmId}` could never match it). What the bytecode actually says:
+  - `Router()` sets `defaultMatchingMode = 2` (`Template.MODE_EQUALS`), and `Template.match` uses
+    `Matcher.matches()` — a whole-string match — for that mode (`lookingAt()` is the `MODE_STARTS_WITH`
+    branch);
+  - but `attach(String, Restlet)` calls **`getMatchingMode(target)`**, which returns `1`
+    (`MODE_STARTS_WITH`) when the target is a `Router` **or** a `Directory`, **recurses through
+    `Filter.getNext()`** when the target is a `Filter`, and only otherwise falls back to the default.
+
+  ⇒ read each attachment's target before concluding anything. In `OAuth2RouterProvider`:
+  `/realms/{realmId}` targets a `RestletRealmRouter` ⇒ **STARTS_WITH**; every endpoint row targets
+  `OAuth2AccessAuditFilter → (endpoint filter) → RestletUtils.wrap(...)`, which is a **`Finder`**, so the
+  recursion bottoms out at a non-router ⇒ **EQUALS**. That is why `OAuth2RouterProvider:131-133` attaches
+  `resource_set` three times and no other endpoint twice, and why a flat CHF `EQUALS` table is the right
+  transcription for the other 14 — but the conclusion comes from the *targets*, not from the default mode.
 - ⚠ **`HEAD` is not routed.** `Endpoints.from` builds its verb map from `{DELETE, GET, POST, PUT}`
   (`Endpoints.java:60-63`), so `HEAD` takes the unmapped-verb branch and answers **405** — while Restlet's
   `ServerResource.doHandle(Method, Form, Representation)` rewrites `HEAD` → `GET` before annotation lookup and
   answers **200 with no body**. This affects **every** endpoint this migration ports that has a `@Get`, not
   just the one that found it; the fix is two lines
   ([phase-5c C3](phase-5c.md#framework-items-openam-http-is-ours)) and the decision belongs to 5d-1.
+
+## 23. Route-provider mechanics — when handlers are built, and what a no-match answers (Phase 5d-1)
+
+Read from `openam-http` and commons `http-framework/core` on 2026-07-30 while planning
+[Phase 5d-1](phase-5d-1.md). These are the facts a phase needs *before* it writes an `HttpRouteProvider`, and
+none of them is visible from the provider's own source.
+
+- ⚠ **`Endpoints.from(Class)` builds the endpoint instance when the route is built, not per request.**
+  `Endpoints.java:97-109` resolves through `InjectorHolder.getInstance(key)` at `from(...)` time, and
+  `HttpRouterProvider.get()` (`:46-56`) calls **every** registered `HttpRouteProvider` while assembling the
+  **single** `Router` behind the one `OpenAM` `HttpFrameworkServlet`. ⇒ a Guice failure constructing *any*
+  endpoint of *any* provider aborts the router that also serves `/json`, `/xui`'s REST calls, `/xacml`,
+  `/uma` and `/rest-sts`. The observable failure is *"the admin console is down"*, not *"my endpoint 500s"*,
+  and it happens as soon as the provider is on the classpath — a `META-INF/services` line is a production
+  change even when the servlet mapping has not moved.
+- **The lazy alternative is a trap.** `HttpRoute.newHttpRoute(mode, template, Provider<Handler>)` exists, but
+  `HttpRoute.getHandler():213-216` calls `handler.get()` **inside `handle`** — i.e. per request. Using it to
+  defer construction rebuilds the whole route subtree on every request. `GuiceHandler` (package-private,
+  keyed on a bound `Handler`) is the framework's own lazy-once idiom; there is no lazy-once form for an
+  annotated POJO.
+- **A router with no matching route answers a *bodiless* 404.** Commons `Router.handle`
+  (`routing/Router.java:96-104`) returns `newNotFound()` — status only, no entity. Any error filter that
+  guards on `Content-Type` before parsing (as `OAuth2ErrorFilter` and `XacmlXmlErrorFilter` do) therefore
+  passes it straight through. If an application's contract is "every error has a parseable body", the router
+  needs a `setDefaultRoute(...)`; a filter cannot fill in what has no type.
+- **`RealmContextFilter` never 404s an unknown path element.** `evaluate` (`:208-278`) greedily consumes
+  leading elements that resolve as realms or realm aliases, and **breaks out of the loop** on the first that
+  does not (`:239-248`, `catch (InternalServerErrorException ignored)`), leaving it in the remaining URI for
+  the router. A `?realm=` override **replaces** the resolved realm rather than appending, and a bad realm —
+  resolved or overridden — is a `BadRequestException` (**400**, `:255-257`/`:263-276`), never a 404. This is
+  why the legacy `/<prefix>/<subrealm>/<endpoint>` style keeps working without any route entry, and why
+  Restlet's *"No mapping organization found for organization identifier: …"* 404 has **no CHF counterpart**.
+  `filter:85-93` is what turns those exceptions into responses: `BadRequestException` → **400**, every other
+  `ResourceException` → **500**, both CREST-shaped.
+- ⚠ **The realm pair validates the request's `Host`, and a Restlet application may not have.** Two separate
+  checks, on two different branches, and neither runs on both:
+  - non-`realms/` (the `RealmContextFilter` default route): `coreWrapper.isValidFQDN(host)` (`:229-231`) →
+    **400** *"FQDN … is not valid."*. This is a literal membership test on the configured FQDN map
+    (`FqdnValidator:99-101`, `fqdnMap.values().contains(host.toLowerCase())`) — being a realm alias is not
+    enough;
+  - `realms/{realmId}`: `HostnameFilter` (`RealmRoutingFactory:123-131`) resolves `Realm.of(host)` and
+    answers **400** if it throws. No FQDN-map test. `RealmContextFilter` then short-circuits on the recursion
+    (`:225-227`, a `RealmContext` is already present), so the FQDN check **never** runs on this branch.
+
+  ⇒ moving a surface onto the CHF realm pair can start rejecting requests that a proxy or ingress used to
+  deliver under an unrewritten `Host`. `/json` has always behaved this way, so it reads as normal until the
+  first port of a surface that did not — and no e2e suite can see it, because the suite always uses the
+  container's own hostname.
+- **Realm-layer failures do not all share a status.** With the pair mounted, a routing failure can be a **404**
+  (`ChfRealmRouter:146-154`, unknown `realms/{realmId}` — message `Realm "x" not found`), a **400**
+  (bad `?realm=`, bad host, invalid FQDN), a **500** (an `IdRepo`/SSO failure inside the alias lookup) or a
+  **bodiless 404** (no route matched). An error filter keyed on status must map all four deliberately.
+- **`@Named("InvalidRealmNames")` is a realm-*creation* guard, not a router input.** It is read by
+  `OrganizationConfigManager:522` and the `/json` route builders; `RealmContextFilter` does not consult it.
+  Registering an endpoint segment stops an administrator creating a realm that would shadow the endpoint
+  through the greedy consumption above. Register the **first** path segment (`connect`, not
+  `connect/register`), or one realm name shadows several endpoints at once.
+- **There are two 405 producers in `openam-http`, and only one of them knows the verb map.**
+  `Endpoints.java:67-77` handles a verb that is not a map key (`PATCH`, `HEAD`, `OPTIONS`, …);
+  `AnnotatedMethod.java:93-98` handles a verb that *is* mapped but whose endpoint declares no such method
+  (the null-method sentinel). Both emit the same CREST body and — until [5d-1a's F5](phase-5d-1.md#d4) — neither emits `Allow`. Anything that has to be true of *every* 405
+  belongs in `Endpoints.from`, which is the only place the supported-verb set exists.
+- **`Endpoints` honours `X-HTTP-Method-Override` on a POST** (`getMethod:119-126`). Restlet's equivalent
+  (`TunnelService`) is configured separately, so a port can silently gain or lose method tunnelling — worth a
+  recorded row wherever the endpoint is security-relevant.
+- **The global CHF chain adds filters no Restlet application had.** `OpenAMHttpApplication.start():68-80`
+  wraps the router in a runtime-exception logger, `ApiDescriptorFilter` and `OpenApiRequestFilter` — the last
+  two react to `?_api` / `?_crestapi`. Any path moved onto the `OpenAM` servlet inherits them.
+- **Servlet mapping precedence still decides who serves what.** An exact `<url-pattern>` (e.g.
+  `/oauth2/connect/checkSession`) out-ranks a path mapping (`/oauth2/*`) regardless of which servlet owns the
+  prefix, so a JSP that shadows an endpoint today keeps shadowing it after a flip; an extension mapping
+  (`*.jsp`) loses to a path mapping and does not.

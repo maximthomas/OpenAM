@@ -127,7 +127,7 @@ the error just written. Consequence, traced through the chain:
   overwrites the 405.** So today's wire response to `GET /access_token` is very likely **400 invalid_request**,
   *not* 405. **Do not predict this — the §E lock must record it by observation** (below).
 - The CHF handler is **`@Post`-only and returns on validation failure**, so `GET /access_token` yields a clean
-  framework **405** ([finding 3](#3-405-for-get-is-free--content-type-still-needs-an-explicit-check)). That is a
+  framework **405** ([finding 3](#3-405-for-get-is-free-content-type-still-needs-an-explicit-check)). That is a
   **deliberate behaviour change at the 5d-1 flip** — more correct than the buggy 400, and belonging in 5d-1's
   smoke matrix. The umbrella's "**5a's `TokenEndpointHandler` must return, not continue**"
   ([phase-3c-2 "Recorded for Phase 5a"](phase-3c-2-error-layer.md)) is exactly this: the handler must not

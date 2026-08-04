@@ -54,7 +54,7 @@ Three properties shape the split below:
 
 | Step | Scope | New / changed | Risk |
 |---|---|---|---|
-| **5-E5** | **The last live-Restlet gate.** 14 items: realm styles (`?realm=`, legacy path realm, bogus realm), an unknown `Host`, `HEAD` and `Allow` on non-`resource_set` endpoints, unrouted-path shapes, `X-HTTP-Method-Override`, `?_api`/`?_crestapi`, `OPTIONS`, path-form edge cases. Test-only. Gates D4, D5 and D11 — and its **row 13 can redesign [D1](#d1)'s route table** | e2e spec only (0 main) | **High** — unrecoverable after 5d-1c |
+| **5-E5** ✅ **done 2026-08-04** ([as-built](#as-built-5-e5--recorded-2026-08-04)) | **The last live-Restlet gate.** 14 items: realm styles (`?realm=`, legacy path realm, bogus realm), an unknown `Host`, `HEAD` and `Allow` on non-`resource_set` endpoints, unrouted-path shapes, `X-HTTP-Method-Override`, `?_api`/`?_crestapi`, `OPTIONS`, path-form edge cases. Test-only. Gates D4, D5 and D11 — and its **row 13 can redesign [D1](#d1)'s route table** | e2e spec only (0 main) | **High** — unrecoverable after 5d-1c |
 | **5d-1a** | **`openam-http` verb fixes.** `HEAD` → the `@Get` method; `Allow` on both 405 producers. Own commit, own tests, no migration code. Closes two [decisions.md backlog](decisions.md#chf-cleanup-backlog) items | 2 modified + tests | **Med** — reaches every `Endpoints.from` consumer; three already-live endpoints start answering `HEAD` ([finding 6](#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct)) |
 | **5d-1b** | **`OAuth2HttpRouteProvider` + `META-INF/services` + `OAuth2RouterIT`.** The full 18-attachment table, the audit matrix, the nested `resource_set` router, the root error filter, the two-route no-cache filter, the synthesized 404 (+ one line in `OAuth2ErrorFilter` and two deliberate pin edits). **`/oauth2` still served by Restlet** | 2 new main + 1 line + 1 services line + 1 IT + 2 edited pins | **High** — a broken Guice graph here breaks the *whole* CHF router, `/json` included ([finding 3](#3--the-provider-instantiates-all-15-handlers-when-the-router-is-built-and-that-router-is-the-whole-chf-servlets)) |
 | **5d-1c** | **The flip.** One `<servlet-mapping>` line; then Cargo boot, the e2e re-run + byte-diff, the audit smoke, the soak record. Revert = revert this commit | 1 line + docs | **High** — the wire change |
@@ -195,6 +195,12 @@ behaviour gain. List the four mapped verbs only.
 <a id="6--head-after-the-fix-lands-on-code-paths-that-are-already-correct"></a>
 ### 6. `HEAD` after the fix lands on code paths that are already correct — verified, not assumed
 
+⚠ **One row of this finding is wrong, and 5-E5 measured it.** `HEAD /oauth2/authorize` is a **405** on
+Restlet, not a run of the authorization flow — the endpoint's method filter sits *above* the `HEAD` → `GET`
+rewrite. See [correction 2](#5-e5-correction-2); the `AuthorizeHandler` bullet below is retained for its
+description of the CHF side, which is exactly why the guard is needed. `EndSessionHandler` and the eight
+lookup endpoints are unaffected — they have no method filter, and 5-E5 row 5 confirms `HEAD` serves them.
+
 Mapping `HEAD` → the `@Get` method activates handler code that has never run under CHF. Checked, endpoint by
 endpoint:
 
@@ -266,14 +272,14 @@ every path element that matches no attached endpoint is consumed as a **sub-real
 (`doHandle:80-85` → `getRealmFromURI:107-118` → `Realm.of(realm, subrealm)`), and the lookup's failure message
 is what the client sees. Two consequences worth having in writing:
 
-- Restlet's `/oauth2` essentially never emits a plain routing 404: every unmatched path with at least one
-  segment is a *realm* 404. That is the same mechanism as the legacy `/oauth2/<subrealm>/authorize` style in
-  [finding 9](#9--realm-resolution-is-a-different-implementation-and-its-oauth2-behaviour-is-unrecorded) —
-  one default route serves both. (The exception is the **bare** prefix, where `/{subrealm}` has nothing to
-  bind and Restlet's own router 404 surfaces — unrecorded, which is [5-E5](#5-e5--the-last-gate) row 12);
-- it independently predicts [5-E5](#5-e5--the-last-gate) row 13: `/oauth2/tokeninfo/` misses the `EQUALS`
-  attachment, falls to `/{subrealm}`, and 404s on `Realm.of(root, "tokeninfo")`. A 404 either way, so
-  [D1](#d1)'s flat table stands — but by a different route than the CHF side reaches its 404.
+- ~~Restlet's `/oauth2` essentially never emits a plain routing 404~~ ⚠ **corrected 2026-08-04 by
+  [5-E5](#5-e5-the-one-mechanism):** it emits one whenever exactly **one** element sits below `/oauth2`. The
+  element is consumed by `/{subrealm}`, the recursion re-enters with an *empty* remaining URI, nothing
+  matches, and `doHandle` never runs — so no realm is looked up. Two or more elements do produce the realm
+  404 this finding describes, naming the **first**;
+- ~~it independently predicts row 13~~ — the prediction (`404s on Realm.of(root, "tokeninfo")`) was right about
+  the status and wrong about the producer: `/oauth2/tokeninfo/` is the **router** 404. [D1](#d1)'s flat table
+  stands, which is what the row existed to decide.
 
 <a id="9--realm-resolution-is-a-different-implementation-and-its-oauth2-behaviour-is-unrecorded"></a>
 ### 9. ⚠ Realm resolution is a **different implementation**, and its `/oauth2` behaviour is unrecorded
@@ -373,6 +379,12 @@ one is `url-pattern`-based, so no servlet filter follows the servlet rather than
 <a id="15--the-realm-layer-has-its-own-404-and-400-and-they-are-crest-shaped"></a>
 ### 15. The realm layer has **five** error producers, and they do not agree on a status
 
+⚠ **The "Restlet today" column's *messages* are wrong, measured 2026-08-04** — the statuses are right. Restlet
+renders the **cause's** message, not the `ResourceException` description quoted below, so rows a and d both
+read `No mapping organization found for organization identifier: X` on the wire
+([5-E5 correction 3](#5-e5-correction-3)). Row b is also refuted: the `realms/` branch **does** resolve the
+host, and a bad one is a **500** ([correction 6](#5-e5-correction-6)).
+
 Read from `RealmRoutingFactory` and `RealmContextFilter` this session. Routing failures under `/oauth2` will
 have **five** producers after the flip, not one — and they do not all speak the same status, let alone the same
 shape:
@@ -408,6 +420,12 @@ unknown-path and unknown-host cases separately, since they are four different co
 
 <a id="16--the-flip-adds-host-validation-to-oauth2-that-restlet-never-did"></a>
 ### 16. ⚠ The flip adds **host validation** to `/oauth2` that Restlet never did
+
+⚠ **Half-refuted 2026-08-04 by [5-E5 row 14](#the-recorded-rows).** The FQDN-map test really is new, but the
+table below is wrong about `/oauth2/realms/root/…`: it does **not** work today under an unrecognised `Host`.
+The `realmId` short-circuit cannot fire on the first pass ([the mechanism](#5-e5-the-one-mechanism)), so both
+styles resolve the host and both answer **500**. The flip therefore changes 500 → 400 on both, rather than
+breaking a working integration ([correction 6](#5-e5-correction-6)).
 
 Found while checking finding 15's producers, and the only finding in this document that can break a *working*
 deployment rather than change an error's shape. What each stack does with the request's `Host`:
@@ -500,7 +518,14 @@ return singleton(newHttpRoute(STARTS_WITH, "oauth2", chainOf(root, new OAuth2Err
   wrap and `OAuth2NoCacheFilter` sit between it and the handler.
 
 ⚠ **`OAuth2RouterIT` must assert the negative half of the no-cache scoping** (a `/tokeninfo` response carries
-no `Pragma`), or a later "tidy-up" that hoists the filter to the root passes every other row.
+no `Pragma`), or a later "tidy-up" that hoists the filter to the root passes every other row. [5-E5 row
+2](#the-recorded-rows) adds a second, live half of the same guard: a realm failure on `/access_token` carries
+**no** cache headers today, because the stamping filter sits inside the realm layer — which the shape above
+preserves.
+
+✅ **The flat `EQUALS` table is measured-correct.** [5-E5 row 13](#the-recorded-rows) sent a trailing slash, a
+case change and an empty segment at every shape of endpoint: all 404. Only `resource_set` needs [D2](#d2)'s
+nested router (R-5d1.8 discharged).
 
 <a id="d2"></a>
 ### D2 — `resource_set` is a nested router, and the chain wraps the **handler**
@@ -557,8 +582,10 @@ Decided 2026-07-30. Three separate questions, three different answers:
 | | Restlet | CHF today | 5d-1 |
 |---|---|---|---|
 | `HEAD` on a `@Get` endpoint | 200, body stripped by the connector | **405** | **fix** — `Endpoints.from` maps `HEAD` to the `@Get` entry |
-| `Allow` on any 405 | `Allow: POST, PUT, GET, DELETE` on `resource_set`; ⚠ **unmeasured on the other 14** until [5-E5](#5-e5--the-last-gate) row 6 | **absent** | **fix** — stamped on both 405 producers, **excluding `HEAD`** ([finding 5](#5--openam-http-has-two-405-producers-and-the-allow-fix-belongs-where-the-verb-map-is)) |
+| `HEAD` on `/authorize` | ⚠ **405** — measured, [5-E5 correction 2](#5-e5-correction-2) | 405 | **keep the 405** — `AuthorizeHandler` refuses `HEAD` explicitly, or the fix above turns it into a flow that **issues codes** |
+| `Allow` on any 405 | `Allow: POST, PUT, GET, DELETE` on `resource_set`; **`Allow: GET`** on the single-`@Get` endpoints, **absent** on the two filter-produced 405s — measured, [5-E5 row 6](#the-recorded-rows) | **absent** | **fix** — stamped on both 405 producers, **excluding `HEAD`** ([finding 5](#5--openam-http-has-two-405-producers-and-the-allow-fix-belongs-where-the-verb-map-is)) |
 | `PATCH` on `resource_set` | routed to `@Put`: a working **full replace**, 200 | **405** | **record** — divergence row 14 |
+| `PATCH` elsewhere | ⚠ runs the `@Get` **first**, then 405s — so the `@Get`'s errors and side effects are on the wire ([5-E5 correction 4](#5-e5-correction-4)) | 405, nothing run | **record** — row 14, widened |
 
 `HEAD` and `Allow` are fixed because both are *specification* obligations (`Allow` is mandatory on a 405, RFC
 7231 §6.5.5; `GET` and `HEAD` are the two methods every general-purpose server must support, §4.1, and §4.3.2
@@ -570,6 +597,15 @@ filter: `PATCH` on `resource_set` is unused by the UMA UI and by every e2e row e
 it. The `HEAD` fix's blast radius beyond `/oauth2` — three already-live CHF endpoints, one of them expensive —
 is enumerated in [finding 6](#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct) and is
 5d-1a's to verify, not the flip's.
+
+⚠ **Revised 2026-08-04 by [5-E5](#as-built-5-e5--recorded-2026-08-04).** The `HEAD` fix is unchanged in
+principle and now carries one exception: `/authorize` answers **405** today, so mapping `HEAD` → `@Get` without
+a guard would make a `HEAD` run the authorization flow and hand out a code — a capability *addition* on the
+endpoint that issues credentials, and precisely the direction [risk #20](plan.md#risk-register-behavioral-compatibility)
+says not to take silently. The guard belongs in `AuthorizeHandler` (which owns an explicit verb contract
+already, [5b-1 D8](phase-5b-1.md)) rather than in `Endpoints.from`, which must stay generic — `/json` endpoints
+gain `HEAD` correctly. `TokenEndpointHandler` needs nothing: it is `@Post`-only, so `HEAD` hits the sentinel
+405 either way.
 
 ⚠ **A body byte-diff at the flip shows nothing for any of these three.** `HEAD`'s change is a status; `Allow`
 is a header; `PATCH`'s 405 body is identical to the shape [D3](phase-5c.md#d3) already produces. The rows that
@@ -613,13 +649,14 @@ sub-decisions, all deliberate:
   the **javadoc** that goes with it (`OAuth2ErrorFilter:129-132`'s `default:` comment reads *"400, 404 and the
   rest of 4xx"* — it must stop naming 404), plus the **edited** data-provider row in the table below — the
   test row exists already and says `invalid_request` today.
-- **On one of the 404 producers this buys near-parity, not just consistency.** For
-  `/oauth2/realms/<bogus>/…` CHF's message is byte-identical to Restlet's (`Realm "bogus" not found`,
-  [finding 15](#15--the-realm-layer-has-its-own-404-and-400-and-they-are-crest-shaped) row a), so with
-  `case 404` the response differs from today's only in **shape** — `{"error":"not_found","error_description":"Realm \"bogus\" not found"}`
-  against `{"code":404,"reason":"Not Found","message":"Realm \"bogus\" not found"}`. That is the shape change
-  [D5-1](phase-5-oauth2.md) already licenses for the whole surface, and nothing more. Without `case 404` the
-  same response would say `invalid_request`, which is *further* from Restlet, not closer.
+- ~~**On one of the 404 producers this buys near-parity, not just consistency.**~~ ⚠ **Struck 2026-08-04 by
+  [5-E5 correction 3](#5-e5-correction-3).** The claim was that CHF's `Realm "bogus" not found` would be
+  byte-identical to Restlet's message. It is not: Restlet renders the *cause's* message
+  (`No mapping organization found for organization identifier: /bogus`), because
+  `RestStatusService.toRepresentation:42-52` prefers `status.getThrowable().getMessage()` over the description
+  the router wrote. `case 404 → not_found` stands on its remaining, sufficient ground — it keeps `/oauth2`
+  saying one word for a 404 — but the *body* diverges in message as well as shape, and divergence row 15 says
+  so.
 
 ⚠ **Two committed pins change with this decision, and both must be edited deliberately, not "made green".**
 Found while reviewing this plan, by grepping for existing 404 assertions rather than assuming there were none:
@@ -741,6 +778,11 @@ graph builds. It does **not** prove the *production* bindings resolve; only Carg
 <a id="d11"></a>
 ### D11 — `X-HTTP-Method-Override`: decided when 5-E5 row 10 lands
 
+⚠ **Settled 2026-08-04 by [5-E5 row 10](#the-recorded-rows): Restlet honours it, so the POST case is parity and
+nothing is done to `Endpoints.from`.** The measurement also found the two shapes the decision did not
+anticipate — the header on a *non*-POST, and Restlet's `?method=` query tunnel — both recorded as divergences
+rather than fixed ([correction 5](#5-e5-correction-5)). The original framing follows.
+
 `Endpoints.getMethod:119-126` rewrites the verb of a **POST** that carries `X-HTTP-Method-Override`, before
 any route or annotation lookup. Restlet's equivalent is `TunnelService`, which is configured per application
 and whose state on `/oauth2` is unrecorded. Two outcomes, and 5-E5 row 10 picks between them:
@@ -758,6 +800,10 @@ off in `Endpoints.from` would move CREST behaviour that has nothing to do with t
 
 <a id="5-e5--the-last-gate"></a>
 ## 5-E5 — the last gate (test-only)
+
+✅ **Done 2026-08-04 — [as-built](#as-built-5-e5--recorded-2026-08-04)** (14 rows, `oauth2 uma` = **113
+passed**, six corrections to this plan). The brief below is left as written so the corrections can be read
+against what was predicted.
 
 The final live-Restlet recording. Written **by observation**, against a container built from this tree with
 `/oauth2` still on `ForgeRockRest`, in its own describe
@@ -834,10 +880,12 @@ makes a sequential second run untrustworthy.
 
 ## Verification criteria
 
-**5-E5:**
-1. `npx playwright test oauth2 uma` in **one pass** on a freshly built container ⇒ **99 + new rows**, all
-   green, against unmodified Restlet. Zero main-source lines changed.
-2. Every new row's recorded value pasted into this doc's as-built (the values, not "green").
+**5-E5:** ✅ **done 2026-08-04** — [as-built](#as-built-5-e5--recorded-2026-08-04).
+1. ~~`npx playwright test oauth2 uma` in **one pass** on a freshly built container ⇒ **99 + new rows**, all
+   green, against unmodified Restlet. Zero main-source lines changed.~~ **113 passed** (99 + 14), one pass on
+   a freshly recreated `openam-e2e:5e5`; zero main-source lines.
+2. ~~Every new row's recorded value pasted into this doc's as-built (the values, not "green").~~ done —
+   [the recorded rows](#the-recorded-rows) plus [six corrections](#six-corrections-to-this-plan) to this plan.
 
 **5d-1a:**
 3. `mvn -o -pl openam-http test` — baseline **73** surefire (measured green 2026-07-30); must only grow.
@@ -931,6 +979,9 @@ other — 5c's own IT says so in its class javadoc.
   realm rows.
 - **R-5d1.7 — the revert is not actually one line.** If 5d-1c accretes a "small fix", the lever breaks.
   **Guard:** [D6](#d6), enforced by review of the commit's file list.
+- ✅ **R-5d1.8 — DISCHARGED 2026-08-04.** [5-E5 row 13](#the-recorded-rows) measured it: a trailing slash is a
+  404 on every endpoint, in both spellings of the 404, so [D1](#d1)'s flat `EQUALS` table is right and only
+  `resource_set` needs [D2](#d2)'s nested shape. The original entry follows.
 - **R-5d1.8 — the trailing-slash shape could be wrong for 14 endpoints.** CHF `EQUALS` cannot match a URI
   ending in `/`. Disassembly says Restlet cannot either — **for these rows**: `attach` derives the mode from
   the target (`getMatchingMode`), and each endpoint's target chain ends in a `Finder`, so it stays
@@ -941,6 +992,11 @@ other — 5c's own IT says so in its class javadoc.
   right — but both are inferences about a URL no test has ever sent. **Guard:** 5-E5 row 13, written
   **first**, because it is the only gate row whose answer can change the provider's design rather than a
   divergence table.
+- ⚠ **R-5d1.9 — DOWNGRADED 2026-08-04.** [5-E5 row 14](#the-recorded-rows) found that `/oauth2/realms/root/…`
+  does **not** work today under an unrecognised `Host` — it is a 500, like every other `/oauth2` URL — so the
+  flip changes 500 → 400 rather than breaking a working integration. The release-note line stays (the status
+  changes, and the FQDN-map test is genuinely new); "most likely to surface in someone else's deployment" no
+  longer holds. Original entry:
 - **R-5d1.9 — an unknown `Host` starts failing.** [Finding 16](#16--the-flip-adds-host-validation-to-oauth2-that-restlet-never-did):
   `/oauth2/realms/root/…` under a `Host` that is not a realm alias works today and 400s after the flip, and
   `/oauth2/…` gains a strict FQDN-map test it never had. **No e2e row can catch this** — the suite always uses
@@ -952,16 +1008,17 @@ other — 5c's own IT says so in its class javadoc.
 
 ## Checklist
 
-**5-E5**
+**5-E5** — ✅ **all four done 2026-08-04**, [as-built](#as-built-5-e5--recorded-2026-08-04)
 
-1. Build the container from this tree (`openam-e2e:5e5`) with `/oauth2` on Restlet; confirm the deployed
-   `openam-oauth2` jar is this working tree's (checksum, not the banner — 5-E4's lesson).
-2. Write the 14 rows by observation; fixture for the row-3 sub-realm, with teardown.
-3. `npx playwright test oauth2 uma` in one pass → record the totals and every recorded value here.
-4. If a row overturns [D4](#d4) or [D5](#d5), update the decision **in this doc** before proceeding; row 10
-   *settles* [D11](#d11), which has no default answer on purpose, and **row 13 can force a redesign of
-   [D1](#d1)'s route table** — a trailing-slash 200 means every endpoint needs [D2](#d2)'s nested shape, not
-   just `resource_set`. Do row 13 first for that reason.
+1. ~~Build the container from this tree (`openam-e2e:5e5`)~~ — built; deployed `openam-oauth2` jar
+   md5-matched against the working tree's (`d03a404db1a56057c4eb1a12529717d3`), banner ignored.
+2. ~~Write the 14 rows by observation; fixture for the row-3 sub-realm, with teardown.~~ — 14 rows, sub-realm
+   created and deleted per run.
+3. ~~`npx playwright test oauth2 uma` in one pass~~ — **113 passed**.
+4. ~~If a row overturns [D4](#d4) or [D5](#d5), update the decision…~~ — **five did**: [D4](#d4) gains the
+   `/authorize` `HEAD` guard and the widened `PATCH` row, [D5](#d5) loses its parity claim, [D11](#d11) is
+   settled and split in three, [D1](#d1)'s flat table is **confirmed** by row 13 (run first, as instructed —
+   a trailing slash is a 404 on every endpoint), and findings 6, 8, 15 and 16 carry ⚠ corrections.
 
 **5d-1a**
 
@@ -1015,6 +1072,146 @@ Two further rows are **provisional**: the source says they will be needed, but e
 | 17 ⚠ *provisional, confirmed or dropped by [5-E5](#5-e5--the-last-gate) row 14* | A request whose `Host` OpenAM does not know | `/oauth2/realms/root/…` **works**; `/oauth2/…` **500** | **400** for both — `HostnameFilter:123-131` and `RealmContextFilter:229-231` | [Finding 16](#16--the-flip-adds-host-validation-to-oauth2-that-restlet-never-did). The only row here that can break a deployment that works today, and therefore the one that needs a release-note line rather than just a table entry |
 
 All four rows are added to the table **in 5d-1c's commit**, with the measured bytes rather than these drafts.
+⚠ Rows 16 and 17 have since been **measured** — see the [5-E5 as-built](#as-built-5-e5--recorded-2026-08-04),
+which confirms 16's status while correcting its body, **rewrites 17**, and adds four more.
+
+---
+
+<a id="as-built-5-e5--recorded-2026-08-04"></a>
+## As-built — 5-E5, recorded 2026-08-04 (test-only)
+
+Captured against a live container built from this tree: `openam-e2e:5e5` (the repo
+`openam-distribution/openam-distribution-docker/Dockerfile` with its three `#COPY` lines uncommented, exactly
+CI's `build-docker` sed) over a full `mvn install -DskipTests` of the working tree, plus
+`openidentityplatform/opendj:latest` on the `test-openam` network, configured with CI's `conf.file`. Restlet
+still serves `/oauth2`: `web.xml:1143-1146` is unchanged and no CHF `HttpRouteProvider` claims those paths.
+
+Provenance was checked by **md5 of the deployed jar**, not the banner (5-E4's lesson):
+`WEB-INF/lib/openam-oauth2-16.2.0-SNAPSHOT.jar` = `d03a404db1a56057c4eb1a12529717d3` = this working tree's
+`openam-oauth2/target/openam-oauth2-16.2.0-SNAPSHOT.jar`. (`openam-restlet` likewise.)
+
+**Deliverables — e2e only, zero main-source lines:**
+
+| File | Change |
+|---|---|
+| `e2e/oauth2/oauth2-test.spec.mjs` | new describe `/oauth2 routing contract lock (5-E5, live Restlet)` — **14 rows**, plus a `node:http` raw client for the three things Playwright cannot express (a `Host` that does not match the connection, path bytes a normalising client would rewrite, and `PROPFIND`/`PATCH`), and a sub-realm fixture created through `/json/global-config/realms` and deleted in `afterAll`. ⚠ The realm's resource id is **base64url of the realm PATH** (`/e2e5e5realm` → `L2UyZTVlNXJlYWxt`), not its name — a `DELETE …/realms/%2Fe2e5e5realm` answers 400 |
+
+`npx playwright test oauth2 uma`, **one pass on a freshly recreated container**: **113 passed** (1.4 min) —
+99 + 14, with `oauth2-test` going **23 → 37** and `oauth2-endpoints` 43, `oidc` 20, `webfinger` 2, `uma` 11 all
+unchanged. No existing row edited, no fixture changed.
+
+### The recorded rows
+
+| # | Request | Recorded |
+|---|---|---|
+| 13 | `/oauth2/tokeninfo/`, `/oauth2/Tokeninfo`, `/oauth2/TOKENINFO`, `/oauth2//tokeninfo` | **404**, and the **router** 404 — `{"code":404,"reason":"Not Found","message":"The server has not found anything matching the request URI"}`. Two-segment endpoints answer the **realm** 404 instead: `/oauth2/connect/jwk_uri/` → `…"message":"No mapping organization found for organization identifier: /connect"`, `/oauth2/.well-known/openid-configuration/` → `…: /.well-known`, `/oauth2/Connect/jwk_uri` → `…: /Connect`. Routing is **case-sensitive**. `/oauth2/resource_set/` still answers (401 `invalid_token`) — it is the one endpoint attached three times. ⇒ **[D1](#d1)'s flat `EQUALS` table stands**; no endpoint needs [D2](#d2)'s nested shape |
+| 1 | `?realm=/`, `?realm=%2F` on `/tokeninfo`; `?realm=<sub>` on `/.well-known/openid-configuration`; `?realm=bogus` on an unrouted path | **200** for both spellings of root. The override really **switches** realm: `?realm=e2e5e5realm` → **404** `{"error":"not_found","error_description":"No OpenID Connect provider for realm /e2e5e5realm"}`, and `?realm=/e2e5e5realm` is identical (the leading slash is optional). ⚠ On a path that matched **no** endpoint the override is **not applied at all** — `/oauth2/nosuchendpoint?realm=bogus` is the plain router 404, not a realm error, which is `RestletRealmRouter:86`'s `next != delegateRoute` guard on the wire |
+| 2 | `?realm=bogus` on `/tokeninfo` and on `POST /access_token` | **404** `{"code":404,"reason":"Not Found","message":"No mapping organization found for organization identifier: bogus"}`, identical for both, and with **no `Cache-Control`/`Pragma`** even on `/access_token` — the realm layer answers above the `OAuth2Filter`. ⇒ divergence row 16's **status** is confirmed (404 here, 400 on CHF); its **body** is corrected, see [correction 3](#5-e5-correction-3) |
+| 3 | `/oauth2/<sub>/tokeninfo`, `/oauth2/<sub>/.well-known/openid-configuration`, and the same with `?realm=/` | The legacy style **resolves, and resolves to the sub-realm**: the discovery document answers **404** `No OpenID Connect provider for realm /e2e5e5realm`, while `/tokeninfo` under the same prefix answers **200**. `?realm=/` on top of a legacy prefix **replaces** it — 200, `issuer` = the root issuer |
+| 4 | `/oauth2/realms/root/tokeninfo`, `/realms/bogus/tokeninfo`, **flat `/realms/<sub>/…`**, nested `/realms/root/realms/<sub>/…` | root → **200**; bogus → **404** `…"message":"No mapping organization found for organization identifier: /bogus"` (note the **leading slash**, where row 2's is bare); ⚠ **flat `/realms/<sub>/…` is SERVED, in the sub-realm** — 404 `No OpenID Connect provider for realm /e2e5e5realm`, the endpoint's own answer — and the nested spelling is identical. ⇒ [correction 1](#5-e5-correction-1) |
+| 5 | `HEAD` on `/tokeninfo`, `/.well-known/openid-configuration`, `/connect/jwk_uri`, `/authorize`, `/access_token` | The first three: **200**, the `GET`'s exact `Content-Type` (`application/json` on `/tokeninfo`, `application/json;charset=UTF-8` on the other two), `/tokeninfo`'s `no-cache, no-store` intact, and **no `Content-Length`** on any of them (as 5-E4 row 15 recorded for `resource_set` — so [finding 7](#7--content-length-on-a-head-is-tomcats-decision)'s Restlet half is answered; what *Tomcat* does behind CHF is still 5d-1c's to measure). ⚠ `/authorize` and `/access_token`: **405**. A `HEAD` carrying a complete, authenticated, valid authorization request is a 405 while the byte-identical `GET` is a **302 with an issued code**. ⇒ [correction 2](#5-e5-correction-2). ⚠ Also: a `HEAD` that ends in an **error** status sends `text/html;charset=utf-8` **with** a `Content-Length` (401 → 721 B, 404 → 714 B, 405 → 726 B, 400 → 796 B) instead of the `application/json` body its `GET` sends |
+| 6 | `PROPFIND` / `PUT` on `/tokeninfo` and `/connect/jwk_uri`; `PROPFIND` on `/access_token` and `/authorize` | Two producers, two shapes. The **resource**: 405 + **`Allow: GET`** + the CREST body `{"code":405,"reason":"Method Not Allowed","message":"The method specified in the request is not allowed for the resource identified by the request URI"}`, no cache headers. The **endpoint filter**: 405 + `{"error":"method_not_allowed","error_description":"Required Method: POST found: PROPFIND"}` (`/authorize`: `"Required Method: GET or POST found: PROPFIND"`) + `no-store`/`no-cache` and **no `Allow` at all**. ⇒ [D4](#d4)'s `Allow` list is **per endpoint** — `GET` here, not `resource_set`'s four |
+| 7 | `PATCH` on `/tokeninfo` (with and without a token), `/connect/jwk_uri`, `/access_token` | ⚠ **`PATCH` runs the resource's `@Get` first and only then 405s.** With a valid token: 405 + `Allow: GET` + the CREST body — **carrying `Cache-Control: no-cache, no-store`, which only `ValidationServerResource.validate()` sets**. Without a token: **401 `invalid_token`** — the `@Get`'s own error, no 405 at all. A `PUT` on the same URL is a 405 with **no** cache headers, i.e. it does not run the `@Get`. On the method-filtered endpoints the filter refuses first: `{"error":"method_not_allowed","error_description":"Required Method: POST found: PATCH"}`. ⇒ [correction 4](#5-e5-correction-4) |
+| 8 | `?_api`, `?_crestapi` | **Ignored**. `/connect/jwk_uri?_api` and `?_crestapi` are **byte-identical** to the plain `GET` (asserted as a body comparison, not a status); `/tokeninfo?_api` with a token is a normal 200 |
+| 9 | `OPTIONS /oauth2/authorize` with and without an `Origin`; `OPTIONS /tokeninfo` | **405** `{"error":"method_not_allowed","error_description":"Required Method: GET or POST found: OPTIONS"}`, and **not one `Access-Control-*` header** in either case — the `web.xml` `CORSFilter` is unconfigured on this deployment and contributes nothing. On an endpoint with no method filter, `OPTIONS` is the same CREST 405 + `Allow: GET` as any other unmapped verb: Restlet does **not** answer `OPTIONS` automatically |
+| 10 | `X-HTTP-Method-Override` and `?method=` | ⚠ Three answers, not two. **(a)** the header on a **POST** is **honoured** — `POST /access_token` + `X-HTTP-Method-Override: GET` → 405 `Required Method: POST found: GET` (the same request without it → 200 + a token), and `POST /tokeninfo` + override `GET` → **200**. **(b)** the header on a **non-POST** is *also* honoured — `GET /tokeninfo` + override `PUT` → **405**. **(c)** Restlet's own `?method=` query tunnel is live, **POST-only** — `POST /access_token?method=GET` → 405 `…found: GET`, while `GET /tokeninfo?method=PUT` → **200**. ⇒ [D11](#d11) settles, [correction 5](#5-e5-correction-5) |
+| 11 | `/oauth2/nosuchendpoint`, `/oauth2/authorize/extra`, `/oauth2/connect/nosuch`, `/oauth2/realms/root/nosuch` | All **404 `application/json`**, from **two** producers by segment count: one element below `/oauth2` → the **router** 404; two → the **realm** 404 naming the first (`/authorize`, `/connect`). `/realms/root/nosuch` is a router 404 — the realm route consumed both leading elements |
+| 12 | `GET /oauth2/`, `GET /oauth2`, `/oauth2/realms`, `/oauth2/realms/root` | **404**, the router's, for all four. The bare prefix is where `/{subrealm}` has nothing to bind |
+| 14 | An unknown `Host` on `/oauth2/tokeninfo`, `/oauth2/realms/root/tokeninfo` and `/oauth2/.well-known/openid-configuration` | ⚠ **500** for **all three** — `{"code":500,"reason":"Internal Server Error","message":"No mapping organization found for organization identifier: not-a-real-host.invalid"}`. The realm-prefixed form does **not** work today. An IP-literal `Host` behaves the same; `Host:` without a port works. ⇒ [correction 6](#5-e5-correction-6), and divergence row 17 is rewritten |
+
+<a id="5-e5-the-one-mechanism"></a>
+### One mechanism explains rows 4, 13 and 14
+
+`Router.doHandle` runs **before** the matched route's template is parsed, so `RestletRealmRouter.doHandle`
+never sees the attributes the *current* route will set — only what an earlier pass left behind. Everything
+surprising above follows from that:
+
+- **row 13 / row 11.** One unmatched element is consumed by `/{subrealm}` (`MODE_STARTS_WITH`), leaving an
+  **empty** remaining URI that matches no route at all on the recursive pass — so `doHandle` never runs again
+  and Restlet's own router 404 surfaces. With **two** elements the recursion re-enters with a non-empty URI,
+  `subrealm` is set from the first pass, and the realm lookup fails instead. ⇒
+  [finding 8](#8--an-unrouted-oauth2-path-is-a-bodiless-404-on-chf) is right about the mechanism and wrong
+  about the reach: it predicted a realm 404 for `/oauth2/tokeninfo/`, which is a **router** 404.
+- **row 4.** `realmId` is set by the `/realms/{realmId}` template, i.e. after the outer `doHandle` has already
+  resolved the host and stored `REALM_OBJECT` — so the inner router's "root or an existing `REALM_OBJECT`"
+  guard is *always* satisfied and a flat `realms/<non-root>` resolves.
+- **row 14.** The same ordering means `doHandle:75-78`'s `realmId` short-circuit **cannot fire on the first
+  pass**, so `getRealmFromServerName` runs on every request, whatever the URL style.
+
+And the wire message of every realm failure is the **cause's**, not the router's:
+`RestStatusService.toRepresentation:42-52` renders `status.getThrowable().getMessage()` whenever a throwable is
+present, so `RestletRealmRouter:102-104`'s `"Realm \"" + x + "\" not found"` — which
+[finding 15](#15--the-realm-layer-has-its-own-404-and-400-and-they-are-crest-shaped) quotes for rows a and d —
+is a `Status` *description* that never reaches a client.
+
+### Six corrections to this plan
+
+<a id="5-e5-correction-1"></a>
+**1. A flat `/oauth2/realms/<non-root>/…` works on Restlet too.** [The 5-E5 brief](#5-e5--the-last-gate)'s row 4
+predicted a Restlet 404 and a CHF **capability gain** worth recording. There is no gain and no divergence —
+both stacks serve it, in the sub-realm. Had it gone unmeasured, the byte diff would have read as a regression
+in reverse.
+
+<a id="5-e5-correction-2"></a>
+**2. ⚠ `HEAD /oauth2/authorize` does *not* run the authorization flow.**
+[Finding 6](#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct) states that it "runs the real
+authorization flow — including … on success, a 302 with an issued code. Restlet did precisely the same". It
+does not: `AuthorizeEndpointFilter.validateMethod` accepts `GET` and `POST` only, and Restlet's `HEAD` → `GET`
+rewrite happens at **annotation lookup**, *inside* the resource and *below* that filter — so the filter sees a
+`HEAD` and answers 405. Measured with a complete, authenticated, valid request: `HEAD` → **405**, the
+byte-identical `GET` → **302 with a code**. `/access_token` is a 405 on both verbs, so only `/authorize` moves.
+⇒ [D4](#d4) is updated: `Endpoints.from` still maps `HEAD` → `@Get`, and `AuthorizeHandler` must refuse `HEAD`
+explicitly so the incumbent 405 survives.
+
+<a id="5-e5-correction-3"></a>
+**3. The realm 404's message is `No mapping organization found for organization identifier: X`.**
+[Finding 15](#15--the-realm-layer-has-its-own-404-and-400-and-they-are-crest-shaped) rows a and d quote
+`Realm "bogus" not found` for the Restlet side, and [D5](#d5) builds a near-byte-parity argument for divergence
+row 15 on it (*"even the `error_description` is byte-identical to Restlet's `message`"*). It is not: see
+[the mechanism above](#5-e5-the-one-mechanism). The identifier is spelled **`bogus`** for a `?realm=` override
+and **`/bogus`** for `realms/<bogus>`. `case 404 → not_found` is still right — it keeps `/oauth2`'s 404
+vocabulary consistent — but it buys **consistency only**, not parity, and D5's parity sentence is struck.
+
+<a id="5-e5-correction-4"></a>
+**4. `PATCH` is wider than `resource_set`, and it has a side effect.** [D4](#d4) scopes divergence row 14 to
+`resource_set` because it is the only ported endpoint with a `@Put`. That is true of the *200*, but Restlet
+runs the resource's `@Get` for **every** `PATCH` before looking for a handler — so on a `@Get`-only endpoint
+the `@Get`'s errors are what reach the wire (`PATCH /oauth2/tokeninfo` without a token is a **401**, not a
+405) and its side effects happen (the 405 carries `/tokeninfo`'s own cache directives). On CHF, `PATCH` is an
+unmapped verb everywhere: a flat 405 that runs nothing. Divergence row 14 is widened rather than re-scoped.
+
+<a id="5-e5-correction-5"></a>
+**5. [D11](#d11) settles — and splits.** Restlet **honours** `X-HTTP-Method-Override`, so its first branch
+applies and there is nothing to do for the POST case. But `Endpoints.getMethod:119-126` gates the rewrite on
+`"POST".equals(method)`, and Restlet does not, and Restlet additionally honours the `?method=` **query** tunnel
+on a POST, which CHF has no equivalent for. Two new divergences, both changing a **405 into a 200**:
+`GET …?…` + `X-HTTP-Method-Override: PUT`, and `POST /oauth2/access_token?method=GET` — the second of which
+starts **issuing tokens** for a request that is refused today. Neither is a reason to change `Endpoints`
+(the header is shared with `/json`, and the query tunnel is a Restlet service nothing else implements), so both
+are recorded.
+
+<a id="5-e5-correction-6"></a>
+**6. ⚠ An unknown `Host` does not work on either URL style today.**
+[Finding 16](#16--the-flip-adds-host-validation-to-oauth2-that-restlet-never-did) predicted
+`/oauth2/realms/root/…` **works** under an unrecognised `Host` and would start 400ing — *"the only row here
+that can break a deployment that works today"*. Measured, it is a **500**, exactly like the bare-path form.
+⇒ divergence row 17 becomes **500 → 400 on both styles**: a better answer to a request that already fails, not
+a working integration breaking. [R-5d1.9](#risk-register-extends-phase-5-oauth2s) keeps its release-note line
+(the *status* still changes, and the FQDN-map test is genuinely new) but is no longer the step's most dangerous
+row. The `FQDNValidationFilter` redirect on `/oauth2/authorize` is unaffected either way.
+
+### Divergence rows this gate hands to 5d-1c
+
+Added to [plan.md](plan.md#expected-divergences-at-the-flip) with measured bytes **in 5d-1c's commit**, not now:
+
+| # | What differs | Restlet (measured 2026-08-04) | CHF (expected) |
+|---|---|---|---|
+| 16 | `?realm=<bogus>` | **404** `{"code":404,…,"message":"No mapping organization found for organization identifier: bogus"}`, no cache headers | **400** `{"error":"invalid_request","error_description":"Invalid realm, bogus"}` |
+| 17 *(rewritten)* | an unknown request `Host`, **both** URL styles | **500** `{"code":500,…,"message":"No mapping organization found for organization identifier: <host>"}` | **400** — `HostnameFilter:123-131` / `RealmContextFilter:229-231` |
+| 18 | `HEAD` on an endpoint whose answer is an **error** | the JSON body and `Content-Type` are replaced by `text/html;charset=utf-8` **plus** a `Content-Length` (401 → 721 B, 404 → 714 B, 405 → 726 B, 400 → 796 B) | the `GET`'s `Content-Type`, no `Content-Length`. Not a prediction: the same probe against a CHF path (`HEAD /openam/json/nosuchthing`) answers **501 `application/json;charset=UTF-8`**, no length, no HTML — so the substitution is the Restlet stack's, and it goes away with it |
+| 19 | `HEAD /oauth2/authorize` | **405** | **405**, *provided* [correction 2](#5-e5-correction-2)'s guard lands in 5d-1a; without it, a 302 **issuing an authorization code** |
+| 20 | the method tunnel beyond `POST` + header | `GET …` + `X-HTTP-Method-Override: PUT` → **405**; `POST /access_token?method=GET` → **405** | **200** for both — the override is ignored on a non-POST, and `?method=` is not implemented |
+| 14 *(widened)* | `PATCH` on a `@Get`-only endpoint | the `@Get` runs first: **401** `invalid_token` on `/tokeninfo` with no token; 405 + `Allow: GET` + `Cache-Control: no-cache, no-store` with one | **405**, nothing run |
 
 ---
 

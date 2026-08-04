@@ -14,6 +14,7 @@
  * Copyright 2026 3A Systems, LLC.
  */
 
+import { request as httpRequest } from "node:http";
 import { test, expect, request as apiRequest } from "@playwright/test";
 import { OPENAM_BASE, getAdminToken, getAuthToken, PASSWORD, USERNAME } from "../common/openam-commons.mjs";
 import {
@@ -872,6 +873,632 @@ test.describe("OAuth2 /authorize contract lock (5-E2, live Restlet)", () => {
     expect(hintCookies[0].startsWith("oidcLoginHint=; Expires=")).toBe(true);
     expect(hintCookies[0]).not.toContain("Path=");
     expect(hintCookies[0]).not.toContain("HttpOnly");
+  });
+
+});
+
+/**
+ * Step 5-E5: the /oauth2 ROUTING contract lock -- realm styles, path forms, unmapped verbs, the method
+ * tunnel and the request `Host` -- recorded against LIVE RESTLET. The LAST live-Restlet gate
+ * (docs/migration/restlet/phase-5d-1.md): every row here describes the ROUTER, and the router is exactly what
+ * the 5d-1c flip replaces, so not one of these answers can be re-recorded afterwards.
+ *
+ * Every value was OBSERVED first and only then asserted (2026-08-04, image `openam-e2e:5e5` built from this
+ * tree, provenance checked by md5 of the deployed `openam-oauth2` jar rather than the banner). FIVE rows
+ * overturned what the plan had predicted from the source -- rows 4, 5, 7, 10 and 14, each saying so in its own
+ * comment. That is the whole reason this gate is written by observation.
+ *
+ * ⚠ Two different 404 bodies recur below, and telling them apart IS the measurement:
+ *   - the ROUTER 404 -- "The server has not found anything matching the request URI" -- Restlet's own, when
+ *     no route matched and the realm layer never ran;
+ *   - the REALM 404 -- "No mapping organization found for organization identifier: X" -- when the unmatched
+ *     element was consumed as a sub-realm by `RestletRealmRouter`'s `/{subrealm}` default route and the realm
+ *     lookup then failed.
+ * Which one a URL gets depends on how many path elements sit below `/oauth2` (rows 11-13), because the
+ * router's attributes are populated by the route TEMPLATE, i.e. only after `doHandle` has already run: the
+ * first pass always resolves the realm from the host, and only the recursive second pass sees a `subrealm`.
+ *
+ * ⚠ The realm message is the CAUSE's, not the router's. `RestletRealmRouter:102-104` throws
+ * `ResourceException(CLIENT_ERROR_NOT_FOUND, "Realm \"" + x + "\" not found", e)`, but
+ * `RestStatusService.toRepresentation:42-52` renders `status.getThrowable().getMessage()` whenever there is a
+ * throwable -- so the RealmLookupException's own wording wins and the router's description never reaches the
+ * wire. phase-5d-1 finding 15 predicted `Realm "bogus" not found` for these rows, and D5 built a
+ * near-byte-parity argument for divergence row 15 on that prediction; both are corrected by rows 2 and 4.
+ */
+test.describe("/oauth2 routing contract lock (5-E5, live Restlet)", () => {
+
+  const BASE = new URL(OPENAM_BASE);
+  const OAUTH2 = `${OPENAM_BASE}/oauth2`;
+  /** Realms are created through global-config (the deprecated RealmResource rejects this body). */
+  const SUB_REALM = "e2e5e5realm";
+  /** SmsRealmProvider's resource id is base64url of the realm PATH -- "/e2e5e5realm", not the name. */
+  const SUB_REALM_ID = Buffer.from(`/${SUB_REALM}`).toString("base64url");
+  const REALMS_URL = `${OPENAM_BASE}/json/global-config/realms`;
+
+  const ROUTER_404 = {
+    code: 404, reason: "Not Found",
+    message: "The server has not found anything matching the request URI",
+  };
+  const realm404 = (identifier) => ({
+    code: 404, reason: "Not Found",
+    message: `No mapping organization found for organization identifier: ${identifier}`,
+  });
+  /** The 405 Restlet's ServerResource raises for a verb its annotations do not cover. */
+  const CREST_405 = {
+    code: 405, reason: "Method Not Allowed",
+    message: "The method specified in the request is not allowed for the resource identified by the request URI",
+  };
+
+  let adminToken;
+  /** A client_credentials token, so the /tokeninfo rows have something real to look up. */
+  let ccToken;
+  let demoToken;
+
+  /**
+   * A raw node:http request. Needed for three things Playwright cannot express: a `Host` header that does not
+   * match the connection (row 14), path bytes a normalising client could rewrite (`//tokeninfo`, a trailing
+   * slash -- row 13), and a request with no `Content-Type` at all.
+   */
+  function raw(path, { method = "GET", headers = {}, hostHeader, body } = {}) {
+    return new Promise((resolve, reject) => {
+      const req = httpRequest({
+        hostname: BASE.hostname, port: BASE.port || 80, path, method,
+        headers: { ...(hostHeader ? { Host: hostHeader } : {}), ...headers },
+        // setHost:false only when we supply our own, or node appends a second Host header.
+        setHost: hostHeader === undefined,
+      }, (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => { text += c; });
+        res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, text }));
+      });
+      req.on("error", reject);
+      req.end(body);
+    });
+  }
+
+  /** `/oauth2…` as a raw path, context path included. */
+  const path = (suffix) => `${BASE.pathname.replace(/\/$/, "")}/oauth2${suffix}`;
+  const bodyOf = (response) => JSON.parse(response.text);
+
+  test.beforeAll(async ({ request }) => {
+    adminToken = await getAdminToken(request);
+
+    const created = await request.post(`${REALMS_URL}?_action=create`, {
+      headers: {
+        iPlanetDirectoryPro: adminToken,
+        "Content-Type": "application/json",
+        "Accept-API-Version": "protocol=1.0,resource=1.0",
+      },
+      // aliases is not optional: SmsRealmProvider.validateRealmAliases rejects a body without it.
+      data: { name: SUB_REALM, parentPath: "/", active: true, aliases: [] },
+    });
+    // 409 means a previous run left it behind, which is as good as creating it.
+    if (!created.ok() && created.status() !== 409) {
+      throw new Error(`Failed to create realm ${SUB_REALM}: ${created.status()} ${await created.text()}`);
+    }
+    console.log(`[5-E5] realm ${SUB_REALM} ready (${created.status()})`);
+
+    const basic = Buffer.from(`${CONFIDENTIAL_CLIENT_ID}:${CONFIDENTIAL_SECRET}`).toString("base64");
+    const token = await request.post(`${OAUTH2}/access_token`, {
+      form: { grant_type: "client_credentials", scope: SCOPE },
+      headers: { Accept: "application/json", Authorization: `Basic ${basic}` },
+    });
+    expect(token.status()).toBe(200);
+    ccToken = (await token.json()).access_token;
+
+    const loginCtx = await apiRequest.newContext();
+    try {
+      demoToken = await getAuthToken(loginCtx, USERNAME, PASSWORD);
+    } finally {
+      await loginCtx.dispose();
+    }
+  });
+
+  test.afterAll(async ({ request }) => {
+    // Best effort: a leaked empty realm would make the next run's create a 409, which is tolerated above,
+    // but leaving one behind on a long-lived container is still untidy.
+    const deleted = await request.delete(`${REALMS_URL}/${SUB_REALM_ID}`, {
+      headers: { iPlanetDirectoryPro: adminToken, "Accept-API-Version": "protocol=1.0,resource=1.0" },
+    });
+    console.log(`[5-E5] realm ${SUB_REALM} teardown -> ${deleted.status()}`);
+  });
+
+  test("row 13: path forms -- a trailing slash, a case change and an empty segment are all 404", async () => {
+    // ⚠ WRITTEN AND RUN FIRST, because it is the one row whose answer could redesign the CHF route table:
+    // a trailing-slash 200 would mean all 15 endpoints need D2's nested-router shape, not just resource_set
+    // (phase-5d-1 R-5d1.8). It does not -- every form below is a 404, so D1's flat EQUALS table stands.
+    const slash = await raw(`${path("/tokeninfo")}/?access_token=${ccToken}`);
+    console.log(`[5-E5] row13 /tokeninfo/ -> ${slash.status} ${slash.text}`);
+    expect(slash.status).toBe(404);
+    // ⚠ And it is the ROUTER 404, not the realm 404 finding 8 predicted ("falls to /{subrealm} and 404s on
+    // Realm.of(root,'tokeninfo')"). One unmatched element leaves the recursive pass with an EMPTY remaining
+    // URI, which matches no route at all -- so `doHandle` never runs and no realm is ever looked up.
+    expect(bodyOf(slash)).toEqual(ROUTER_404);
+
+    // Two segments below /oauth2 is the other case: the FIRST element is consumed as a sub-realm, and it is
+    // the realm lookup that fails. Same status, different body, different producer.
+    const twoSegment = await raw(`${path("/connect/jwk_uri")}/`);
+    console.log(`[5-E5] row13 /connect/jwk_uri/ -> ${twoSegment.status} ${twoSegment.text}`);
+    expect(twoSegment.status).toBe(404);
+    expect(bodyOf(twoSegment)).toEqual(realm404("/connect"));
+
+    const wellKnown = await raw(`${path("/.well-known/openid-configuration")}/`);
+    console.log(`[5-E5] row13 /.well-known/openid-configuration/ -> ${wellKnown.status} ${wellKnown.text}`);
+    expect(bodyOf(wellKnown)).toEqual(realm404("/.well-known"));
+
+    // Routing is CASE-SENSITIVE -- risk #11 asks for exactly this spot-check, and CHF's EQUALS matcher is
+    // case-sensitive too, so this is parity rather than a divergence.
+    for (const [label, url, expected] of [
+      ["/Tokeninfo", path("/Tokeninfo"), ROUTER_404],
+      ["/TOKENINFO", path("/TOKENINFO"), ROUTER_404],
+      ["/Connect/jwk_uri", path("/Connect/jwk_uri"), realm404("/Connect")],
+      ["/connect/JWK_URI", path("/connect/JWK_URI"), realm404("/connect")],
+      // An empty path segment does not collapse: `//tokeninfo` matches nothing.
+      ["//tokeninfo", path("//tokeninfo"), ROUTER_404],
+    ]) {
+      const response = await raw(url);
+      console.log(`[5-E5] row13 ${label} -> ${response.status} ${response.text}`);
+      expect(response.status, label).toBe(404);
+      expect(bodyOf(response), label).toEqual(expected);
+    }
+
+    // The counter-example that explains why resource_set needed three attachments: it is the ONLY endpoint
+    // Restlet attaches with an explicit trailing-slash route, and it is the only one that answers here.
+    const resourceSet = await raw(`${path("/resource_set")}/`);
+    console.log(`[5-E5] row13 /resource_set/ -> ${resourceSet.status} ${resourceSet.text}`);
+    expect(resourceSet.status).toBe(401);
+    expect(bodyOf(resourceSet).error).toBe("invalid_token");
+  });
+
+  test("row 1: the ?realm= override is honoured -- and skipped entirely when no route matched", async ({ request }) => {
+    for (const value of ["/", "%2F"]) {
+      const response = await request.get(`${OAUTH2}/tokeninfo?realm=${value}&access_token=${ccToken}`);
+      const body = await response.json();
+      console.log(`[5-E5] row1 ?realm=${value} -> ${response.status()} realm=${body.realm}`);
+      expect(response.status(), value).toBe(200);
+      expect(body.realm, value).toBe("/");
+    }
+
+    // The override really SWITCHES realm rather than merely being tolerated: the discovery document is the
+    // one endpoint whose answer names the realm it resolved to, and the sub-realm has no OIDC provider.
+    const switched = await request.get(
+      `${OAUTH2}/.well-known/openid-configuration?realm=${SUB_REALM}`, { maxRedirects: 0 });
+    const switchedBody = await switched.json();
+    console.log(`[5-E5] row1 ?realm=${SUB_REALM} -> ${switched.status()} ${JSON.stringify(switchedBody)}`);
+    expect(switched.status()).toBe(404);
+    expect(switchedBody).toEqual({
+      error: "not_found", error_description: `No OpenID Connect provider for realm /${SUB_REALM}`,
+    });
+    // The leading slash is optional in the override value.
+    const withSlash = await request.get(`${OAUTH2}/.well-known/openid-configuration?realm=/${SUB_REALM}`);
+    expect((await withSlash.json()).error_description).toBe(`No OpenID Connect provider for realm /${SUB_REALM}`);
+
+    // ⚠ The half no CHF row can reproduce: `RestletRealmRouter:86` guards the override on
+    // `next != delegateRoute`, so on a path that matched NO endpoint the override is never applied. A BAD
+    // override proves it -- if it were applied, this would be the realm 404 of row 2 instead of the router's.
+    const unmatched = await raw(`${path("/nosuchendpoint")}?realm=bogus`);
+    console.log(`[5-E5] row1 unmatched path + ?realm=bogus -> ${unmatched.status} ${unmatched.text}`);
+    expect(unmatched.status).toBe(404);
+    expect(bodyOf(unmatched)).toEqual(ROUTER_404);
+    // CHF applies `?realm=` in RealmContextFilter, BEFORE the router runs, so after the flip the same request
+    // is a 400 `invalid_request` about the realm. Recorded here so that difference reads as expected.
+  });
+
+  test("row 2: a bad ?realm= override is a 404 -- and CHF will answer 400", async ({ request }) => {
+    // Confirms provisional divergence row 16's STATUS (404 here, 400 after the flip via
+    // RealmContextFilter:255-257) and corrects its BODY: the message is the RealmLookupException's, not the
+    // `Realm "bogus" not found` the plan quoted from RestletRealmRouter:103.
+    const onGet = await request.get(`${OAUTH2}/tokeninfo?realm=bogus&access_token=${ccToken}`);
+    const getBody = await onGet.json();
+    console.log(`[5-E5] row2 GET /tokeninfo?realm=bogus -> ${onGet.status()} ${JSON.stringify(getBody)}`);
+    expect(onGet.status()).toBe(404);
+    expect(getBody).toEqual(realm404("bogus"));
+
+    // The same on the busiest endpoint in the product, and by the same producer: the realm layer answers
+    // before /access_token's own filter ever sees the request, so the body is CREST, not OAuth2.
+    const onPost = await request.post(`${OAUTH2}/access_token?realm=bogus`, {
+      form: { grant_type: "client_credentials", scope: SCOPE },
+      headers: { Authorization: `Basic ${Buffer.from(`${CONFIDENTIAL_CLIENT_ID}:${CONFIDENTIAL_SECRET}`).toString("base64")}` },
+    });
+    const postBody = await onPost.json();
+    console.log(`[5-E5] row2 POST /access_token?realm=bogus -> ${onPost.status()} ${JSON.stringify(postBody)}`);
+    expect(onPost.status()).toBe(404);
+    expect(postBody).toEqual(realm404("bogus"));
+    // ⚠ No `Cache-Control: no-store` here: the OAuth2Filter that stamps /access_token sits INSIDE the realm
+    // router, so a realm failure never reaches it. After the flip the OAuth2NoCacheFilter is inside the realm
+    // filter too (D1), so this stays absent -- assert it, or a "tidy" hoist to the root would go unnoticed.
+    expect(onPost.headers()["cache-control"]).toBeUndefined();
+    expect(onPost.headers()["pragma"]).toBeUndefined();
+  });
+
+  test("row 3: the legacy /oauth2/<subrealm>/... style resolves to that sub-realm", async ({ request }) => {
+    // The style RestletRealmRouter's `/{subrealm}` default route exists for. It is NOT dead: it resolves, and
+    // it resolves to the sub-realm rather than quietly falling back to root -- which is what the discovery
+    // document proves, since only the realm's own provider can answer it.
+    const discovery = await request.get(`${OAUTH2}/${SUB_REALM}/.well-known/openid-configuration`);
+    const body = await discovery.json();
+    console.log(`[5-E5] row3 /oauth2/${SUB_REALM}/.well-known/... -> ${discovery.status()} ${JSON.stringify(body)}`);
+    expect(discovery.status()).toBe(404);
+    expect(body).toEqual({
+      error: "not_found", error_description: `No OpenID Connect provider for realm /${SUB_REALM}`,
+    });
+
+    // An endpoint that does not need the realm's own provider answers normally under the legacy prefix.
+    const tokeninfo = await request.get(`${OAUTH2}/${SUB_REALM}/tokeninfo?access_token=${ccToken}`);
+    console.log(`[5-E5] row3 /oauth2/${SUB_REALM}/tokeninfo -> ${tokeninfo.status()}`);
+    expect(tokeninfo.status()).toBe(200);
+
+    // And the query override REPLACES the path realm rather than appending to it (RestletRealmRouter:86-90
+    // overwrites `realm`), which is the same rule RealmContextFilter follows after the flip.
+    const overridden = await request.get(`${OAUTH2}/${SUB_REALM}/.well-known/openid-configuration?realm=/`);
+    console.log(`[5-E5] row3 legacy + ?realm=/ -> ${overridden.status()}`);
+    expect(overridden.status()).toBe(200);
+    expect((await overridden.json()).issuer).toBe(`${OPENAM_BASE}/oauth2`);
+  });
+
+  test("row 4: the modern /oauth2/realms/... style, including the FLAT non-root spelling", async ({ request }) => {
+    const root = await request.get(`${OAUTH2}/realms/root/tokeninfo?access_token=${ccToken}`);
+    console.log(`[5-E5] row4 /realms/root/tokeninfo -> ${root.status()}`);
+    expect(root.status()).toBe(200);
+
+    const bogus = await request.get(`${OAUTH2}/realms/bogus/tokeninfo?access_token=${ccToken}`);
+    const bogusBody = await bogus.json();
+    console.log(`[5-E5] row4 /realms/bogus/tokeninfo -> ${bogus.status()} ${JSON.stringify(bogusBody)}`);
+    expect(bogus.status()).toBe(404);
+    // ⚠ Note the LEADING SLASH: the inner router hands `Realm.of` a path, so the identifier is "/bogus" here
+    // and a bare "bogus" in row 2. Same failure, two spellings.
+    expect(bogusBody).toEqual(realm404("/bogus"));
+
+    // ⚠ OVERTURNS THE PLAN. phase-5d-1 row 4 predicted Restlet would 404 a FLAT `realms/<non-root>` (the
+    // inner RestletRealmRouter throws unless the element is `root` or a REALM_OBJECT is already set) and that
+    // CHF serving it would be a capability GAIN to record. Restlet serves it too: the OUTER router's
+    // `doHandle` runs before the `/realms/{realmId}` template is parsed, so REALM_OBJECT is always already
+    // set to the host's realm by the time the inner router looks. No divergence, nothing to record -- but it
+    // would have read as a regression in reverse at the byte diff.
+    for (const [label, url] of [
+      [`flat /realms/${SUB_REALM}`, `${OAUTH2}/realms/${SUB_REALM}/.well-known/openid-configuration`],
+      [`nested /realms/root/realms/${SUB_REALM}`,
+        `${OAUTH2}/realms/root/realms/${SUB_REALM}/.well-known/openid-configuration`],
+    ]) {
+      const response = await request.get(url);
+      const body = await response.json();
+      console.log(`[5-E5] row4 ${label} -> ${response.status()} ${JSON.stringify(body)}`);
+      expect(response.status(), label).toBe(404);
+      // The endpoint answered, in the sub-realm: routing worked and the realm resolved to /e2e5e5realm.
+      expect(body, label).toEqual({
+        error: "not_found", error_description: `No OpenID Connect provider for realm /${SUB_REALM}`,
+      });
+    }
+  });
+
+  test("row 5: HEAD is served as GET -- except on the two endpoints with a method filter", async () => {
+    // D4's incumbent beyond resource_set. The 5d-1a fix maps HEAD to the @Get entry in `Endpoints.from`;
+    // these are the answers it has to reproduce.
+    for (const [label, url, contentType] of [
+      ["/tokeninfo", `${path("/tokeninfo")}?access_token=${ccToken}`, "application/json"],
+      ["/.well-known/openid-configuration", path("/.well-known/openid-configuration"), "application/json;charset=UTF-8"],
+      ["/connect/jwk_uri", path("/connect/jwk_uri"), "application/json;charset=UTF-8"],
+    ]) {
+      const head = await raw(url, { method: "HEAD" });
+      const get = await raw(url);
+      console.log(`[5-E5] row5 HEAD ${label} -> ${head.status} ct=${head.headers["content-type"]}`
+        + ` len=${head.headers["content-length"]} (GET ${get.status})`);
+      expect(head.status, label).toBe(200);
+      expect(get.status, label).toBe(200);
+      expect(head.headers["content-type"], label).toBe(contentType);
+      // No Content-Length on a HEAD, exactly as 5-E4 row 15 recorded for resource_set. finding 7 asks for
+      // this measurement because it is the container's decision, not the application's.
+      expect(head.headers["content-length"], label).toBeUndefined();
+      // An HTTP client discards a HEAD entity whatever the server sent, so body emptiness is NOT asserted.
+    }
+    // /tokeninfo's own cache contract survives the verb change.
+    const cached = await raw(`${path("/tokeninfo")}?access_token=${ccToken}`, { method: "HEAD" });
+    expect(cached.headers["cache-control"]).toBe("no-cache, no-store");
+
+    // ⚠ OVERTURNS THE PLAN, and this is the sharpest finding of the gate. phase-5d-1 finding 6 states that
+    // `HEAD /oauth2/authorize` "runs the real authorization flow ... Restlet did precisely the same". It does
+    // not: AuthorizeEndpointFilter.validateMethod accepts GET and POST only, and Restlet rewrites HEAD to GET
+    // at ANNOTATION LOOKUP -- inside the resource, below the filter -- so the filter sees a HEAD and 405s.
+    // After 5d-1a maps HEAD to @Get in `Endpoints.from`, the same request would run the flow and ISSUE A
+    // CODE. That is a wire change on the authorize endpoint, and it has to be decided in D4, not discovered.
+    const authorizeQuery = [
+      "response_type=code", `client_id=${CLIENT_ID}`, `redirect_uri=${encodeURIComponent(REDIRECT_URI)}`,
+      `scope=${SCOPE}`, "state=row5", `code_challenge=${encodeURIComponent((await pkce()).challenge)}`,
+      "code_challenge_method=S256",
+    ].join("&");
+    const authCtx = await sessionContext(apiRequest, demoToken);
+    try {
+      const head = await authCtx.fetch(`${OAUTH2}/authorize?${authorizeQuery}`, { method: "HEAD", maxRedirects: 0 });
+      const get = await authCtx.get(`${OAUTH2}/authorize?${authorizeQuery}`, { maxRedirects: 0 });
+      console.log(`[5-E5] row5 HEAD /authorize -> ${head.status()} (the same GET -> ${get.status()}`
+        + ` Location=${get.headers()["location"]})`);
+      expect(head.status()).toBe(405);
+      // The control that makes the 405 meaningful: the identical GET succeeds and issues a code.
+      expect(get.status()).toBe(302);
+      expect(new URL(get.headers()["location"]).searchParams.get("code")).toBeTruthy();
+      // The 405 carries /authorize's cache headers -- so it is the OAuth2Filter-wrapped path, not a container
+      // error -- and an HTML body, not the JSON a GET-shaped error would produce (see below).
+      expect(head.headers()["cache-control"]).toBe("no-store");
+      expect(head.headers()["pragma"]).toBe("no-cache");
+    } finally {
+      await authCtx.dispose();
+    }
+
+    // /access_token has the same filter and answers the same way to HEAD as to GET.
+    const tokenHead = await raw(path("/access_token"), { method: "HEAD" });
+    console.log(`[5-E5] row5 HEAD /access_token -> ${tokenHead.status} ct=${tokenHead.headers["content-type"]}`);
+    expect(tokenHead.status).toBe(405);
+
+    // ⚠ A HEAD that ends in an ERROR status does not send the JSON body's headers at all: the Restlet stack
+    // substitutes an HTML status page, with a Content-Length. Compare the same request as a GET, which is
+    // `application/json` with no length. CHF keeps the JSON content type on a HEAD (verified against
+    // /openam/json), so this is a header divergence to expect at the flip, on every erroring HEAD.
+    const errorHead = await raw(path("/tokeninfo"), { method: "HEAD" });
+    const errorGet = await raw(path("/tokeninfo"));
+    console.log(`[5-E5] row5 HEAD /tokeninfo (no token) -> ${errorHead.status} ct=${errorHead.headers["content-type"]}`
+      + ` len=${errorHead.headers["content-length"]} (GET ct=${errorGet.headers["content-type"]})`);
+    expect(errorHead.status).toBe(401);
+    expect(errorGet.status).toBe(401);
+    expect(errorHead.headers["content-type"]).toBe("text/html;charset=utf-8");
+    expect(errorHead.headers["content-length"]).toBeTruthy();
+    expect(errorGet.headers["content-type"]).toBe("application/json");
+  });
+
+  test("row 6: an unmapped verb is 405 -- with Allow from the resource, without from the filter", async () => {
+    // The `Allow` header D4 restores in `Endpoints.from`. ⚠ Its VALUE is per endpoint and is not the
+    // resource_set list: these two endpoints declare a single @Get, so Restlet advertises exactly "GET".
+    for (const endpoint of ["/tokeninfo", "/connect/jwk_uri"]) {
+      for (const method of ["PROPFIND", "PUT"]) {
+        const response = await raw(path(endpoint), { method, headers: { "Content-Length": 0 } });
+        const label = `${method} ${endpoint}`;
+        console.log(`[5-E5] row6 ${label} -> ${response.status} allow=${response.headers["allow"]} ${response.text}`);
+        expect(response.status, label).toBe(405);
+        expect(response.headers["allow"], label).toBe("GET");
+        // The CREST 405 body -- a THIRD shape alongside /access_token's `method_not_allowed` and
+        // resource_set's `unsupported_method_type` (5-E4 row 11).
+        expect(bodyOf(response), label).toEqual(CREST_405);
+        // No cache headers on these: only /authorize and /access_token are OAuth2Filter-wrapped.
+        expect(response.headers["cache-control"], label).toBeUndefined();
+      }
+    }
+
+    // The other 405 producer: an endpoint whose own filter checks the verb. It sends the OAuth2 body, the
+    // cache headers -- and NO Allow at all, which is the RFC 7231 §6.5.5 gap that survives the flip on this
+    // path unless the CHF handler stamps it (D4 stamps it in Endpoints.from, i.e. on the framework's 405).
+    for (const [endpoint, expected] of [
+      ["/access_token", "Required Method: POST found: PROPFIND"],
+      ["/authorize", "Required Method: GET or POST found: PROPFIND"],
+    ]) {
+      const response = await raw(path(endpoint), { method: "PROPFIND" });
+      console.log(`[5-E5] row6 PROPFIND ${endpoint} -> ${response.status} allow=${response.headers["allow"]}`
+        + ` ${response.text}`);
+      expect(response.status, endpoint).toBe(405);
+      expect(bodyOf(response), endpoint).toEqual({ error: "method_not_allowed", error_description: expected });
+      expect(response.headers["allow"], endpoint).toBeUndefined();
+      expect(response.headers["cache-control"], endpoint).toBe("no-store");
+    }
+  });
+
+  test("row 7: PATCH runs the @Get method and THEN 405s -- so it is wider than resource_set", async () => {
+    // ⚠ OVERTURNS THE PLAN's scoping. 5-E4 row 11 found PATCH on resource_set routed to the @Put method, and
+    // D4 scoped divergence row 14 to that endpoint on the grounds that it is the only ported endpoint with a
+    // @Put. What Restlet actually does with a PATCH is run the resource's @Get FIRST (to obtain the current
+    // representation) and only then look for a handler -- so on a @Get-only endpoint the GET's side effects
+    // and the GET's ERRORS are on the wire, and only afterwards does the 405 appear.
+    //
+    // Proof, three requests: with a valid token the 405 carries /tokeninfo's OWN cache directives, which only
+    // `ValidationServerResource.validate()` sets; without a token the request never reaches the 405 at all
+    // and answers the GET's 401; and a PUT -- which does not run the @Get -- carries neither.
+    const patched = await raw(`${path("/tokeninfo")}?access_token=${ccToken}`,
+      { method: "PATCH", headers: { "Content-Length": 0 } });
+    console.log(`[5-E5] row7 PATCH /tokeninfo (valid token) -> ${patched.status}`
+      + ` cache=${patched.headers["cache-control"]} allow=${patched.headers["allow"]}`);
+    expect(patched.status).toBe(405);
+    expect(bodyOf(patched)).toEqual(CREST_405);
+    expect(patched.headers["allow"]).toBe("GET");
+    expect(patched.headers["cache-control"]).toBe("no-cache, no-store");
+
+    const unauthenticated = await raw(path("/tokeninfo"), { method: "PATCH", headers: { "Content-Length": 0 } });
+    console.log(`[5-E5] row7 PATCH /tokeninfo (no token) -> ${unauthenticated.status} ${unauthenticated.text}`);
+    expect(unauthenticated.status).toBe(401);
+    expect(bodyOf(unauthenticated).error).toBe("invalid_token");
+
+    const put = await raw(`${path("/tokeninfo")}?access_token=${ccToken}`,
+      { method: "PUT", headers: { "Content-Length": 0 } });
+    console.log(`[5-E5] row7 PUT /tokeninfo (valid token) -> ${put.status} cache=${put.headers["cache-control"]}`);
+    expect(put.status).toBe(405);
+    expect(put.headers["cache-control"]).toBeUndefined();
+
+    // On the two method-filtered endpoints the filter refuses PATCH before any of that.
+    const onToken = await raw(path("/access_token"), { method: "PATCH", headers: { "Content-Length": 0 } });
+    console.log(`[5-E5] row7 PATCH /access_token -> ${onToken.status} ${onToken.text}`);
+    expect(onToken.status).toBe(405);
+    expect(bodyOf(onToken)).toEqual({
+      error: "method_not_allowed", error_description: "Required Method: POST found: PATCH",
+    });
+  });
+
+  test("row 8: ?_api and ?_crestapi are ignored", async ({ request }) => {
+    // The baseline for phase-5d-1 finding 10: after the flip the global CHF chain's ApiDescriptorFilter and
+    // OpenApiRequestFilter see these parameters on /oauth2 for the first time. Today they are simply query
+    // parameters nobody reads, and the endpoint answers exactly as it would without them.
+    const plain = await request.get(`${OAUTH2}/connect/jwk_uri`);
+    const plainBody = await plain.text();
+    for (const parameter of ["_api", "_crestapi"]) {
+      const response = await request.get(`${OAUTH2}/connect/jwk_uri?${parameter}`);
+      console.log(`[5-E5] row8 /connect/jwk_uri?${parameter} -> ${response.status()}`
+        + ` ct=${response.headers()["content-type"]}`);
+      expect(response.status(), parameter).toBe(200);
+      expect(response.headers()["content-type"], parameter).toBe("application/json;charset=UTF-8");
+      expect(await response.text(), parameter).toBe(plainBody);
+    }
+    const withToken = await request.get(`${OAUTH2}/tokeninfo?_api&access_token=${ccToken}`);
+    console.log(`[5-E5] row8 /tokeninfo?_api -> ${withToken.status()}`);
+    expect(withToken.status()).toBe(200);
+  });
+
+  test("row 9: OPTIONS is a 405, and no CORS headers are produced at all", async ({ request }) => {
+    // The CORSFilter is mapped to /oauth2/* in web.xml (`:224-227`) and survives the flip untouched, being
+    // url-pattern based. On this deployment it is unconfigured, so it adds nothing -- recorded so that a
+    // post-flip run showing Access-Control-* headers would be a change in the FILTER's configuration and not
+    // something the migration did.
+    for (const origin of [undefined, "http://app.invalid"]) {
+      const response = await request.fetch(`${OAUTH2}/authorize`, {
+        method: "OPTIONS", maxRedirects: 0,
+        headers: origin ? { Origin: origin, "Access-Control-Request-Method": "GET" } : {},
+      });
+      const body = await response.json();
+      const label = origin ? "with Origin" : "no Origin";
+      console.log(`[5-E5] row9 OPTIONS /authorize ${label} -> ${response.status()} ${JSON.stringify(body)}`);
+      expect(response.status(), label).toBe(405);
+      expect(body, label).toEqual({
+        error: "method_not_allowed", error_description: "Required Method: GET or POST found: OPTIONS",
+      });
+      for (const header of Object.keys(response.headers())) {
+        expect(header.startsWith("access-control-"), `${label}: ${header}`).toBe(false);
+      }
+    }
+
+    // On an endpoint with no method filter, OPTIONS lands on the same CREST 405 as any other unmapped verb --
+    // Restlet does NOT implement the automatic OPTIONS response its ServerResource could.
+    const onGetOnly = await raw(path("/tokeninfo"), { method: "OPTIONS" });
+    console.log(`[5-E5] row9 OPTIONS /tokeninfo -> ${onGetOnly.status} allow=${onGetOnly.headers["allow"]}`);
+    expect(onGetOnly.status).toBe(405);
+    expect(onGetOnly.headers["allow"]).toBe("GET");
+    expect(bodyOf(onGetOnly)).toEqual(CREST_405);
+  });
+
+  test("row 10: the method tunnel -- the header is honoured on ANY verb, the query only on POST", async ({ request }) => {
+    // ⚠ THIS ROW SETTLES D11, and it settles it in three parts rather than the two the decision anticipated.
+    //
+    // (a) `X-HTTP-Method-Override` on a POST: HONOURED, exactly as `Endpoints.getMethod:119-126` will do
+    //     after the flip. No divergence -- D11's first branch.
+    const overridden = await request.post(`${OAUTH2}/access_token`, {
+      form: { grant_type: "client_credentials", scope: SCOPE },
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${CONFIDENTIAL_CLIENT_ID}:${CONFIDENTIAL_SECRET}`).toString("base64")}`,
+        "X-HTTP-Method-Override": "GET",
+      },
+    });
+    const overriddenBody = await overridden.json();
+    console.log(`[5-E5] row10 POST /access_token + override GET -> ${overridden.status()}`
+      + ` ${JSON.stringify(overriddenBody)}`);
+    expect(overridden.status()).toBe(405);
+    // The verb was rewritten BEFORE TokenEndpointFilter.validateMethod ran -- the message says so.
+    expect(overriddenBody).toEqual({
+      error: "method_not_allowed", error_description: "Required Method: POST found: GET",
+    });
+    // The control: the identical request without the header issues a token.
+    const control = await request.post(`${OAUTH2}/access_token`, {
+      form: { grant_type: "client_credentials", scope: SCOPE },
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${CONFIDENTIAL_CLIENT_ID}:${CONFIDENTIAL_SECRET}`).toString("base64")}`,
+      },
+    });
+    console.log(`[5-E5] row10 the same POST without the header -> ${control.status()}`);
+    expect(control.status()).toBe(200);
+    // And the rewrite is real in the other direction too: a POST becomes a working GET on a @Get endpoint.
+    const posted = await raw(`${path("/tokeninfo")}?access_token=${ccToken}`, {
+      method: "POST", headers: { "X-HTTP-Method-Override": "GET", "Content-Length": 0 },
+    });
+    console.log(`[5-E5] row10 POST /tokeninfo + override GET -> ${posted.status}`);
+    expect(posted.status).toBe(200);
+
+    // (b) the same header on a NON-POST: Restlet honours it, CHF will not (`Endpoints.getMethod` gates on
+    //     POST). So this GET, a 405 today, becomes a 200 after the flip -- a divergence in the safe
+    //     direction, but a divergence.
+    const onGet = await raw(`${path("/tokeninfo")}?access_token=${ccToken}`,
+      { headers: { "X-HTTP-Method-Override": "PUT" } });
+    console.log(`[5-E5] row10 GET /tokeninfo + override PUT -> ${onGet.status} allow=${onGet.headers["allow"]}`);
+    expect(onGet.status).toBe(405);
+    expect(bodyOf(onGet)).toEqual(CREST_405);
+
+    // (c) Restlet's OWN tunnel, the `method` QUERY parameter (TunnelService, POST-only), which CHF has no
+    //     equivalent for at all. `POST /access_token?method=GET` is a 405 today and will ISSUE A TOKEN after
+    //     the flip. Nobody had measured this; it is a divergence row of its own.
+    const queryTunnel = await request.post(`${OAUTH2}/access_token?method=GET`, {
+      form: { grant_type: "client_credentials", scope: SCOPE },
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${CONFIDENTIAL_CLIENT_ID}:${CONFIDENTIAL_SECRET}`).toString("base64")}`,
+      },
+    });
+    const queryBody = await queryTunnel.json();
+    console.log(`[5-E5] row10 POST /access_token?method=GET -> ${queryTunnel.status()} ${JSON.stringify(queryBody)}`);
+    expect(queryTunnel.status()).toBe(405);
+    expect(queryBody.error_description).toBe("Required Method: POST found: GET");
+    // ...and it really is POST-only: the same parameter on a GET changes nothing.
+    const queryOnGet = await request.get(`${OAUTH2}/tokeninfo?method=PUT&access_token=${ccToken}`);
+    console.log(`[5-E5] row10 GET /tokeninfo?method=PUT -> ${queryOnGet.status()}`);
+    expect(queryOnGet.status()).toBe(200);
+  });
+
+  test("row 11: an unrouted path is a 404 -- from one of two different producers", async () => {
+    // What D5's OAuth2NotFoundHandler is measured against. The producer depends on the SEGMENT COUNT, which
+    // is the finding phase-5d-1's finding 8 half-predicted: it expected every unmatched path to be a realm
+    // 404, and one-segment paths are not.
+    for (const [label, url, expected] of [
+      ["/nosuchendpoint (one segment -> router)", path("/nosuchendpoint"), ROUTER_404],
+      ["/authorize/extra (two -> realm)", path("/authorize/extra"), realm404("/authorize")],
+      ["/connect/nosuch (two -> realm)", path("/connect/nosuch"), realm404("/connect")],
+      ["/realms/root/nosuch (consumed by the realm route -> router)", path("/realms/root/nosuch"), ROUTER_404],
+    ]) {
+      const response = await raw(url);
+      console.log(`[5-E5] row11 ${label} -> ${response.status} ${response.text}`);
+      expect(response.status, label).toBe(404);
+      expect(bodyOf(response), label).toEqual(expected);
+      // No OAuth2-shaped body anywhere here: /oauth2's routing failures speak CREST today. After the flip
+      // they all become {"error":"not_found",...} (D5) -- a shape change on every one of these URLs.
+      expect(response.headers["content-type"], label).toBe("application/json");
+    }
+  });
+
+  test("row 12: the bare prefix, and the realm prefix with no endpoint, are router 404s", async () => {
+    // Never recorded by any row before this one. The bare prefix is the one place `/{subrealm}` has nothing
+    // to bind, so Restlet's own router 404 surfaces -- and `/realms` and `/realms/root` behave the same way.
+    for (const [label, url] of [
+      ["/oauth2/", `${path("")}/`],
+      ["/oauth2", path("")],
+      ["/oauth2/realms", path("/realms")],
+      ["/oauth2/realms/root", path("/realms/root")],
+    ]) {
+      const response = await raw(url);
+      console.log(`[5-E5] row12 ${label} -> ${response.status} ${response.text}`);
+      expect(response.status, label).toBe(404);
+      expect(bodyOf(response), label).toEqual(ROUTER_404);
+    }
+  });
+
+  test("row 14: an unknown Host is a 500 today -- on BOTH URL styles", async () => {
+    // ⚠ OVERTURNS THE PLAN, and it is the row that matters most to a live deployment. phase-5d-1 finding 16
+    // predicted that `/oauth2/realms/root/...` WORKS today under an unrecognised Host (the outer router
+    // short-circuits when `realmId` is set) and would 400 after the flip -- "the only row here that can break
+    // a deployment that works today". It does not work today: `realmId` is set by the route TEMPLATE, which
+    // is parsed after `doHandle` has already called `getRealmFromServerName`, so the host is resolved on
+    // every request and both styles answer 500.
+    //
+    // ⇒ provisional divergence row 17 becomes "500 -> 400 on both styles", i.e. a better answer to a request
+    //   that is already failing, not a working integration breaking. R-5d1.9's severity drops accordingly.
+    for (const [label, url] of [
+      ["/oauth2/tokeninfo", `${path("/tokeninfo")}?access_token=${ccToken}`],
+      ["/oauth2/realms/root/tokeninfo", `${path("/realms/root/tokeninfo")}?access_token=${ccToken}`],
+      ["/oauth2/.well-known/openid-configuration", path("/.well-known/openid-configuration")],
+    ]) {
+      const response = await raw(url, { hostHeader: "not-a-real-host.invalid" });
+      console.log(`[5-E5] row14 ${label} under an unknown Host -> ${response.status} ${response.text}`);
+      expect(response.status, label).toBe(500);
+      expect(bodyOf(response), label).toEqual({
+        code: 500, reason: "Internal Server Error",
+        message: "No mapping organization found for organization identifier: not-a-real-host.invalid",
+      });
+    }
+
+    // ⚠ The positive control that makes the three rows above mean anything: the SAME raw client, the same
+    // URL, with the deployment's own hostname, answers 200. Without it a client that silently dropped the
+    // Host header would leave every assertion above passing for the wrong reason.
+    const known = await raw(path("/connect/jwk_uri"), { hostHeader: BASE.hostname });
+    console.log(`[5-E5] row14 the same request with Host: ${BASE.hostname} -> ${known.status}`);
+    expect(known.status).toBe(200);
   });
 
 });

@@ -194,12 +194,23 @@ test.describe("/oauth2/resource_set contract lock (5-E4, live Restlet)", () => {
     // this endpoint reports as **400** (not 500 -- see row 4 for why every non-OAuth2Exception lands on 400),
     // and the resource set cannot be removed through the API at all. So this teardown mitigates
     // accumulation, it does not guarantee it. See the 5-E4 as-built.
-    const results = await Promise.all(created.map(async (id) => {
+    // ⚠ Sequential, deliberately -- NOT `Promise.all`. Issuing these concurrently corrupts the realm's
+    // entitlement model and takes the container down for the rest of the run (run 30900393465: 45 deletes
+    // in one Promise.all, realm poisoned at 11:56:52.352, every later /json policy and UMA call 500s).
+    // `resourceSetDeleted` is a read-modify-write -- getApplication / removeResourceTypeUuid /
+    // saveApplication -- and only THEN deletes the ResourceType. Run in parallel, one thread re-persists an
+    // application snapshot still listing an id another thread has removed, and that thread then deletes the
+    // id's ResourceType; the application is left referencing a type that is gone. From there
+    // OpenSSOApplicationPrivilegeManager.getAllBaseResource throws NO_SUCH_RESOURCE_TYPE on the first id it
+    // cannot resolve, which is realm-wide and permanent because every entitlement call goes through
+    // ApplicationPrivilegeManager.getInstance. The uma and xacml specs both died on it.
+    const results = [];
+    for (const id of created) {
       const response = await request.delete(`${RS}/${id}`, {
         headers: { Authorization: `Bearer ${pat}`, "If-Match": "*" },
       });
-      return response.status();
-    }));
+      results.push(response.status());
+    }
     const failed = results.filter((status) => status !== 204);
     console.log(`[5-E4] teardown: ${results.length - failed.length}/${results.length} deleted`
       + (failed.length ? `; ${failed.length} could not be removed (statuses ${[...new Set(failed)].join(", ")})` : ""));

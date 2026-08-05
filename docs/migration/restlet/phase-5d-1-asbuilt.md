@@ -365,6 +365,62 @@ the nested one, in a single run.
 
 ---
 
+<a id="the-pre-flip-audit-capture--recorded-2026-08-05"></a>
+## The pre-flip audit capture — recorded 2026-08-05
+
+[D8](phase-5d-1.md#d8)'s pre-flip half, taken early: it has to happen on a live-Restlet `/oauth2`, and the
+5d-1b soak containers were still up. Checklist step 14 of **5d-1c**, done ahead of the flip.
+
+| | |
+|---|---|
+| Artefact | `docs/migration/restlet/artefacts/d8-audit-pre-flip.csv` (8 rows + a provenance header) |
+| Tool | `e2e/tools/d8-audit-capture.mjs` (md5 in the artefact header), fixtures from `e2e/common/oauth2-fixtures.mjs` unchanged |
+| Normaliser | `e2e/tools/d8-audit-diff.py` |
+| Container | `openam-idp` on `openam-e2e:5d1b` — the same image 5d-1b's criterion 11 measured |
+| Commit | `ca7bed61159250149599c4f402d3eae7f0764004` (5d-1b) |
+| Statuses | `1:200 2:401 3:302 4:302 5:200 6:200 7:201 8:405` — all eight as expected, bar D8's predicted 301 |
+
+**The capture is validated in both directions.** Two captures of the same unchanged container normalise to
+byte-identical output, so a non-empty post-flip diff is a real difference and not run-to-run noise; and
+mutating a `reason` string in the artefact still shows up in the diff, so the normaliser is not simply
+hiding everything. Both checks were run, not assumed.
+
+**Four of D8's assumptions were wrong** — the corrected procedure is now in [D8](phase-5d-1.md#d8) itself.
+Briefly: the audit handler is already enabled (nothing to turn on), but `csvBuffering.bufferingEnabled` must
+be turned **off** or the extraction silently captures someone else's traffic; the auditor detail is at
+`request.detail`/`response.detail`, not `http.request.detail`; `AM-ACCESS-ATTEMPT` is blacklisted by default
+so there are 8 rows and not 16; and an unauthenticated `/authorize` is a **302**, not a 301.
+
+**What the artefact already proves, pre-flip.** The audit matrix
+([finding 2](phase-5d-1-research.md#2--the-route-table-is-18-attachments-and-7-distinct-auditor-pairs-lift-both-verbatim))
+is directly readable in the response details, which is the strongest available check that the copy in
+`OAuth2HttpRouteProvider` is the same contract Restlet is serving today:
+
+| Row | Endpoint | `response.detail` | Matches table row |
+|---|---|---|---|
+| 1 | `/access_token` | `{"scope":"uma_protection","token_type":"Bearer"}` | 3 — `jsonAuditor(SCOPE, TOKEN_TYPE)` |
+| 5 | `/tokeninfo` | `{"scope":["uma_protection"],"token_type":"Bearer"}` | 4 — `jsonAuditor(SCOPE, TOKEN_TYPE)` |
+| 6 | `/introspect` | `{"scope":…,"token_type":"access_token","client_id":"d8_probe","active":true}` | 5 — `jsonAuditor(SCOPE, TOKEN_TYPE, CLIENT_ID, USERNAME, ACTIVE)`; `USERNAME` is absent because a `client_credentials` token has no resource owner |
+| 7 | `/resource_set` | `{"_id":"…"}` | 12–14 — `jsonAuditor("_id")` |
+| 3, 4 | `/authorize` | *(none)* | 2 — `noBodyAuditor()` on both sides |
+
+**The two strings the flip is expected to change**, pinned exactly:
+
+| Row | Now (Restlet `getDescription()`) | Expected after the flip (`getReasonPhrase()`) |
+|---|---|---|
+| 2 — bad-secret token, 401 | `{"reason":"The request requires user authentication"}` | `{"reason":"Unauthorized"}` |
+| 8 — `PROPFIND /oauth2/tokeninfo`, 405 | `{"reason":"The method specified in the request is not allowed for the resource identified by the request URI"}` | `{"reason":"Method Not Allowed"}` |
+
+⚠ **The `:-1` port does not reproduce.** [Risk #13](plan.md#risk-register-behavioral-compatibility) allows for
+`http.request.path` carrying `:-1` ([backlog](decisions.md#chf-cleanup-backlog)); every pre-flip row shows
+`http://openam.example.org:8080/…`. So a `:-1` appearing post-flip is a **regression**, not the known issue —
+this artefact is what removes that excuse.
+
+**Left on the container by this capture** (both harmless, both recreated identically by a re-run): an OAuth2
+client `d8_probe`, and the audit service's `csvBuffering.bufferingEnabled` set to `false`.
+
+---
+
 ## Handed to 5d-2
 
 Recorded here so the deletion step reads one list:

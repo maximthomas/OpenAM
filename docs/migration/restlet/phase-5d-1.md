@@ -304,24 +304,63 @@ their own flips. Existing realms are unaffected: the set is consulted on creatio
 already has a realm called `connect` was already shadowed by Restlet's own realm router.
 
 <a id="d8"></a>
-### D8 — the audit smoke is a manual pre/post capture, recorded in the as-built
+### D8 — the audit smoke is a scripted pre/post capture, recorded in the as-built
 
 Decided 2026-07-30. [Risk #13](plan.md#risk-register-behavioral-compatibility)'s residual (the FAILED-path
 `reason` string, the `queryParameters` fix, the `:-1` port) is discharged by capturing real audit records
-either side of the flip rather than by new e2e machinery:
+either side of the flip rather than by new e2e machinery.
 
-1. before 5d-1c, on the soak container: enable the file-based access-audit handler for the OAuth topic;
-2. drive a fixed 8-request sequence (client_credentials token, a bad-secret token, an authorize 301, an
-   authorize success, tokeninfo, introspect, a resource_set create, a 405);
-3. `docker exec cat` the access log, save it as the pre-flip artefact;
-4. flip, repeat, diff field by field: `eventName`, `component`, `userId`, `trackingIds`,
-   `http.request.method/path/queryParameters/detail`, `http.response.detail`, `response.status`,
-   `response.statusCode`, `response.detail.reason`.
+⚠ **Revised 2026-08-05, after taking the pre-flip capture.** The procedure below was written from the plan
+and four of its assumptions turned out to be wrong against a live container; it is restated here as what
+actually works. It is now a script rather than a manual sequence, because the post-flip capture happens on a
+**rebuilt container** — the only thing that makes the two artefacts comparable is that the same code created
+the same fixtures and sent the same bytes.
+
+```
+node   e2e/tools/d8-audit-capture.mjs pre-flip     # before the flip   (done, 2026-08-05)
+node   e2e/tools/d8-audit-capture.mjs post-flip    # after  the flip
+python3 e2e/tools/d8-audit-diff.py docs/migration/restlet/artefacts/d8-audit-pre-flip.csv  > /tmp/pre
+python3 e2e/tools/d8-audit-diff.py docs/migration/restlet/artefacts/d8-audit-post-flip.csv > /tmp/post
+diff -u /tmp/pre /tmp/post
+```
+
+The capture drives D8's fixed 8-request sequence (client_credentials token, a bad-secret token, an
+unauthenticated authorize, an authorize success, tokeninfo, introspect, a resource_set create, a 405),
+brackets it with a line marker in `access.csv`, and writes the rows those 8 requests produced to
+`docs/migration/restlet/artefacts/d8-audit-<label>.csv`. Fixtures come from `e2e/common/oauth2-fixtures.mjs`
+unchanged, and the artefact header records the md5 of both the tool and the fixtures so a diff taken across
+an edit to either is detectable rather than silently wrong.
+
+**What the plan got wrong, and what is true instead:**
+
+| Plan said | Actually |
+|---|---|
+| step 1: "enable the file-based access-audit handler for the OAuth topic" | **Already enabled.** A `Global CSV Handler` ships with `enabled=true` and topics `[access, activity, config, authentication]`, writing `$OPENAM_DATA_DIR/$OPENAM_PATH/log/access.csv`. Nothing to turn on |
+| *(not mentioned)* | **`csvBuffering.bufferingEnabled` must be turned off**, and this is the one config change the smoke needs. It ships `true` with `autoFlush=false`, and the buffer is FIFO with no bounded latency: a flush after the 8 requests emits the *oldest* pending records, so line-offset extraction silently yields someone else's traffic. Observed directly — the first capture attempt returned 0 rows while the file grew by 8192 bytes of unrelated SAML traffic. The tool disables it (and that flushes the backlog as a side effect) |
+| diff `http.request.detail` / `http.response.detail` | **No such columns.** `AMAccessAuditEventBuilder:145` calls `addDetail(detail, REQUEST)` and `AccessAuditEventBuilder:84` has `REQUEST = "request"`, so the auditor detail is at **`request.detail`** and **`response.detail`** |
+| an attempt **and** an outcome event per request | **Outcome only, 8 rows not 16.** `AM-ACCESS-ATTEMPT` is blacklisted unless the JVM property `org.forgerock.openam.audit.access.attempt.enabled` is set (`AuditServiceConfigurationProviderImpl:221`). Decided 2026-08-05 to leave it off: enabling it needs a restart on **both** sides of the flip, and the only field it adds — `request.detail`, the request-side auditor field lists — is already pinned in-process by `OAuth2RouterIT.theAccessTokenAuditDetailIsExactlyTheConfiguredFieldList`. Everything the residual actually rides on is on the outcome event |
+| "an authorize **301**" | **302.** Measured on `openam-e2e:5d1b`, both unauthenticated and authenticated |
+
+Diff these, per row: `eventName`, `component`, `realm`, `userId`, `http.request.secure`,
+`http.request.method`, `http.request.path`, `http.request.queryParameters`, `request.detail`,
+`response.status`, `response.statusCode`, `response.detail`, plus `http.request.headers`/`cookies`.
+`d8-audit-diff.py` prints exactly these and blanks the fields that vary run to run regardless of the flip
+(`_id`, `timestamp`, `transactionId`, `trackingIds`, ip/port, `elapsedTime`, and issued UUIDs inside a
+detail blob). It is validated in both directions: two captures of one unchanged container normalise to
+byte-identical output, and mutating a `reason` string still shows up in the diff.
 
 Expected differences: the `reason` string on failures (`getReasonPhrase()` vs Restlet `getDescription()` — the
-accepted residual), and possibly `http.request.path`'s `:-1` port
-([backlog](decisions.md#chf-cleanup-backlog), pre-existing on `/json` too). Anything else is a regression.
-Record the diff verbatim in the as-built — it is the only record that survives 5d-2.
+accepted residual). The pre-flip artefact pins the two exact strings the flip should change:
+
+| Row | Now (Restlet) | Expected after the flip |
+|---|---|---|
+| 2 — bad-secret token, 401 | `{"reason":"The request requires user authentication"}` | `{"reason":"Unauthorized"}` |
+| 8 — `PROPFIND /oauth2/tokeninfo`, 405 | `{"reason":"The method specified in the request is not allowed for the resource identified by the request URI"}` | `{"reason":"Method Not Allowed"}` |
+
+`http.request.path`'s `:-1` port ([backlog](decisions.md#chf-cleanup-backlog)) does **not** reproduce here —
+the pre-flip capture shows `:8080` on every row, so a `:-1` appearing post-flip *is* a regression, not the
+known issue. Anything else is a regression. Record the diff verbatim in the as-built — it is the only record
+that survives 5d-2.
 
 <a id="d9"></a>
 ### D9 — `OAuth2RouterIT`: probe rows for the table, deep rows for the seams
@@ -491,7 +530,12 @@ Steps **1–12** (5-E5, 5d-1a, 5d-1b) are done; what each of them actually produ
 **5d-1c — what is left**
 
 13. Re-read every open question in this doc; anything still needing live Restlet stops the flip.
-14. Enable audit + capture the pre-flip audit artefact ([D8](#d8) steps 1–3).
+14. ~~Enable audit + capture the pre-flip audit artefact ([D8](#d8) steps 1–3).~~ — **done 2026-08-05**,
+    ahead of the flip while the 5d-1b containers were still up
+    ([as-built](phase-5d-1-asbuilt.md#the-pre-flip-audit-capture--recorded-2026-08-05)). D8 itself was rewritten:
+    four of its assumptions were wrong, and the capture is now `e2e/tools/d8-audit-capture.mjs`.
+    ⚠ The post-flip capture must run **`node e2e/tools/d8-audit-capture.mjs post-flip`** on the rebuilt
+    container — the tool disables `csvBuffering` itself, so there is no separate config step.
 15. Move the one web.xml line. Nothing else in the commit.
 16. Rebuild the container; criteria 12–16.
 17. Write the as-built: the byte-diff, the audit diff, the new divergence rows, the answers to 5-E4 rows 15/17,

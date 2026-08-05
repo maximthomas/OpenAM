@@ -191,6 +191,10 @@ public class ResourceSetRouteCompositionIT {
         Router resourceSetRouter = new Router();
         resourceSetRouter.addRoute(requestUriMatcher(EQUALS, ""), chain);         // resource_set, resource_set/
         resourceSetRouter.addRoute(requestUriMatcher(EQUALS, "{rsid}"), chain);   // resource_set/{rsid}
+        // 5d-1 D5: the nested router carries its own default route -- a child Router answers its own 404 rather
+        // than falling through to the parent's, so without this the one 404 the migration has an oracle for
+        // (5-E4 row 17) would be the only bodiless one on the surface.
+        resourceSetRouter.setDefaultRoute(new OAuth2NotFoundHandler());
 
         Router endpointRouter = new Router();
         endpointRouter.addRoute(requestUriMatcher(STARTS_WITH, "resource_set"), resourceSetRouter);
@@ -286,9 +290,11 @@ public class ResourceSetRouteCompositionIT {
         assertThat(response.getStatus().getCode()).isEqualTo(405);
         assertThat(bodyOf(response)).containsEntry("error", "unsupported_method_type");
         assertThat(response.getHeaders().getFirst("Content-Type")).isEqualTo(JSON);
-        // ⚠ Restlet also sent `Allow: POST, PUT, GET, DELETE` here and Endpoints.from sends nothing. Recorded,
-        // not asserted away: closing it is a 5d-1 handoff item, and this line is what will fail when it is.
-        assertThat(response.getHeaders().getFirst("Allow")).isNull();
+        // The handoff item this line was written to fail on: 5d-1a closed it. Restlet sent
+        // `Allow: POST, PUT, GET, DELETE` (5-E4 row 11); Endpoints.allowHeader emits the same four verbs in its
+        // own order, and HEAD is deliberately absent. The set is the contract -- the e2e row asserts a set too.
+        assertThat(response.getHeaders().getFirst("Allow").split(", "))
+                .containsExactlyInAnyOrder("DELETE", "GET", "POST", "PUT");
 
         // the root filter, outside: its containsKey("error") guard must return this body untouched
         Response throughRoot = Handlers.chainOf(router, new OAuth2ErrorFilter())
@@ -364,18 +370,25 @@ public class ResourceSetRouteCompositionIT {
     }
 
     /**
-     * Row 9 — a no-match below the endpoint is the router's own 404 and stays CREST-shaped, because the chain
-     * wraps the handler rather than the router (D9). The second half is the counterfactual: wrap the router and
-     * the same 404 becomes a 500, which is the bug the placement exists to avoid (pairs with 5-E4 row 17).
+     * Row 9 — a no-match below the endpoint is the nested router's own 404, which the {@code ResourceSetErrorFilter}
+     * never sees because the chain wraps the handler rather than the router (D9). Since 5d-1 D5 that 404 carries
+     * {@link OAuth2NotFoundHandler}'s body rather than being bodiless (pairs with 5-E4 row 17).
+     *
+     * <p>⚠ <strong>D5 hides the bug this row exists to catch, so the counterfactual is re-expressed rather than
+     * dropped.</strong> Wrapping {@code router} itself no longer demonstrates anything: the filter returns a body
+     * already carrying {@code error} untouched, so the misplacement would now answer 404 instead of 500. The
+     * lesson is about the <em>bodiless</em> 404 a router with no default route still produces — which is what
+     * every other CHF router on the surface produces, and what {@code ResourceSetErrorFilter} turns into a
+     * server error if it is ever hoisted above one. Deleting this half would retire D2's only executable guard.
      */
     @Test
     public void aNoMatchBelowTheEndpointIsA404TheResourceSetFilterNeverSees() throws Exception {
         Response response = through("GET", PATH + "/a/b", PAT, null);
 
         assertThat(response.getStatus().getCode()).isEqualTo(404);
-        assertThat(response.getEntity().isRawContentEmpty()).isTrue();
+        assertThat(bodyOf(response)).containsEntry("error", "not_found");
 
-        Response wrapped = Handlers.chainOf(router, new ResourceSetErrorFilter())
+        Response wrapped = Handlers.chainOf(new Router(), new ResourceSetErrorFilter())
                 .handle(context(), new Request().setMethod("GET").setUri(URI.create(PATH + "/a/b")))
                 .getOrThrowUninterruptibly();
         assertThat(wrapped.getStatus().getCode()).isEqualTo(500);

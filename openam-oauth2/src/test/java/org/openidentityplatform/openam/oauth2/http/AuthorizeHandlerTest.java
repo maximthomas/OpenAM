@@ -497,6 +497,47 @@ public class AuthorizeHandlerTest {
         verify(authorizationService, never()).authorize(any());
     }
 
+    /**
+     * 5-E5 correction 2: live Restlet answers {@code HEAD /oauth2/authorize} with a <strong>405</strong> --
+     * {@code AuthorizeEndpointFilter.validateMethod} accepts {@code GET} and {@code POST} only, and sits above
+     * the {@code HEAD} -> {@code GET} rewrite. 5d-1a maps {@code HEAD} to the {@code @Get} entry framework-wide,
+     * so without this guard a {@code HEAD} would run the authorization flow and answer 302 <em>with an issued
+     * code</em> -- a capability addition on the endpoint that hands out credentials. The generic mapping stays:
+     * the refusal is this endpoint's verb contract, not the framework's.
+     */
+    @Test
+    public void aHeadIsRefusedRatherThanRunningTheAuthorizationFlow() throws Exception {
+        Response response = Endpoints.from(handler)
+                .handle(new RootContext(), new Request().setMethod("HEAD").setUri("/oauth2/authorize"))
+                .getOrThrowUninterruptibly();
+
+        assertThat(response.getStatus().getCode()).isEqualTo(405);
+        assertThat(response.getEntity().getString()).contains("method_not_allowed");
+        assertThat(response.getHeaders().getFirst("Allow")).isEqualTo("GET, POST");
+        assertThat(response.getHeaders().getFirst("Cache-Control")).isEqualTo("no-store");
+        verify(requestFactory, never()).create(any(), any(Request.class));
+        verify(authorizationService, never()).authorize(any());
+    }
+
+    /**
+     * The guard reads the same effective method the framework dispatched on. {@code Endpoints.getMethod}
+     * rewrites a {@code POST} carrying {@code X-HTTP-Method-Override}, so this request reaches the {@code @Get}
+     * method with {@code request.getMethod()} still reading {@code POST} -- and Restlet refuses it too, its
+     * tunnel service rewriting above the endpoint filter (5-E5 row 10a). Guarding on the raw verb alone would
+     * leave the refusal bypassable by one header.
+     */
+    @Test
+    public void aPostTunnellingHeadIsRefusedToo() throws Exception {
+        Request request = new Request().setMethod("POST").setUri("/oauth2/authorize");
+        request.getHeaders().put("X-HTTP-Method-Override", "HEAD");
+
+        Response response = Endpoints.from(handler).handle(new RootContext(), request)
+                .getOrThrowUninterruptibly();
+
+        assertThat(response.getStatus().getCode()).isEqualTo(405);
+        verify(authorizationService, never()).authorize(any());
+    }
+
     // --- the collapse table (finding 3) -----------------------------------------------------------
 
     /**

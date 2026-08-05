@@ -111,7 +111,7 @@ public class OAuth2ErrorFilterTest {
             {Status.FORBIDDEN, "access_denied"},               // RFC 6749 4.1.2.1
             {Status.SERVICE_UNAVAILABLE, "temporarily_unavailable"},
             {Status.METHOD_NOT_ALLOWED, "method_not_allowed"}, // D10: AuthorizeEndpointFilter/TokenEndpointFilter
-            {Status.NOT_FOUND, "invalid_request"},
+            {Status.NOT_FOUND, "not_found"},                   // 5d-1 D5: the surface's incumbent word for a 404
             {Status.BAD_REQUEST, "invalid_request"},
             {Status.INTERNAL_SERVER_ERROR, "server_error"},
         };

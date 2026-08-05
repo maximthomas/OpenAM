@@ -62,8 +62,10 @@ import org.forgerock.services.context.Context;
  * {@code (status, error)} pair those clauses passed equals the exception's own, so the collapse is
  * byte-identical except for the two changes it is meant to make -- see D6 and D7.
  *
- * <p>No verb check: two annotated methods mean the framework answers {@code PUT}/{@code DELETE} with its own
- * 405, whose body {@code OAuth2ErrorFilter} rewrites (D8).
+ * <p>One verb check, and only one. Two annotated methods mean the framework answers {@code PUT}/{@code DELETE}
+ * with its own 405, whose body {@code OAuth2ErrorFilter} rewrites (D8). {@code HEAD} is the exception: 5d-1a
+ * maps it to the {@code @Get} entry framework-wide, which for this endpoint alone would mean running the
+ * authorization flow and issuing a code, so {@link #authorize} refuses it explicitly (5-E5 correction 2).
  */
 public class AuthorizeHandler extends AbstractOAuth2HttpBrowserEndpoint {
 
@@ -99,6 +101,11 @@ public class AuthorizeHandler extends AbstractOAuth2HttpBrowserEndpoint {
      */
     @Get
     public Response authorize(@Contextual Context ctx, @Contextual Request request) throws OAuth2Exception {
+        // Before the content-type check, as OAuth2Filter.beforeHandle:59-62 ordered validateMethod before
+        // validateContentType.
+        if (isHead(request)) {
+            return methodNotAllowed();
+        }
         // On the GET too: OAuth2Filter.beforeHandle:59-62 ran validateContentType on every method, so a GET
         // carrying a non-empty JSON body is a 400 today and checking only the POST would quietly widen that.
         // The ordinary bodyless GET is accepted without inspecting anything, so real traffic pays nothing.
@@ -243,4 +250,30 @@ public class AuthorizeHandler extends AbstractOAuth2HttpBrowserEndpoint {
                 OAuth2Error.of(400, INVALID_REQUEST, "Invalid Content Type")));
     }
 
+    /**
+     * The {@code HEAD} refusal (5-E5 correction 2), built rather than thrown for the same reason as the two
+     * errors above: no exception type carries a 405, and one that did would be redirectable.
+     * <p>
+     * Wording and code are the framework's own unsupported-verb answer, so that {@code HEAD}, {@code PUT} and
+     * {@code DELETE} give this endpoint one 405 rather than three. Restlet's filter said {@code "Required
+     * Method: GET or POST found: HEAD"}; D8 already accepted the framework's phrasing for the other two verbs,
+     * and on a {@code HEAD} no body reaches the wire anyway. {@code Allow} is stamped by {@code Endpoints}.
+     */
+    private Response methodNotAllowed() {
+        return withErrorHeaders(errorResponseFactory.toJsonResponse(
+                OAuth2Error.of(Status.METHOD_NOT_ALLOWED.getCode(), "method_not_allowed",
+                        Status.METHOD_NOT_ALLOWED.getReasonPhrase())));
+    }
+
+    /**
+     * The verb the framework <em>dispatched</em> on, not the one on the request line: {@code Endpoints.getMethod}
+     * rewrites a {@code POST} carrying {@code X-HTTP-Method-Override}, so that spelling reaches this method too.
+     * Restlet refuses it as well -- its tunnel service rewrites above {@code AuthorizeEndpointFilter} (5-E5
+     * row 10a) -- so reading the raw verb alone would leave the refusal bypassable by one header.
+     */
+    private static boolean isHead(Request request) {
+        return "HEAD".equalsIgnoreCase(request.getMethod())
+                || ("POST".equalsIgnoreCase(request.getMethod())
+                        && "HEAD".equalsIgnoreCase(request.getHeaders().getFirst("X-HTTP-Method-Override")));
+    }
 }

@@ -102,7 +102,16 @@ public class OAuth2ErrorFilter implements Filter {
      * filter had to rewrite came from the framework or an authentication filter, not from a protected
      * resource that would have produced its own bearer-token error.
      * <p>
-     * {@code method_not_allowed} (D10) is the one exception to that RFC-first reasoning: it is not an RFC 6749
+     * Two codes are exceptions to that RFC-first reasoning, both because they are the surface's incumbents and
+     * this is a parity migration. {@code not_found} (5d-1 D5) is already what {@code /oauth2} says for a 404 --
+     * {@code NotFoundException} is {@code super(404, "not_found", ...)}, which is what
+     * {@code ChfAccessTokenProtectionFilter} propagates on {@code resource_set}, and
+     * {@code DeviceCodeVerificationHandler} uses the same literal -- so without this case the surface would say
+     * {@code not_found} for a missing resource set and {@code invalid_request} for a missing realm. It buys
+     * <strong>consistency, not parity</strong>: Restlet's routing 404s are CREST-shaped and their message names a
+     * realm lookup CHF never performs (divergence row 15).
+     * <p>
+     * {@code method_not_allowed} (D10) is the other: it is not an RFC 6749
      * code, but it is the incumbent, and this is a parity migration -- so it wins over the standard. Live
      * Restlet emits it from {@code AuthorizeEndpointFilter.validateMethod} and
      * {@code TokenEndpointFilter.validateMethod} (the two concrete {@code OAuth2Filter} subclasses; the base
@@ -122,12 +131,14 @@ public class OAuth2ErrorFilter implements Filter {
             return "invalid_client";            // RFC 6749 5.2: client authentication failed
         case 403:
             return "access_denied";             // RFC 6749 4.1.2.1
+        case 404:
+            return "not_found";                 // 5d-1 D5: the surface's incumbent word for a 404
         case 405:
             return "method_not_allowed";        // D10: parity with AuthorizeEndpointFilter/TokenEndpointFilter
         case 503:
             return "temporarily_unavailable";   // RFC 6749 4.1.2.1: retry later, not "the provider broke"
         default:
-            // 400, 404 and the rest of 4xx: the request is what was wrong, and nothing narrower is knowable
+            // 400 and the rest of 4xx: the request is what was wrong, and nothing narrower is knowable
             // from a status alone.
             return response.getStatus().getCode() >= 500 ? "server_error" : "invalid_request";
         }

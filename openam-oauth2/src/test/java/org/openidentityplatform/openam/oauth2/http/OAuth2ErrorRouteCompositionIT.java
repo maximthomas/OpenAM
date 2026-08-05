@@ -146,10 +146,14 @@ public class OAuth2ErrorRouteCompositionIT {
      * now 405-coded (it once carried {@code code: 501} against the 405 status). Both 405 paths collapse to one
      * client-visible shape because the filter derives the error from the wire status -- which is what makes
      * D10's single {@code case} cover both without knowing which produced the response.
+     *
+     * <p>⚠ {@code PATCH}, not {@code HEAD}: 5d-1a mapped {@code HEAD} to the {@code @Get} entry, so on this
+     * endpoint it now <em>serves</em>. {@code PATCH} is the verb this producer still answers, and 5d-1 divergence
+     * row 14 is the record of that.
      */
     @Test
     public void anUnmappedVerbBecomesTheSameMethodNotAllowed() throws Exception {
-        Response response = through(new GetOnlyEndpoint(), "HEAD");
+        Response response = through(new GetOnlyEndpoint(), "PATCH");
 
         assertThat(response.getStatus().getCode()).isEqualTo(405);
         assertThat(bodyOf(response)).containsEntry("error", "method_not_allowed");

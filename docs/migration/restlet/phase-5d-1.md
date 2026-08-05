@@ -56,7 +56,7 @@ Three properties shape the split below:
 |---|---|---|---|
 | **5-E5** ✅ **done 2026-08-04** ([as-built](#as-built-5-e5--recorded-2026-08-04)) | **The last live-Restlet gate.** 14 items: realm styles (`?realm=`, legacy path realm, bogus realm), an unknown `Host`, `HEAD` and `Allow` on non-`resource_set` endpoints, unrouted-path shapes, `X-HTTP-Method-Override`, `?_api`/`?_crestapi`, `OPTIONS`, path-form edge cases. Test-only. Gates D4, D5 and D11 — and its **row 13 can redesign [D1](#d1)'s route table** | e2e spec only (0 main) | **High** — unrecoverable after 5d-1c |
 | **5d-1a** ✅ **done 2026-08-05** ([as-built](#as-built-5d-1a--recorded-2026-08-05)) | **`openam-http` verb fixes.** `HEAD` → the `@Get` method; `Allow` on both 405 producers. Own commit, own tests, no migration code. Closes two [decisions.md backlog](decisions.md#chf-cleanup-backlog) items | 2 modified + tests | **Med** — reaches every `Endpoints.from` consumer; three already-live endpoints start answering `HEAD` ([finding 6](#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct)) |
-| **5d-1b** | **`OAuth2HttpRouteProvider` + `META-INF/services` + `OAuth2RouterIT`.** The full 18-attachment table, the audit matrix, the nested `resource_set` router, the root error filter, the two-route no-cache filter, the synthesized 404 (+ one line in `OAuth2ErrorFilter` and two deliberate pin edits). **`/oauth2` still served by Restlet** | 2 new main + 1 line + 1 services line + 1 IT + 2 edited pins | **High** — a broken Guice graph here breaks the *whole* CHF router, `/json` included ([finding 3](#3--the-provider-instantiates-all-15-handlers-when-the-router-is-built-and-that-router-is-the-whole-chf-servlets)) |
+| **5d-1b** ✅ **done 2026-08-05** ([as-built](#as-built-5d-1b--recorded-2026-08-05)) | **`OAuth2HttpRouteProvider` + `META-INF/services` + `OAuth2RouterIT`.** The full 18-attachment table, the audit matrix, the nested `resource_set` router, the root error filter, the two-route no-cache filter, the synthesized 404 (+ one line in `OAuth2ErrorFilter` and two deliberate pin edits). **`/oauth2` still served by Restlet** | 2 new main + 1 line + 1 services line + 1 IT + 2 edited pins | **High** — a broken Guice graph here breaks the *whole* CHF router, `/json` included ([finding 3](#3--the-provider-instantiates-all-15-handlers-when-the-router-is-built-and-that-router-is-the-whole-chf-servlets)) |
 | **5d-1c** | **The flip.** One `<servlet-mapping>` line; then Cargo boot, the e2e re-run + byte-diff, the audit smoke, the soak record. Revert = revert this commit | 1 line + docs | **High** — the wire change |
 
 **Total new main classes: 2.** Order: **5-E5 → 5d-1a → 5d-1b → 5d-1c**. 5-E5 first because three of its rows
@@ -1030,20 +1030,21 @@ other — 5c's own IT says so in its class javadoc.
    that answered [finding 7](#7--content-length-on-a-head-is-tomcats-decision) early
    ([divergence row 21](#5d-1a-content-length)).
 
-**5d-1b**
+**5d-1b** — ✅ **all five done 2026-08-05**, [as-built](#as-built-5d-1b--recorded-2026-08-05)
 
-8. **`AuthorizeHandler` refuses `HEAD`** ([correction 2](#5-e5-correction-2), reassigned here from 5d-1a),
+8. ~~**`AuthorizeHandler` refuses `HEAD`** ([correction 2](#5-e5-correction-2), reassigned here from 5d-1a),
    pinned by `OAuth2RouterIT`; `OAuth2NotFoundHandler` + test; `errorFor`'s `case 404`; then the
    **two deliberate pin edits**
    ([D5](#d5)'s table) — `OAuth2ErrorFilterTest:114` and `ResourceSetRouteCompositionIT` row 9, the latter
-   keeping its counterfactual.
-9. `OAuth2HttpRouteProvider` — the 18 attachments, the audit matrix copied from
+   keeping its counterfactual.~~ — done, plus **two pin edits the plan did not list**: the two ITs 5d-1a broke
+   ([the 5d-1a casualties](#5d-1b-the-two-5d-1a-casualties)).
+9. ~~`OAuth2HttpRouteProvider` — the 18 attachments, the audit matrix copied from
    [finding 2](#2--the-route-table-is-18-attachments-and-7-distinct-auditor-pairs-lift-both-verbatim) with the
-   `file:line` citation in a comment, [D2](#d2)'s nested router, [D7](#d7)'s eleven invalid realm names.
-10. `META-INF/services` append.
-11. `OAuth2RouterIT` — probe rows first (they need no stubbing and immediately verify the table), then the
-    deep rows.
-12. Criteria 6–11 green; commit.
+   `file:line` citation in a comment, [D2](#d2)'s nested router, [D7](#d7)'s eleven invalid realm names.~~ — all 18 attachments diffed against the source table.
+10. ~~`META-INF/services` append.~~ — the missing trailing newline handled, byte-checked after.
+11. ~~`OAuth2RouterIT` — probe rows first … then the deep rows.~~ — **24 rows** (17 probes + [D7](#d7) + 6 deep);
+    five [mutation checks](#mutation-checks) recorded.
+12. ~~Criteria 6–11 green; commit.~~ — 6–11 green; the commit is the next action.
 
 **5d-1c**
 
@@ -1245,7 +1246,7 @@ The framework half of [D4](#d4), landed as its own commit per the F1–F4 preced
 | Criterion | Recorded |
 |---|---|
 | 3 — `mvn -o -pl openam-http test` | **81** (baseline 73, grew only). Mutation-checked: removing the `HEAD` put reddens 1 row, disabling the `Allow` stamp reddens 5 |
-| 4a — every other `Endpoints.from` consumer | `openam-rest` **275**, `openam-entitlements` **580**, `openam-core-rest` **414**, `openam-oauth2` **1281**, `openam-uma` **196** — unchanged |
+| 4a — every other `Endpoints.from` consumer | `openam-rest` **275**, `openam-entitlements` **580**, `openam-core-rest` **414**, `openam-oauth2` **1281**, `openam-uma` **196** — unchanged. ⚠ **Surefire only.** These are `mvn … test`, so the failsafe suites were never re-run — and `openam-oauth2`'s had **two red rows** until 5d-1b found them ([the 5d-1a casualties](#5d-1b-the-two-5d-1a-casualties)) |
 | 4b — the live `HEAD` smoke | below |
 | 5 — `mvn -o install -DskipTests` whole reactor | SUCCESS, 33:49, doclint clean |
 
@@ -1308,6 +1309,138 @@ Nothing to fix: RFC 7231 §3.3.2 explicitly permits — and §4.3.2 encourages �
 - **`AuthorizeHandler`'s `HEAD` guard** ([correction 2](#5-e5-correction-2)) moved to **5d-1b** — it is
   `openam-oauth2` code and 5d-1a is framework-only. Nothing is exposed in between: `AuthorizeHandler` is not
   routed until 5d-1c.
+
+---
+
+<a id="as-built-5d-1b--recorded-2026-08-05"></a>
+## As-built — 5d-1b, recorded 2026-08-05 (the provider, still unflipped)
+
+The composition step: everything 5a–5c built is now wired and registered, and **`/oauth2` is still served by
+Restlet**. `web.xml:1143-1146` is untouched — the only difference between this commit and the flip is 5d-1c's
+one line.
+
+**Deliverables:**
+
+| File | Change |
+|---|---|
+| `…/oauth2/http/OAuth2HttpRouteProvider.java` | **new**, ~250 lines with javadoc — [D1](#d1), [D2](#d2), [D3](#d3), [D7](#d7). Every route carries the `OAuth2RouterProvider` line it copies as a trailing comment |
+| `…/oauth2/http/OAuth2NotFoundHandler.java` | **new**, 19 lines of body — [D5](#d5). Dependency-free by design: a default route with no collaborators cannot widen [finding 3](#3--the-provider-instantiates-all-15-handlers-when-the-router-is-built-and-that-router-is-the-whole-chf-servlets)'s Guice blast radius |
+| `…/oauth2/http/AuthorizeHandler.java` | the `HEAD` guard ([correction 2](#5-e5-correction-2)) + the class javadoc's "no verb check" sentence, which is no longer true |
+| `…/oauth2/http/OAuth2ErrorFilter.java` | `case 404: return "not_found";`, the `default:` comment that named 404, and the "one exception to RFC-first reasoning" paragraph, now naming two |
+| `META-INF/services/org.forgerock.openam.http.HttpRouteProvider` | the provider appended. The file ended **without** a trailing newline; `printf '\n…\n' >>` and a byte check afterwards |
+| `…/test/…/oauth2/http/OAuth2RouterIT.java` | **new** — [D9](#d9). 17 probe rows + [D7](#d7) + 6 deep rows = **24** |
+| `…/test/…/oauth2/http/OAuth2NotFoundHandlerTest.java` | **new**, 3 rows |
+| `…/test/…/oauth2/http/AuthorizeHandlerTest.java` | 2 rows for the `HEAD` guard (48 → 50) |
+| `…/test/…/oauth2/http/OAuth2ErrorFilterTest.java` | the `statusToError` pin at `:114` — 404 is now `not_found` |
+| `…/test/…/oauth2/http/ResourceSetRouteCompositionIT.java` | row 9's new body + the re-expressed counterfactual; the inline nested router gains D5's default route; **and** the `Allow` assertion (below) |
+| `…/test/…/oauth2/http/OAuth2ErrorRouteCompositionIT.java` | ⚠ **not in the plan's table** — see [the two 5d-1a casualties](#5d-1b-the-two-5d-1a-casualties) |
+| `openam-oauth2/pom.xml` | ⚠ **not in the plan's table** — `org.openidentityplatform.commons.guice:test` (test scope). `OAuth2RouterIT` drives the real provider, whose `Endpoints.from(Class)` resolves through `InjectorHolder`, so it needs `GuiceTestCase`. The same declaration `openam-uma` carries for `UmaRouterIT` |
+| `…/test/java/org/forgerock/openam/http/HttpRouteAccessor.java`, `…/test/java/org/forgerock/guice/core/GuiceModuleLoaderAccessor.java` | ⚠ **not in the plan's table** — copied verbatim from `openam-uma`'s test tree (third copy of each). Both expose package-private framework state a provider-driven IT cannot otherwise reach |
+
+**Verification — criteria 6-11, all green:**
+
+| Criterion | Recorded |
+|---|---|
+| 6 — `mvn -o -pl openam-oauth2 test` | **1286** surefire (baseline 1281; +3 `OAuth2NotFoundHandlerTest`, +2 `AuthorizeHandlerTest`) |
+| 7 — `mvn -o -pl openam-oauth2 verify` | **62** failsafe (baseline 38; +24 `OAuth2RouterIT`) |
+| 8 — `grep -rn "org.restlet\|getCurrent()"` over the two new main files | **0** |
+| 9 — `mvn -o install -pl openam-oauth2,openam-oauth2-saml2,openam-uma,openam-rest -am -DskipTests` | SUCCESS, 9:27 |
+| 10 — **Cargo boot** (`mvn -o -pl openam-server verify -P integration-test`) | SUCCESS, 3 tests, 364.8 s. Verified **non-vacuously**: see below |
+| 11 — **the full e2e suite** on `openam-e2e:5d1b` | **131 passed, 1 skipped, 0 failed** (132 declared) |
+
+<a id="5d-1b-criterion-10-is-not-vacuous"></a>
+### Criterion 10 proves what it claims — checked, not assumed
+
+A Cargo boot that never loaded the provider would pass exactly as green. What was checked on the booted WAR:
+`OAuth2HttpRouteProvider.class`, `OAuth2NotFoundHandler.class`, `AuthorizeHandler.class`,
+`OAuth2ErrorFilter.class` and `META-INF/services/org.forgerock.openam.http.HttpRouteProvider` each **md5-match
+the working tree's**. (The *jar* md5 differs — the WAR assembly repacks it — so the comparison has to be
+per-entry, not per-archive. Worth knowing before the next step repeats this check.)
+
+⇒ **R-5d1.1 discharged**: the production Guice graph constructs all 15 handlers eagerly, and the router that
+also serves `/json`, `/xacml`, `/uma` and `/rest-sts` builds.
+
+### Criterion 11 — the full suite, one pass, fresh containers
+
+`openam-e2e:5d1b`, built by CI's `build-docker` recipe (the three `#COPY` lines uncommented by the same sed,
+a minimal hard-linked context) over a single `mvn -o install -DskipTests -am -pl openam-server,…ssoadmintools,…ssoconfiguratortools`
+so all three artifacts share one provenance. IDP **and** SP, both on that image, configured with `build.yml`'s
+`conf.file` verbatim. Deployed-jar md5 `fd650b8b2f440cdc265759cd7621b1f2` = the working tree's.
+
+| Surface | Rows | Result |
+|---|---|---|
+| `/oauth2` — `oauth2-endpoints` 43, `oauth2-test` 37 (incl. 5-E5's 14), `oidc` 20, `webfinger` 2 | 102 | all pass, **still Restlet** |
+| `/uma` | 11 | pass |
+| `/xacml` | 15 | pass |
+| `/xui` | 3 | 2 pass, 1 skipped |
+| `/saml` | 1 | pass |
+| `/json` | — | exercised by every spec's login |
+
+Two marks that are **not** failures, resolved by reading rather than by assuming:
+
+- `webfinger-test.spec.mjs:59` renders `✘` but is counted **passed**: it carries `test.fail(true, "Pre-existing
+  defect: ServletUtils.getRequest returns null under the upstream ServerServlet…")`, to be removed when phase 6
+  fixes it. The list reporter marks an expected failure with the same glyph as a real one;
+- `xui-httponly.spec.mjs:208` is skipped by a `cookieHttpOnly` mode gate.
+
+⚠ **Two false starts, recorded so the next step does not repeat them.** The first full run reported *130 passed,
+1 failed* — the failure was `saml`, whose `bootstrap.sh` does `docker exec … openam-sp` against an SP container
+that had not been started. Standing the SP up was not enough: `bootstrap.sh` is **not idempotent**, and the
+first run had already created the `MYSAML` circle of trust on the IDP before failing, so `create-cot` exited
+**127** under `set -e` on the retry. Both containers had to be recreated. That is the same rule
+[5c's gate notes](phase-5c.md#run-this-gate-against-a-fresh-container) state for resource-set leakage, and it
+applies to the SAML fixture too: **a second run against a used container is not a measurement.**
+
+<a id="5d-1b-the-two-5d-1a-casualties"></a>
+### ⚠ 5d-1a left this module's failsafe suite red, and its as-built records it green
+
+Found by running `mvn -o -pl openam-oauth2 verify` — which **5d-1a never did**. Its criteria 3 and 4 are
+`mvn … test`, and `*IT.java` is bound to failsafe, so two composition ITs asserting framework verb behaviour
+were never re-run after the `HEAD`/`Allow` change landed. Both were broken by it:
+
+| Row | Was | Now |
+|---|---|---|
+| `ResourceSetRouteCompositionIT:295` | asserted `Allow` is **absent** — and its own comment said *"closing it is a 5d-1 handoff item, and this line is what will fail when it is"* | asserts the four-verb **set**. `Endpoints.allowHeader` emits `DELETE, GET, POST, PUT`; Restlet sent the same four in a different order ([5-E4 row 11](phase-5c.md#as-built-5-e4--recorded-2026-07-29)), and the e2e row asserts a set too |
+| `OAuth2ErrorRouteCompositionIT:152` | used **`HEAD`** as its example of *"a verb that is not in the framework's map at all"* — 5d-1a mapped it, so on a `@Get`-only endpoint it now serves | uses **`PATCH`**, the verb that producer still answers ([divergence row 14](#divergence-rows-this-step-adds-to-planmd)) |
+
+Both are faithful repairs of each row's stated intent. ⇒ **the [5d-1a as-built](#as-built-5d-1a--recorded-2026-08-05)'s
+criterion table should read "surefire only"**, and any future framework commit must run `verify` on every
+consumer it names, not `test`.
+
+### Two design choices the plan left open
+
+- **the `HEAD` refusal's body** is the framework's own unsupported-verb answer — `{"error":"method_not_allowed",
+  "error_description":"Method Not Allowed"}`, identical to what `PUT`/`DELETE` already get on this endpoint —
+  rather than Restlet's `"Required Method: GET or POST found: HEAD"`. [D8](phase-5b-1.md) already accepted the
+  framework's phrasing for those two verbs, and on a `HEAD` no body reaches the wire, so reproducing Restlet's
+  string would buy an unobservable parity at the cost of one endpoint answering two different 405s;
+- **the guard reads the *effective* method**, not the request line. `Endpoints.getMethod:119-126` rewrites a
+  `POST` carrying `X-HTTP-Method-Override`, so `POST /oauth2/authorize` + `X-HTTP-Method-Override: HEAD` reaches
+  the `@Get`. Restlet refuses that too ([5-E5 row 10a](#the-recorded-rows) — its tunnel rewrites above the
+  endpoint filter), so guarding on the raw verb alone would have left the refusal bypassable by one header on
+  the endpoint that issues codes.
+
+### Mutation checks
+
+Every guard whose value is "it fails when someone gets this wrong" was reddened deliberately and restored:
+
+| Mutation | Reddens |
+|---|---|
+| `"tokeninfo"` → `"tokeninf0"` in the provider | exactly that probe row (404, not 405) — R-5d1.3 |
+| `noCache(...)` added to the `tokeninfo` route | `theNoCacheFilterIsOnTwoRoutesAndNoOthers` **and** the `HEAD` header row — R-5d1.4 |
+| `USERNAME` dropped from `access_token`'s `formAuditor` | exactly `theAccessTokenAuditDetailIsExactlyTheConfiguredFieldList` — R-5d1.3 |
+| `isHead`'s raw-verb branch disabled | row 1 only |
+| `isHead`'s override branch disabled | row 2 only — the two branches are independently load-bearing |
+
+### What `OAuth2RouterIT` deliberately does not cover
+
+[D9](#d9) lists four deep rows not written, three of them by decision: `/access_token` bad-secret 401 +
+`WWW-Authenticate`, `/authorize` unauthenticated 301, and `/authorize`'s 302 fragment-vs-query. All three are
+pinned at handler-plus-chain level by `AuthorizeRouteCompositionIT`, and the provider adds nothing to those
+paths but the audit wrap and the no-cache filter — both of which *are* pinned here. The fourth, *"the three
+error shapes coexisting in one run"*, **is** covered: the probe table shows 14 routes answering
+`method_not_allowed` from the root filter and 3 `resource_set` routes answering `unsupported_method_type` from
+the nested one, in a single run.
 
 ---
 

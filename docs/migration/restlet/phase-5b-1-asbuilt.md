@@ -31,6 +31,15 @@ knowing before writing any further `/authorize` e2e):
    with `400 invalid_request` "Missing parameter, 'code_challenge'" **before** the session, consent or scope
    logic runs — the first probe of rows 1/2/5 recorded that error instead of the intended one. Every row that
    must get past validation carries a real fixed S256 challenge.
+
+   ⚠ **Added 2026-08-05 (5d-1c), and unresolved.** [D8](phase-5d-1.md#d8)'s pre-flip audit probe sends the same
+   shape — `response_type=code`, no `code_challenge` — and live Restlet answered it **302**, not 400
+   ([5d-1c as-built](phase-5d-1-asbuilt.md#the-pre-flip-audit-capture--recorded-2026-08-05)): the validation
+   error was redirected back to the client's registered `redirect_uri` rather than returned. Both observations
+   are real; what distinguishes them is not established. The likeliest reading is that Restlet returned the
+   error directly only when it could not resolve a `redirect_uri` to send it to, but that is **inference, not
+   measurement** — `/oauth2` no longer runs on Restlet, so it cannot be settled by re-running anything. Noted
+   here because this bullet is what a later reader will trust, and it is at most half the story.
 2. **On `/authorize` the `iPlanetDirectoryPro` *header* does not authenticate — only the *cookie* does.** A
    header-only request gets the 301 to `/UI/Login`. This is the mirror image of
    [../../test-infrastructure.md](../../test-infrastructure.md)'s cookie gotcha (the existing "Should receive

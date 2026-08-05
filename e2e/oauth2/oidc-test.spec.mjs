@@ -16,16 +16,19 @@
 
 /*
  * Protocol cover for the OIDC half of /oauth2 -- discovery, the JWKS, the session endpoints and
- * idtokeninfo. These five routes are still served by Restlet and move to CHF in phase 5
- * (docs/migration/restlet/phase-5-oauth2.md, phase-5a-2.md, phase-5b-2.md); until this spec existed NONE of
- * them had any end-to-end cover at all, so a port could have broken them silently.
+ * idtokeninfo. These five routes were served by Restlet when this spec was written and have been served by
+ * CHF since the 5d-1c flip (docs/migration/restlet/phase-5-oauth2.md, phase-5a-2.md, phase-5b-2.md); until
+ * this spec existed NONE of them had any end-to-end cover at all, so the port could have broken them silently.
  *
  * This is a MIGRATION GUARD, not a byte oracle. It asserts statuses, body fields and the redirect/HTML
- * contract -- the things the port must preserve -- and deliberately does NOT pin exact Content-Type bytes,
- * because CHF emits `application/json; charset=UTF-8` where Restlet emits bare `application/json`; that
- * known, deliberate divergence is locked separately by the 5-E rows in oauth2-test.spec.mjs.
+ * contract -- the things the port had to preserve -- and deliberately does NOT pin exact Content-Type bytes,
+ * because CHF emits `application/json;charset=UTF-8` (measured post-flip: NO space after the semicolon)
+ * where Restlet emitted bare `application/json`; that known, deliberate divergence is locked separately by
+ * the 5-E rows in oauth2-test.spec.mjs.
  *
- * Re-run this suite unchanged after the 5d-1 flip: anything that goes red is a regression.
+ * The 5d-1c flip has happened. Everything here is now asserted against the CHF contract, and the handful of
+ * rows whose value legitimately moved carry a `⚠ 5d-1c divergence:` comment naming the old Restlet value.
+ * Re-run this suite unchanged from here on: anything that goes red is a regression.
  */
 
 import { createHmac } from "node:crypto";
@@ -259,13 +262,20 @@ test.describe("OIDC session endpoints", () => {
  * (docs/migration/restlet/phase-5b-2.md).
  *
  * Every value here was OBSERVED FIRST and only then asserted (2026-07-28, openam-e2e:5e3 built from this
- * tree; `Server: Restlet-Framework/2.4.4` on every realm-prefixed row). Do not "tidy" a string: the exact
- * bytes ARE the oracle for the 5d-1 byte diff. Where an observation contradicted the plan, the comment says
- * so rather than quietly matching the code.
+ * tree; `Server: Restlet-Framework/2.4.4` on every realm-prefixed row -- gone everywhere under /oauth2 since
+ * the flip, because nothing CHF serves stamps that banner). Do not "tidy" a string: the exact bytes ARE the
+ * oracle for the 5d-1 byte diff. Where an observation contradicted the plan, the comment says so rather than
+ * quietly matching the code.
+ *
+ * POST-FLIP (5d-1c): the values below are now the CHF contract. Rows re-pinned at the flip carry a
+ * `⚠ 5d-1c divergence:` comment naming what moved and what Restlet answered. Row 8's state-encoding leg moved
+ * too but was pre-absorbed by an either/or written for that purpose (plan.md expected-divergences row 9, see
+ * the comment there). Everything else held byte for byte, which is the whole point of having recorded it.
  *
  * Both endpoints answer errors as JSON, which is the single most load-bearing fact in 5b-2: their doCatch
- * calls the 2-arg ExceptionHandler.handle. A CHF port that put them on the browser base would answer every
- * row below with an HTML page instead.
+ * called the 2-arg ExceptionHandler.handle. A CHF port that put them on the browser base would answer every
+ * row below with an HTML page instead -- CONFIRMED post-flip: rows 6d, 7, 9 and 10 all still answer JSON, so
+ * AbstractOAuth2HttpJsonEndpoint is the base that was actually wired.
  */
 test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () => {
 
@@ -307,9 +317,12 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
 
   // ---------------------------------------------------------------- checkSession
 
-  test("row 6: the bare path is the JSP and the realm-prefixed path is the Restlet FTL", async ({ request }) => {
+  test("row 6: the bare path is the JSP and the realm-prefixed path is the CHF-rendered FTL", async ({ request }) => {
     // 5b-2 D6 keeps the JSP on the bare path and mounts CheckSessionHandler on the realm-prefixed one, so
-    // proving WHICH page answers WHICH url is the whole point of this row.
+    // proving WHICH page answers WHICH url is the whole point of this row. CONFIRMED post-flip: the exact
+    // web.xml mapping of /oauth2/connect/checkSession still out-ranks /oauth2/*, so the container keeps
+    // serving the JSP on the bare path while CHF renders checkSession.ftl on the realm-prefixed one --
+    // exactly as D6 predicted, with no web.xml edit and no conditional routing.
     const jsp = await request.get(`${OPENAM_BASE}/oauth2/connect/checkSession`);
     const ftl = await request.get(`${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession`);
     const jspHtml = await jsp.text();
@@ -322,23 +335,36 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
     expect(ftl.headers()["content-type"]).toBe("text/html;charset=UTF-8");
 
     // Discriminator 1 -- the script src. The JSP is container-served and uses a RELATIVE path; the FTL
-    // interpolates the absolute baseUrl. This one survives the flip, so it is the durable oracle.
+    // interpolates the absolute baseUrl. This one survives the flip, so it is the durable oracle --
+    // CONFIRMED: post-flip the realm-prefixed body still carries the absolute baseUrl form, which only
+    // checkSession.ftl produces and which the JSP cannot produce at all.
     expect(jspHtml).toContain('<script src="../../js/sha256.js">');
     expect(ftlHtml).toContain(`<script src="${OPENAM_BASE}/js/sha256.js">`);
 
-    // Discriminator 2 -- only valid BEFORE the flip: Restlet stamps its banner, the JSP does not.
+    // The Server banner is DEAD as a discriminator. It told the two apart only while Restlet answered the
+    // realm-prefixed path; CHF stamps no banner, so the header is now absent on BOTH and separates nothing.
+    // Kept -- not deleted -- because "no Restlet banner anywhere under /oauth2" is the flip's single most
+    // visible wire fact, and a banner reappearing on either path would mean the servlet mapping regressed.
+    // The discrimination this pair used to carry is done entirely by discriminators 1 and 2, both of which
+    // are BODY facts and so cannot be faked by one server answering both urls.
     expect(jsp.headers()["server"]).toBeUndefined();
-    expect(ftl.headers()["server"]).toBe("Restlet-Framework/2.4.4");
+    // ⚠ 5d-1c divergence: the realm-prefixed checkSession is served by CHF, which stamps no Server header at all. Restlet: "Restlet-Framework/2.4.4".
+    expect(ftl.headers()["server"]).toBeUndefined();
 
-    // ⚠ NOT cosmetic. The JSP emits a quoted STRING, so `!validSession` is false even when the session is
-    // invalid and getBrowserState() reads the cookie regardless; the FTL's `?js_string` escapes without
-    // adding quotes, so it emits a bare boolean literal and the guard actually works. The CHF port inherits
-    // the FTL, i.e. the CORRECT behaviour -- record the difference so the 5d-1 diff on the bare path (which
-    // keeps the JSP) is not mistaken for a regression.
+    // Discriminator 2, and ⚠ NOT cosmetic. The JSP emits a quoted STRING, so `!validSession` is false even
+    // when the session is invalid and getBrowserState() reads the cookie regardless; the FTL's `?js_string`
+    // escapes without adding quotes, so it emits a bare boolean literal and the guard actually works. The
+    // CHF port inherits the FTL, i.e. the CORRECT behaviour -- CONFIRMED post-flip: CheckSessionHandler
+    // seeds valid_session with Boolean.toString(...) and page/checkSession.ftl still interpolates it
+    // unquoted, so the realm-prefixed page keeps the bare literal while the bare path keeps the JSP's quoted
+    // one. Two pages, two different renderers, one url apart -- record the difference so the 5d-1 diff on the
+    // bare path (which keeps the JSP) is not mistaken for a regression.
     expect(jspHtml).toContain('var validSession = "false";');
     expect(ftlHtml).toContain("var validSession = false;");
 
-    // finding 8: no cache headers on either page, ever.
+    // finding 8: no cache headers on either page, ever. Holds under CHF too -- OAuth2HttpRouteProvider wraps
+    // noCache() around /authorize and /access_token only (the two routes the Restlet OAuth2Filter covered),
+    // and connect/checkSession is not one of them.
     for (const response of [jsp, ftl]) {
       expect(response.headers()["cache-control"]).toBeUndefined();
       expect(response.headers()["pragma"]).toBeUndefined();
@@ -370,7 +396,13 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
   test("row 6d: every unusable id_token in the Referer is a 400 server_error JSON", async ({ request }) => {
     // The three unchecked throws behind CheckSession, all client-reachable, all landing on the same wire
     // shape via the 2-arg ExceptionHandler -> ServerException (400 "server_error"). 5b-2 D7 wraps these at
-    // source so the CHF port reproduces the 400 rather than letting CHF answer 500.
+    // source so the CHF port reproduces the 400 rather than letting CHF answer 500. CONFIRMED post-flip, but
+    // only after a fix: the first post-flip run answered `unknown aud` with a 500, because that leg raises an
+    // UnsupportedOperationException (the store's InvalidClientException asks the realm-only
+    // OAuth2Request.forRealm for its Authorization header) and CheckSessionHandler's typed catch listed only
+    // NullPointerException and NoSuchElementException. That was a genuine port DEFECT, not a licensed
+    // divergence, and it was fixed in the handler rather than by relaxing anything here -- so all three cases
+    // below still answer the recorded Restlet 400. Do not weaken these: a 500 on any of them is a regression.
     const cases = {
       // getClientRegistration returns null when there is no `aud`, and getClientSessionURI then dereferences
       // it unguarded (CheckSession.java:111-115) -- a genuine NPE, pinned here so the separate null-guard
@@ -402,9 +434,10 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
     // endpoint's entire reason for existing -- is a NoSuchElementException today. Row 6c only gets a 200
     // because ensureOidcClient sets the attribute explicitly.
     //
-    // 5b-2 D7's wrap already covers this (same call as row 6d), so this row does NOT guard the port. It
-    // guards the SEPARATE null-guard fix, which could repair the null-registration half and leave this one.
-    // If that fix lands, this row must be changed deliberately -- it is not a passive snapshot.
+    // 5b-2 D7's wrap already covers this (same call as row 6d), so this row does NOT guard the port -- and it
+    // came through the flip green, unchanged. It guards the SEPARATE null-guard fix, which could repair the
+    // null-registration half and leave this one. If that fix lands, this row must be changed deliberately --
+    // it is not a passive snapshot.
     const idToken = signedJwt({ aud: NO_SESSION_URI_CLIENT_ID, realm: "/", sub: "demo" }, OIDC_CLIENT_SECRET);
     const response = await request.get(`${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession`, {
       headers: { Referer: `http://rp.invalid/page?id_token=${idToken}` },
@@ -412,8 +445,9 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
     const body = await response.json();
     console.log(`[5-E3] row6e default client -> ${response.status()} ${JSON.stringify(body)}`);
     expect(response.status()).toBe(400);
-    // toContain, not toBe: CHF emits `application/json; charset=UTF-8` where Restlet emits it bare, and this
-    // file's header says it deliberately does not pin those bytes.
+    // toContain, not toBe: CHF emits `application/json;charset=UTF-8` (measured post-flip -- no space after
+    // the semicolon) where Restlet emitted it bare, and this file's header says it deliberately does not pin
+    // those bytes.
     expect(response.headers()["content-type"]).toContain("application/json");
     expect(body.error).toBe("server_error");
   });
@@ -424,6 +458,13 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
     // template against the CHECK-SESSION model, which has no display_name, so FreeMarker throws, getText()
     // fails and the IOException becomes the same ResourceException as a missing template. touch/wap have no
     // checkSession.ftl at all. Same status, same body, three different mechanisms.
+    //
+    // Post-flip the three mechanisms have collapsed into one, with no change on the wire: CHF's
+    // FreemarkerTemplateRenderer.renderForDisplay resolves <display>/checkSession.ftl FIRST even for popup
+    // (only popup/authorize.ftl and popup/popup.ftl exist), so all three now fail identically on a missing
+    // template and CheckSessionHandler answers the authored RESTLET_TEMPLATE_ERROR. Do not read the paragraph
+    // above as a description of the code that serves this today -- it is the recorded Restlet mechanism, kept
+    // because it is what the observation corrected.
     for (const display of ["popup", "touch", "wap"]) {
       const response = await request.get(
         `${OPENAM_BASE}/oauth2/realms/${REALM}/connect/checkSession?display=${display}`);
@@ -545,10 +586,12 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
   });
 
   test("row 10: a malformed id_token_hint is a 400 server_error (5b-2 D7)", async ({ request }) => {
-    // JwtReconstruction throws UNCHECKED, so this never reaches the OAuth2Exception catch -- it lands in
-    // doCatch, which wraps it as ServerException: status 400, error "server_error". D7 reproduces the 400 at
-    // source rather than letting CHF's default 500 stand, and this row is why that is parity and not a
-    // re-litigation of decisions.md D3: the path is reachable by any client, so it is contract, not a bug.
+    // JwtReconstruction throws UNCHECKED, so this never reached the OAuth2Exception catch -- it landed in
+    // Restlet's doCatch, which wrapped it as ServerException: status 400, error "server_error". D7 reproduces
+    // the 400 at source rather than letting CHF's default 500 stand, and this row is why that is parity and
+    // not a re-litigation of decisions.md D3: the path is reachable by any client, so it is contract, not a
+    // bug. CONFIRMED post-flip: both cases below came through the flip green and unchanged, so
+    // EndSessionHandler's typed wrap covers the same two throws Restlet's doCatch swallowed.
     // Reached only when a post_logout_redirect_uri is present -- without one the endpoint returns before
     // validateRedirect ever reconstructs the JWT, which is the second case below.
     const response = await request.get(`${OPENAM_BASE}/oauth2/connect/endSession?${new URLSearchParams({
@@ -572,26 +615,44 @@ test.describe("OIDC session endpoints contract lock (5-E3, live Restlet)", () =>
     expect((await garbage.json()).error).toBe("server_error");
   });
 
-  test("row 11: PUT on either endpoint is Restlet's own 405 with a CREST body", async ({ request }) => {
-    // Closes 5b-2 open question 6, and the answer LIMITS D10 rather than supporting it. Neither endpoint is
-    // wrapped by OAuth2Filter, so there is no validateMethod and no OAuth2-shaped 405 here: the framework
-    // answers with a CREST {code, reason, message} body. That is NOT `method_not_allowed`, so after the flip
-    // these two diverge in body shape whatever OAuth2ErrorFilter maps 405 to -- D10 stays justified by
-    // /authorize and /access_token (which DO emit method_not_allowed today), not by these.
+  test("row 11: PUT on either endpoint is a 405 carrying the OAuth2 method_not_allowed body", async ({ request }) => {
+    // Closed 5b-2 open question 6, and the answer LIMITED D10 rather than supporting it. Neither endpoint was
+    // wrapped by OAuth2Filter, so there was no validateMethod and no OAuth2-shaped 405 here: Restlet's
+    // framework answered with a CREST {code, reason, message} body carrying no `error` field at all. That
+    // divergence was PREDICTED to happen at the flip whatever OAuth2ErrorFilter mapped 405 to -- and it did:
+    // plan.md expected-divergences row 8 names `device/user`, `connect/checkSession` and `connect/endSession`
+    // explicitly and calls the exact post-flip body asserted below.
+    //
+    // ⚠ The shape change comes from mounting OAuth2ErrorFilter across the whole application at all
+    // (phase-5-oauth2.md D5-1, the root filter in OAuth2HttpRouteProvider.get), NOT from D10 -- so it lands on
+    // these two even though OAuth2Filter never wrapped them, which is exactly what row 11 predicted it would
+    // do. D10 only chooses the word inside the new shape; before it the same routes would have said
+    // `invalid_request` -- equally non-CREST, equally undefined by RFC 6749 for a 405. OAuth2ErrorFilter's
+    // errorFor() has no route scope, deliberately, so /oauth2 speaks one error shape end to end. D10 itself
+    // is still justified by /authorize and /access_token (which emitted method_not_allowed before the flip
+    // too), not by these two.
+    //
+    // The STATUS is unchanged at 405, and neither endpoint has gained or lost a verb: what moved is the body.
     for (const path of [`/oauth2/realms/${REALM}/connect/checkSession`, "/oauth2/connect/endSession"]) {
       const response = await request.fetch(`${OPENAM_BASE}${path}`, { method: "PUT", maxRedirects: 0 });
       const body = await response.json();
       console.log(`[5-E3] row11 PUT ${path} -> ${response.status()} ${JSON.stringify(body)}`);
       expect(response.status(), path).toBe(405);
       expect(response.headers()["content-type"], path).toContain("application/json");
-      expect(body.code, path).toBe(405);
-      expect(body.reason, path).toBe("Method Not Allowed");
-      expect(body.message, path)
-        .toBe("The method specified in the request is not allowed for the resource identified by the request URI");
-      // No OAuth2 error shape at all -- neither field exists.
-      expect(body.error, path).toBeUndefined();
-      expect(body.error_description, path).toBeUndefined();
-      // finding 8 again, on the error path this time.
+      // ⚠ 5d-1c divergence: the root OAuth2ErrorFilter rewrites the CREST body into the OAuth2 shape, so `error` now exists (plan.md expected-divergences row 8). Restlet: no `error` field at all, body.error was undefined.
+      expect(body.error, path).toBe("method_not_allowed");
+      // ⚠ 5d-1c divergence: the description is the framework's generic reason phrase, from Status.METHOD_NOT_ALLOWED.getReasonPhrase() carried over as the CREST `message` (plan.md expected-divergences row 8). Restlet: no `error_description` field at all, body.error_description was undefined.
+      expect(body.error_description, path).toBe("Method Not Allowed");
+      // No CREST error shape left at all -- all three of its fields are gone, which is the other half of
+      // plan.md row 8 and the thing a client that parsed `code` would notice.
+      // ⚠ 5d-1c divergence: `code` is consumed by the rewrite and not re-emitted. Restlet: 405.
+      expect(body.code, path).toBeUndefined();
+      // ⚠ 5d-1c divergence: `reason` is dropped by the rewrite. Restlet: "Method Not Allowed".
+      expect(body.reason, path).toBeUndefined();
+      // ⚠ 5d-1c divergence: `message` is carried over into error_description, not kept under its own key. Restlet: "The method specified in the request is not allowed for the resource identified by the request URI".
+      expect(body.message, path).toBeUndefined();
+      // finding 8 again, on the error path this time. Still holds: neither route is wrapped by noCache(), and
+      // the 405 is produced by Endpoints/AnnotatedMethod, which set Allow and nothing else.
       expect(response.headers()["cache-control"], path).toBeUndefined();
       expect(response.headers()["pragma"], path).toBeUndefined();
     }

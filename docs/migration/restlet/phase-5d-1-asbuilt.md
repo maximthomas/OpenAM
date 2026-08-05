@@ -380,6 +380,12 @@ the nested one, in a single run.
 | Commit | `ca7bed61159250149599c4f402d3eae7f0764004` (5d-1b) |
 | Statuses | `1:200 2:401 3:302 4:302 5:200 6:200 7:201 8:405` — all eight as expected, bar D8's predicted 301 |
 
+⚠ **Corrected 2026-08-05, after the flip.** Rows 3 and 4's `302` was read here as an unauthenticated login
+redirect. It is not: the probe sends no `redirect_uri`, the request fails validation, and Restlet redirected
+the *error* back to the client's registered `redirect_uri`. Post-flip both rows are a **400**, because
+[D7](phase-5d-1.md#d7) makes exactly that failure non-redirecting. The audit diff is therefore D7 working as
+designed, not a regression — and row 4 being authenticated (it carries the demo user's `id`) never mattered.
+
 **The capture is validated in both directions.** Two captures of the same unchanged container normalise to
 byte-identical output, so a non-empty post-flip diff is a real difference and not run-to-run noise; and
 mutating a `reason` string in the artefact still shows up in the diff, so the normaliser is not simply
@@ -389,7 +395,8 @@ hiding everything. Both checks were run, not assumed.
 Briefly: the audit handler is already enabled (nothing to turn on), but `csvBuffering.bufferingEnabled` must
 be turned **off** or the extraction silently captures someone else's traffic; the auditor detail is at
 `request.detail`/`response.detail`, not `http.request.detail`; `AM-ACCESS-ATTEMPT` is blacklisted by default
-so there are 8 rows and not 16; and an unauthenticated `/authorize` is a **302**, not a 301.
+so there are 8 rows and not 16; and the probe's `/authorize` is a **302**, not a 301 — an error redirect, as
+corrected above, not the login redirect this originally called it.
 
 **What the artefact already proves, pre-flip.** The audit matrix
 ([finding 2](phase-5d-1-research.md#2--the-route-table-is-18-attachments-and-7-distinct-auditor-pairs-lift-both-verbatim))
@@ -418,6 +425,129 @@ this artefact is what removes that excuse.
 
 **Left on the container by this capture** (both harmless, both recreated identically by a re-run): an OAuth2
 client `d8_probe`, and the audit service's `csvBuffering.bufferingEnabled` set to `false`.
+
+---
+
+## As-built — 5d-1c, recorded 2026-08-05 (the flip)
+
+`/oauth2/*` now resolves to the CHF `OpenAM` servlet. The change itself is four lines of `web.xml`; everything
+else below is what measuring it turned up.
+
+### The commit shape — two commits, not one
+
+[D6](phase-5d-1.md#d6) requires the flip to be one revertible commit and says any fix it demands lands *on top*.
+That sentence assumed a flip already pushed and soaking. Here the fixes were known **before** the flip existed,
+and the e2e rows they move are re-pinned in the flip commit — so putting them on top would leave the flip
+commit itself red under `git bisect`. They go **underneath** instead:
+
+| | Commit | Contents | Green? |
+|---|---|---|---|
+| A | the parity fixes | five source changes + their unit/IT rows, all in `openam-oauth2`; plus the oracle-extractor fix | yes — the CHF routes have been registered since 5d-1b but are not yet *served*, so nothing on the wire moves |
+| B | **5d-1c** | the one `web.xml` mapping move, the licensed e2e re-pins, the docs, the post-flip artefacts | yes |
+
+`git revert` of **B** still restores Restlet on `/oauth2` with the CHF stack built and dormant — the
+[cutover lever](decisions.md#cutover-lever) unchanged. Reverting B does **not** revert A, which is correct: A
+is inert while Restlet serves.
+
+### Criteria 12–13 — the byte-diff
+
+| | |
+|---|---|
+| Image | `openam-e2e:5d1c-v5`, built from this working tree; `/oauth2/*` → `OpenAM` asserted **inside the WAR** before baking, and the deployed `openam-oauth2` jar md5 matched the local build |
+| Environment | full teardown + rebuild via `recreate-e2e-env.sh` — both OpenAM containers recreated, never reused |
+| Suite | **131 passed, 1 skipped, 0 failed** (132 declared), one pass on fresh fixtures |
+| Artefacts | [`artefacts/e2e-transcript-post-flip.txt`](artefacts/e2e-transcript-post-flip.txt), [`artefacts/e2e-oracle-post-flip.txt`](artefacts/e2e-oracle-post-flip.txt) (211 rows, against 217 pre-flip) |
+| Oracle diff | 99 rows byte-identical, 118 pre-only, 112 post-only |
+
+**Every unmatched difference resolved to a divergence row.** Rows 14–30 in
+[plan.md](plan.md#expected-divergences-at-the-flip) are the result; all are measured on both stacks, and the
+directions are 13 shape-only, 3 narrowing (14, 21, 26) and **1 widening** (30 — the method tunnels, where
+`POST /access_token?method=GET` now issues a real token). Row 30 is the one that wants a release-note line.
+
+⚠ **A green suite is not a green surface.** Playwright aborts a test at its first failing assertion, so an
+early divergence hides every later one in the same row. Three of the fixes below were found only because a
+row that had already gone red was re-run after the earlier failure was fixed.
+
+### Criterion 14 — the audit smoke
+
+Post-flip capture on the shipped image: [`artefacts/d8-audit-post-flip.csv`](artefacts/d8-audit-post-flip.csv),
+8 rows. Field-for-field identical to the pre-flip capture apart from run-specific values (event ids,
+timestamps, ports, token and resource-set ids, durations) and the **two strings the pre-flip capture pinned as
+expected to change** — both changed exactly as predicted, `getDescription()` → `getReasonPhrase()`.
+
+Two statuses differ from D8's own prediction and are recorded, not fatal: rows 3 and 4 (`/authorize`) were
+**302** pre-flip and are **400** post-flip. The 302 was never a login redirect — it was the `invalid_request`
+error redirect back to `redirect_uri`; [D7](phase-5d-1.md#d7) makes that failure a non-redirecting 400 on
+purpose, so this is D7 working, not a regression. No `:-1` port appears in any row.
+
+### Criterion 15 — the Cargo boot
+
+`mvn -o -pl openam-server verify -P integration-test` against the flipped WAR: **the instance starts**
+(`OpenAM instance started, context=/test-am`) and the suite is green — `Tests run: 3, Failures: 0, Errors: 0,
+Skipped: 0`, BUILD SUCCESS. The WAR that booted is the one the e2e image was baked from, so the mapping move
+is exercised by both the container and the in-reactor boot.
+
+### Five parity fixes the flip demanded (commit A)
+
+Each was a real wire difference the pre-flip capture did not license, so each was fixed rather than recorded:
+
+1. **Unauthored `server_error` descriptions leaked internals.** `OAuth2Error.asMap` now masks them to Restlet's
+   own generic sentence. The discriminator is exact rather than heuristic: `ServerException(Throwable)` is the
+   wrap-any-bug path and its description *is* the throwable's message, while `ServerException(String)` is
+   authored. Masking lives in `asMap()` (the wire), not `getDescription()` (the log), so the detail survives
+   for operators. The authored `precondition_failed (512) - …` family and [D7](phase-5d-1.md#d7)'s
+   `invalid_request` are deliberately untouched.
+2. **`CheckSessionHandler` display errors.** `?display=popup|touch|wap` now answers Restlet's own
+   `Bad Request (400) - Server can not serve the content of authorization page`, and `?display=<unknown>` the
+   generic mask — reproducing `OAuth2Representation`'s two branches and restoring byte parity on all four
+   measured spellings.
+3. **`CheckSessionHandler` client-driven runtime failures.** The catch was an enumeration of exception types
+   and found a new one on every measurement (`NullPointerException`, `NoSuchElementException`,
+   `UnsupportedOperationException`, `JwtRuntimeException`) because the set is the transitive closure of what the
+   store and the JWT parser may throw. Replaced with `catch (RuntimeException)` scoped to the single call that
+   parses the client's own `id_token`. The other three collaborator calls sit outside it and keep CHF's 500 for
+   a genuine bug ([D3](phase-5c.md#d3)).
+4. **`resource_set` thrown errors carried a charset.** The `PUT` 400 and `GET` 404 left through the base class's
+   `@ExceptionHandler` → `setEntity(Map)` and went out `application/json;charset=UTF-8`, where 5-E4 row 14
+   measured bare. Fixed by overriding `withErrorHeaders` on `ResourceSetRegistrationHandler` — the same
+   `protected` hook `TokenEndpointHandler` and `AuthorizeHandler` already use. ⚠ **Not** in
+   `ResourceSetErrorFilter`, which was the first attempt: by the time the filter sees them, a thrown error and
+   the in-band duplicate-name 400 are both OAuth2-shaped 4xx JSON bodies with a charset, and **row 7's charset
+   is measured Restlet parity**. Normalising there would have closed two divergences by opening a third.
+5. **The oracle extractor lost ~6% of fixture suffixes.** `SUFFIX` required a digit to avoid eating English
+   words, but the suffix is base-36, so about one name in 17 draws none — `cejdvhxu` did, and put a phantom
+   5-E4 row 7 in the byte-diff. Anchoring a second rule on the closing quote of a quoted fixture name fixes it;
+   re-extracting the committed pre-flip transcript with the fixed tool yields a **byte-identical body**, which
+   is what keeps the two sides of the diff comparable.
+
+### One divergence row withdrawn, and three comments that repeated it
+
+⚠ [plan.md](plan.md#expected-divergences-at-the-flip) **row 11** — "every `Content-Type` that carries a charset
+gains a space after the `;`" — is **false on the wire and is withdrawn**. commons
+`ContentTypeHeader.getValues()` does render `"; charset="`, so a unit test reading the header back with
+`getFirst` sees the spaced form; but that renderer only runs when something reads the header *as a
+`ContentTypeHeader`*. `setJson` writes the literal constant, and that is what reaches the socket. The post-flip
+capture contains **no spaced Content-Type at all** — 26 logged values across both stacks, every one of them
+`application/json`, `application/json;charset=UTF-8` or `text/html;charset=UTF-8`. The rows row 11 predicted
+would go red (5-E2 2/3/4, the 5-E3 device pages, 5-E4 row 7) are all green.
+
+The same claim had been copied into `ResourceSetRegistrationHandler`'s duplicate-name branch, its
+`JSON_TYPE` javadoc and `ResourceSetRegistrationHandlerTest`; all three are corrected in commit A.
+
+### Answers to questions the plan left open
+
+| Question | Answer |
+|---|---|
+| 5-E4 row 15 — `HEAD` `Content-Length` | CHF **sends** it; Restlet did not. Measured: `/tokeninfo` 213, `.well-known/openid-configuration` 1515, `connect/jwk_uri` 447, `resource_set` item 238. Inverted from [finding 7](phase-5d-1-research.md#7--content-length-on-a-head-is-tomcats-decision) |
+| 5-E4 row 17 — the unrouted-path 404 | Collapses to one body ([D5](phase-5d-1.md#d5)); Restlet's per-segment sub-realm messages have no counterpart |
+| `//tokeninfo` — could the empty segment now be consumed? | **No.** Measured 404. `RealmContextFilter`'s cleanup does not make the empty element routable |
+| `PUT /tokeninfo` — did it take the `@Get`-first path like `PATCH`? | **No.** No cache directives on either stack; the `@Get`-first behaviour was PATCH-specific |
+| `?_api` — fix or record? | **Record** (row 26). The filter is mounted application-wide and shared with `/json`, whose descriptor works; the only surgical alternative mutates a query `/authorize` echoes into `goto` |
+
+### Still owed
+
+- **Criterion 16** — CI green on the `features/**` push, 9 legs.
+- **Criterion 17** — the soak. 5d-2 does not start until 13–16 are recorded.
 
 ---
 

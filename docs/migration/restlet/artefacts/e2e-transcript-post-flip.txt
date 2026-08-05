@@ -1,0 +1,505 @@
+
+Running 132 tests using 4 workers
+
+OAuth2 provider service created
+OAuth2 provider service created
+OAuth2 provider service created
+OAuth2 provider updated (scopes: openid, uma_protection, uma_authorization, savedConsentAttribute: already set)
+OAuth2 provider updated (scopes: openid, uma_protection, uma_authorization, savedConsentAttribute: already set)
+OAuth2 provider updated (scopes: openid, uma_protection, uma_authorization, savedConsentAttribute: already set)
+UMA provider service created
+OAuth2 client "test_client_oidc" written (201)
+OAuth2 client "test_client_app" created successfully
+OAuth2 client "test_client_oidc_dev" written (201)
+OAuth2 client "test_client_device_consent" written (201)
+OAuth2 client "test_client_oidc_nosessionuri" written (201)
+Confidential client "test_client_confidential" created successfully
+OAuth2 client "test_client_rs_reg" written (201)
+Consent client "test_client_consent" created successfully
+Got access token: 3f2acab7-b7ec-46d7-8aa3-464da143f91d
+  ✓    1 oauth2/oauth2-test.spec.mjs:206:3 › OAuth Service test › Should receive an auth code and exchange it to access token (158ms)
+[oidc] discovery issuer=http://openam.example.org:8080/openam/oauth2 keys=21
+  ✓    3 oauth2/oidc-test.spec.mjs:84:3 › OIDC discovery › /oauth2/.well-known/openid-configuration advertises this deployment's endpoints (108ms)
+[webfinger] issuer lookup -> 500 ct=application/json;charset=UTF-8 {"error":"Internal Server Error","error_description":"The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[oauth2] resource_set POST -> 201 id=064f7c19-bcc5-417b-8e14-ac90ff74fa2e0 etag=W/"-214375489"
+  ✓    6 oauth2/oidc-test.spec.mjs:105:3 › OIDC discovery › the realm-prefixed discovery path resolves to the same provider (29ms)
+  ✓    2 oauth2/webfinger-test.spec.mjs:44:3 › /.well-known/webfinger › records the current live response for an issuer lookup (1.5s)
+[oidc] jwk_uri keys=1
+[oauth2] resource_set PUT without If-Match -> 400 {"error":"server_error","error_description":"precondition_failed (512) - Require If-Match header to update Resource Set"}
+  ✓    7 oauth2/oidc-test.spec.mjs:115:3 › OIDC discovery › /oauth2/connect/jwk_uri publishes a usable JWK set (42ms)
+[oidc] token keys=access_token,refresh_token,scope,id_token,token_type,expires_in,nonce
+  ✘    8 oauth2/webfinger-test.spec.mjs:59:3 › /.well-known/webfinger › returns a JRD naming the issuer for a known account (57ms)
+  ✓    9 oauth2/oidc-test.spec.mjs:141:3 › OIDC id_token issuance and idtokeninfo › the authorization_code flow issues an id_token bound to the request (29ms)
+
+▶ Running bootstrap script: /home/maxim/Documents/_projects/forgerock/OpenAM/e2e/saml/bootstrap.sh
+Setup COT for OpenAM IDP
+[oidc] idtokeninfo -> 200 sub=demo
+  ✓   10 oauth2/oidc-test.spec.mjs:164:3 › OIDC id_token issuance and idtokeninfo › /oauth2/idtokeninfo returns the claim set for a valid id_token (129ms)
+[oauth2] resource_set DELETE -> 204
+[oidc] idtokeninfo no token -> 400 {"error":"bad_request","error_description":"no id_token in request"}
+  ✓   12 oauth2/oidc-test.spec.mjs:181:3 › OIDC id_token issuance and idtokeninfo › /oauth2/idtokeninfo rejects a missing id_token (45ms)
+  ✓    4 oauth2/oauth2-endpoints-test.spec.mjs:77:3 › /oauth2/resource_set registration › full lifecycle: register, read, list, update, delete (510ms)
+[oidc] idtokeninfo malformed -> 400 {"error":"bad_request","error_description":"invalid id_token: not right number of dots, 2"}
+  ✓   13 oauth2/oidc-test.spec.mjs:193:3 › OIDC id_token issuance and idtokeninfo › /oauth2/idtokeninfo rejects a malformed id_token (48ms)
+[oauth2] resource_set no token -> 401 {"error":"invalid_token","error_description":"The access token provided is expired, revoked, malformed, or invalid for other reasons."}
+  ✓   14 oauth2/oauth2-endpoints-test.spec.mjs:142:3 › /oauth2/resource_set registration › rejects a request with no bearer token (49ms)
+  ✓   16 oauth2/oauth2-endpoints-test.spec.mjs:154:3 › /oauth2/resource_set registration › rejects a request with an unknown bearer token (45ms)
+[oidc] checkSession -> 200 ct=text/html;charset=UTF-8 bytes=1254
+  ✓   15 oauth2/oidc-test.spec.mjs:209:3 › OIDC session endpoints › /oauth2/connect/checkSession serves the session-management iframe (174ms)
+[5-E4] row1 stale If-Match (weak) -> 412 {"error":"precondition_failed"}
+[oidc] endSession no hint -> 400 {"error":"bad_request","error_description":"The endSession endpoint requires an id_token_hint parameter"}
+  ✓   18 oauth2/oidc-test.spec.mjs:222:3 › OIDC session endpoints › /oauth2/connect/endSession requires an id_token_hint (27ms)
+[5-E4] row1 stale If-Match (strong) -> 412 {"error":"precondition_failed"}
+[5-E4] row1 stale If-Match on DELETE -> 412 {"error":"precondition_failed"}
+  ✓   17 oauth2/oauth2-endpoints-test.spec.mjs:305:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 1: a stale If-Match is a 412 precondition_failed, weak form and strong form alike (292ms)
+[oidc] endSession -> 204 location=undefined
+User Info Claims: {
+  sub: 'demo',
+  name: 'Demo Demo',
+  given_name: 'Demo',
+  family_name: 'Demo'
+}
+  ✓    5 oauth2/oauth2-test.spec.mjs:290:3 › OAuth Service test › Get user info with access token (1.3s)
+  ✓   19 oauth2/oidc-test.spec.mjs:231:3 › OIDC session endpoints › /oauth2/connect/endSession accepts a valid id_token_hint (329ms)
+[5-E4] row1b the exact weak tag ("W/\"1430881556\"") -> 200
+  ✓   21 oauth2/oauth2-test.spec.mjs:308:3 › OAuth Service test › Get user info with access token in POST form body (66ms)
+[5-E4] row1b the strong form of the same tag ("\"-657067649\"") -> 200
+  ✓   23 oauth2/oauth2-test.spec.mjs:324:3 › OAuth Service test › Reject user info request with token in both header and form body (27ms)
+  ✓   24 oauth2/oauth2-test.spec.mjs:342:3 › OAuth Service test › Get token info with access token in query parameter (46ms)
+[5-E4] row1b a comma list, current tag second ("W/\"nope\", W/\"1816544052\"") -> 200
+  ✓   25 oauth2/oauth2-test.spec.mjs:359:3 › OAuth Service test › Get token info with access token in header (43ms)
+[5-E3] row6 jsp server=undefined ftl server=undefined
+  ✓   22 oauth2/oidc-test.spec.mjs:320:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 6: the bare path is the JSP and the realm-prefixed path is the CHF-rendered FTL (316ms)
+  ✓   26 oauth2/oauth2-test.spec.mjs:374:3 › OAuth Service test › Reject token info request with token in both header and query parameter (33ms)
+[5-E3] row6b GET=200 POST=200
+[5-E] unknown grant_type -> 400 {"error":"unsupported_grant_type","error_description":"Grant type is not supported"}
+  ✓   27 oauth2/oidc-test.spec.mjs:374:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 6b: checkSession answers GET and POST identically (36ms)
+  ✓   28 oauth2/oauth2-test.spec.mjs:402:3 › OAuth2 /access_token contract lock (5-E, live Restlet) › unknown grant_type -> 400 unsupported_grant_type (40ms)
+[5-E4] row1b a comma list, current tag first ("W/\"1137965146\", W/\"nope\"") -> 200
+[5-E3] row6c valid id_token -> 200
+  ✓   29 oauth2/oidc-test.spec.mjs:382:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 6c: an id_token in the REFERER supplies client_uri (37ms)
+[5-E3] row6d no aud claim (the CheckSession NPE) -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E] bad secret -> 401 WWW-Authenticate=Basic realm="/" {"error":"invalid_client","error_description":"Client authentication failed"}
+[5-E3] row6d unknown aud -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+  ✓   30 oauth2/oauth2-test.spec.mjs:415:3 › OAuth2 /access_token contract lock (5-E, live Restlet) › bad client secret -> 401 with WWW-Authenticate (98ms)
+[5-E3] row6d malformed jwt -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E] GET /access_token -> status=405 body={"error":"method_not_allowed","error_description":"Method Not Allowed"}
+  ✓   31 oauth2/oidc-test.spec.mjs:396:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 6d: every unusable id_token in the Referer is a 400 server_error JSON (87ms)
+[5-E4] row1b a comma list with no space after the comma ("W/\"nope\",W/\"1819895304\"") -> 200
+  ✓   32 oauth2/oauth2-test.spec.mjs:431:3 › OAuth2 /access_token contract lock (5-E, live Restlet) › GET /access_token records the live-Restlet response (finding 1 oracle) (30ms)
+[5-E3] row6e default client -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+  ✓   33 oauth2/oidc-test.spec.mjs:429:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 6e: a DEFAULT-configured client 400s on checkSession's own happy path (38ms)
+[5-E] /access_token success -> Cache-Control=no-store Pragma=no-cache
+[5-E3] row7 display=popup -> 400 {"error":"server_error","error_description":"Bad Request (400) - Server can not serve the content of authorization page"}
+[5-E4] row1b * ("*") -> 200
+[5-E3] row7 display=touch -> 400 {"error":"server_error","error_description":"Bad Request (400) - Server can not serve the content of authorization page"}
+[5-E3] row7 display=wap -> 400 {"error":"server_error","error_description":"Bad Request (400) - Server can not serve the content of authorization page"}
+[5-E] /tokeninfo success -> 200 Cache-Control=no-cache, no-store Pragma=undefined Content-Type=application/json;charset=UTF-8
+[5-E4] row1b a comma list containing neither ("W/\"nope\", W/\"nope2\"") -> 412
+  ✓   34 oauth2/oauth2-test.spec.mjs:485:3 › OAuth2 cache-header contract lock (5-E, live Restlet) › /tokeninfo success carries 'no-cache, no-store' and NO Pragma (40ms)
+[5-E3] row7 display=bogus -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+  ✓   35 oauth2/oidc-test.spec.mjs:455:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 7: every non-page ?display= on checkSession is a 400 (5b-2 D5) (140ms)
+[5-E4] row1b a quoted empty string ("\"\"") -> 412
+[5-E] /introspect success -> 200 Cache-Control=undefined Pragma=undefined
+  ✓   36 oauth2/oauth2-test.spec.mjs:506:3 › OAuth2 cache-header contract lock (5-E, live Restlet) › /introspect success carries no cache headers (70ms)
+[5-E4] row1b the tag unquoted ("2013915480") -> 400
+[5-E] /userinfo -> 400 Cache-Control=undefined Pragma=undefined
+[5-E4] row1b an empty header ("") -> 400
+  ✓   38 oauth2/oauth2-test.spec.mjs:517:3 › OAuth2 cache-header contract lock (5-E, live Restlet) › /userinfo carries no cache headers (51ms)
+[5-E4] row1b garbage ("!!!") -> 400
+  ✓   20 oauth2/oauth2-endpoints-test.spec.mjs:341:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 1b: how Restlet PARSES If-Match -- the specification the CHF helper must satisfy (1.2s)
+[5-E3] row8 no state -> 302 http://app.invalid/logout
+[5-E2] row1 unauthenticated GET -> 301 Location=http://openam.example.org:8080/openam/UI/Login?realm=%2F&goto=http%3A%2F%2Fopenam.example.org%3A8080%2Fopenam%2Foauth2%2Fauthorize%3Fresponse_type%3Dcode%26client_id%3Dtest_client_app%26redirect_uri%3Dhttp%3A%2F%2Fapp.invalid%2Fcb%26scope%3Dprofile%26state%3Drow1state%26code_challenge%3DImpiCd8pp4MveCNnbIS7-GXEtB0xF5HMIDoWqvGA5ig%26code_challenge_method%3DS256
+  ✓   39 oauth2/oauth2-test.spec.mjs:624:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 1: unauthenticated GET -> 301 to /UI/Login carrying the request as goto (50ms)
+[5-E4] row2a PUT If-Match W/"-1901500778" -> 200 newEtag=W/"2080338227"
+[5-E4] row2a labels after a labels-less PUT -> []
+[5-E2] row2 consent page -> 200 Content-Type=text/html;charset=UTF-8 bytes=2961
+  ✓   41 oauth2/oauth2-test.spec.mjs:654:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 2: authenticated GET on a consent-requiring client -> the 200 consent page (157ms)
+[5-E3] row8 with state -> 302 http://app.invalid/logout?state=st%20ate/1
+[5-E2] row3 unknown client -> 400 Content-Type=text/html;charset=UTF-8
+  ✓   42 oauth2/oauth2-test.spec.mjs:692:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 3: unknown client_id -> 400 HTML error page, no Location (63ms)
+[5-E4] row2a DELETE If-Match W/"-1839374782" -> 204
+[5-E2] row4 redirect_uri mismatch -> 400 Location=undefined
+  ✓   40 oauth2/oauth2-endpoints-test.spec.mjs:392:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 2a: If-Match echoing the GET's ETag verbatim succeeds, W/ prefix and all (543ms)
+  ✓   43 oauth2/oauth2-test.spec.mjs:708:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 4: registered client, unregistered redirect_uri -> 400 HTML error page, no Location (28ms)
+[5-E2] row5 invalid_scope code -> 302 Location=http://app.invalid/cb?error=invalid_scope&error_description=Unknown/invalid%20scope(s):%20%5Bno_such_scope%5D&state=row5state
+  ✓   45 oauth2/oauth2-test.spec.mjs:722:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 5: post-validation error with response_type=code -> 302, parameters in the QUERY (28ms)
+[5-E2] row6 invalid_scope token -> 302 Location=http://app.invalid/cb#error=invalid_scope&error_description=Unknown/invalid%20scope(s):%20%5Bno_such_scope%5D&state=row6state
+[5-E4] row2b the label store's order is ["alpha","beta"]
+  ✓   46 oauth2/oauth2-test.spec.mjs:739:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 6: the same error with response_type=token -> 302, parameters in the FRAGMENT (26ms)
+[5-E3] row8 existing query -> 302 http://app.invalid/logout?ui=1&state=s2
+[5-E2] row7 PUT -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+  ✓   47 oauth2/oauth2-test.spec.mjs:759:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 7: PUT /oauth2/authorize records the live-Restlet response (D8 input) (25ms)
+  ✓   37 oauth2/oidc-test.spec.mjs:501:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 8: a registered post_logout_redirect_uri redirects, and state goes in the QUERY (901ms)
+[5-E2] row8 POST application/json -> 400 {"error":"invalid_request","error_description":"Invalid Content Type"}
+[5-E4] row2b matching the store: sent=["alpha","beta"] read=["alpha","beta"] POST=W/"-492129068" GET=W/"-492129068"
+  ✓   48 oauth2/oauth2-test.spec.mjs:784:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 8: POST with a JSON body records the live-Restlet response (D8 input) (23ms)
+[5-E4] row2b matching the store: PUT with the POST tag -> 200
+[5-E2] row9 consent POST -> 302 Location=http://app.invalid/cb?code=4caf2ac1-d886-4d5f-a678-a227f3bcf7d8&scope=profile&iss=http://openam.example.org:8080/openam/oauth2&state=row9state&client_id=test_client_consent Set-Cookie=[]
+  ✓   50 oauth2/oauth2-test.spec.mjs:807:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 9: consent POST decision=allow -> 302 with the code in the QUERY (121ms)
+[5-E4] row2b opposite to the store: sent=["beta","alpha"] read=["alpha","beta"] POST=W/"1542357601" GET=W/"-1154790531"
+[5-E4] row2b opposite to the store: PUT with the POST tag -> 412
+  ✓   44 oauth2/oauth2-endpoints-test.spec.mjs:428:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 2b: the POST's ETag is already stale unless the client's label order matches the store's (406ms)
+[5-E3] row9 http://evil.invalid/x -> 400 {"error":"redirect_uri_mismatch","error_description":"The redirection URI provided does not match a pre-registered value."}
+[5-E2] row9b consent page Set-Cookie=["oidcLoginHint=demo; Path=/; HttpOnly","oauth2_csrf=BkWwZD2EBSYfVvXtdm71wKvBHYxUTBAww13aov8jOas;Path=/;HttpOnly;SameSite=Lax"]
+[5-E2] row9b success, no prior cookie Set-Cookie=["oidcLoginHint=demo; Path=/; HttpOnly","oidcLoginHint=; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Path=/; HttpOnly"]
+[5-E4] row3 304 -> 304 etag=W/"1714312026" ct=undefined bytes=0
+[5-E2] row9b success, prior cookie Set-Cookie=["oidcLoginHint=demo; Path=/; HttpOnly","oidcLoginHint=; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Path=/; HttpOnly"]
+[5-E4] row3 If-None-Match: * -> 200
+  ✓   51 oauth2/oauth2-test.spec.mjs:864:3 › OAuth2 /authorize contract lock (5-E2, live Restlet) › row 9b: the oidcLoginHint cookie contract on the live wire (D6 baseline) (248ms)
+  ✓   52 oauth2/oauth2-endpoints-test.spec.mjs:481:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 3: If-None-Match with the current tag is a 304 that still carries the ETag (245ms)
+[5-E3] row9 http://app.invalid/cb -> 400 {"error":"redirect_uri_mismatch","error_description":"The redirection URI provided does not match a pre-registered value."}
+[5-E4] row3b GET If-Match:* -> 200
+[5-E4] row3b GET stale If-Match -> 412 etag=W/"1473258208" name=5e4 ifmatch on get gu6mqlzn
+  ✓   54 oauth2/oauth2-endpoints-test.spec.mjs:521:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 3b: a GET honours If-Match too -- and a stale one 412s WITH the representation (186ms)
+[5-E3] row9 /relative/cb -> 400 {"error":"relative_redirect_uri","error_description":"The redirection URI provided is not absolute."}
+[5-E4] row4 PUT no If-Match -> 400 {"error":"server_error","error_description":"precondition_failed (512) - Require If-Match header to update Resource Set"}
+  ✓   55 oauth2/oauth2-endpoints-test.spec.mjs:552:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 4: PUT without If-Match is a 400 server_error, never a 412 and never a 512 (166ms)
+  ✓   49 oauth2/oidc-test.spec.mjs:556:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 9: an unregistered or relative post_logout_redirect_uri is a 400 JSON (911ms)
+[5-E5] realm e2e5e5realm ready (201)
+[5-E3] row10 malformed hint -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E3] row10 garbage uri -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+  ✓   57 oauth2/oidc-test.spec.mjs:588:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 10: a malformed id_token_hint is a 400 server_error (5b-2 D7) (69ms)
+[5-E4] row5 etags post=W/"-349419241" get=W/"-349419241" put=W/"117141847"
+[5-E3] row11 PUT /oauth2/realms/root/connect/checkSession -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E3] row11 PUT /oauth2/connect/endSession -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+  ✓   56 oauth2/oauth2-endpoints-test.spec.mjs:575:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 5: the ETag is a weak tag around a signed decimal, on POST, PUT and GET alike (176ms)
+  ✓   58 oauth2/oidc-test.spec.mjs:618:3 › OIDC session endpoints contract lock (5-E3, live Restlet) › row 11: PUT on either endpoint is a 405 carrying the OAuth2 method_not_allowed body (62ms)
+[5-E5] row13 /tokeninfo/ -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E4] row6 DELETE no If-Match -> 400 {"error":"server_error","error_description":"precondition_failed (512) - Require If-Match header to delete Resource Set"}
+[5-E5] row13 /connect/jwk_uri/ -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /.well-known/openid-configuration/ -> 404 {"error":"not_found","error_description":"Not Found"}
+  ✓   59 oauth2/oauth2-endpoints-test.spec.mjs:601:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 6: DELETE without If-Match is the same 400 server_error, with the delete wording (82ms)
+[5-E5] row13 /Tokeninfo -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /TOKENINFO -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /Connect/jwk_uri -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /connect/JWK_URI -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 //tokeninfo -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /resource_set/ -> 401 {"error":"invalid_token","error_description":"The access token provided is expired, revoked, malformed, or invalid for other reasons."}
+OAuth2 provider already supports openid, profile, uma_protection, uma_authorization
+  ✓   53 oauth2/oauth2-test.spec.mjs:1095:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 13: path forms -- a trailing slash, a case change and an empty segment are all 404 (114ms)
+UMA provider service already exists
+[5-E5] row1 ?realm=/ -> 200 realm=/
+[5-E4] row7 duplicate name -> 400 ct=application/json;charset=UTF-8 {"error":"Bad Request","error_description":"A shared item with the name '5e4 duplicate 1a0jbb2i' already exists"}
+[5-E5] row1 ?realm=%2F -> 200 realm=/
+  ✓   61 oauth2/oauth2-endpoints-test.spec.mjs:612:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 7: a duplicate name answers a reason PHRASE in the error field, with a charset (113ms)
+[5-E5] row1 ?realm=e2e5e5realm -> 404 {"error":"not_found","error_description":"No OpenID Connect provider for realm /e2e5e5realm"}
+[5-E5] row1 unmatched path + ?realm=bogus -> 400 {"error":"invalid_request","error_description":"Invalid realm, bogus"}
+  ✓   62 oauth2/oauth2-test.spec.mjs:1156:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 1: the ?realm= override is honoured -- and after the flip it applies even with no route matched (104ms)
+[5-E4] row8 missing name -> 400 {"error":"bad_request","error_description":"Invalid Resource Set Description. Missing required attribute, 'name'."}
+[5-E5] row2 GET /tokeninfo?realm=bogus -> 400 {"error":"invalid_request","error_description":"Invalid realm, bogus"}
+[5-E4] row8 missing scopes -> 400 {"error":"bad_request","error_description":"Invalid Resource Set Description. Missing required attribute, 'scopes'."}
+[5-E5] row2 POST /access_token?realm=bogus -> 400 {"error":"invalid_request","error_description":"Invalid realm, bogus"}
+OAuth2 client "test_client_rs_uma" written (201)
+[5-E4] row8 non-array scopes -> 400 {"error":"bad_request","error_description":"Invalid Resource Set Description. Required attribute, 'scopes', must be an array of Strings."}
+  ✓   64 oauth2/oauth2-test.spec.mjs:1192:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 2: a bad ?realm= override is a 400 -- CHF answers before the endpoint is reached (51ms)
+[5-E4] row8 empty object -> 400 {"error":"bad_request","error_description":"Invalid Resource Set Description. Missing required attribute, 'name'."}
+  ✓   63 oauth2/oauth2-endpoints-test.spec.mjs:632:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 8: the validator's rejections, verbatim (140ms)
+[5-E5] row3 /oauth2/e2e5e5realm/.well-known/... -> 404 {"error":"not_found","error_description":"No OpenID Connect provider for realm /e2e5e5realm"}
+[5-E5] row3 /oauth2/e2e5e5realm/tokeninfo -> 200
+[5-E5] row3 legacy + ?realm=/ -> 200
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/usr/openam/ssoadmintools/lib/com.google.inject.guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+  ✓   65 oauth2/oauth2-test.spec.mjs:1226:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 3: the legacy /oauth2/<subrealm>/... style resolves to that sub-realm (64ms)
+[5-E4] row9 PUT /resource_set If-Match:* -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E5] row4 /realms/root/tokeninfo -> 200
+[5-E5] row4 /realms/bogus/tokeninfo -> 404 {"error":"not_found","error_description":"Realm &quot;bogus&quot; not found"}
+[5-E5] row4 flat /realms/e2e5e5realm -> 404 {"error":"not_found","error_description":"No OpenID Connect provider for realm /e2e5e5realm"}
+[5-E5] row4 nested /realms/root/realms/e2e5e5realm -> 404 {"error":"not_found","error_description":"No OpenID Connect provider for realm /e2e5e5realm"}
+[5-E4] row9 DELETE /resource_set If-Match:* -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+  ✓   67 oauth2/oauth2-test.spec.mjs:1251:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 4: the modern /oauth2/realms/... style, including the FLAT non-root spelling (81ms)
+[5-E5] row5 HEAD /tokeninfo -> 200 ct=application/json;charset=UTF-8 len=213 (GET 200)
+[5-E5] row5 HEAD /.well-known/openid-configuration -> 200 ct=application/json;charset=UTF-8 len=1515 (GET 200)
+[5-E5] row5 HEAD /connect/jwk_uri -> 200 ct=application/json;charset=UTF-8 len=447 (GET 200)
+[5-E4] row9 PUT /resource_set/ If-Match:* -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E5] row5 HEAD /authorize -> 405 (the same GET -> 302 Location=http://app.invalid/cb?code=cab41e6b-6c53-4119-900a-454e8a4e41db&scope=profile&iss=http://openam.example.org:8080/openam/oauth2&state=row5&client_id=test_client_app)
+[5-E5] row5 HEAD /access_token -> 405 ct=application/json;charset=UTF-8
+[uma] uma-configuration -> 200 keys=14
+[5-E4] row9 DELETE /resource_set/ If-Match:* -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E5] row5 HEAD /tokeninfo (no token) -> 401 ct=application/json;charset=UTF-8 len=135 (GET ct=application/json;charset=UTF-8)
+  ✓   68 oauth2/oauth2-test.spec.mjs:1289:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 5: HEAD is served as GET -- except on the two endpoints with a method filter (190ms)
+  ✓   60 uma/uma-test.spec.mjs:81:3 › /uma/.well-known/uma-configuration › is public and advertises the UMA endpoints (88ms)
+[5-E5] row6 PROPFIND /tokeninfo -> 405 allow=GET {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row6 PUT /tokeninfo -> 405 allow=GET {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row6 PROPFIND /connect/jwk_uri -> 405 allow=GET {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+  ✓   66 oauth2/oauth2-endpoints-test.spec.mjs:653:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 9: PUT and DELETE on the COLLECTION give three different answers by If-Match form (412ms)
+[5-E5] row6 PUT /connect/jwk_uri -> 405 allow=GET {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+  ✓   70 uma/uma-test.spec.mjs:102:3 › /uma/.well-known/uma-configuration › resolves through the realm-prefixed path too (30ms)
+[5-E5] row6 PROPFIND /access_token -> 405 allow=POST {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row6 PROPFIND /authorize -> 405 allow=GET, POST {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+  ✓   69 oauth2/oauth2-test.spec.mjs:1377:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 6: an unmapped verb is 405 -- and after the flip every producer says the same thing (74ms)
+[5-E5] row7 PATCH /tokeninfo (valid token) -> 405 cache=undefined allow=GET
+[5-E5] row7 PATCH /tokeninfo (no token) -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row7 PUT /tokeninfo (valid token) -> 405 cache=undefined
+[5-E5] row7 PATCH /access_token -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[uma] permission_request -> 201 {"ticket":"a322b5fc-5ca6-4859-a1a2-2a3b237a64902"}
+  ✓   73 oauth2/oauth2-test.spec.mjs:1420:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 7: PATCH is refused before the @Get runs -- narrower than under Restlet, and than resource_set (42ms)
+  ✓   72 uma/uma-test.spec.mjs:111:3 › /uma/permission_request › issues a permission ticket for a registered resource set (99ms)
+[uma] permission_request unknown rsid -> 400 {"error":"invalid_resource_set_id","error_description":"Could not find Resource Set, no-such-resource-set"}
+[5-E5] row8 /connect/jwk_uri?_api -> 501 ct=undefined
+[5-E4] row10 GET as amadmin -> 404 {"error":"not_found","error_description":"Resource set does not exist with id d07e2813-963b-42c0-bda5-ae9584aaee370"}
+  ✓   75 uma/uma-test.spec.mjs:125:3 › /uma/permission_request › rejects an unknown resource set id in the UMA error shape (36ms)
+[5-E5] row8 /connect/jwk_uri?_crestapi -> 200 ct=application/json;charset=UTF-8
+[5-E4] row10 PUT as amadmin -> 404 {"error":"not_found","error_description":"Resource set does not exist with id d07e2813-963b-42c0-bda5-ae9584aaee370"}
+[5-E5] row8 /tokeninfo?_api -> 501
+[5-E4] row10 DELETE as amadmin -> 404 {"error":"not_found","error_description":"Resource set does not exist with id d07e2813-963b-42c0-bda5-ae9584aaee370"}
+  ✓   74 oauth2/oauth2-test.spec.mjs:1468:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 8: ?_api now answers 501; only ?_crestapi is still ignored (89ms)
+  ✓   76 uma/uma-test.spec.mjs:141:3 › /uma/permission_request › rejects a request with no resource_set_id (41ms)
+  ✓   71 oauth2/oauth2-endpoints-test.spec.mjs:688:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 10: another resource owner's token gets 404, not 403 (231ms)
+[5-E5] row9 OPTIONS /authorize no Origin -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[uma] permission_request no token -> 401 {"code":401,"reason":"Unauthorized","message":"The access token provided is expired, revoked, malformed, or invalid for other reasons."}
+[5-E5] row9 OPTIONS /authorize with Origin -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row9 OPTIONS /tokeninfo -> 405 allow=GET
+  ✓   78 uma/uma-test.spec.mjs:152:3 › /uma/permission_request › rejects an unauthenticated request in the CREST shape (phase-4 D5) (56ms)
+  ✓   77 oauth2/oauth2-test.spec.mjs:1500:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 9: OPTIONS is a 405, and no CORS headers are produced at all (97ms)
+[uma] permission_request GET -> 405 {"code":405,"reason":"Method Not Allowed","message":"Method Not Allowed"}
+[5-E4] row11 OPTIONS -> 405 allow=DELETE, GET, POST, PUT {"error":"unsupported_method_type"}
+  ✓   80 uma/uma-test.spec.mjs:172:3 › /uma/permission_request › answers 405 for a verb the endpoint does not map (27ms)
+[5-E5] row10 POST /access_token + override GET -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E4] row11 PROPFIND -> 405 allow=DELETE, GET, POST, PUT {"error":"unsupported_method_type"}
+[5-E4] row11 PATCH -> 405
+[5-E5] row10 the same POST without the header -> 200
+[5-E5] row10 POST /tokeninfo + override GET -> 200
+[5-E5] row10 GET /tokeninfo + override PUT -> 200 allow=undefined
+  ✓   79 oauth2/oauth2-endpoints-test.spec.mjs:714:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 11: every unmapped verb is 405 unsupported_method_type -- PATCH included, since the flip (243ms)
+[5-E5] row10 POST /access_token?method=GET -> 200 {"access_token":"8f613ec2-3ef4-45c9-ad57-56a85e14062d","scope":"profile","token_type":"Bearer","expires_in":3599}
+[5-E4] row12 Content-Type text/plain -> 201
+[5-E5] row10 GET /tokeninfo?method=PUT -> 200
+[uma] authz_request -> 403 error=need_info
+  ✓   81 oauth2/oauth2-test.spec.mjs:1534:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 10: the method tunnel -- the header is honoured on POST only, and the query tunnel is gone (247ms)
+  ✓   82 uma/uma-test.spec.mjs:186:3 › /uma/authz_request › a valid ticket enters claim gathering (233ms)
+[5-E5] row11 /nosuchendpoint (one segment -> router) -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row11 /authorize/extra (two -> realm) -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row11 /connect/nosuch (two -> realm) -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row11 /realms/root/nosuch (consumed by the realm route -> router) -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E4] row12 Content-Type application/xml -> 201
+  ✓   84 oauth2/oauth2-test.spec.mjs:1606:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 11: an unrouted path is a 404 -- and after the flip from a single producer (43ms)
+[uma] authz_request bad ticket -> 400 {"error":"invalid_ticket","error_description":"Unable to retrieve Permission Ticket"}
+[5-E5] row12 /oauth2/ -> 500 
+[5-E5] row12 /oauth2 -> 404 {"error":"not_found","error_description":"Not Found"}
+  ✓   85 uma/uma-test.spec.mjs:208:3 › /uma/authz_request › rejects an unknown ticket in the UMA error shape (76ms)
+[5-E5] row12 /oauth2/realms -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row12 /oauth2/realms/root -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E4] row12 no Content-Type -> 201 sentCt=undefined {"_id":"a4f3efc0-82be-40c4-a412-6b981a92c5ef2","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/a4f3efc0-82be-40c4-a412-6b981a92c5ef2"}
+  ✓   86 oauth2/oauth2-test.spec.mjs:1632:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 12: the prefix with no endpoint is a 404 -- except the bare `/oauth2/`, which is a 500 (57ms)
+[5-E4] row12 non-JSON body -> 400 {"error":"bad_request","error_description":"A JSONObject text must begin with '{' at 1 [character 2 line 1]"}
+[uma] authz_request wrong scope -> 403 {"code":403,"reason":"Forbidden","message":"The resource requested requires scope: uma_authorization"}
+[5-E5] row14 /oauth2/tokeninfo under an unknown Host -> 400 {"error":"invalid_request","error_description":"FQDN &quot;not-a-real-host.invalid&quot; is not valid."}
+  ✓   83 oauth2/oauth2-endpoints-test.spec.mjs:786:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 12: the request's media type is ignored entirely; only the BODY can fail (261ms)
+[5-E5] row14 /oauth2/realms/root/tokeninfo under an unknown Host -> 400 {"error":"invalid_request","error_description":"Realm &quot;not-a-real-host.invalid&quot; not found"}
+  ✓   87 uma/uma-test.spec.mjs:222:3 › /uma/authz_request › rejects a token without the uma_authorization scope (46ms)
+[5-E5] row14 /oauth2/.well-known/openid-configuration under an unknown Host -> 400 {"error":"invalid_request","error_description":"FQDN &quot;not-a-real-host.invalid&quot; is not valid."}
+[5-E5] row14 the same request with Host: openam.example.org -> 200
+[5-E4] row13 POST 201 -> 201 cc=undefined pragma=undefined
+[5-E4] row13 GET 200 -> 200 cc=undefined pragma=undefined
+
+[5-E4] row13 GET 304 -> 304 cc=undefined pragma=undefined
+[5-E4] row13 GET list 200 -> 200 cc=undefined pragma=undefined
+  ✓   90 uma/uma-test.spec.mjs:237:3 › /uma/authz_request › rejects an unauthenticated request (34ms)
+[5-E4] row13 PUT 400 -> 400 cc=undefined pragma=undefined
+amUtil:08/05/2026 05:03:38:688 PM UTC: Thread[#3,main,5,main]: TransactionId[unknown]
+CloseableHttpClientHandlerProvider.get: System proxy enabled for HttpClientHandler: false
+[5-E5] realm e2e5e5realm teardown -> 200
+  ✓   88 oauth2/oauth2-test.spec.mjs:1667:3 › /oauth2 routing contract lock (5-E5, live Restlet) › row 14: an unknown Host is a 400 after the flip -- on BOTH URL styles, from two different filters (51ms)
+[5-E4] row13 PUT 412 -> 412 cc=undefined pragma=undefined
+[5-E4] row13 GET 404 -> 404 cc=undefined pragma=undefined
+[5-E4] row13 OPTIONS 405 -> 405 cc=undefined pragma=undefined
+[5-E4] row13 POST 401 -> 401 cc=undefined pragma=undefined
+[5-E4] row13 DELETE 204 -> 204 cc=undefined pragma=undefined
+  ✓   89 oauth2/oauth2-endpoints-test.spec.mjs:859:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 13: no cache headers on any verb or any status (812ms)
+[5-E4] row14 POST 201 -> 201 ct=application/json
+Server reports cookieName=iPlanetDirectoryPro, cookieHttpOnly=false
+[5-E4] row14 GET 200 -> 200 ct=application/json
+[5-E4] row14 GET 304 -> 304 ct=undefined
+[5-E4] row14 GET list 200 -> 200 ct=application/json
+[5-E4] row14 PUT 400 -> 400 ct=application/json
+Realm "xacmltest" created
+[5-E4] row14 PUT 412 -> 412 ct=application/json
+[5-E4] row14 GET 404 -> 404 ct=application/json
+[5-E4] row14 OPTIONS 405 -> 405 ct=application/json
+[5-E4] row14 POST 401 -> 401 ct=application/json
+[5-E4] row14 DELETE 204 -> 204 ct=application/json
+  ✓   93 oauth2/oauth2-endpoints-test.spec.mjs:876:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 14: Content-Type is a bare application/json except on the 304 (955ms)
+Policy "xacml-e2e-policy" created
+[5-E4] row15 HEAD item -> 200 ct=application/json etag=W/"1828334945" len=238
+[5-E4] row15 HEAD collection -> 200 ct=application/json etag=undefined len=1121
+[5-E4] row15 HEAD collection/ -> 200 ct=application/json etag=undefined len=1121
+  ✓   94 oauth2/oauth2-endpoints-test.spec.mjs:897:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 15: HEAD is served as a GET with the body stripped -- 200, not 405 (498ms)
+[5-E4] row16 POST /resource_set/{id} -> 201 _id=77e92a8d-02b3-4a87-807f-b59103c559ad3
+  ✓   95 oauth2/oauth2-endpoints-test.spec.mjs:940:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 16: POST to the item URL creates a resource set and ignores the rsid (163ms)
+[5-E4] row17 GET /resource_set/a/b with a valid bearer -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E4] row17 GET /resource_set/a/b with a bogus bearer -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E4] row17 GET /resource_set/a/b with no bearer at all -> 404 {"error":"not_found","error_description":"Not Found"}
+  ✓   96 oauth2/oauth2-endpoints-test.spec.mjs:955:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 17: two segments below the endpoint is a 404 raised before authentication (100ms)
+[5-E4] row22 strict (control) -> 201 {"_id":"a322b5fc-5ca6-4859-a1a2-2a3b237a64903","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/a322b5fc-5ca6-4859-a1a2-2a3b237a64903"}
+[5-E4] row22 single-quoted strings -> 201 {"_id":"92dd5fcf-e485-4c4d-8981-e61d507d86ed5","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/92dd5fcf-e485-4c4d-8981-e61d507d86ed5"}
+[5-E4] row22 unquoted keys -> 201 {"_id":"92dd5fcf-e485-4c4d-8981-e61d507d86ed6","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/92dd5fcf-e485-4c4d-8981-e61d507d86ed6"}
+[5-E4] row22 a trailing comma -> 201 {"_id":"77e92a8d-02b3-4a87-807f-b59103c559ad4","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/77e92a8d-02b3-4a87-807f-b59103c559ad4"}
+[5-E4] row22 duplicate keys -> 400 {"error":"bad_request","error_description":"Duplicate key \"name\" at 33 [character 34 line 1]"}
+[5-E4] row22 a top-level array -> 400 {"error":"bad_request","error_description":"A JSONObject text must begin with '{' at 1 [character 2 line 1]"}
+[5-E4] row22 not json at all -> 400 {"error":"bad_request","error_description":"A JSONObject text must begin with '{' at 1 [character 2 line 1]"}
+  ✓   97 oauth2/oauth2-endpoints-test.spec.mjs:995:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 22: the body parser is org.json, and org.json is LENIENT (290ms)
+[5-E4] row18 PUT If-None-Match:<current> -> 412 {"error":"precondition_failed"}
+  ✓   91 xacml/xacml-test.spec.mjs:187:3 › XACML policy export › exports the root realm as an XACML 3.0 attachment (1.1s)
+[5-E4] row18 PUT If-None-Match:<stale> -> 400 {"error":"server_error","error_description":"precondition_failed (512) - Require If-Match header to update Resource Set"}
+[5-E4] row18 DELETE If-None-Match:<current> -> 412
+  ✓   99 xacml/xacml-test.spec.mjs:201:3 › XACML policy export › rejects an unauthenticated export with 401 (92ms)
+  ✓  100 xacml/xacml-test.spec.mjs:210:3 › XACML policy export › rejects an export by a user without delegation permission with 403 (61ms)
+[5-E4] row18 PUT If-Match + If-None-Match, both <current> -> 412
+  ✓   98 oauth2/oauth2-endpoints-test.spec.mjs:1060:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 18: If-None-Match is evaluated on PUT and DELETE too, and a match there is a 412 (430ms)
+  ✓  101 xacml/xacml-test.spec.mjs:217:3 › XACML policy export › renders the method-not-allowed fallback as XML (33ms)
+[5-E4] row19 POST collection If-Match:* -> 201
+[5-E4] row19 POST collection If-Match:<stale> -> 412
+Circle of trust, MYSAML was created.
+  ✓  103 xacml/xacml-test.spec.mjs:237:3 › XACML export is unversioned › exports when no Accept-API-Version header is sent (195ms)
+[5-E4] row19 POST item If-Match:<its own tag> -> 201
+[5-E4] row19 POST item If-Match:<stale> -> 412
+  ✓  102 oauth2/oauth2-endpoints-test.spec.mjs:1119:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 19: POST is conditional as well -- If-Match is evaluated before a create (310ms)
+Create Metadata Template for OpenAM IDP
+[5-E4] row20 GET collection If-Match:<stale> -> 412 41 ids
+  ✓  104 xacml/xacml-test.spec.mjs:243:3 › XACML export is unversioned › ignores a known Accept-API-Version and answers without Content-API-Version (151ms)
+[5-E4] row20 GET collection If-None-Match:* -> 304 ct=undefined
+[5-E4] row20 GET collection If-None-Match:<concrete> -> 200
+[5-E4] row20 POST collection If-None-Match:* -> 412
+  ✓  105 oauth2/oauth2-endpoints-test.spec.mjs:1159:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 20: the collection representation carries no tag, which flips three conditional answers (134ms)
+  ✓  106 xacml/xacml-test.spec.mjs:251:3 › XACML export is unversioned › serves a version that does not exist rather than 404ing (141ms)
+[5-E4] row21 GET If-None-Match:"-165624737" (strong form of W/"-165624737") -> 200
+[5-E4] row21 PUT If-None-Match:"-165624737" -> 412
+[5-E4] row21 POST collection If-None-Match:W/* -> 201
+  ✓  108 xacml/xacml-test.spec.mjs:261:3 › XACML export realm styles › resolves the modern realms/root path (161ms)
+  ✓  109 xacml/xacml-test.spec.mjs:268:3 › XACML export realm styles › resolves a legacy path realm (116ms)
+  ✓  110 xacml/xacml-test.spec.mjs:276:3 › XACML export realm styles › honours the realm query parameter (131ms)
+  ✓  111 xacml/xacml-test.spec.mjs:286:3 › XACML export filters › restricts the export to a matching filter (213ms)
+  ✓  112 xacml/xacml-test.spec.mjs:298:3 › XACML export filters › applies every value of a repeated filter parameter (138ms)
+  ✓   92 xui/xui-httponly.spec.mjs:120:5 › OpenAM XUI - HttpOnly session cookie › XUI login/session/logout work and cookie flag matches server mode (4.1s)
+  ✓  113 xacml/xacml-test.spec.mjs:315:3 › XACML policy import › reports the steps of a dryrun without persisting them (551ms)
+  ✓  115 xacml/xacml-test.spec.mjs:334:3 › XACML policy import › round-trips an export from the root realm into a sub realm (453ms)
+  ✓  116 xacml/xacml-test.spec.mjs:350:3 › XACML policy import › rejects an empty document with 400 (129ms)
+[5-E4] teardown: 42/45 deleted; 3 could not be removed (statuses 404)
+  ✓  107 oauth2/oauth2-endpoints-test.spec.mjs:1201:3 › /oauth2/resource_set contract lock (5-E4, live Restlet) › row 21: whether If-None-Match compares weakness depends on the VERB (233ms)
+[oauth2] connect/register -> 201 client_id=a3b10ccf-42fb-4104-bf9d-53b939db1f8c
+[oauth2] connect/register read-back -> 200
+[oauth2] connect/register DELETE -> 405
+  ✓  117 oauth2/oauth2-endpoints-test.spec.mjs:1257:3 › /oauth2/connect/register dynamic client registration › registers a client and reads it back with the registration access token (85ms)
+[oauth2] connect/register no token -> 400 {"error":"access_denied","error_description":"Access Token not valid"}
+  ✓  118 oauth2/oauth2-endpoints-test.spec.mjs:1294:3 › /oauth2/connect/register dynamic client registration › rejects registration without an access token (33ms)
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/usr/openam/ssoadmintools/lib/com.google.inject.guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+[oauth2] device/code -> 200 user_code=uk2KLoqk
+  ✓  119 oauth2/oauth2-endpoints-test.spec.mjs:1311:3 › OAuth2 device flow › /oauth2/device/code issues a user code and a verification URI (43ms)
+[oauth2] device/code missing params -> 400 {"error":"bad_request","error_description":"client_id, scope and response_type are required parameters"}
+  ✓  120 oauth2/oauth2-endpoints-test.spec.mjs:1326:3 › OAuth2 device flow › /oauth2/device/code rejects a request missing required parameters (24ms)
+[oauth2] device/user no code -> 200 ct=text/html;charset=UTF-8 bytes=1491
+  ✓  121 oauth2/oauth2-endpoints-test.spec.mjs:1337:3 › OAuth2 device flow › /oauth2/device/user serves the code-entry page with no user_code (55ms)
+[oauth2] device/user unauthenticated -> 301 location=http://openam.example.org:8080/openam/UI/Login?realm=%2F&goto=http%3A%2F%2Fopenam.example.org%3A8080%2Fopenam%2Foauth2%2Fdevice%2Fuser%3Fuser_code%3DZ4CUtJTX%26user_code%3DZ4CUtJTX
+  ✓  114 xui/xui-httponly.spec.mjs:182:5 › OpenAM XUI - HttpOnly session cookie › admin stays logged in to the console after a browser page reload (3.5s)
+  ✓  122 oauth2/oauth2-endpoints-test.spec.mjs:1353:3 › OAuth2 device flow › /oauth2/device/user sends an unauthenticated user_code submission to login (68ms)
+Server reports cookieHttpOnly=false
+[oauth2] device/user authenticated -> 200 ct=text/html;charset=UTF-8 bytes=1506
+  ✓  124 oauth2/oauth2-endpoints-test.spec.mjs:1374:3 › OAuth2 device flow › /oauth2/device/user renders the verification page for an authenticated user (169ms)
+  -  123 xui/xui-httponly.spec.mjs:208:5 › OpenAM XUI - HttpOnly session cookie › step-up after a fresh page load is recognised as a session upgrade, not a new login
+[5-E3] row1 unknown code (authenticated) -> 200
+[5-E3] row1 unknown code (anonymous) -> 200
+  ✓  125 oauth2/oauth2-endpoints-test.spec.mjs:1452:3 › OAuth2 device flow contract lock (5-E3, live Restlet) › row 1: an unknown user_code is a 200 form page carrying errorCode (66ms)
+[5-E3] row4 consent page -> 200 bytes=2830
+  ✓  126 oauth2/oauth2-endpoints-test.spec.mjs:1477:3 › OAuth2 device flow contract lock (5-E3, live Restlet) › row 4: the device consent page carries a model built ENTIRELY from request attributes (99ms)
+
+[5-E3] row2 decision=allow -> 200
+amUtil:08/05/2026 05:03:47:689 PM UTC: Thread[#3,main,5,main]: TransactionId[unknown]
+CloseableHttpClientHandlerProvider.get: System proxy enabled for HttpClientHandler: false
+[5-E3] row2 decision=deny -> 200
+  ✓  127 oauth2/oauth2-endpoints-test.spec.mjs:1515:3 › OAuth2 device flow contract lock (5-E3, live Restlet) › row 2: decision=allow and decision=deny both render the thanks page (168ms)
+[5-E3] row3 csrf missing -> 400 ct=text/html;charset=UTF-8
+[5-E3] row3 csrf wrong -> 400 ct=text/html;charset=UTF-8
+  ✓  128 oauth2/oauth2-endpoints-test.spec.mjs:1537:3 › OAuth2 device flow contract lock (5-E3, live Restlet) › row 3: a CSRF failure is an HTML error PAGE, not JSON (the 4-arg doCatch) (167ms)
+[5-E3] row11 PUT /device/user -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+  ✓  129 oauth2/oauth2-endpoints-test.spec.mjs:1558:3 › OAuth2 device flow contract lock (5-E3, live Restlet) › row 11: PUT on /device/user is a 405 -- an OAuth2-shaped one since the flip (32ms)
+[oauth2] token/revoke -> 200 {}
+[oauth2] tokeninfo after revoke -> 401 {"error":"invalid_token","error_description":"The access token provided is expired, revoked, malformed, or invalid for other reasons."}
+  ✓  130 oauth2/oauth2-endpoints-test.spec.mjs:1589:3 › /oauth2/token/revoke › revokes an access token so it stops validating (135ms)
+[oauth2] token/revoke no token -> 400 {"error":"invalid_request","error_description":"Missing parameter: token"}
+  ✓  131 oauth2/oauth2-endpoints-test.spec.mjs:1613:3 › /oauth2/token/revoke › rejects a revocation with no token parameter (25ms)
+[oauth2] token/revoke bad secret -> 400 {"error":"invalid_client","error_description":"Client authentication failed"}
+  ✓  132 oauth2/oauth2-endpoints-test.spec.mjs:1624:3 › /oauth2/token/revoke › rejects a revocation with a bad client secret (45ms)
+Hosted entity configuration was written to idp-extended.xml.
+Hosted entity descriptor was written to idp-metadata.xml.
+modify idp-extended.xml
+Create a hosted identity provider for OpenAM IDP
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/usr/openam/ssoadmintools/lib/com.google.inject.guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+
+amUtil:08/05/2026 05:03:51:313 PM UTC: Thread[#3,main,5,main]: TransactionId[unknown]
+CloseableHttpClientHandlerProvider.get: System proxy enabled for HttpClientHandler: false
+Import file, idp-metadata.xml.
+Import file, idp-extended.xml.
+Running OpenAM SP setup
+Setup COT for OpenAM SP
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/usr/openam/ssoadmintools/lib/com.google.inject.guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+
+amUtil:08/05/2026 05:03:55:554 PM UTC: Thread[#3,main,5,main]: TransactionId[unknown]
+CloseableHttpClientHandlerProvider.get: System proxy enabled for HttpClientHandler: false
+Circle of trust, MYSAML was created.
+Create Metadata Template for OpenAM SP
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/usr/openam/ssoadmintools/lib/com.google.inject.guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+
+amUtil:08/05/2026 05:04:00:745 PM UTC: Thread[#3,main,5,main]: TransactionId[unknown]
+CloseableHttpClientHandlerProvider.get: System proxy enabled for HttpClientHandler: false
+Hosted entity configuration was written to sp-extended.xml.
+Hosted entity descriptor was written to sp-metadata.xml.
+modify sp-metadata.xml
+modify sp-extended.xml
+Create hosted identity provider for OpenAM IDP
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/usr/openam/ssoadmintools/lib/com.google.inject.guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+
+amUtil:08/05/2026 05:04:04:908 PM UTC: Thread[#3,main,5,main]: TransactionId[unknown]
+CloseableHttpClientHandlerProvider.get: System proxy enabled for HttpClientHandler: false
+Import file, sp-metadata.xml.
+Import file, sp-extended.xml.
+Exchange providers metadata between contaners
+Create remote SP in OpenAM IDP
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/usr/openam/ssoadmintools/lib/com.google.inject.guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+
+amUtil:08/05/2026 05:04:09:010 PM UTC: Thread[#3,main,5,main]: TransactionId[unknown]
+CloseableHttpClientHandlerProvider.get: System proxy enabled for HttpClientHandler: false
+Import file, remote-sp-metadata.xml.
+Create remote IDP in OpenAM SP
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/usr/openam/ssoadmintools/lib/com.google.inject.guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+
+amUtil:08/05/2026 05:04:13:393 PM UTC: Thread[#3,main,5,main]: TransactionId[unknown]
+CloseableHttpClientHandlerProvider.get: System proxy enabled for HttpClientHandler: false
+Import file, remote-idp-metadata.xml.
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/usr/openam/ssoadmintools/lib/com.google.inject.guice-7.0.0.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+
+amUtil:08/05/2026 05:04:17:900 PM UTC: Thread[#3,main,5,main]: TransactionId[unknown]
+CloseableHttpClientHandlerProvider.get: System proxy enabled for HttpClientHandler: false
+Attribute values were set.
+Navigating to: http://sp.mycompany.org:8081/openam/spssoinit?metaAlias=/sp&idpEntityID=http%3A//openam.example.org%3A8080/openam&RelayState=http%3A//sp.mycompany.org%3A8081/openam
+Redirected to: http://openam.example.org:8080/openam/XUI/?realm=/&spEntityID=http%3A%2F%2Fsp.mycompany.org%3A8081%2Fopenam&goto=http%3A%2F%2Fopenam.example.org%3A8080%2Fopenam%2FSSORedirect%2FmetaAlias%2Fidp%3FReqID%3Ds239595461d2d352ccd16419576cb55cd78a905ae7%26index%3Dnull%26acsURL%3Dhttp%253A%252F%252Fsp.mycompany.org%253A8081%252Fopenam%252FConsumer%252FmetaAlias%252Fsp%26spEntityID%3Dhttp%253A%252F%252Fsp.mycompany.org%253A8081%252Fopenam%26binding%3Durn%253Aoasis%253Anames%253Atc%253ASAML%253A2.0%253Abindings%253AHTTP-Artifact#login/
+  ✓   11 saml/saml-test.spec.mjs:76:3 › OpenAM XUI - Login flow › should log in as demo and reach the authenticated page (5.7s)
+
+  1 skipped
+  131 passed (56.3s)

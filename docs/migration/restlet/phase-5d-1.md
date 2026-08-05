@@ -536,12 +536,20 @@ Steps **1–12** (5-E5, 5d-1a, 5d-1b) are done; what each of them actually produ
     four of its assumptions were wrong, and the capture is now `e2e/tools/d8-audit-capture.mjs`.
     ⚠ The post-flip capture must run **`node e2e/tools/d8-audit-capture.mjs post-flip`** on the rebuilt
     container — the tool disables `csvBuffering` itself, so there is no separate config step.
-15. Move the one web.xml line. Nothing else in the commit.
-16. Rebuild the container; criteria 12–16.
-17. Write the as-built: the byte-diff, the audit diff, the new divergence rows, the answers to 5-E4 rows 15/17,
-    and the `HEAD` `Content-Length` measurement ([finding 7](phase-5d-1-research.md#7--content-length-on-a-head-is-tomcats-decision)).
-18. Update [plan.md](plan.md): 5d-1 row → done, the stale "hook re-sign" text
-    ([finding 1](phase-5d-1-research.md#1--the-hook-re-sign-is-already-done)) removed, divergence rows 14/15 added.
+15. ~~Move the one web.xml line. Nothing else in the commit.~~ — **done 2026-08-05.** ⚠ "Nothing else" held for
+    the flip commit, but the flip demanded five parity fixes, and the e2e rows they move are re-pinned in that
+    same commit — so the fixes ship as a **preceding** commit rather than a following one, or the flip commit
+    is red under `bisect`. [D6](#d6)'s revert is unaffected: reverting the flip does not revert the fixes, and
+    should not ([as-built](phase-5d-1-asbuilt.md#the-commit-shape--two-commits-not-one)).
+16. ~~Rebuild the container; criteria 12–16.~~ — **done 2026-08-05** for 12–15 (131/132 e2e green on
+    `openam-e2e:5d1c-v5`, audit diff clean, Cargo boot green). **16 is owed**: CI's 9 legs on the push.
+17. ~~Write the as-built.~~ — **done**: [5d-1c as-built](phase-5d-1-asbuilt.md#as-built--5d-1c-recorded-2026-08-05-the-flip),
+    including the answers to 5-E4 rows 15/17 and the `HEAD` `Content-Length` measurement
+    ([finding 7](phase-5d-1-research.md#7--content-length-on-a-head-is-tomcats-decision), which measured the
+    **opposite** of what it predicted).
+18. ~~Update [plan.md](plan.md).~~ — **done**: 5d-1 row → done, the stale "hook re-sign" work items annotated
+    ([finding 1](phase-5d-1-research.md#1--the-hook-re-sign-is-already-done)), divergence **rows 14–30** added,
+    and **row 11 withdrawn** — the charset-gains-a-space claim is false on the wire.
 
 ---
 
@@ -553,7 +561,7 @@ discovered — they follow from [D4](#d4) and [D5](#d5) and no measurement can c
 | # | What differs | Restlet | CHF | Why |
 |---|---|---|---|---|
 | 14 | `PATCH /oauth2/resource_set/{rsid}` | routed to the `@Put` method: a working **full replace**, 200 + new `ETag` ([5-E4 row 11](phase-5c-asbuilt.md#as-built-5-e4--recorded-2026-07-29)) | **405** `{"error":"unsupported_method_type"}` + `Allow: …` | [D4](#d4) — aliasing `PATCH` to `PUT` in `Endpoints.from` would impose RFC 5789-wrong full-replace `PATCH` on every CHF endpoint with a `@Put`. Scoped to `resource_set`: it is the only ported endpoint with a `@Put`. ⚠ **The body byte-diff shows nothing** — the 405 shape is identical to the one [D3](phase-5c.md#d3) already produces for `OPTIONS`/`PROPFIND`. Only the *verb's* outcome changed |
-| 15 | The two routing-layer failures that stay **404** on both stacks — an unrouted path, and `/oauth2/realms/<bogus>/…` | unrouted path: 404 **CREST** naming a realm lookup — `{"code":404,"reason":"Not Found","message":"No mapping organization found for organization identifier: /resource_set"}` ([5-E4 row 17](phase-5c-asbuilt.md#as-built-5-e4--recorded-2026-07-29)), because Restlet's `/oauth2` router consumes any unmatched element as a sub-realm ([finding 8](phase-5d-1-research.md#8--an-unrouted-oauth2-path-is-a-bodiless-404-on-chf)). Unknown realm: 404 CREST `{"code":404,…,"message":"Realm \"bogus\" not found"}` (`RealmRoutingFactory`'s inner `RestletRealmRouter:254-257`; **confirmed by 5-E5 row 4**) | `{"error":"not_found","error_description":…}` for both — the endpoint router's default route for the path case ([D5](#d5)), `ChfRealmRouter`'s CREST 404 rewritten by `errorFor`'s new `case 404` for the realm case | [D5](#d5). **Status is preserved; only the shape moves.** For the realm case even the `error_description` is byte-identical to Restlet's `message`. For the path case parity is unavailable — CHF's realm filter breaks out rather than looking the element up, so Restlet's message has no counterpart, and commons' `Router` would otherwise answer a **bodiless** 404 |
+| 15 | The two routing-layer failures that stay **404** on both stacks — an unrouted path, and `/oauth2/realms/<bogus>/…` | unrouted path: 404 **CREST** naming a realm lookup — `{"code":404,"reason":"Not Found","message":"No mapping organization found for organization identifier: /resource_set"}` ([5-E4 row 17](phase-5c-asbuilt.md#as-built-5-e4--recorded-2026-07-29)), because Restlet's `/oauth2` router consumes any unmatched element as a sub-realm ([finding 8](phase-5d-1-research.md#8--an-unrouted-oauth2-path-is-a-bodiless-404-on-chf)). Unknown realm: ⚠ **this draft said** 404 CREST `{"code":404,…,"message":"Realm \"bogus\" not found"}` (`RealmRoutingFactory`'s inner `RestletRealmRouter:254-257`) **and was wrong** — 5-E5 row 4 measured `"message":"No mapping organization found for organization identifier: /bogus"`, leading slash included. `Realm "bogus" not found` turns out to be the *successor's* sentence, not the incumbent's | `{"error":"not_found","error_description":…}` for both — the endpoint router's default route for the path case ([D5](#d5)), `ChfRealmRouter`'s CREST 404 rewritten by `errorFor`'s new `case 404` for the realm case | [D5](#d5). **Status is preserved; only the shape moves.** ⚠ **The claim that the realm case's `error_description` is byte-identical to Restlet's `message` is withdrawn** — it followed from the mis-attributed Restlet value above. The two sentences differ; only the 404 status is preserved. The measured row is [plan.md row 15](plan.md#expected-divergences-at-the-flip). For the path case parity is unavailable — CHF's realm filter breaks out rather than looking the element up, so Restlet's message has no counterpart, and commons' `Router` would otherwise answer a **bodiless** 404 |
 
 Two further rows are **provisional**: the source says they will be needed, but each is licensed only by its
 5-E5 measurement, and if the measurement contradicts the source the *measurement* wins.
@@ -563,7 +571,10 @@ Two further rows are **provisional**: the source says they will be needed, but e
 | 16 ⚠ *provisional, confirmed or dropped by [5-E5](phase-5d-1-asbuilt.md#as-built-5-e5--recorded-2026-08-04) row 2* | `?realm=<bogus>` on any `/oauth2` endpoint | **404** `{"code":404,…,"message":"Realm \"bogus\" not found"}` — `RestletRealmRouter:86-90` → `:102-104` | **400** `{"error":"invalid_request","error_description":"Invalid realm, bogus"}` — `RealmContextFilter:255-257` | The two realm layers classify the same failure differently: Restlet as *not found*, CHF as *bad request*. Not worth "fixing" in `RealmContextFilter`, which `/json` has depended on since 14.0 — but a client that branches on 404 sees a 400 |
 | 17 ⚠ *provisional, confirmed or dropped by [5-E5](phase-5d-1-asbuilt.md#as-built-5-e5--recorded-2026-08-04) row 14* | A request whose `Host` OpenAM does not know | `/oauth2/realms/root/…` **works**; `/oauth2/…` **500** | **400** for both — `HostnameFilter:123-131` and `RealmContextFilter:229-231` | [Finding 16](phase-5d-1-research.md#16--the-flip-adds-host-validation-to-oauth2-that-restlet-never-did). The only row here that can break a deployment that works today, and therefore the one that needs a release-note line rather than just a table entry |
 
-All four rows are added to the table **in 5d-1c's commit**, with the measured bytes rather than these drafts.
+⚠ **Superseded 2026-08-05.** The flip added **seventeen** rows, not four — [plan.md rows 14–30](plan.md#expected-divergences-at-the-flip),
+every one measured on both stacks. The drafts above are kept as the record of what was predicted; where a
+prediction was wrong the row says so in place. All four rows are in the table **in 5d-1c's commit**, with the
+measured bytes rather than these drafts.
 ⚠ Rows 16 and 17 have since been **measured** — see the [5-E5 as-built](phase-5d-1-asbuilt.md#as-built-5-e5--recorded-2026-08-04),
 which confirms 16's status while correcting its body, **rewrites 17**, and adds four more.
 

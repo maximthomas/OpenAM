@@ -1,0 +1,221 @@
+# e2e oracle capture: post-flip (CHF)
+# container=openam-idp image=openam-e2e:5d1c-v5 base=http://openam.example.org:8080/openam
+# git=fe3720624abbcf0ee23e91bca509fcd5e6d85b8c + the uncommitted 5d-1c working tree (the flip is this commit)
+# tool.md5=ad6fe6a4c800f18109cdead4f6307ef4
+# tool.md5.pre-flip=2ce12f272a75494e5ad9253ca50e1301 -- the pre-flip capture used the tool BEFORE its
+#   all-letter-suffix fix. Re-extracting e2e-transcript-pre-flip.txt with the tool above yields a
+#   BYTE-IDENTICAL body, so the two sides of this diff remain comparable; only the phantom row the
+#   old rule left behind (5-E4 row 7, suffix 'cejdvhxu') is affected, and that row is not in this pair.
+# serving=OpenAM
+# suite=131 passed, 1 skipped (132 declared)
+# 210 oracle rows
+[5-E2] row1 unauthenticated GET -> 301 Location=http://openam.example.org:8080/openam/UI/Login?realm=%2F&goto=http%3A%2F%2Fopenam.example.org%3A8080%2Fopenam%2Foauth2%2Fauthorize%3Fresponse_type%3Dcode%26client_id%3Dtest_client_app%26redirect_uri%3Dhttp%3A%2F%2Fapp.invalid%2Fcb%26scope%3Dprofile%26state%3Drow1state%26code_challenge%3DImpiCd8pp4MveCNnbIS7-GXEtB0xF5HMIDoWqvGA5ig%26code_challenge_method%3DS256
+[5-E2] row2 consent page -> 200 Content-Type=text/html;charset=UTF-8 bytes=2961
+[5-E2] row3 unknown client -> 400 Content-Type=text/html;charset=UTF-8
+[5-E2] row4 redirect_uri mismatch -> 400 Location=undefined
+[5-E2] row5 invalid_scope code -> 302 Location=http://app.invalid/cb?error=invalid_scope&error_description=Unknown/invalid%20scope(s):%20%5Bno_such_scope%5D&state=row5state
+[5-E2] row6 invalid_scope token -> 302 Location=http://app.invalid/cb#error=invalid_scope&error_description=Unknown/invalid%20scope(s):%20%5Bno_such_scope%5D&state=row6state
+[5-E2] row7 PUT -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E2] row8 POST application/json -> 400 {"error":"invalid_request","error_description":"Invalid Content Type"}
+[5-E2] row9 consent POST -> 302 Location=http://app.invalid/cb?code=<uuid>&scope=profile&iss=http://openam.example.org:8080/openam/oauth2&state=row9state&client_id=test_client_consent Set-Cookie=[]
+[5-E2] row9b consent page Set-Cookie=["oidcLoginHint=demo; Path=/; HttpOnly","oauth2_csrf=BkWwZD2EBSYfVvXtdm71wKvBHYxUTBAww13aov8jOas;Path=/;HttpOnly;SameSite=Lax"]
+[5-E2] row9b success, no prior cookie Set-Cookie=["oidcLoginHint=demo; Path=/; HttpOnly","oidcLoginHint=; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Path=/; HttpOnly"]
+[5-E2] row9b success, prior cookie Set-Cookie=["oidcLoginHint=demo; Path=/; HttpOnly","oidcLoginHint=; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Path=/; HttpOnly"]
+[5-E3] row1 unknown code (anonymous) -> 200
+[5-E3] row1 unknown code (authenticated) -> 200
+[5-E3] row10 garbage uri -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E3] row10 malformed hint -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E3] row11 PUT /device/user -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E3] row11 PUT /oauth2/connect/endSession -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E3] row11 PUT /oauth2/realms/root/connect/checkSession -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E3] row2 decision=allow -> 200
+[5-E3] row2 decision=deny -> 200
+[5-E3] row3 csrf missing -> 400 ct=text/html;charset=UTF-8
+[5-E3] row3 csrf wrong -> 400 ct=text/html;charset=UTF-8
+[5-E3] row4 consent page -> 200 bytes=2830
+[5-E3] row6 jsp server=undefined ftl server=undefined
+[5-E3] row6b GET=200 POST=200
+[5-E3] row6c valid id_token -> 200
+[5-E3] row6d malformed jwt -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E3] row6d no aud claim (the CheckSession NPE) -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E3] row6d unknown aud -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E3] row6e default client -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E3] row7 display=bogus -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E3] row7 display=popup -> 400 {"error":"server_error","error_description":"Bad Request (400) - Server can not serve the content of authorization page"}
+[5-E3] row7 display=touch -> 400 {"error":"server_error","error_description":"Bad Request (400) - Server can not serve the content of authorization page"}
+[5-E3] row7 display=wap -> 400 {"error":"server_error","error_description":"Bad Request (400) - Server can not serve the content of authorization page"}
+[5-E3] row8 existing query -> 302 http://app.invalid/logout?ui=1&state=s2
+[5-E3] row8 no state -> 302 http://app.invalid/logout
+[5-E3] row8 with state -> 302 http://app.invalid/logout?state=st%20ate/1
+[5-E3] row9 /relative/cb -> 400 {"error":"relative_redirect_uri","error_description":"The redirection URI provided is not absolute."}
+[5-E3] row9 http://app.invalid/cb -> 400 {"error":"redirect_uri_mismatch","error_description":"The redirection URI provided does not match a pre-registered value."}
+[5-E3] row9 http://evil.invalid/x -> 400 {"error":"redirect_uri_mismatch","error_description":"The redirection URI provided does not match a pre-registered value."}
+[5-E4] row1 stale If-Match (strong) -> 412 {"error":"precondition_failed"}
+[5-E4] row1 stale If-Match (weak) -> 412 {"error":"precondition_failed"}
+[5-E4] row1 stale If-Match on DELETE -> 412 {"error":"precondition_failed"}
+[5-E4] row10 DELETE as amadmin -> 404 {"error":"not_found","error_description":"Resource set does not exist with id <uuid>"}
+[5-E4] row10 GET as amadmin -> 404 {"error":"not_found","error_description":"Resource set does not exist with id <uuid>"}
+[5-E4] row10 PUT as amadmin -> 404 {"error":"not_found","error_description":"Resource set does not exist with id <uuid>"}
+[5-E4] row11 OPTIONS -> 405 allow=DELETE, GET, POST, PUT {"error":"unsupported_method_type"}
+[5-E4] row11 PATCH -> 405
+[5-E4] row11 PROPFIND -> 405 allow=DELETE, GET, POST, PUT {"error":"unsupported_method_type"}
+[5-E4] row12 Content-Type application/xml -> 201
+[5-E4] row12 Content-Type text/plain -> 201
+[5-E4] row12 no Content-Type -> 201 sentCt=undefined {"_id":"<uuid>","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/<uuid>"}
+[5-E4] row12 non-JSON body -> 400 {"error":"bad_request","error_description":"A JSONObject text must begin with '{' at 1 [character 2 line 1]"}
+[5-E4] row13 DELETE 204 -> 204 cc=undefined pragma=undefined
+[5-E4] row13 GET 200 -> 200 cc=undefined pragma=undefined
+[5-E4] row13 GET 304 -> 304 cc=undefined pragma=undefined
+[5-E4] row13 GET 404 -> 404 cc=undefined pragma=undefined
+[5-E4] row13 GET list 200 -> 200 cc=undefined pragma=undefined
+[5-E4] row13 OPTIONS 405 -> 405 cc=undefined pragma=undefined
+[5-E4] row13 POST 201 -> 201 cc=undefined pragma=undefined
+[5-E4] row13 POST 401 -> 401 cc=undefined pragma=undefined
+[5-E4] row13 PUT 400 -> 400 cc=undefined pragma=undefined
+[5-E4] row13 PUT 412 -> 412 cc=undefined pragma=undefined
+[5-E4] row14 DELETE 204 -> 204 ct=application/json
+[5-E4] row14 GET 200 -> 200 ct=application/json
+[5-E4] row14 GET 304 -> 304 ct=undefined
+[5-E4] row14 GET 404 -> 404 ct=application/json
+[5-E4] row14 GET list 200 -> 200 ct=application/json
+[5-E4] row14 OPTIONS 405 -> 405 ct=application/json
+[5-E4] row14 POST 201 -> 201 ct=application/json
+[5-E4] row14 POST 401 -> 401 ct=application/json
+[5-E4] row14 PUT 400 -> 400 ct=application/json
+[5-E4] row14 PUT 412 -> 412 ct=application/json
+[5-E4] row15 HEAD collection -> 200 ct=application/json etag=undefined len=1121
+[5-E4] row15 HEAD collection/ -> 200 ct=application/json etag=undefined len=1121
+[5-E4] row15 HEAD item -> 200 ct=application/json etag=W/"<etag>" len=238
+[5-E4] row16 POST /resource_set/{id} -> 201 _id=<uuid>
+[5-E4] row17 GET /resource_set/a/b with a bogus bearer -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E4] row17 GET /resource_set/a/b with a valid bearer -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E4] row17 GET /resource_set/a/b with no bearer at all -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E4] row18 DELETE If-None-Match:<current> -> 412
+[5-E4] row18 PUT If-Match + If-None-Match, both <current> -> 412
+[5-E4] row18 PUT If-None-Match:<current> -> 412 {"error":"precondition_failed"}
+[5-E4] row18 PUT If-None-Match:<stale> -> 400 {"error":"server_error","error_description":"precondition_failed (512) - Require If-Match header to update Resource Set"}
+[5-E4] row19 POST collection If-Match:* -> 201
+[5-E4] row19 POST collection If-Match:<stale> -> 412
+[5-E4] row19 POST item If-Match:<its own tag> -> 201
+[5-E4] row19 POST item If-Match:<stale> -> 412
+[5-E4] row1b * ("*") -> 200
+[5-E4] row1b a comma list containing neither ("W/\"nope\", W/\"nope2\"") -> 412
+[5-E4] row1b a comma list with no space after the comma ("W/\"nope\",W/\"<etag>\"") -> 200
+[5-E4] row1b a comma list, current tag first ("W/\"<etag>\", W/\"nope\"") -> 200
+[5-E4] row1b a comma list, current tag second ("W/\"nope\", W/\"<etag>\"") -> 200
+[5-E4] row1b a quoted empty string ("\"\"") -> 412
+[5-E4] row1b an empty header ("") -> 400
+[5-E4] row1b garbage ("!!!") -> 400
+[5-E4] row1b the exact weak tag ("W/\"<etag>\"") -> 200
+[5-E4] row1b the strong form of the same tag ("\"<etag>\"") -> 200
+[5-E4] row1b the tag unquoted ("<etag>") -> 400
+[5-E4] row20 GET collection If-Match:<stale> -> 412 <n> ids
+[5-E4] row20 GET collection If-None-Match:* -> 304 ct=undefined
+[5-E4] row20 GET collection If-None-Match:<concrete> -> 200
+[5-E4] row20 POST collection If-None-Match:* -> 412
+[5-E4] row21 GET If-None-Match:"<etag>" (strong form of W/"<etag>") -> 200
+[5-E4] row21 POST collection If-None-Match:W/* -> 201
+[5-E4] row21 PUT If-None-Match:"<etag>" -> 412
+[5-E4] row22 a top-level array -> 400 {"error":"bad_request","error_description":"A JSONObject text must begin with '{' at 1 [character 2 line 1]"}
+[5-E4] row22 a trailing comma -> 201 {"_id":"<uuid>","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/<uuid>"}
+[5-E4] row22 duplicate keys -> 400 {"error":"bad_request","error_description":"Duplicate key \"name\" at 33 [character 34 line 1]"}
+[5-E4] row22 not json at all -> 400 {"error":"bad_request","error_description":"A JSONObject text must begin with '{' at 1 [character 2 line 1]"}
+[5-E4] row22 single-quoted strings -> 201 {"_id":"<uuid>","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/<uuid>"}
+[5-E4] row22 strict (control) -> 201 {"_id":"<uuid>","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/<uuid>"}
+[5-E4] row22 unquoted keys -> 201 {"_id":"<uuid>","user_access_policy_uri":"http://openam.example.org:8080/openam/XUI/?realm=/#uma/share/<uuid>"}
+[5-E4] row2a DELETE If-Match W/"<etag>" -> 204
+[5-E4] row2a PUT If-Match W/"<etag>" -> 200 newEtag=W/"<etag>"
+[5-E4] row2a labels after a labels-less PUT -> []
+[5-E4] row2b matching the store: PUT with the POST tag -> 200
+[5-E4] row2b matching the store: sent=["alpha","beta"] read=["alpha","beta"] POST=W/"<etag>" GET=W/"<etag>"
+[5-E4] row2b opposite to the store: PUT with the POST tag -> 412
+[5-E4] row2b opposite to the store: sent=["beta","alpha"] read=["alpha","beta"] POST=W/"<etag>" GET=W/"<etag>"
+[5-E4] row2b the label store's order is ["alpha","beta"]
+[5-E4] row3 304 -> 304 etag=W/"<etag>" ct=undefined bytes=0
+[5-E4] row3 If-None-Match: * -> 200
+[5-E4] row3b GET If-Match:* -> 200
+[5-E4] row3b GET stale If-Match -> 412 etag=W/"<etag>" name=5e4 ifmatch on get <sfx>
+[5-E4] row4 PUT no If-Match -> 400 {"error":"server_error","error_description":"precondition_failed (512) - Require If-Match header to update Resource Set"}
+[5-E4] row5 etags post=W/"<etag>" get=W/"<etag>" put=W/"<etag>"
+[5-E4] row6 DELETE no If-Match -> 400 {"error":"server_error","error_description":"precondition_failed (512) - Require If-Match header to delete Resource Set"}
+[5-E4] row7 duplicate name -> 400 ct=application/json;charset=UTF-8 {"error":"Bad Request","error_description":"A shared item with the name '5e4 duplicate <sfx>' already exists"}
+[5-E4] row8 empty object -> 400 {"error":"bad_request","error_description":"Invalid Resource Set Description. Missing required attribute, 'name'."}
+[5-E4] row8 missing name -> 400 {"error":"bad_request","error_description":"Invalid Resource Set Description. Missing required attribute, 'name'."}
+[5-E4] row8 missing scopes -> 400 {"error":"bad_request","error_description":"Invalid Resource Set Description. Missing required attribute, 'scopes'."}
+[5-E4] row8 non-array scopes -> 400 {"error":"bad_request","error_description":"Invalid Resource Set Description. Required attribute, 'scopes', must be an array of Strings."}
+[5-E4] row9 DELETE /resource_set If-Match:* -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E4] row9 DELETE /resource_set/ If-Match:* -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E4] row9 PUT /resource_set If-Match:* -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E4] row9 PUT /resource_set/ If-Match:* -> 400 {"error":"server_error","error_description":"Internal Server Error (500) - The server encountered an unexpected condition which prevented it from fulfilling the request"}
+[5-E4] teardown: <n>/<n> deleted; <n> could not be removed (statuses 404)
+[5-E5] realm e2e5e5realm ready (201)
+[5-E5] realm e2e5e5realm teardown -> 200
+[5-E5] row1 ?realm=%2F -> 200 realm=/
+[5-E5] row1 ?realm=/ -> 200 realm=/
+[5-E5] row1 ?realm=e2e5e5realm -> 404 {"error":"not_found","error_description":"No OpenID Connect provider for realm /e2e5e5realm"}
+[5-E5] row1 unmatched path + ?realm=bogus -> 400 {"error":"invalid_request","error_description":"Invalid realm, bogus"}
+[5-E5] row10 GET /tokeninfo + override PUT -> 200 allow=undefined
+[5-E5] row10 GET /tokeninfo?method=PUT -> 200
+[5-E5] row10 POST /access_token + override GET -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row10 POST /access_token?method=GET -> 200 {"access_token":"<uuid>","scope":"profile","token_type":"Bearer","expires_in":3599}
+[5-E5] row10 POST /tokeninfo + override GET -> 200
+[5-E5] row10 the same POST without the header -> 200
+[5-E5] row11 /authorize/extra (two -> realm) -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row11 /connect/nosuch (two -> realm) -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row11 /nosuchendpoint (one segment -> router) -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row11 /realms/root/nosuch (consumed by the realm route -> router) -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row12 /oauth2 -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row12 /oauth2/ -> 500
+[5-E5] row12 /oauth2/realms -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row12 /oauth2/realms/root -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /.well-known/openid-configuration/ -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 //tokeninfo -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /Connect/jwk_uri -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /TOKENINFO -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /Tokeninfo -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /connect/JWK_URI -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /connect/jwk_uri/ -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row13 /resource_set/ -> 401 {"error":"invalid_token","error_description":"The access token provided is expired, revoked, malformed, or invalid for other reasons."}
+[5-E5] row13 /tokeninfo/ -> 404 {"error":"not_found","error_description":"Not Found"}
+[5-E5] row14 /oauth2/.well-known/openid-configuration under an unknown Host -> 400 {"error":"invalid_request","error_description":"FQDN &quot;not-a-real-host.invalid&quot; is not valid."}
+[5-E5] row14 /oauth2/realms/root/tokeninfo under an unknown Host -> 400 {"error":"invalid_request","error_description":"Realm &quot;not-a-real-host.invalid&quot; not found"}
+[5-E5] row14 /oauth2/tokeninfo under an unknown Host -> 400 {"error":"invalid_request","error_description":"FQDN &quot;not-a-real-host.invalid&quot; is not valid."}
+[5-E5] row14 the same request with Host: openam.example.org -> 200
+[5-E5] row2 GET /tokeninfo?realm=bogus -> 400 {"error":"invalid_request","error_description":"Invalid realm, bogus"}
+[5-E5] row2 POST /access_token?realm=bogus -> 400 {"error":"invalid_request","error_description":"Invalid realm, bogus"}
+[5-E5] row3 /oauth2/e2e5e5realm/.well-known/... -> 404 {"error":"not_found","error_description":"No OpenID Connect provider for realm /e2e5e5realm"}
+[5-E5] row3 /oauth2/e2e5e5realm/tokeninfo -> 200
+[5-E5] row3 legacy + ?realm=/ -> 200
+[5-E5] row4 /realms/bogus/tokeninfo -> 404 {"error":"not_found","error_description":"Realm &quot;bogus&quot; not found"}
+[5-E5] row4 /realms/root/tokeninfo -> 200
+[5-E5] row4 flat /realms/e2e5e5realm -> 404 {"error":"not_found","error_description":"No OpenID Connect provider for realm /e2e5e5realm"}
+[5-E5] row4 nested /realms/root/realms/e2e5e5realm -> 404 {"error":"not_found","error_description":"No OpenID Connect provider for realm /e2e5e5realm"}
+[5-E5] row5 HEAD /.well-known/openid-configuration -> 200 ct=application/json;charset=UTF-8 len=1515 (GET 200)
+[5-E5] row5 HEAD /access_token -> 405 ct=application/json;charset=UTF-8
+[5-E5] row5 HEAD /authorize -> 405 (the same GET -> 302 Location=http://app.invalid/cb?code=<uuid>&scope=profile&iss=http://openam.example.org:8080/openam/oauth2&state=row5&client_id=test_client_app)
+[5-E5] row5 HEAD /connect/jwk_uri -> 200 ct=application/json;charset=UTF-8 len=447 (GET 200)
+[5-E5] row5 HEAD /tokeninfo (no token) -> 401 ct=application/json;charset=UTF-8 len=135 (GET ct=application/json;charset=UTF-8)
+[5-E5] row5 HEAD /tokeninfo -> 200 ct=application/json;charset=UTF-8 len=213 (GET 200)
+[5-E5] row6 PROPFIND /access_token -> 405 allow=POST {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row6 PROPFIND /authorize -> 405 allow=GET, POST {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row6 PROPFIND /connect/jwk_uri -> 405 allow=GET {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row6 PROPFIND /tokeninfo -> 405 allow=GET {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row6 PUT /connect/jwk_uri -> 405 allow=GET {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row6 PUT /tokeninfo -> 405 allow=GET {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row7 PATCH /access_token -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row7 PATCH /tokeninfo (no token) -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row7 PATCH /tokeninfo (valid token) -> 405 cache=undefined allow=GET
+[5-E5] row7 PUT /tokeninfo (valid token) -> 405 cache=undefined
+[5-E5] row8 /connect/jwk_uri?_api -> 501 ct=undefined
+[5-E5] row8 /connect/jwk_uri?_crestapi -> 200 ct=application/json;charset=UTF-8
+[5-E5] row8 /tokeninfo?_api -> 501
+[5-E5] row9 OPTIONS /authorize no Origin -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row9 OPTIONS /authorize with Origin -> 405 {"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E5] row9 OPTIONS /tokeninfo -> 405 allow=GET
+[5-E] /access_token success -> Cache-Control=no-store Pragma=no-cache
+[5-E] /introspect success -> 200 Cache-Control=undefined Pragma=undefined
+[5-E] /tokeninfo success -> 200 Cache-Control=no-cache, no-store Pragma=undefined Content-Type=application/json;charset=UTF-8
+[5-E] /userinfo -> 400 Cache-Control=undefined Pragma=undefined
+[5-E] GET /access_token -> status=405 body={"error":"method_not_allowed","error_description":"Method Not Allowed"}
+[5-E] bad secret -> 401 WWW-Authenticate=Basic realm="/" {"error":"invalid_client","error_description":"Client authentication failed"}
+[5-E] unknown grant_type -> 400 {"error":"unsupported_grant_type","error_description":"Grant type is not supported"}

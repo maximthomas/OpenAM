@@ -724,7 +724,7 @@ Verified in `commons/http-framework/servlet/.../HttpFrameworkServlet.java:293-32
 raw preference-ordered tags, so `getAcceptedLanguages()` is added in 5b-1a and A/B'd against Restlet's
 `ClientInfo` parser ([phase-5b-1 D3](phase-5b-1.md#d3)) — **built 2026-07-26**; the parity table is the
 authority on its behaviour, and it diverges from D3's predictions in four places
-([phase-5b-1 as-built S4](phase-5b-1.md#as-built-s4)).
+([phase-5b-1 as-built S4](phase-5b-1-asbuilt.md#as-built-s4)).
 
 ⇒ **When a neutral accessor needs a base default, use the value an absent header produces — not "empty".**
 `getAcceptedLanguages()` defaults to `List.of("*")`, because its tags are *joined into a page* and an empty
@@ -854,7 +854,7 @@ Restlet oracle dies at 5d-2.
 Related: `Filter.handle` returns `CONTINUE`/`SKIP`/`STOP` as `0`/`1`/`2`. `STOP` skips **only that filter's
 own** `afterHandle`; an enclosing filter's `doHandle` still returns `CONTINUE`, so **its** `afterHandle` runs
 and sees the inner filter's bare status. That ordering is why `/oauth2/resource_set`'s 401 comes out
-OAuth2-shaped while `/uma`'s comes out CREST-shaped ([phase-5c finding 1](phase-5c.md#1--the-resource_set-401-is-oauth2-shaped-not-crest--the-4a-filter-cannot-be-reused-unchanged)) —
+OAuth2-shaped while `/uma`'s comes out CREST-shaped ([phase-5c finding 1](phase-5c-research.md#1--the-resource_set-401-is-oauth2-shaped-not-crest--the-4a-filter-cannot-be-reused-unchanged)) —
 a per-route fact that §16's general rule does not settle on its own.
 
 **`openam-http` gaps this exposed** (both in the
@@ -867,7 +867,7 @@ there is no conditional-request/ETag support at all.
 
 The disassembly above is right about the mechanism. Three things it does **not** tell you, all recorded
 against a live container and all load-bearing for any reimplementation
-([5-E4 as-built](phase-5c.md#as-built-5-e4--recorded-2026-07-29)):
+([5-E4 as-built](phase-5c-asbuilt.md#as-built-5-e4--recorded-2026-07-29)):
 
 | Header | Wire behaviour |
 |---|---|
@@ -914,7 +914,7 @@ Check which side of the servlet boundary an assertion sits on before "fixing" on
 
 ⇒ the corollary that matters at 5d-1: writing a **bare** `application/json` after `setEntity` really does
 reach the wire bare, so matching Restlet's no-charset form costs one line and no divergence row
-([phase-5c S2](phase-5c.md#as-built-s2)).
+([phase-5c S2](phase-5c-asbuilt.md#as-built-s2)).
 
 <a id="21b"></a>
 ### 21b. The tag parser itself, line by line (disassembled 2026-07-29 while writing `HttpConditions`)
@@ -977,7 +977,7 @@ for (Tag t : getNoneMatch())        matched = t.equals(actualTag, GET.equals(m) 
   `W/"<name>"` produces the 304 that [§21a](#21a)'s table records.
   ⚠ **This bullet claimed until 2026-07-29 that GET/HEAD are the only verbs reaching the `noneMatch` branch,
   so that the flag is "in practice always `true`". Both halves are wrong, and they were measured wrong**
-  ([phase-5c row 18](phase-5c.md#as-built-5-e4-rows-18-21), row 21): `doConditionalHandle` guards **every**
+  ([phase-5c row 18](phase-5c-asbuilt.md#as-built-5-e4-rows-18-21), row 21): `doConditionalHandle` guards **every**
   verb, so a `PUT`/`DELETE`/`POST` reaches the comparison too — with the flag `false`, i.e. **names only**. So
   the strong form of this endpoint's weak tag is a **200 on a `GET` and a 412 on a `PUT`**, and any
   reimplementation needs the flag as a *parameter*, not a constant.

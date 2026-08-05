@@ -441,11 +441,11 @@ they are distinct attachments (risk #8).
 > side rather than the CHF side:** **(e)** ⚠ the flip gives `/oauth2` **host validation it has never had** —
 > `RealmContextFilter` rejects a `Host` outside the configured FQDN map with a 400, and `HostnameFilter` 400s
 > a host that is not a realm alias, so `/oauth2/realms/root/authorize` behind a proxy that does not rewrite
-> `Host` **works today and 400s after the flip** ([finding 16](phase-5d-1.md#16--the-flip-adds-host-validation-to-oauth2-that-restlet-never-did),
+> `Host` **works today and 400s after the flip** ([finding 16](phase-5d-1-research.md#16--the-flip-adds-host-validation-to-oauth2-that-restlet-never-did),
 > R-5d1.9 — no e2e row can see it, so it needs a release-note line); **(f)** the `/oauth2` Restlet router *is*
 > a realm router whose default route consumes any unmatched element as a sub-realm, which is why it never
 > emits a plain routing 404 and why a bad `?realm=` is a **404** there against CHF's **400**
-> ([finding 15](phase-5d-1.md#15--the-realm-layer-has-its-own-404-and-400-and-they-are-crest-shaped)).
+> ([finding 15](phase-5d-1-research.md#15--the-realm-layer-has-its-own-404-and-400-and-they-are-crest-shaped)).
 
 The flip is **two commits** (finding #3), because the original one-commit 5d bundled an *irreversible*
 ~40-class deletion with the mapping move — so a regression in the flip could only be backed out by resurrecting

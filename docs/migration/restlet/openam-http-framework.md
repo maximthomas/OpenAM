@@ -921,8 +921,8 @@ framework is fixed rather than routed around, in **its own commit with its own t
 
 | | Restlet, measured | `openam-http` before F5 |
 |---|---|---|
-| `HEAD` on an endpoint with a `@Get` | **200**, the `GET`'s exact headers, body dropped by the connector ([5-E5 row 5](phase-5d-1.md#the-recorded-rows), [5-E4 row 15](phase-5c.md#as-built-5-e4--recorded-2026-07-29)) | **405** — the verb map is `{DELETE, GET, POST, PUT}` (`Endpoints.java:60-63` before F5), so `HEAD` takes the unmapped-verb branch |
-| `Allow` on a 405 | `Allow: GET` on a single-`@Get` endpoint, `Allow: POST, PUT, GET, DELETE` on `resource_set` — i.e. **per endpoint** ([5-E5 row 6](phase-5d-1.md#the-recorded-rows), [5-E4 row 11](phase-5c.md#as-built-5-e4--recorded-2026-07-29)) | **absent**, from both producers |
+| `HEAD` on an endpoint with a `@Get` | **200**, the `GET`'s exact headers, body dropped by the connector ([5-E5 row 5](phase-5d-1-asbuilt.md#the-recorded-rows), [5-E4 row 15](phase-5c-asbuilt.md#as-built-5-e4--recorded-2026-07-29)) | **405** — the verb map is `{DELETE, GET, POST, PUT}` (`Endpoints.java:60-63` before F5), so `HEAD` takes the unmapped-verb branch |
+| `Allow` on a 405 | `Allow: GET` on a single-`@Get` endpoint, `Allow: POST, PUT, GET, DELETE` on `resource_set` — i.e. **per endpoint** ([5-E5 row 6](phase-5d-1-asbuilt.md#the-recorded-rows), [5-E4 row 11](phase-5c-asbuilt.md#as-built-5-e4--recorded-2026-07-29)) | **absent**, from both producers |
 
 Both are specification obligations and both are additive: RFC 7231 §4.3.2 defines `HEAD` as `GET` without the
 body, §4.1 makes `GET` and `HEAD` the two methods a general-purpose server must support, and §6.5.5 makes
@@ -959,13 +959,13 @@ live and pinned (`methodNamedAfterTheVerbIsBoundWithoutAnAnnotation`, R-F.8).
 
 ### F5.3 — ⚠ `HEAD` is mapped but must **not** appear in `Allow`
 
-Restlet answered `HEAD` and still advertised the four mapped verbs only; [5-E4 row 11](phase-5c.md#as-built-5-e4--recorded-2026-07-29)
+Restlet answered `HEAD` and still advertised the four mapped verbs only; [5-E4 row 11](phase-5c-asbuilt.md#as-built-5-e4--recorded-2026-07-29)
 asserts the **set** `["DELETE","GET","POST","PUT"]`. Adding `HEAD` would turn a recorded row red for no
 behaviour gain, so `allowHeader` walks the four mapped verbs and never the `HEAD` alias.
 
 ### F5.4 — the `HEAD` fix reaches three endpoints that are **already live** on CHF
 
-Enumerated in [phase-5d-1 finding 6](phase-5d-1.md#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct)
+Enumerated in [phase-5d-1 finding 6](phase-5d-1-research.md#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct)
 — every `Endpoints.from` consumer, checked for a `@Get`:
 
 | Live CHF endpoint | `@Get`? | `HEAD` after F5 |
@@ -1008,7 +1008,7 @@ F5.2 needs, expressed once rather than re-derived by the caller.
 **Body suppression is not ours.** `HttpFrameworkServlet.writeResponse` copies headers and streams the entity
 regardless of verb; the servlet container drops the body for a `HEAD`. Whether it also emits `Content-Length`
 is Tomcat's decision and is measured at 5d-1c
-([phase-5d-1 finding 7](phase-5d-1.md#7--content-length-on-a-head-is-tomcats-decision)).
+([phase-5d-1 finding 7](phase-5d-1-research.md#7--content-length-on-a-head-is-tomcats-decision)).
 
 ## Tests
 
@@ -1035,7 +1035,7 @@ Consumers unchanged: `openam-rest` 275, `openam-entitlements` 580, `openam-core-
 ## Measured on a live container (`openam-e2e:5d1a`, 2026-08-05)
 
 Unit rows cannot see what a servlet container does with a `HEAD`, so F5.4's widening was checked on a booted
-IDP — full record in the [5d-1a as-built](phase-5d-1.md#the-live-smoke--openam-e2e5d1a).
+IDP — full record in the [5d-1a as-built](phase-5d-1-asbuilt.md#the-live-smoke--openam-e2e5d1a).
 
 - `/json/api`, `/xacml/policies`, `/uma/.well-known/uma-configuration`: `HEAD` returns its `GET`'s **status and
   every header**. `/xacml/policies` really does serialise the realm's policies (392 B of `<ns2:PolicySet>`) and
@@ -1045,8 +1045,8 @@ IDP — full record in the [5d-1a as-built](phase-5d-1.md#the-live-smoke--openam
   `PROPFIND /uma/.well-known/uma-configuration` → `Allow: GET`.
 - ⚠ **Tomcat sends the `GET`'s `Content-Length` on a `HEAD`** (232 / 392 / 82 / 12011 B). Restlet sends none.
   That is a **wire divergence the flip will show**, recorded as
-  [row 21](phase-5d-1.md#5d-1a-content-length) — and it answers a question
-  [phase-5d-1 finding 7](phase-5d-1.md#7--content-length-on-a-head-is-tomcats-decision) had deferred to 5d-1c.
+  [row 21](phase-5d-1-asbuilt.md#5d-1a-content-length) — and it answers a question
+  [phase-5d-1 finding 7](phase-5d-1-research.md#7--content-length-on-a-head-is-tomcats-decision) had deferred to 5d-1c.
   Not a defect: RFC 7231 §3.3.2 permits it and §4.3.2 encourages it.
 
 One unrelated defect surfaced and was **not** fixed here: `/json/api` 500s when the request sends no

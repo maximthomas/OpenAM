@@ -55,7 +55,7 @@ Three properties shape the split below:
 | Step | Scope | New / changed | Risk |
 |---|---|---|---|
 | **5-E5** ✅ **done 2026-08-04** ([as-built](#as-built-5-e5--recorded-2026-08-04)) | **The last live-Restlet gate.** 14 items: realm styles (`?realm=`, legacy path realm, bogus realm), an unknown `Host`, `HEAD` and `Allow` on non-`resource_set` endpoints, unrouted-path shapes, `X-HTTP-Method-Override`, `?_api`/`?_crestapi`, `OPTIONS`, path-form edge cases. Test-only. Gates D4, D5 and D11 — and its **row 13 can redesign [D1](#d1)'s route table** | e2e spec only (0 main) | **High** — unrecoverable after 5d-1c |
-| **5d-1a** | **`openam-http` verb fixes.** `HEAD` → the `@Get` method; `Allow` on both 405 producers. Own commit, own tests, no migration code. Closes two [decisions.md backlog](decisions.md#chf-cleanup-backlog) items | 2 modified + tests | **Med** — reaches every `Endpoints.from` consumer; three already-live endpoints start answering `HEAD` ([finding 6](#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct)) |
+| **5d-1a** ✅ **done 2026-08-05** ([as-built](#as-built-5d-1a--recorded-2026-08-05)) | **`openam-http` verb fixes.** `HEAD` → the `@Get` method; `Allow` on both 405 producers. Own commit, own tests, no migration code. Closes two [decisions.md backlog](decisions.md#chf-cleanup-backlog) items | 2 modified + tests | **Med** — reaches every `Endpoints.from` consumer; three already-live endpoints start answering `HEAD` ([finding 6](#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct)) |
 | **5d-1b** | **`OAuth2HttpRouteProvider` + `META-INF/services` + `OAuth2RouterIT`.** The full 18-attachment table, the audit matrix, the nested `resource_set` router, the root error filter, the two-route no-cache filter, the synthesized 404 (+ one line in `OAuth2ErrorFilter` and two deliberate pin edits). **`/oauth2` still served by Restlet** | 2 new main + 1 line + 1 services line + 1 IT + 2 edited pins | **High** — a broken Guice graph here breaks the *whole* CHF router, `/json` included ([finding 3](#3--the-provider-instantiates-all-15-handlers-when-the-router-is-built-and-that-router-is-the-whole-chf-servlets)) |
 | **5d-1c** | **The flip.** One `<servlet-mapping>` line; then Cargo boot, the e2e re-run + byte-diff, the audit smoke, the soak record. Revert = revert this commit | 1 line + docs | **High** — the wire change |
 
@@ -859,6 +859,7 @@ makes a sequential second run untrustworthy.
 
 | File | Change |
 |---|---|
+| `…/openam/oauth2/http/AuthorizeHandler.java` | refuse `HEAD` explicitly ([correction 2](#5-e5-correction-2)) — **moved here from 5d-1a 2026-08-05**, since it is migration code and 5d-1a is framework-only |
 | `…/openam/oauth2/http/OAuth2HttpRouteProvider.java` | **new** — [D1](#d1), [D2](#d2), [D3](#d3), [D7](#d7) |
 | `…/openam/oauth2/http/OAuth2NotFoundHandler.java` | **new**, ~15 lines — [D5](#d5) |
 | `…/openam/oauth2/http/OAuth2ErrorFilter.java` | one line — `case 404: return "not_found";` in `errorFor` — **and** the `default:` javadoc/comment at `:129-132`, which currently names 404 ([D5](#d5)) |
@@ -887,7 +888,7 @@ makes a sequential second run untrustworthy.
 2. ~~Every new row's recorded value pasted into this doc's as-built (the values, not "green").~~ done —
    [the recorded rows](#the-recorded-rows) plus [six corrections](#six-corrections-to-this-plan) to this plan.
 
-**5d-1a:**
+**5d-1a:** ✅ **all three done 2026-08-05** — [as-built](#as-built-5d-1a--recorded-2026-08-05); recorded values there.
 3. `mvn -o -pl openam-http test` — baseline **73** surefire (measured green 2026-07-30); must only grow.
 4. `mvn -o -pl openam-http install -DskipTests`, then
    `mvn -o -pl openam-rest,openam-oauth2,openam-uma,openam-entitlements,openam-core-rest test` — every other
@@ -1020,16 +1021,20 @@ other — 5c's own IT says so in its class javadoc.
    settled and split in three, [D1](#d1)'s flat table is **confirmed** by row 13 (run first, as instructed —
    a trailing slash is a 404 on every endpoint), and findings 6, 8, 15 and 16 carry ⚠ corrections.
 
-**5d-1a**
+**5d-1a** — ✅ **all three done 2026-08-05**, [as-built](#as-built-5d-1a--recorded-2026-08-05)
 
-5. `Endpoints.from`: `HEAD` mapping + `Allow` stamping; `AnnotatedMethod.isSupported()`.
-6. Six `EndpointsTest` rows (criterion 3's list). Mutation-check: revert the `HEAD` line, the `HEAD` rows must
-   go red; revert the `Allow` line, the `Allow` rows must go red.
-7. Criteria 3–5 green; decisions.md + openam-http-framework.md updated; commit.
+5. ~~`Endpoints.from`: `HEAD` mapping + `Allow` stamping; `AnnotatedMethod.isSupported()`.~~ — 59 lines main.
+6. ~~Six `EndpointsTest` rows (criterion 3's list). Mutation-check…~~ — **eight** rows, 73 → **81**; both
+   mutations reddened their rows (1 and 5 respectively) and were restored.
+7. ~~Criteria 3–5 green; decisions.md + openam-http-framework.md updated; commit.~~ — done, plus a live smoke
+   that answered [finding 7](#7--content-length-on-a-head-is-tomcats-decision) early
+   ([divergence row 21](#5d-1a-content-length)).
 
 **5d-1b**
 
-8. `OAuth2NotFoundHandler` + test; `errorFor`'s `case 404`; then the **two deliberate pin edits**
+8. **`AuthorizeHandler` refuses `HEAD`** ([correction 2](#5-e5-correction-2), reassigned here from 5d-1a),
+   pinned by `OAuth2RouterIT`; `OAuth2NotFoundHandler` + test; `errorFor`'s `case 404`; then the
+   **two deliberate pin edits**
    ([D5](#d5)'s table) — `OAuth2ErrorFilterTest:114` and `ResourceSetRouteCompositionIT` row 9, the latter
    keeping its counterfactual.
 9. `OAuth2HttpRouteProvider` — the 18 attachments, the audit matrix copied from
@@ -1161,7 +1166,11 @@ rewrite happens at **annotation lookup**, *inside* the resource and *below* that
 `HEAD` and answers 405. Measured with a complete, authenticated, valid request: `HEAD` → **405**, the
 byte-identical `GET` → **302 with a code**. `/access_token` is a 405 on both verbs, so only `/authorize` moves.
 ⇒ [D4](#d4) is updated: `Endpoints.from` still maps `HEAD` → `@Get`, and `AuthorizeHandler` must refuse `HEAD`
-explicitly so the incumbent 405 survives.
+explicitly so the incumbent 405 survives. ⚠ **The guard is 5d-1b's, not 5d-1a's** (decided 2026-08-05, see the
+[5d-1a as-built](#as-built-5d-1a--recorded-2026-08-05)): `AuthorizeHandler` is migration code in
+`openam-oauth2`, and 5d-1a's whole premise is a framework-only commit. Nothing is on the wire in between —
+`AuthorizeHandler` is not routed until 5d-1c — so the reassignment costs no coverage, and `OAuth2RouterIT` is
+where `HEAD /authorize` → 405 gets pinned.
 
 <a id="5-e5-correction-3"></a>
 **3. The realm 404's message is `No mapping organization found for organization identifier: X`.**
@@ -1209,9 +1218,96 @@ Added to [plan.md](plan.md#expected-divergences-at-the-flip) with measured bytes
 | 16 | `?realm=<bogus>` | **404** `{"code":404,…,"message":"No mapping organization found for organization identifier: bogus"}`, no cache headers | **400** `{"error":"invalid_request","error_description":"Invalid realm, bogus"}` |
 | 17 *(rewritten)* | an unknown request `Host`, **both** URL styles | **500** `{"code":500,…,"message":"No mapping organization found for organization identifier: <host>"}` | **400** — `HostnameFilter:123-131` / `RealmContextFilter:229-231` |
 | 18 | `HEAD` on an endpoint whose answer is an **error** | the JSON body and `Content-Type` are replaced by `text/html;charset=utf-8` **plus** a `Content-Length` (401 → 721 B, 404 → 714 B, 405 → 726 B, 400 → 796 B) | the `GET`'s `Content-Type`, no `Content-Length`. Not a prediction: the same probe against a CHF path (`HEAD /openam/json/nosuchthing`) answers **501 `application/json;charset=UTF-8`**, no length, no HTML — so the substitution is the Restlet stack's, and it goes away with it |
-| 19 | `HEAD /oauth2/authorize` | **405** | **405**, *provided* [correction 2](#5-e5-correction-2)'s guard lands in 5d-1a; without it, a 302 **issuing an authorization code** |
+| 19 | `HEAD /oauth2/authorize` | **405** | **405**, *provided* [correction 2](#5-e5-correction-2)'s guard lands in **5d-1b** (reassigned from 5d-1a 2026-08-05 — it is `openam-oauth2` code); without it, a 302 **issuing an authorization code** |
 | 20 | the method tunnel beyond `POST` + header | `GET …` + `X-HTTP-Method-Override: PUT` → **405**; `POST /access_token?method=GET` → **405** | **200** for both — the override is ignored on a non-POST, and `?method=` is not implemented |
 | 14 *(widened)* | `PATCH` on a `@Get`-only endpoint | the `@Get` runs first: **401** `invalid_token` on `/tokeninfo` with no token; 405 + `Allow: GET` + `Cache-Control: no-cache, no-store` with one | **405**, nothing run |
+
+---
+
+<a id="as-built-5d-1a--recorded-2026-08-05"></a>
+## As-built — 5d-1a, recorded 2026-08-05 (`openam-http` only)
+
+The framework half of [D4](#d4), landed as its own commit per the F1–F4 precedent — written up in the
+[F1–F4 house style as **F5**](openam-http-framework.md#f5), which is where the reusable half of this belongs.
+**Zero migration-source lines**: no `openam-oauth2`, no `openam-uma`, no route provider.
+
+**Deliverables:**
+
+| File | Change |
+|---|---|
+| `openam-http/.../annotations/Endpoints.java` | `methods.put("HEAD", methods.get("GET"))`; `allowHeader(...)` computed once at construction; `withAllow(...)` stamping every 405 that leaves the handler (both producers, idempotent) |
+| `openam-http/.../annotations/AnnotatedMethod.java` | package-private `isSupported()` — `method != null`, the sentinel test |
+| `openam-http/.../annotations/EndpointsTest.java` | **8** new rows (the plan asked for six; `handlersOwnAllowIsNotOverwritten` and `allowCoversMethodsMatchedByNameRatherThanAnnotation` were added because each is the only guard on a documented design point) |
+| `decisions.md`, `openam-http-framework.md` | the `HEAD` backlog entry closed, an `Allow` entry added already-closed, the F5 section |
+
+**59 lines of main code.** Verification, all green:
+
+| Criterion | Recorded |
+|---|---|
+| 3 — `mvn -o -pl openam-http test` | **81** (baseline 73, grew only). Mutation-checked: removing the `HEAD` put reddens 1 row, disabling the `Allow` stamp reddens 5 |
+| 4a — every other `Endpoints.from` consumer | `openam-rest` **275**, `openam-entitlements` **580**, `openam-core-rest` **414**, `openam-oauth2` **1281**, `openam-uma` **196** — unchanged |
+| 4b — the live `HEAD` smoke | below |
+| 5 — `mvn -o install -DskipTests` whole reactor | SUCCESS, 33:49, doclint clean |
+
+<a id="the-live-smoke--openam-e2e5d1a"></a>
+### The live smoke — `openam-e2e:5d1a`
+
+IDP container only (no SP: none of the four URLs needs it), built and configured exactly as
+[test-infrastructure.md](../../test-infrastructure.md#running-layer-4-locally-against-a-war-built-from-your-tree)
+prescribes. Provenance by md5 of the **deployed** jar, not the banner:
+`WEB-INF/lib/openam-http-16.2.0-SNAPSHOT.jar` = `ad5d9f49e03ccc94a64c14c7d69871a8` = this tree's.
+
+| Endpoint | `GET` | `HEAD` | Verdict |
+|---|---|---|---|
+| `/json/api` (`@Get`) | **200**, 12011 B | **200**, same headers, same `Content-Length` | ✅ [finding 6](#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct)'s "descriptor computed and discarded", confirmed |
+| `/xacml/policies` (`@Get`, the **export**) | **200** `application/xacml+xml; version=3.0`, 392 B of real `<ns2:PolicySet>` | **200**, byte-identical header set | ✅ the expensive row: it really does serialise the realm's policies and drop them |
+| `/uma/.well-known/uma-configuration` (`@Get`) | **404** `{"error":"not_found","error_description":"No OpenID Connect provider for realm /"}` — the endpoint's own answer on a container with no OIDC provider configured, **not** a routing failure | **404**, identical | ✅ `HEAD` tracks `GET` whatever `GET` says |
+| `/json/authenticate` (`@Post` only) | — | **405 `Allow: POST`** | ✅ the row that would have mattered: authentication is still not reachable by `HEAD`, and it now advertises why |
+
+And `Allow` on live 405s, per endpoint as [5-E5 row 6](#the-recorded-rows) demands:
+`PROPFIND /xacml/policies` → **`Allow: GET, POST`**; `PROPFIND /uma/.well-known/uma-configuration` →
+**`Allow: GET`** — the same single-verb shape Restlet gives `/oauth2/tokeninfo`.
+(`PROPFIND /json/api` is a **403**: the authz module refuses above dispatch, so no 405 is produced at all.)
+
+Control: `HEAD /oauth2/tokeninfo` on the same container still answers Restlet's **401 + `text/html;charset=utf-8`
++ `Content-Length: 721`**, reproducing [5-E5 row 5](#the-recorded-rows) exactly — the container is a faithful
+replica and `/oauth2` is untouched by this commit.
+
+<a id="5d-1a-content-length"></a>
+### ⚠ [Finding 7](#7--content-length-on-a-head-is-tomcats-decision) is answered early, and the answer is a divergence
+
+The finding says `Content-Length` on a `HEAD` is Tomcat's decision and *"only a live container answers"* it, and
+schedules the measurement for 5d-1c. This smoke measured it four times, because every URL above is already CHF:
+
+**Tomcat behind CHF sends the `GET`'s `Content-Length` on a `HEAD`** — 232, 392, 82 and 12011 B, each equal to
+its own `GET`'s. `HttpFrameworkServlet.writeResponse:371-386` never sets the header (verified this session: it
+copies headers and streams `copyRawContentTo`), so this is the connector computing the length from the bytes
+written and then suppressing the body.
+
+Restlet sends **none** ([5-E4 row 15](phase-5c.md#as-built-5-e4--recorded-2026-07-29),
+[5-E5 row 5](#the-recorded-rows)). ⇒ a **new divergence row for 5d-1c**, drafted below, and one the flip's
+header diff *will* show — unlike [D4](#d4)'s three, which a body byte-diff cannot see.
+
+| # | What differs | Restlet (measured) | CHF (measured 2026-08-05, pre-flip, on `/json` `/xacml` `/uma`) |
+|---|---|---|---|
+| 21 | `Content-Length` on a successful `HEAD` | **absent** | **present**, equal to the `GET`'s |
+
+Nothing to fix: RFC 7231 §3.3.2 explicitly permits — and §4.3.2 encourages — a `HEAD` to carry the
+`Content-Length` its `GET` would have sent. It is the *better* answer; it is simply not the incumbent's.
+
+### Two things found and deliberately not fixed here
+
+- ⚠ **`/json/api` 500s when the request carries no `Accept-Language`.** The body is
+  `Cannot invoke "…AcceptLanguageHeader.getLocales()" because the return value of
+  "…Headers.get(java.lang.Class)" is null` — `Headers.get(Class)` returns null for an absent header and
+  `ApiService` dereferences it. **Pre-existing and unrelated to F5**: it is on the `GET` path, which this
+  commit does not touch, and `HEAD` reproduces it identically (500 → 500). Sending `Accept-Language: en` gives
+  200 on both verbs. Found only because the smoke drove `/json/api` with curl, which sends no such header —
+  every browser and the e2e suite do. Filed to the [CHF cleanup backlog](decisions.md#chf-cleanup-backlog);
+  fixing it in this commit would have widened a framework-verb change into an unrelated endpoint fix.
+- **`AuthorizeHandler`'s `HEAD` guard** ([correction 2](#5-e5-correction-2)) moved to **5d-1b** — it is
+  `openam-oauth2` code and 5d-1a is framework-only. Nothing is exposed in between: `AuthorizeHandler` is not
+  routed until 5d-1c.
 
 ---
 

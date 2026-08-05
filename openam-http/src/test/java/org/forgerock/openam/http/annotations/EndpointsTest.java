@@ -32,6 +32,10 @@ import org.testng.annotations.Test;
  * Characterization tests for {@link Endpoints} — request dispatch and the framework's own
  * error responses. These pin behaviour as it is <em>before</em> the F1–F4 fixes; rows that a
  * fix deliberately changes are replaced by that fix's commit.
+ * <p>
+ * The rows marked <em>F5</em> are the exception: they pin the {@code HEAD} mapping and the
+ * {@code Allow} header <em>after</em> that fix, against the live Restlet behaviour phase 5-E5
+ * recorded.
  */
 public class EndpointsTest {
 
@@ -62,6 +66,35 @@ public class EndpointsTest {
     public static class GetOnlyHandler {
         @Get
         public Response onGet() {
+            return new Response(Status.OK).setEntity("GET");
+        }
+    }
+
+    /** Handler with a @Post only, so HEAD resolves to the GET sentinel. */
+    public static class PostOnlyHandler {
+        @Post
+        public Response onPost() {
+            return new Response(Status.OK).setEntity("POST");
+        }
+    }
+
+    /** Handler that answers 405 itself, advertising a verb the framework knows nothing about. */
+    public static class OwnAllowHandler {
+        @Get
+        public Response onGet() {
+            Response response = new Response(Status.METHOD_NOT_ALLOWED);
+            response.getHeaders().put("Allow", "TRACE");
+            return response;
+        }
+    }
+
+    /**
+     * Handler carrying no annotation at all: {@code findMethod}'s second pass matches it by method
+     * name. Nothing an annotation scan could see, which is why the Allow list is derived from the
+     * resolved method instead.
+     */
+    public static class NameConventionHandler {
+        public Response get() {
             return new Response(Status.OK).setEntity("GET");
         }
     }
@@ -130,5 +163,85 @@ public class EndpointsTest {
                 .containsEntry("code", 405)
                 .containsEntry("reason", "Method Not Allowed")
                 .containsEntry("message", "Method Not Allowed");
+    }
+
+    /**
+     * F5. RFC 7231 §4.3.2 defines HEAD as GET without the body, and dropping the body is the
+     * servlet container's job — so the @Get method runs and returns its entity here.
+     */
+    @Test
+    public void headDispatchesToTheGetMethod() throws IOException {
+        Response response = handle(new AllVerbsHandler(), new Request().setMethod("HEAD"));
+
+        assertThat(response.getStatus()).isEqualTo(Status.OK);
+        assertThat(response.getEntity().getString()).isEqualTo("GET");
+    }
+
+    /** F5. No @Get means HEAD resolves to the same sentinel GET does, so it 405s as before. */
+    @Test
+    public void headGives405WhenThereIsNoGetMethod() {
+        Response response = handle(new PostOnlyHandler(), new Request().setMethod("HEAD"));
+
+        assertThat(response.getStatus()).isEqualTo(Status.METHOD_NOT_ALLOWED);
+        assertThat(allowOf(response)).isEqualTo("POST");
+    }
+
+    /** F5. RFC 7231 §6.5.5 makes Allow mandatory on a 405 — here from the unmapped-verb producer. */
+    @Test
+    public void unmappedVerb405CarriesAllow() {
+        Response response = handle(new AllVerbsHandler(), new Request().setMethod("PATCH"));
+
+        assertThat(allowOf(response)).isEqualTo("DELETE, GET, POST, PUT");
+    }
+
+    /** F5. The other 405 producer: AnnotatedMethod's null-method sentinel. */
+    @Test
+    public void sentinel405CarriesAllowListingOnlyTheSupportedVerbs() {
+        Response response = handle(new GetOnlyHandler(), new Request().setMethod("DELETE"));
+
+        assertThat(allowOf(response)).isEqualTo("GET");
+    }
+
+    /**
+     * F5. HEAD is mapped but never advertised: Restlet answered HEAD while advertising the four
+     * mapped verbs only, and [5-E4 row 11] asserts that set.
+     */
+    @Test
+    public void allowNeverAdvertisesHead() {
+        Response response = handle(new AllVerbsHandler(), new Request().setMethod("PROPFIND"));
+
+        assertThat(allowOf(response)).doesNotContain("HEAD");
+    }
+
+    /**
+     * F5. The Allow list is derived from the resolved AnnotatedMethod, not from an annotation
+     * scan — findMethod's second pass matches by method name, and the two disagree here.
+     */
+    @Test
+    public void allowCoversMethodsMatchedByNameRatherThanAnnotation() {
+        Response response = handle(new NameConventionHandler(), new Request().setMethod("PATCH"));
+
+        assertThat(allowOf(response)).isEqualTo("GET");
+    }
+
+    /** F5. The stamp is idempotent: a handler that answered 405 with its own Allow keeps it. */
+    @Test
+    public void handlersOwnAllowIsNotOverwritten() {
+        Response response = handle(new OwnAllowHandler(), new Request().setMethod("GET"));
+
+        assertThat(allowOf(response)).isEqualTo("TRACE");
+    }
+
+    /** F5. Allow belongs on a 405, and nowhere else. */
+    @Test
+    public void successfulResponseCarriesNoAllow() {
+        Response response = handle(new AllVerbsHandler(), new Request().setMethod("GET"));
+
+        assertThat(response.getStatus()).isEqualTo(Status.OK);
+        assertThat(allowOf(response)).isNull();
+    }
+
+    private static String allowOf(Response response) {
+        return response.getHeaders().getFirst("Allow");
     }
 }

@@ -1,4 +1,8 @@
-# openam-http framework fixes (F1–F4) — prerequisite to phase 3c-2
+# openam-http framework fixes — F1–F4 (prerequisite to phase 3c-2), F5 (phase 5d-1a)
+
+> **F5 was added 2026-08-05, four phases later, and is a separate piece of work** — see
+> [**F5 — `HEAD` and `Allow`**](#f5) at the end of this document. Everything between here and there is
+> F1–F4 and is unchanged.
 
 Execution plan for four defects in **`openam-http`'s annotation-driven endpoint framework**
 (`org.forgerock.openam.http.annotations`), fixed **before** [phase-3c-2-error-layer.md](phase-3c-2-error-layer.md)
@@ -900,3 +904,165 @@ Each is a decision rather than an oversight, and each is cheap to revisit if a c
 | R-F.6 | **Empty as predicted** (finding 10) — no live `Content-Type` changed |
 | R-F.7 | **Realised, and caught in review.** The charset-completion bug above is exactly this risk, in the fix rather than the baseline |
 | R-F.8 | **Not realised** — the name-based fallback survived F2's signature change, pinned by `methodNamedAfterTheVerbIsBoundWithoutAnAnnotation` |
+
+---
+
+<a id="f5"></a>
+# F5 — `HEAD` and `Allow` (phase 5d-1a, 2026-08-05)
+
+A fifth defect pair, fixed four phases after F1–F4 and for a different trigger: [phase 5d-1](phase-5d-1.md)
+moves `/oauth2` onto CHF, and both items are **measured** live behaviour of the Restlet stack it replaces
+rather than deductions from source. Same house rules as F1–F4 — `openam-http` is in-tree and ours, so the
+framework is fixed rather than routed around, in **its own commit with its own tests and no migration code**
+([phase-5d-1 D4](phase-5d-1.md#d4)). Both entries close their
+[decisions.md backlog](decisions.md#chf-cleanup-backlog) items.
+
+## The two defects
+
+| | Restlet, measured | `openam-http` before F5 |
+|---|---|---|
+| `HEAD` on an endpoint with a `@Get` | **200**, the `GET`'s exact headers, body dropped by the connector ([5-E5 row 5](phase-5d-1.md#the-recorded-rows), [5-E4 row 15](phase-5c.md#as-built-5-e4--recorded-2026-07-29)) | **405** — the verb map is `{DELETE, GET, POST, PUT}` (`Endpoints.java:60-63` before F5), so `HEAD` takes the unmapped-verb branch |
+| `Allow` on a 405 | `Allow: GET` on a single-`@Get` endpoint, `Allow: POST, PUT, GET, DELETE` on `resource_set` — i.e. **per endpoint** ([5-E5 row 6](phase-5d-1.md#the-recorded-rows), [5-E4 row 11](phase-5c.md#as-built-5-e4--recorded-2026-07-29)) | **absent**, from both producers |
+
+Both are specification obligations and both are additive: RFC 7231 §4.3.2 defines `HEAD` as `GET` without the
+body, §4.1 makes `GET` and `HEAD` the two methods a general-purpose server must support, and §6.5.5 makes
+`Allow` **mandatory** on a 405.
+
+`PATCH` is the third member of the same backlog family and is deliberately **not** fixed here: aliasing it to
+`@Put` would impose RFC 5789-wrong full-replace semantics on every CHF endpoint with a `@Put` to buy parity on
+one. It is [divergence row 14](phase-5d-1.md#divergence-rows-this-step-adds-to-planmd) instead.
+
+## Findings
+
+### F5.1 — there are **two** 405 producers, and only one of them knows the verb map
+
+- `Endpoints.from`'s dispatch branch — the request's verb is not a key in the map at all (`PATCH`, `PROPFIND`,
+  `OPTIONS`): builds `new Response(Status.METHOD_NOT_ALLOWED)` with a CREST entity;
+- `AnnotatedMethod.invoke` — the verb **is** mapped but `findMethod` returned its null-method sentinel: the
+  same status, the same CREST body.
+
+`from()` is the only place that can see the whole verb map, and `AnnotatedMethod` is the only place that knows
+whether an entry is the sentinel. So F5 splits the work: `from()` computes the list once at construction, and
+the stamp is applied to **any 405 leaving the handler**, which covers both producers in one place — and is
+idempotent, so a handler that answered 405 with an `Allow` of its own keeps it.
+
+### F5.2 — ⚠ "supported" cannot be computed from the annotations
+
+`AnnotatedMethod.findMethod` has a **second** pass that matches by *method name*
+(`methodName.equals(annotation.getSimpleName().toLowerCase())`, i.e. a method literally called `get`), and only
+if that also fails does it return the sentinel. A `getAnnotation(Get.class) != null` scan and the actual
+dispatch therefore **disagree** for any endpoint using the name convention — a convention F1–F4 already found
+live and pinned (`methodNamedAfterTheVerbIsBoundWithoutAnAnnotation`, R-F.8).
+
+⇒ the `Allow` list is derived from `AnnotatedMethod.isSupported()` on the resolved entries, never from a scan.
+`allowCoversMethodsMatchedByNameRatherThanAnnotation` is that decision's executable guard.
+
+### F5.3 — ⚠ `HEAD` is mapped but must **not** appear in `Allow`
+
+Restlet answered `HEAD` and still advertised the four mapped verbs only; [5-E4 row 11](phase-5c.md#as-built-5-e4--recorded-2026-07-29)
+asserts the **set** `["DELETE","GET","POST","PUT"]`. Adding `HEAD` would turn a recorded row red for no
+behaviour gain, so `allowHeader` walks the four mapped verbs and never the `HEAD` alias.
+
+### F5.4 — the `HEAD` fix reaches three endpoints that are **already live** on CHF
+
+Enumerated in [phase-5d-1 finding 6](phase-5d-1.md#6--head-after-the-fix-lands-on-code-paths-that-are-already-correct)
+— every `Endpoints.from` consumer, checked for a `@Get`:
+
+| Live CHF endpoint | `@Get`? | `HEAD` after F5 |
+|---|---|---|
+| `/json/authenticate` | **no** — `@Post` only | still 405. ⚠ The one that would have mattered |
+| `/json/api` | yes | 200, API descriptor computed and discarded |
+| `/xacml/policies` | yes — the policy **export** | 200, and it does real work: the realm's policies are serialised, then dropped by the connector |
+| `/uma/.well-known/uma-configuration` | yes | 200, trivial |
+| UMA `permission_request` / `authz_request` | no — `@Post` | still 405 |
+
+The widening is real but bounded — one cheap descriptor, one trivial document, one *expensive but
+authenticated and permission-checked* export — and it is what Restlet gave all of them before they were ported.
+Recorded rather than glossed, because "additive, nothing moves" is not true of `/xacml/policies`.
+The live smoke in [phase-5d-1 criterion 4](phase-5d-1.md#verification-criteria) is what checks it.
+
+## The fix
+
+`Endpoints.java`, at construction:
+
+```java
+methods.put("HEAD", methods.get("GET"));       // F5.3: mapped, never advertised
+final String allow = allowHeader(methods);     // F5.2: from the resolved methods, not a scan
+```
+
+…and on the way out, for both producers (F5.1):
+
+```java
+private static Response withAllow(Response response, String allow) {
+    if (Status.METHOD_NOT_ALLOWED.equals(response.getStatus())
+            && response.getHeaders().get(HEADER_ALLOW) == null) {
+        response.getHeaders().put(HEADER_ALLOW, allow);
+    }
+    return response;
+}
+```
+
+`AnnotatedMethod` gains one package-private accessor, `isSupported()` — `method != null`, the sentinel test
+F5.2 needs, expressed once rather than re-derived by the caller.
+
+**Body suppression is not ours.** `HttpFrameworkServlet.writeResponse` copies headers and streams the entity
+regardless of verb; the servlet container drops the body for a `HEAD`. Whether it also emits `Content-Length`
+is Tomcat's decision and is measured at 5d-1c
+([phase-5d-1 finding 7](phase-5d-1.md#7--content-length-on-a-head-is-tomcats-decision)).
+
+## Tests
+
+Eight rows added to `EndpointsTest`, **73 → 81** surefire in `openam-http`, nothing edited:
+
+| Row | Pins |
+|---|---|
+| `headDispatchesToTheGetMethod` | the `@Get` runs and returns its entity on a `HEAD` |
+| `headGives405WhenThereIsNoGetMethod` | no `@Get` ⇒ `HEAD` hits the same sentinel `GET` does |
+| `unmappedVerb405CarriesAllow` | producer 1 (F5.1) |
+| `sentinel405CarriesAllowListingOnlyTheSupportedVerbs` | producer 2 (F5.1), and that the list is per endpoint |
+| `allowNeverAdvertisesHead` | F5.3 |
+| `allowCoversMethodsMatchedByNameRatherThanAnnotation` | F5.2 — the one row an annotation-scan implementation fails |
+| `handlersOwnAllowIsNotOverwritten` | the idempotence `withAllow` claims |
+| `successfulResponseCarriesNoAllow` | `Allow` belongs on a 405 and nowhere else |
+
+**Mutation-checked**, as [phase-5d-1 checklist item 6](phase-5d-1.md#checklist) requires: removing the `HEAD`
+put reddens `headDispatchesToTheGetMethod` (1 row); disabling the `Allow` stamp reddens 5 rows. Both restored,
+81 green.
+
+Consumers unchanged: `openam-rest` 275, `openam-entitlements` 580, `openam-core-rest` 414, `openam-oauth2`
+1281, `openam-uma` 196.
+
+## Measured on a live container (`openam-e2e:5d1a`, 2026-08-05)
+
+Unit rows cannot see what a servlet container does with a `HEAD`, so F5.4's widening was checked on a booted
+IDP — full record in the [5d-1a as-built](phase-5d-1.md#the-live-smoke--openam-e2e5d1a).
+
+- `/json/api`, `/xacml/policies`, `/uma/.well-known/uma-configuration`: `HEAD` returns its `GET`'s **status and
+  every header**. `/xacml/policies` really does serialise the realm's policies (392 B of `<ns2:PolicySet>`) and
+  drop them — F5.4's expensive row, confirmed rather than assumed.
+- `/json/authenticate`: still **405**, now carrying **`Allow: POST`**.
+- `Allow` is genuinely per endpoint on the wire: `PROPFIND /xacml/policies` → `Allow: GET, POST`;
+  `PROPFIND /uma/.well-known/uma-configuration` → `Allow: GET`.
+- ⚠ **Tomcat sends the `GET`'s `Content-Length` on a `HEAD`** (232 / 392 / 82 / 12011 B). Restlet sends none.
+  That is a **wire divergence the flip will show**, recorded as
+  [row 21](phase-5d-1.md#5d-1a-content-length) — and it answers a question
+  [phase-5d-1 finding 7](phase-5d-1.md#7--content-length-on-a-head-is-tomcats-decision) had deferred to 5d-1c.
+  Not a defect: RFC 7231 §3.3.2 permits it and §4.3.2 encourages it.
+
+One unrelated defect surfaced and was **not** fixed here: `/json/api` 500s when the request sends no
+`Accept-Language` (`Headers.get(Class)` returns null, `ApiService` dereferences it). It is on the `GET` path,
+which F5 does not touch; `HEAD` reproduces it identically. Filed to the
+[CHF cleanup backlog](decisions.md#chf-cleanup-backlog).
+
+## Known limitations, deliberately left
+
+- **An endpoint with no annotated method at all gets an empty `Allow` value** — which
+  `HttpFrameworkServlet.writeResponse:371-375` then **drops**, since it skips any header whose value is
+  `length() == 0`. So on the wire that degenerate endpoint 405s with no `Allow`, exactly as before F5. Left
+  alone deliberately: `Endpoints.from` on an object with no annotated method is already meaningless, and the
+  RFC 7231 §7.4.1 reading ("the resource allows no methods") is unreachable through this servlet either way.
+- **`Allow`'s order is `DELETE, GET, POST, PUT`**, from the `MAPPED_VERBS` constant — deterministic but
+  *different from Restlet's* `POST, PUT, GET, DELETE`, which merely reflected JDK reflection order. The e2e
+  row asserts the sorted set precisely so that order is free; do not turn it into a string assertion.
+- **`AnnotatedMethod.operation` remains an unread field.** Pre-existing, untouched — mapping `HEAD` to the
+  `@Get` entry means a `HEAD` carries `operation == "Get"`, which nothing reads.

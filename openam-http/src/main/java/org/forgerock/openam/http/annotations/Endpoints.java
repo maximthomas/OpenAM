@@ -21,7 +21,9 @@ import static org.forgerock.util.promise.Promises.*;
 
 import com.google.inject.Key;
 import com.sun.identity.shared.debug.Debug;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.forgerock.guice.core.InjectorHolder;
 import org.forgerock.http.Handler;
@@ -31,6 +33,7 @@ import org.forgerock.http.protocol.Status;
 import org.forgerock.json.resource.InternalServerErrorException;
 import org.forgerock.json.resource.ResourceException;
 import org.forgerock.services.context.Context;
+import org.forgerock.util.Function;
 import org.forgerock.util.promise.NeverThrowsException;
 import org.forgerock.util.promise.Promise;
 
@@ -43,6 +46,9 @@ public final class Endpoints {
 
     private static final Debug DEBUG = Debug.getInstance("frRest");
     private static final String HEADER_X_HTTP_METHOD_OVERRIDE = "X-HTTP-Method-Override";
+    private static final String HEADER_ALLOW = "Allow";
+    /** The verbs {@link #from(Object)} maps to an annotation, in the order {@code Allow} lists them. */
+    private static final String[] MAPPED_VERBS = {"DELETE", "GET", "POST", "PUT"};
 
     /**
      * Produce a {@code Handler} from the annotated methods on the provided object.
@@ -61,6 +67,10 @@ public final class Endpoints {
         methods.put("GET", AnnotatedMethod.findMethod(obj, Get.class, exceptionHandlers));
         methods.put("POST", AnnotatedMethod.findMethod(obj, Post.class, exceptionHandlers));
         methods.put("PUT", AnnotatedMethod.findMethod(obj, Put.class, exceptionHandlers));
+        // RFC 7231 §4.3.2: HEAD is GET without the body, and suppressing the body is the servlet
+        // container's job. Not advertised in Allow -- see allowHeader.
+        methods.put("HEAD", methods.get("GET"));
+        final String allow = allowHeader(methods);
         return new Handler() {
             @Override
             public Promise<Response, NeverThrowsException> handle(Context context, Request request) {
@@ -73,11 +83,17 @@ public final class Endpoints {
                     Response response = new Response(Status.METHOD_NOT_ALLOWED);
                     response.setEntity(AnnotatedMethod.crestBody(ResourceException.newResourceException(
                             Status.METHOD_NOT_ALLOWED.getCode(), Status.METHOD_NOT_ALLOWED.getReasonPhrase())));
-                    return newResultPromise(response);
+                    return newResultPromise(withAllow(response, allow));
                 }
 
                 try {
-                    return method.invoke(context, request);
+                    return method.invoke(context, request)
+                            .then(new Function<Response, Response, NeverThrowsException>() {
+                                @Override
+                                public Response apply(Response response) {
+                                    return withAllow(response, allow);
+                                }
+                            });
                 } catch (Throwable t) {
                     DEBUG.error("Endpoints :: Caught exception during execution of handle() : ", t);
                     Response response = new Response(Status.INTERNAL_SERVER_ERROR);
@@ -106,6 +122,40 @@ public final class Endpoints {
      */
     public static Handler from(Key key) {
         return from(InjectorHolder.getInstance(key));
+    }
+
+    /**
+     * The verbs the endpoint actually implements, ready for the {@code Allow} header.
+     * <p>
+     * Derived from the resolved {@link AnnotatedMethod}s rather than from an annotation scan,
+     * because {@code findMethod} also matches by method name -- a method literally called
+     * {@code get} is dispatched to, but carries no {@code @Get} for a scan to find.
+     * <p>
+     * {@code HEAD} is deliberately absent even though it is mapped: Restlet answered {@code HEAD}
+     * while advertising the mapped verbs only, and the recorded wire contract asserts that set.
+     */
+    private static String allowHeader(Map<String, AnnotatedMethod> methods) {
+        List<String> supported = new ArrayList<>();
+        for (String verb : MAPPED_VERBS) {
+            if (methods.get(verb).isSupported()) {
+                supported.add(verb);
+            }
+        }
+        return String.join(", ", supported);
+    }
+
+    /**
+     * Stamps {@code Allow}, which RFC 7231 §6.5.5 makes mandatory on a 405. Every response leaves
+     * the handler through here, so this covers both of the framework's 405 producers -- the
+     * unmapped verb above and {@link AnnotatedMethod}'s null-method sentinel -- in one place, and
+     * leaves alone a handler that answered 405 with an {@code Allow} of its own.
+     */
+    private static Response withAllow(Response response, String allow) {
+        if (Status.METHOD_NOT_ALLOWED.equals(response.getStatus())
+                && response.getHeaders().get(HEADER_ALLOW) == null) {
+            response.getHeaders().put(HEADER_ALLOW, allow);
+        }
+        return response;
     }
 
     /**

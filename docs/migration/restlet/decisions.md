@@ -228,6 +228,36 @@ routed around in-phase and fixed here only when a phase actually requires the co
   same URL's `GET` — the item form carrying the `ETag` — and it honours `If-None-Match` (→ 304). *Body*
   emptiness is not part of the oracle: an HTTP client discards a HEAD entity regardless, so it cannot be
   observed and no row asserts it. The oracle now exists in the suite; the decision does not.
+  **Status: ✅ fixed 2026-08-05 at 5d-1a** — `methods.put("HEAD", methods.get("GET"))`, as proposed, in
+  `openam-http`'s own commit ([F5](openam-http-framework.md#f5)). ⚠ One exception the incumbent forced:
+  [5-E5 correction 2](phase-5d-1.md#5-e5-correction-2) measured `HEAD /oauth2/authorize` as a **405** on
+  Restlet — its method filter sits *above* the `HEAD` → `GET` rewrite — so `AuthorizeHandler` refuses `HEAD`
+  explicitly rather than letting the generic fix turn a `HEAD` into a flow that **issues an authorization
+  code**. That guard is 5d-1b's (it is migration code, not framework code); `Endpoints.from` stays generic so
+  `/json` gains `HEAD` correctly.
+
+- **Neither 405 producer in `Endpoints.from` sent an `Allow` header**, which RFC 7231 §6.5.5 makes mandatory —
+  where Restlet sent one **per endpoint** (`Allow: GET` on a single-`@Get` endpoint, `Allow: POST, PUT, GET,
+  DELETE` on `resource_set`). Found 2026-07-30 planning Phase 5d-1
+  ([finding 5](phase-5d-1.md#5--openam-http-has-two-405-producers-and-the-allow-fix-belongs-where-the-verb-map-is));
+  incumbent measured by [5-E5 row 6](phase-5d-1.md#the-recorded-rows) and
+  [5-E4 row 11](phase-5c.md#as-built-5-e4--recorded-2026-07-29). **In-tree (ours). Status: ✅ fixed 2026-08-05
+  at 5d-1a**, same commit as `HEAD` ([F5](openam-http-framework.md#f5)). Two traps worth keeping: the verb list
+  must come from the resolved `AnnotatedMethod` (`isSupported()`), **not** from an annotation scan, because
+  `findMethod` also matches by method *name* and the two disagree; and `HEAD` must **not** be advertised, or
+  5-E4 row 11's recorded set turns red for no behaviour gain. Recorded here rather than left implicit because
+  the entry never existed as an open item — it went straight to closed.
+
+- **`/json/api` 500s when the request carries no `Accept-Language` header.**
+  `Headers.get(AcceptLanguageHeader.class)` returns **null** for an absent header and `ApiService` dereferences
+  it, so the response is a CREST 500 reading `Cannot invoke "…AcceptLanguageHeader.getLocales()" because the
+  return value of "…Headers.get(java.lang.Class)" is null`. Found 2026-08-05 during
+  [5d-1a's live HEAD smoke](phase-5d-1.md#the-live-smoke--openam-e2e5d1a), which drove the endpoint with
+  `curl` — every browser and every e2e row sends `Accept-Language`, which is why it has never been seen.
+  `Accept-Language: en` gives 200. **Pre-existing, in-tree (openam-core-rest), unrelated to the migration.
+  Proposed fix:** treat an absent header as "no preference" (`PreferredLocales`' own default) rather than
+  dereferencing. **Status: deferred** — recorded rather than fixed inside a framework-verb commit whose blast
+  radius must stay reviewable. Cheap to do in its own commit with a test.
 
 - **`Endpoints.from` does not map `PATCH` at all — and Restlet routes it to `@Put`.** Same shape as the `HEAD`
   item above and found the same way, but **measured rather than disassembled**: on live Restlet a `PATCH` to
@@ -235,9 +265,15 @@ routed around in-phase and fixed here only when a phase actually requires the co
   ([5-E4 row 11](phase-5c.md#as-built-5-e4--recorded-2026-07-29)). CHF's verb map has no `PATCH` entry, so the
   port answers 405. **In-tree (ours). Proposed fix:** none obviously right — aliasing `PATCH` to `PUT` would
   bake in a Restlet quirk that is wrong by RFC 5789 (a `PATCH` is not a replace), while dropping it changes a
-  working call into an error. **Status: open, owner 5d-1.** Unlike `HEAD` this is **not** Phase-5-wide: it bites
-  wherever a `@Put` exists, which on the ported surface is `/oauth2/resource_set` alone. Most likely outcome is
-  a divergence row rather than a framework change.
+  working call into an error. Unlike `HEAD` this is **not** Phase-5-wide: it bites
+  wherever a `@Put` exists, which on the ported surface is `/oauth2/resource_set` alone.
+  **Status: ✅ resolved 2026-08-05 at 5d-1a — as [divergence row 14](phase-5d-1.md#divergence-rows-this-step-adds-to-planmd),
+  not a framework change**, which was the predicted outcome. [D4](phase-5d-1.md#d4) has the reasoning:
+  the alias would trade one wire regression on one endpoint for an RFC-wrong framework-wide default.
+  ⚠ [5-E5 correction 4](phase-5d-1.md#5-e5-correction-4) then **widened** the row — Restlet runs the resource's
+  `@Get` before looking for a `PATCH` handler, so on a `@Get`-only endpoint the divergence is the `@Get`'s
+  errors and side effects (`PATCH /oauth2/tokeninfo` without a token is a **401**, not a 405), not just
+  `resource_set`'s 200.
 
 - **Commons `UriRouteMatcher` cannot express a trailing-slash route.** `createRegex` strips the template's
   trailing slash while `Paths.getPathElements` preserves the request's, so `EQUALS "foo/"` matches nothing

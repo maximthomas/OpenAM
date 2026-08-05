@@ -90,6 +90,11 @@ public class AnnotatedMethod {
         this.exceptionHandlers = exceptionHandlers;
     }
 
+    /** Whether this is a real annotated method rather than {@link #findMethod}'s null-method sentinel. */
+    boolean isSupported() {
+        return method != null;
+    }
+
     Promise<Response, NeverThrowsException> invoke(Context context, Request request) {
         if (method == null) {
             Object entity = crestBody(ResourceException.getException(Status.METHOD_NOT_ALLOWED.getCode(),

@@ -31,6 +31,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import org.forgerock.http.protocol.Request;
 import org.forgerock.http.protocol.Response;
+import org.forgerock.json.jose.exceptions.JwtRuntimeException;
 import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.OAuth2RequestFactory;
 import org.forgerock.oauth2.core.exceptions.UnauthorizedClientException;
@@ -44,6 +45,7 @@ import org.mockito.ArgumentCaptor;
 import org.openidentityplatform.openam.oauth2.http.FreemarkerTemplateRenderer;
 import org.openidentityplatform.openam.oauth2.http.OAuth2ErrorResponseFactory;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 /**
@@ -167,22 +169,51 @@ public class CheckSessionHandlerTest {
 
     /**
      * D5, gated on and confirmed by 5-E3 row 7. {@code checkSession.ftl} exists only under {@code page/}, so
-     * every other display is a 400 on live Restlet -- by three different mechanisms (missing template for
-     * {@code touch}/{@code wap}, a failed render for {@code popup}, {@code Enum.valueOf} for an unknown one)
-     * that all land on the same status. The port collapses them to one {@code ServerException}.
+     * every other display is a 400 {@code server_error} on live Restlet -- but by two mechanisms it did
+     * <em>not</em> give the same text, which is why the descriptions are pinned per display rather than shared.
+     * <p>
+     * A template it cannot resolve -- {@code touch} and {@code wap} have no {@code checkSession.ftl},
+     * {@code popup} fails rendering one -- was {@code OAuth2Representation:85-98}'s own 400. An unknown display
+     * never reached a template at all: {@code Enum.valueOf} threw at {@code OAuth2Representation:75}, so it
+     * escaped to {@code doCatch} and got the engine's generic sentence.
+     */
+    @DataProvider(name = "nonPageDisplays")
+    public Object[][] nonPageDisplays() {
+        String templateFault = "Bad Request (400) - Server can not serve the content of authorization page";
+        String unhandled = "Internal Server Error (500) - The server encountered an unexpected condition "
+                + "which prevented it from fulfilling the request";
+        return new Object[][] {
+            {"touch", templateFault},
+            {"wap", templateFault},
+            {"popup", templateFault},
+            {"bogus", unhandled},
+        };
+    }
+
+    @Test(dataProvider = "nonPageDisplays")
+    public void aNonPageDisplayIs400ServerErrorJson(String display, String description) throws Exception {
+        when(o2.<String>getParameter("display")).thenReturn(display);
+
+        Response response = dispatch("GET");
+
+        assertThat(response.getStatus().getCode()).as(display).isEqualTo(400);
+        assertThat(response.getHeaders().getFirst("Content-Type")).as(display)
+                .isEqualTo("application/json; charset=UTF-8");
+        assertThat(bodyOf(response)).as(display)
+                .containsEntry("error", "server_error")
+                .containsEntry("error_description", description);
+    }
+
+    /**
+     * ⚠ The FreeMarker fault must not reach the client. Post-flip this row carried the template name, the
+     * loader class and its base package to an unauthenticated caller; the mask is what put it back.
      */
     @Test
-    public void aNonPageDisplayIs400ServerErrorJson() throws Exception {
-        for (String display : new String[] {"touch", "wap", "popup", "bogus"}) {
-            when(o2.<String>getParameter("display")).thenReturn(display);
+    public void aTemplateFaultNamesNeitherTheTemplateNorTheLoader() throws Exception {
+        when(o2.<String>getParameter("display")).thenReturn("popup");
 
-            Response response = dispatch("GET");
-
-            assertThat(response.getStatus().getCode()).as(display).isEqualTo(400);
-            assertThat(response.getHeaders().getFirst("Content-Type")).as(display)
-                    .isEqualTo("application/json; charset=UTF-8");
-            assertThat(bodyOf(response)).as(display).containsEntry("error", "server_error");
-        }
+        assertThat(bodyOf(dispatch("GET")).get("error_description").toString())
+                .doesNotContain("checkSession.ftl").doesNotContain("TemplateLoader");
     }
 
     /** {@code ?display=} and {@code ?display=page} both mean the default folder, and both must render. */
@@ -228,6 +259,46 @@ public class CheckSessionHandlerTest {
 
         assertThat(response.getStatus().getCode()).isEqualTo(400);
         assertThat(bodyOf(response)).containsEntry("error", "server_error");
+    }
+
+    /**
+     * The rest of D7's first half, and the two the flip itself exposed (5-E3 row 6d). Both were invisible
+     * until the D8 mask landed: the row's first case failed first and Playwright's {@code expect} ended the
+     * loop before either ran.
+     * <ul>
+     * <li>{@code JwtRuntimeException} -- an unparseable {@code id_token} in the {@code Referer};
+     * <li>{@code UnsupportedOperationException} -- an {@code aud} naming no registered client. The store raises
+     *     {@code InvalidClientException} through {@code OpenAMClientAuthenticationFailureFactory:52}, which
+     *     asks the request whether it carries an {@code Authorization} header -- but {@code CheckSession:130}
+     *     passes the realm-only {@code OAuth2Request.forRealm}, whose accessors throw. <em>Constructing</em>
+     *     the exception is what fails, so nothing downstream ever sees the {@code InvalidClientException};
+     * <li>a bare {@code RuntimeException} -- not a case anything is known to throw, but the assertion that the
+     *     wrap is a <em>boundary</em> rather than a list. Enumerating types found a new one on each
+     *     measurement, because the set is the transitive closure of what the store and the JWT parser throw.
+     * </ul>
+     * Restlet's {@code doCatch} answered 400 for all of them; without the wrap CHF answers the framework's 500.
+     */
+    @DataProvider(name = "uncheckedFromTheIdToken")
+    public Object[][] uncheckedFromTheIdToken() {
+        return new Object[][] {
+            {new JwtRuntimeException("not right number of dots, 2")},
+            {new UnsupportedOperationException("No Authorization header for this OAuth2Request")},
+            {new RuntimeException("anything else the store may throw")},
+        };
+    }
+
+    @Test(dataProvider = "uncheckedFromTheIdToken")
+    public void anUncheckedThrowFromTheIdTokenIs400ServerErrorNot500(RuntimeException thrown) throws Exception {
+        when(checkSession.getClientSessionURI(servletRequest)).thenThrow(thrown);
+
+        Response response = dispatch("GET");
+
+        assertThat(response.getStatus().getCode()).as(thrown.getClass().getSimpleName()).isEqualTo(400);
+        assertThat(bodyOf(response)).as(thrown.getClass().getSimpleName())
+                .containsEntry("error", "server_error")
+                // And the mask, so the throwable's message does not reach the client either.
+                .containsEntry("error_description", "Internal Server Error (500) - The server encountered "
+                        + "an unexpected condition which prevented it from fulfilling the request");
     }
 
     /**

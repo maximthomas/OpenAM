@@ -215,8 +215,10 @@ public class AuthorizeHandler extends AbstractOAuth2HttpBrowserEndpoint {
      * {@link AbstractOAuth2HttpBrowserEndpoint#onIllegalArgument}.
      *
      * <p>A template fault stays a contractual 400 {@code server_error} page rather than the framework's 500: a
-     * missing or broken template is a deployment fault, not one of the bug paths [D3] sends to the framework,
-     * and the error page can still describe it.
+     * missing or broken template is a deployment fault, not one of the bug paths [D3] sends to the framework.
+     * The page does not name it, though -- the render failure arrives as {@code ServerException(Throwable)},
+     * whose message is the throwable's own, and {@code OAuth2Error.asMap} masks those; the template and the
+     * frame that read it are in the provider log, which is where a deployment fault is diagnosed.
      */
     private Response serverErrorPage(OAuth2Request o2, Exception renderFailed) {
         // of(OAuth2Exception) rather than of(int, String, String): identical wire shape -- ServerException is

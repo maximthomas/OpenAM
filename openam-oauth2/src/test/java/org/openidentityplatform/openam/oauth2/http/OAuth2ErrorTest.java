@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -196,6 +197,97 @@ public class OAuth2ErrorTest {
         error.asMap().put("error", "tampered");
 
         assertThat(error.asMap()).containsEntry("error", "invalid_request");
+    }
+
+    // -------------------------------------------- D8: the unauthored server_error mask
+    //
+    // Restlet's doCatch answered every unexpected throwable with one fixed sentence, so the port must not
+    // put the throwable's own message on the wire. The four leaks measured at the flip all arrive as
+    // OAuth2Error.of(new ServerException(<throwable>)) -- ServerException(Throwable) copies getMessage()
+    // verbatim -- and the rows below pin each of them plus the authored messages that must survive.
+
+    /** Row 6d/D7: {@code CheckSession.getClientSessionURI} dereferences a null registration. */
+    @Test
+    public void anUnauthoredServerErrorIsMaskedOnTheWire() {
+        NullPointerException bug = new NullPointerException("Cannot invoke "
+                + "\"org.forgerock.oauth2.core.ClientRegistration.getClientSessionURI()\" because "
+                + "\"clientRegistration\" is null");
+
+        OAuth2Error error = OAuth2Error.of(new ServerException(bug));
+
+        assertThat(error.asMap()).containsEntry("error_description", OAuth2Error.RESTLET_INTERNAL_ERROR);
+        assertThat(error.asMap().get("error_description")).doesNotContain("clientRegistration");
+    }
+
+    /**
+     * The mask is on the wire only. {@code OAuth2ErrorResponseFactory.log} is the sole consumer of
+     * {@code getDescription()}, and masking there would leave the operator with the same fixed sentence the
+     * client got -- i.e. nothing to diagnose from.
+     */
+    @Test
+    public void theMaskedDescriptionSurvivesUnmaskedForTheLog() {
+        NullPointerException bug = new NullPointerException("because \"clientRegistration\" is null");
+
+        assertThat(OAuth2Error.of(new ServerException(bug)).getDescription())
+                .isEqualTo("because \"clientRegistration\" is null");
+    }
+
+    /**
+     * {@code ServerException(String)} is the authored path -- it chains no cause -- and its text is the
+     * measured Restlet wire text for these rows. Masking it would be the regression, not the fix.
+     */
+    @DataProvider(name = "authoredServerErrors")
+    public Object[][] authoredServerErrors() {
+        return new Object[][] {
+            {"precondition_failed (512) - Require If-Match header to update Resource Set"},
+            {"precondition_failed (512) - Require If-Match header to delete Resource Set"},
+            {OAuth2Error.RESTLET_INTERNAL_ERROR},
+        };
+    }
+
+    @Test(dataProvider = "authoredServerErrors")
+    public void anAuthoredServerErrorDescriptionSurvivesVerbatim(String authored) {
+        assertThat(OAuth2Error.of(new ServerException(authored)).asMap())
+                .containsEntry("error_description", authored);
+    }
+
+    /**
+     * Row 6e: {@code set.iterator().next()} on an empty client session URI. A message-less throwable made
+     * {@code error_description} vanish from the body altogether, which is a shape Restlet never emitted --
+     * so the mask has to fire on the null message too, not merely replace a non-empty one.
+     */
+    @Test
+    public void aMessagelessThrowableGainsTheMaskRatherThanDroppingTheField() {
+        OAuth2Error error = OAuth2Error.of(new ServerException(new NoSuchElementException()));
+
+        assertThat(error.asMap()).containsEntry("error_description", OAuth2Error.RESTLET_INTERNAL_ERROR);
+    }
+
+    /**
+     * ⚠ D7 regression guard. {@code onIllegalArgument} builds the one four-argument {@code server_error}-shaped
+     * call site there is, and it is an {@code invalid_request} whose description is authored *from* the
+     * throwable's message. Two conjuncts keep it out: the code is not {@code server_error}, and nothing chains
+     * a cause under the recorded one.
+     */
+    @Test
+    public void theD7InvalidRequestPageKeepsItsDescription() {
+        OAuth2Error error = OAuth2Error.of(400, "invalid_request", "Missing parameter, 'code_challenge'",
+                new IllegalArgumentException("Missing parameter, 'code_challenge'"));
+
+        assertThat(error.asMap()).containsEntry("error_description", "Missing parameter, 'code_challenge'");
+        assertThat(error.getDescription()).isEqualTo("Missing parameter, 'code_challenge'");
+    }
+
+    /** The mask substitutes one value; it must not disturb the other keys or the canonical order. */
+    @Test
+    public void aMaskedErrorStillRoundTripsState() {
+        OAuth2Error error = OAuth2Error.of(new ServerException(new IllegalStateException("not right number "
+                + "of dots, 2"))).withState("xyz");
+
+        assertThat(error.asMap()).containsExactly(
+                entry("error", "server_error"),
+                entry("error_description", OAuth2Error.RESTLET_INTERNAL_ERROR),
+                entry("state", "xyz"));
     }
 
     // ------------------------------------------------------- of(OAuth2Exception)

@@ -21,6 +21,7 @@ import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.forgerock.oauth2.core.exceptions.CsrfException;
 import org.forgerock.oauth2.core.exceptions.DuplicateRequestParameterException;
@@ -81,6 +82,18 @@ public final class OAuth2Error {
 
     /** RFC 6749 section 5.2's code for an unexpected condition, which is what a missing code is. */
     private static final String SERVER_ERROR = "server_error";
+
+    /**
+     * What Restlet's engine put on the wire for any exception no endpoint handled: the message of a
+     * {@code ResourceException} built from {@code Status.SERVER_ERROR_INTERNAL}, formatted
+     * {@code "<reason> (<code>) - <description>"}. Measured as 5-E4 row 9 and re-measured at the flip.
+     * <p>
+     * Package-private because {@code ResourceSetRegistrationHandler.guarded} <em>authors</em> it -- it is that
+     * endpoint's contractual answer, not a mask -- while {@link #asMap()} substitutes it for the descriptions
+     * nobody authored.
+     */
+    static final String RESTLET_INTERNAL_ERROR = "Internal Server Error (500) - The server encountered "
+            + "an unexpected condition which prevented it from fulfilling the request";
 
     private final int statusCode;
     private final String error;
@@ -333,13 +346,38 @@ public final class OAuth2Error {
     public Map<String, String> asMap() {
         Map<String, String> map = new LinkedHashMap<>();
         map.put("error", error);
-        if (!isEmpty(description)) {
-            map.put("error_description", description);
+        String wireDescription = isUnauthoredServerFault() ? RESTLET_INTERNAL_ERROR : description;
+        if (!isEmpty(wireDescription)) {
+            map.put("error_description", wireDescription);
         }
         if (!isEmpty(state)) {
             map.put("state", state);
         }
         return map;
+    }
+
+    /**
+     * Whether {@link #description} is a throwable's own text rather than something we wrote -- in which case
+     * the wire gets {@link #RESTLET_INTERNAL_ERROR}, which is what live Restlet's {@code doCatch} emitted for
+     * every unhandled throwable. Post-flip this leaked an NPE's message, a FreeMarker loader dump and a JWT
+     * parse fault to unauthenticated clients, and dropped the field entirely when the throwable had no message.
+     * <p>
+     * The two {@code ServerException} constructors are what this tells apart. {@code ServerException(Throwable)}
+     * is the core's wrap-any-bug path: it copies {@code cause.getMessage()} and chains the cause, so the
+     * description is unauthored and there is a cause under the cause. {@code ServerException(String)} authors
+     * its message -- the two {@code precondition_failed (512)} rows and {@code guarded}'s own
+     * {@code RESTLET_INTERNAL_ERROR} -- and chains nothing, which the third conjunct excludes. The fourth is
+     * the belt: a description that does not equal the throwable's message was written by someone, whatever
+     * built it.
+     * <p>
+     * Masking lives here and not in {@link #getDescription()} because the log is that getter's only consumer,
+     * and an operator handed the same fixed sentence as the client has nothing left to diagnose from.
+     */
+    private boolean isUnauthoredServerFault() {
+        return SERVER_ERROR.equals(error)
+                && cause != null
+                && cause.getCause() != null
+                && Objects.equals(description, cause.getCause().getMessage());
     }
 
     /**

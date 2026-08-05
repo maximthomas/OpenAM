@@ -25,6 +25,12 @@ QUOTED_ETAG = re.compile(r'(\\?)"-?\d{6,}(\\?)"')
 # Fixture names carry a random 8-char suffix; require a digit so words like
 # "resource" are left alone.
 SUFFIX = re.compile(r"\b(?=[a-z0-9]{8}\b)[a-z]*\d[a-z0-9]*\b")
+# ...but the suffix is base-36, so roughly one name in 17 draws no digit at all and
+# the rule above misses it, putting a PHANTOM row in the byte-diff -- measured
+# 2026-08-05, when `cejdvhxu` made 5-E4 row 7 look like a flip divergence it was not.
+# Dropping the digit guard outright would eat English words; inside a quoted fixture
+# name the token is unambiguous, so anchor on the closing quote instead.
+QUOTED_SUFFIX = re.compile(r"(?<= )[a-z0-9]{8}(?=')")
 ID_COUNT = re.compile(r"\b\d+ ids\b")
 TEARDOWN = re.compile(r"teardown: \d+/\d+ deleted; \d+ could not be removed")
 
@@ -34,6 +40,7 @@ def normalise(line):
     line = WEAK_ETAG.sub(r'W/\1"<etag>\2"', line)
     line = QUOTED_ETAG.sub(r'\1"<etag>\2"', line)
     line = SUFFIX.sub("<sfx>", line)
+    line = QUOTED_SUFFIX.sub("<sfx>", line)
     line = ID_COUNT.sub("<n> ids", line)
     line = TEARDOWN.sub("teardown: <n>/<n> deleted; <n> could not be removed", line)
     return line

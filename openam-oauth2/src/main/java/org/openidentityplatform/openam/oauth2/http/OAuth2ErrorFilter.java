@@ -77,9 +77,11 @@ public class OAuth2ErrorFilter implements Filter {
         if (body.containsKey("error") || !body.containsKey("code")) {
             return response;
         }
-        // Taken verbatim. openam-http emits the message as the exception wrote it
-        // (AnnotatedMethod.crestBody), so there is no HTML escaping here to reverse -- and reversing one
-        // would corrupt any CREST body that was never escaped, which this filter cannot distinguish.
+        // Taken verbatim, escaping included. ⚠ Some messages ARE HTML-escaped before they reach here -- 5-E5
+        // row 4 measured `Realm &quot;bogus&quot; not found` on the wire -- but un-escaping is still wrong:
+        // /json emits the identical bytes for the same failure and has since 14.0, so reversing it here would
+        // make /oauth2 the odd one out, and this filter cannot tell an escaped message from one that merely
+        // contains `&quot;`.
         Object message = body.get("message");
         response.setEntity(OAuth2Error.of(response.getStatus().getCode(), errorFor(response),
                 message == null ? null : message.toString()).asMap());

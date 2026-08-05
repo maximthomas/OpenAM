@@ -293,8 +293,10 @@ public class AuthorizeHandlerTest {
 
     /**
      * A missing template is a deployment fault, not a bug path, so it stays a contractual 400 error page
-     * rather than becoming the framework's 500. ({@code D3} governs bug paths; the error page can still
-     * describe this one.)
+     * rather than becoming the framework's 500 ({@code D3} governs bug paths). The page names the fault only
+     * as {@code server_error}: the render failure reaches here as {@code ServerException(Throwable)}, whose
+     * message is the throwable's own, and D8 masks those to Restlet's fixed sentence. The template path is in
+     * the provider log, which is where a deployment fault is diagnosed from.
      */
     @Test
     public void aFailedConsentRenderBecomesTheServerErrorPage() throws Exception {
@@ -309,7 +311,9 @@ public class AuthorizeHandlerTest {
         assertThat(response.getStatus().getCode()).isEqualTo(400);
         assertThat(response.getHeaders().getFirst("Location")).isNull();
         assertThat(response.getHeaders().getFirst("Content-Type")).isEqualTo("text/html; charset=UTF-8");
-        assertThat(response.getEntity().getString()).contains("server_error").contains("template missing");
+        assertThat(response.getEntity().getString()).contains("server_error")
+                .doesNotContain("template missing")
+                .contains(OAuth2Error.RESTLET_INTERNAL_ERROR);
     }
 
     /** The form-post render is the second fault site, and it must not redirect either -- nor run the hooks. */

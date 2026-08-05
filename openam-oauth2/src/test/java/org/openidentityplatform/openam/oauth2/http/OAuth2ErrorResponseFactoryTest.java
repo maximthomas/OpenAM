@@ -36,6 +36,7 @@ import org.forgerock.json.resource.NotFoundException;
 import org.forgerock.oauth2.core.OAuth2Request;
 import org.forgerock.oauth2.core.exceptions.InvalidRequestException;
 import org.forgerock.oauth2.core.exceptions.ResourceOwnerAuthenticationRequired;
+import org.forgerock.oauth2.core.exceptions.ServerException;
 import org.forgerock.openam.services.baseurl.BaseURLProvider;
 import org.forgerock.openam.services.baseurl.BaseURLProviderFactory;
 import org.forgerock.openam.utils.RealmNormaliser;
@@ -433,6 +434,43 @@ public class OAuth2ErrorResponseFactoryTest {
         assertThat(response.getStatus().getCode()).isEqualTo(400);
         assertThat((Map<String, Object>) response.getEntity().getJson())
                 .containsEntry("error", "invalid_request");
+    }
+
+    // ------------------------------------------------------------ D8: the mask on every wire branch
+
+    /**
+     * The HTML branch builds its data model from {@code asMap()}, so the mask reaches the page too. Measured
+     * post-flip, this page carried the FreeMarker fault verbatim -- template name, loader class and base
+     * package -- to an unauthenticated browser.
+     */
+    @Test
+    public void theErrorPageCarriesTheMaskRatherThanTheThrowablesMessage() throws Exception {
+        OAuth2Error error = OAuth2Error.of(new ServerException(new java.io.IOException(
+                "Template not found for name \"templates/popup/checkSession.ftl\".")));
+
+        String html = factory.toResponse(request, error).getEntity().getString();
+
+        assertThat(html).doesNotContain("checkSession.ftl").doesNotContain("Template not found")
+                .contains("description: \"" + OAuth2Error.RESTLET_INTERNAL_ERROR + "\"");
+    }
+
+    /**
+     * And the redirect branch, which is the worse leak of the two: the exception text would travel to the
+     * client's callback URL, into its access log and its {@code Referer}.
+     */
+    @Test
+    public void theErrorRedirectCarriesTheMaskRatherThanTheThrowablesMessage() {
+        OAuth2Error error = OAuth2Error.of(new ServerException(new NullPointerException(
+                        "Cannot invoke \"ClientRegistration.getClientSessionURI()\" because it is null")))
+                .withState("xyz")
+                .redirectingTo("https://app.example/cb", QUERY);
+
+        String location = factory.toResponse(request, error).getHeaders().getFirst("Location");
+
+        assertThat(location).doesNotContain("ClientRegistration").doesNotContain("Cannot%20invoke")
+                .isEqualTo("https://app.example/cb?error=server_error&error_description=Internal%20Server"
+                        + "%20Error%20(500)%20-%20The%20server%20encountered%20an%20unexpected%20condition"
+                        + "%20which%20prevented%20it%20from%20fulfilling%20the%20request&state=xyz");
     }
 
     @Test

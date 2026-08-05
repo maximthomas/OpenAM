@@ -111,6 +111,17 @@ public class ResourceSetErrorFilterTest {
                 .isEqualTo("application/json");
     }
 
+    @Test
+    public void aSuccessKeepsTheContentTypeItWasGiven() {
+        // Not this filter's business, and deliberately so: the endpoint's own three stamp sites own the header
+        // (ResourceSetRegistrationHandler.respond, its 204 branch and its withErrorHeaders). A filter that also
+        // normalised it could not tell the thrown errors from the in-band duplicate-name 400, whose charset is
+        // contract (5-E4 row 7) -- which is why the header fix lives on the handler, not here.
+        Response response = through(new Response(Status.OK).setEntity(crest(0, "ok", "fine")));
+
+        assertThat(response.getHeaders().getFirst("Content-Type")).isEqualTo("application/json; charset=UTF-8");
+    }
+
     // ------------------------------------------------------------------ the catch-all: 500 server_error
 
     @Test
@@ -230,6 +241,8 @@ public class ResourceSetErrorFilterTest {
 
         assertThat(response.getStatus().getCode()).isEqualTo(400);
         assertThat(response.getEntity().getString()).isEqualTo("<html>error</html>");
+        // The charset re-stamp is guarded on the declared type, so a non-JSON body is never relabelled.
+        assertThat(response.getHeaders().getFirst("Content-Type")).isEqualTo("text/html; charset=UTF-8");
     }
 
     @Test

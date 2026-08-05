@@ -18,7 +18,6 @@ package org.openidentityplatform.openam.openidconnect.http;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.NoSuchElementException;
 
 import freemarker.template.TemplateException;
 
@@ -39,6 +38,8 @@ import org.forgerock.openidconnect.CheckSession;
 import org.forgerock.services.context.Context;
 import org.openidentityplatform.openam.oauth2.http.AbstractOAuth2HttpJsonEndpoint;
 import org.openidentityplatform.openam.oauth2.http.FreemarkerTemplateRenderer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * CHF OpenID Connect check-session endpoint ({@code /oauth2/connect/checkSession}), porting the Restlet
@@ -61,6 +62,17 @@ import org.openidentityplatform.openam.oauth2.http.FreemarkerTemplateRenderer;
  * the FTL, i.e. the correct leg. Recorded so the 5d-1 diff on the bare path is not misread as a regression.
  */
 public class CheckSessionHandler extends AbstractOAuth2HttpJsonEndpoint {
+
+    /**
+     * What Restlet answered when the requested display had no renderable template:
+     * {@code OAuth2Representation:85-98} threw {@code ResourceException(CLIENT_ERROR_BAD_REQUEST, ...)}, whose
+     * message carries the status prefix. Measured as 5-E3 row 7 for {@code popup}, {@code touch} and
+     * {@code wap} -- three mechanisms, one wire shape.
+     */
+    private static final String RESTLET_TEMPLATE_ERROR =
+            "Bad Request (400) - Server can not serve the content of authorization page";
+
+    private final Logger logger = LoggerFactory.getLogger("OAuth2Provider");
 
     @Inject
     private FreemarkerTemplateRenderer renderer;
@@ -98,14 +110,21 @@ public class CheckSessionHandler extends AbstractOAuth2HttpJsonEndpoint {
         OAuth2Request o2 = requestFactory.create(ctx, request);
         Map<String, Object> model = dataModel(o2);
         try {
-            // D5 + D7, second half: the render. Two unchecked/checked types, both reachable from ?display=:
-            //   - IOException -- ?display=touch|wap|popup, since checkSession.ftl exists only under page/;
-            //   - IAE         -- ?display=<unknown>, from Enum.valueOf inside renderForDisplay.
-            // Live Restlet answered 400 for every non-page display (5-E3 row 7); ServerException is the JSON
-            // base's 400 server_error, byte-identical to its toOAuth2RestletException fallback.
+            // D5 + D7, second half: the render. Two unchecked/checked types, both reachable from ?display=,
+            // and live Restlet answered 400 server_error for each -- but not with the same text (5-E3 row 7).
             return FreemarkerTemplateRenderer.toHtmlResponse(Status.OK,
                     renderer.renderForDisplay(o2.getParameter("display"), "checkSession.ftl", model));
-        } catch (IOException | TemplateException | IllegalArgumentException e) {
+        } catch (IOException | TemplateException e) {
+            // ?display=touch|wap|popup: checkSession.ftl exists only under page/. OAuth2Representation:85-98
+            // answered its own 400 for exactly this, so the text is authored here rather than taken from the
+            // throwable -- which OAuth2Error.asMap would mask anyway, and which named the classpath layout.
+            // Logged with the cause, since an authored message carries no stack.
+            logger.warn("Could not render the check-session iframe", e);
+            throw new ServerException(RESTLET_TEMPLATE_ERROR);
+        } catch (IllegalArgumentException e) {
+            // ?display=<unknown>, from Enum.valueOf inside renderForDisplay. Restlet threw it at
+            // OAuth2Representation:75, BEFORE any template was resolved, so it escaped to doCatch and got the
+            // generic internal-error text instead. Unauthored, so asMap masks it to exactly that.
             throw new ServerException(e);
         }
     }
@@ -116,16 +135,27 @@ public class CheckSessionHandler extends AbstractOAuth2HttpJsonEndpoint {
         data.put("cookie_name", checkSession.getCookieName());
         String clientSessionUri;
         try {
-            // D7, first half. getClientSessionURI is the one call here that throws unchecked on client
-            // input, and it does so two ways -- both out of the single exit at CheckSession:115:
-            //   - NPE           -- no `aud` in the Referer's id_token, so getClientRegistration returns null
-            //                      and :111-115 dereferences it unguarded (a pre-existing product bug);
-            //   - NoSuchElement -- a REGISTERED client whose clientSessionURI is unset, which is the admin
-            //                      API's default, from set.iterator().next() (5-E3 rows 6d and 6e).
-            // Wrapped by type, not with a blanket catch: the other three collaborator calls in this method
-            // take no client input, so a fault in them is a bug and must keep CHF's 500 (decisions.md D3).
+            // D7, first half. Restlet's doCatch caught Throwable and answered 400 for every one of these; the
+            // port reproduces that for this ONE call, which parses and resolves the client's own id_token and
+            // is therefore unchecked-throwing on client input by construction. Four ways found so far, all
+            // reachable from the Referer:
+            //   - JwtRuntime     -- an unparseable id_token ("not right number of dots, 2");
+            //   - NPE            -- no `aud`, so getClientRegistration returns null and CheckSession:111-115
+            //                       dereferences it unguarded (a pre-existing product bug);
+            //   - NoSuchElement  -- a REGISTERED client whose clientSessionURI is unset, which is the admin
+            //                       API's default, from set.iterator().next() (5-E3 rows 6d and 6e);
+            //   - UnsupportedOp  -- an `aud` naming NO client: the store raises InvalidClientException through
+            //                       OpenAMClientAuthenticationFailureFactory:52, which asks the request for its
+            //                       Authorization header -- and CheckSession:130 hands it the realm-only
+            //                       OAuth2Request.forRealm, whose accessors throw. Building the exception is
+            //                       what fails, so nothing downstream ever sees the InvalidClientException.
+            // ⚠ Enumerating the types was tried first and found a new one on each measurement, because the set
+            // is the transitive closure of everything the store and the JWT parser may throw. RuntimeException
+            // is the honest boundary -- and it stays scoped, since the try wraps this call alone. The other
+            // three collaborator calls in this method sit OUTSIDE it, take no client input, and so keep CHF's
+            // 500 for a genuine bug (decisions.md D3). Same shape as ResourceSetRegistrationHandler.guarded.
             clientSessionUri = checkSession.getClientSessionURI(servletRequest);
-        } catch (NullPointerException | NoSuchElementException e) {
+        } catch (RuntimeException e) {
             throw new ServerException(e);
         }
         data.put("client_uri", clientSessionUri);

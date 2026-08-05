@@ -68,6 +68,8 @@ import org.forgerock.openam.oauth2.resources.labels.ResourceSetLabel;
 import org.forgerock.openam.oauth2.resources.labels.UmaLabelsStore;
 import org.forgerock.openam.rest.RealmContext;
 import org.forgerock.openam.rest.representations.JacksonRepresentationFactory;
+import org.forgerock.openam.services.baseurl.BaseURLProviderFactory;
+import org.forgerock.openam.utils.RealmNormaliser;
 import org.forgerock.services.context.AttributesContext;
 import org.forgerock.services.context.ClientContext;
 import org.forgerock.services.context.Context;
@@ -158,6 +160,11 @@ public class ResourceSetRouteCompositionIT {
 
         ResourceSetRegistrationHandler handler = new ResourceSetRegistrationHandler();
         inject(handler, "requestFactory", requestFactory);
+        // Without this the base class's @ExceptionHandler NPEs, so no thrown OAuth2Exception could be composed
+        // here at all. Only its JSON branch is reachable from this endpoint, and that touches none of the three.
+        inject(handler, "errorResponseFactory", new OAuth2ErrorResponseFactory(
+                mock(FreemarkerTemplateRenderer.class), mock(BaseURLProviderFactory.class),
+                mock(RealmNormaliser.class)));
         inject(handler, "providerSettingsFactory", providerSettingsFactory);
         inject(handler, "validator", validator);
         inject(handler, "hooks", new LinkedHashSet<>(Collections.singletonList(hook)));
@@ -414,6 +421,35 @@ public class ResourceSetRouteCompositionIT {
 
         assertThat(response.getStatus().getCode()).isEqualTo(400);
         assertThat(bodyOf(response)).containsEntry("error", "server_error");
+    }
+
+    /**
+     * Row 14's two error producers side by side, which is only visible with the filter mounted: the THROWN 404
+     * is stamped bare by {@code ResourceSetRegistrationHandler.withErrorHeaders}, while the in-band
+     * duplicate-name 400 keeps the charset row 7 measured on Restlet.
+     * <p>
+     * The pair is the point. By the time {@link ResourceSetErrorFilter} sees them both are OAuth2-shaped 4xx
+     * JSON bodies carrying a charset, so a normalisation placed in the filter cannot move one without moving
+     * the other -- it would have passed every unit row in this suite while silently breaking row 7 on the wire.
+     */
+    @Test
+    public void aThrownErrorIsBareJsonWhileTheInBandDuplicateKeepsItsCharset() throws Exception {
+        when(store.read(RSID, OWNER))
+                .thenThrow(new org.forgerock.oauth2.core.exceptions.NotFoundException("no such resource set"));
+
+        Response thrown = through("GET", PATH + "/" + RSID, PAT, null);
+
+        assertThat(thrown.getStatus().getCode()).isEqualTo(404);
+        assertThat(bodyOf(thrown)).containsEntry("error", "not_found");
+        assertThat(thrown.getHeaders().getFirst("Content-Type")).isEqualTo(JSON);
+
+        when(store.query(any())).thenReturn(new LinkedHashSet<>(List.of(storedResourceSet())));
+
+        Response inBand = through("POST", PATH, PAT, "{\"name\":\"photo album\",\"scopes\":[\"read\"]}");
+
+        assertThat(inBand.getStatus().getCode()).isEqualTo(400);
+        assertThat(bodyOf(inBand)).containsEntry("error", "Bad Request");
+        assertThat(inBand.getHeaders().getFirst("Content-Type")).isEqualTo(JSON + "; charset=UTF-8");
     }
 
     /**

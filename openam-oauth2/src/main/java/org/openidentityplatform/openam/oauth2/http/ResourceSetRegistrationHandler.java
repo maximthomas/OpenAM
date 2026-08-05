@@ -98,20 +98,17 @@ public class ResourceSetRegistrationHandler extends AbstractOAuth2HttpJsonEndpoi
     private static final String POLICY_URI_FIELD = "user_access_policy_uri";
     private static final String LABELS_FIELD = "labels";
 
-    /** 5-E4 row 14: every response on this endpoint is bare {@code application/json}, with no charset. */
+    /**
+     * 5-E4 row 14: this endpoint's responses are bare {@code application/json}, with no charset -- stamped at
+     * three sites here (the two below and {@link #withErrorHeaders}, which covers the thrown errors). The 405
+     * and 412 bodies are the exception: they are written by {@link ResourceSetErrorFilter}, which stamps its
+     * own. Row 7's duplicate-name 400 is the other exception, and keeps a charset on purpose.
+     */
     private static final String JSON_TYPE = "application/json";
 
     /** CHF's {@code Status} names neither of the two the conditional gate answers with. */
     private static final Status NOT_MODIFIED = Status.valueOf(304);
     private static final Status PRECONDITION_FAILED = Status.valueOf(412);
-
-    /**
-     * What Restlet's engine put on the wire for an exception the endpoint did not handle: the message of a
-     * {@code ResourceException} built from {@code Status.SERVER_ERROR_INTERNAL}, formatted
-     * {@code "<reason> (<code>) - <description>"}. Measured as 5-E4 row 9.
-     */
-    private static final String RESTLET_INTERNAL_ERROR = "Internal Server Error (500) - The server encountered "
-            + "an unexpected condition which prevented it from fulfilling the request";
 
     private final Logger logger = LoggerFactory.getLogger("OAuth2Provider");
 
@@ -190,10 +187,10 @@ public class ResourceSetRegistrationHandler extends AbstractOAuth2HttpJsonEndpoi
                 // ⚠ Built in band rather than thrown, so it keeps Restlet's reason PHRASE in the `error`
                 // field where every other error on this endpoint carries an OAuth2 error code -- and it is
                 // the one response that carries a charset at all (5-E4 rows 7 and 14). Both are contract.
-                // ⚠ Left as setJson writes it -- "application/json; charset=UTF-8", WITH a space, where row 7
-                // measured none. Not a choice here and not fixable here: commons ContentTypeHeader.getValues()
-                // renders "; charset=" unconditionally, so stamping the bare bytes just gets re-rendered.
-                // Phase-5-wide (every ported HTML page has it too) and recorded as a divergence, not a bug.
+                // ⚠ Left as setJson writes it, which is the point: the post-flip capture measured this response
+                // as `application/json;charset=UTF-8`, byte-identical to Restlet's row 7. Parity, not a
+                // divergence -- so withErrorHeaders below must NOT be allowed to reach it, and nothing may
+                // normalise this endpoint's Content-Type wholesale.
                 return new Response(Status.BAD_REQUEST).setEntity(OAuth2Error.of(400, "Bad Request",
                         "A shared item with the name '" + resourceSet.getName() + "' already exists").asMap());
             }
@@ -482,6 +479,22 @@ public class ResourceSetRegistrationHandler extends AbstractOAuth2HttpJsonEndpoi
 
     // ---------------------------------------------------------------- plumbing
 
+    /**
+     * The third {@link #JSON_TYPE} stamp site, covering the errors this endpoint <em>throws</em>: the base
+     * class renders those through {@code setEntity(Map)}, which writes a charset, and row 14 measured them
+     * bare (the {@code PUT} 400 and the {@code GET} 404).
+     * <p>
+     * ⚠ Deliberately not the whole endpoint: the in-band duplicate-name 400 is returned normally, never passes
+     * through {@code onError}, and keeps its charset because row 7 measured one. That is also why this cannot
+     * be a filter -- by the time {@link ResourceSetErrorFilter} sees them, the two are both OAuth2-shaped 4xx
+     * bodies with a charset and nothing tells them apart.
+     */
+    @Override
+    protected Response withErrorHeaders(Response response) {
+        response.getHeaders().put(ContentTypeHeader.NAME, JSON_TYPE);
+        return response;
+    }
+
     private Response respond(Status status, ReadModel model) {
         Response response = new Response(status).setEntity(model.body);
         // setEntity -> setJson writes "application/json; charset=UTF-8"; row 14 measured it bare and the
@@ -535,7 +548,9 @@ public class ResourceSetRegistrationHandler extends AbstractOAuth2HttpJsonEndpoi
         } catch (RuntimeException e) {
             // The message is the engine's, not this exception's, so the stack trace would otherwise be lost.
             logger.warn("Unhandled exception in /oauth2/resource_set", e);
-            throw new ServerException(RESTLET_INTERNAL_ERROR);
+            // OAuth2Error.RESTLET_INTERNAL_ERROR: authored here, so it survives the D8 mask -- and shared with
+            // it so the one measured sentence has one spelling.
+            throw new ServerException(OAuth2Error.RESTLET_INTERNAL_ERROR);
         }
     }
 }

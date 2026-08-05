@@ -56,6 +56,8 @@ import org.forgerock.openam.oauth2.resources.ResourceSetLabelRegistration;
 import org.forgerock.openam.oauth2.resources.labels.LabelType;
 import org.forgerock.openam.oauth2.resources.labels.ResourceSetLabel;
 import org.forgerock.openam.oauth2.resources.labels.UmaLabelsStore;
+import org.forgerock.openam.services.baseurl.BaseURLProviderFactory;
+import org.forgerock.openam.utils.RealmNormaliser;
 import org.forgerock.services.context.RootContext;
 import org.forgerock.util.query.BaseQueryFilterVisitor;
 import org.forgerock.util.query.QueryFilter;
@@ -120,6 +122,11 @@ public class ResourceSetRegistrationHandlerTest {
 
         handler = new ResourceSetRegistrationHandler();
         inject(handler, "requestFactory", requestFactory);
+        // Only the JSON branch of the factory is reachable from this endpoint, and it touches none of the three
+        // collaborators, so mocks are enough to render a thrown OAuth2Exception through the base's onError.
+        inject(handler, "errorResponseFactory", new OAuth2ErrorResponseFactory(
+                mock(FreemarkerTemplateRenderer.class), mock(BaseURLProviderFactory.class),
+                mock(RealmNormaliser.class)));
         inject(handler, "providerSettingsFactory", settingsFactory);
         inject(handler, "validator", validator);
         inject(handler, "hooks", new LinkedHashSet<>(Collections.singletonList(hook)));
@@ -483,12 +490,30 @@ public class ResourceSetRegistrationHandlerTest {
         assertThat(response.getStatus().getCode()).isEqualTo(400);
         assertThat(bodyOf(response)).containsEntry("error", "Bad Request")
                 .containsEntry("error_description", "A shared item with the name 'photo album' already exists");
-        // ⚠ WITH a space, where 5-E4 row 7 measured `application/json;charset=UTF-8` without one. Asserted as
-        // CHF actually emits it, deliberately: commons ContentTypeHeader.getValues() hard-codes "; charset=",
-        // so a handler that stamps the bare bytes has them re-rendered. Phase-5-wide -- every ported HTML page
-        // diverges the same way -- and recorded in plan.md's divergence table, not worked around here.
+        // ⚠ The charset is the contract here, not an accident: the post-flip capture measured this response as
+        // `application/json;charset=UTF-8`, byte-identical to Restlet's row 7. (The space is in-memory only --
+        // the header factory re-renders "; charset=" for getFirst; the wire carries setJson's own bytes.)
+        // The row that must NOT move when the thrown errors are stamped bare below.
         assertThat(response.getHeaders().getFirst("Content-Type")).isEqualTo("application/json; charset=UTF-8");
         verify(store, never()).create(any(), any());
+    }
+
+    /**
+     * The other half of the same contract, and the reason the fix cannot live in {@link ResourceSetErrorFilter}:
+     * a THROWN error -- 5-E4 row 14's {@code PUT} 400 and {@code GET} 404 -- is rendered by the base class's
+     * {@code @ExceptionHandler} through {@code setEntity(Map)}, so it arrives carrying the charset the row
+     * above is entitled to keep. By the time the filter sees the two they are indistinguishable: both are
+     * OAuth2-shaped 4xx bodies with a charset. {@link ResourceSetRegistrationHandler#withErrorHeaders} runs
+     * only on the thrown path, so it separates them at the one point where they still differ.
+     */
+    @Test
+    public void aThrownErrorIsRenderedAsBareApplicationJson() throws Exception {
+        Response response = handler.onError(
+                new NotFoundException("Resource set does not exist with id " + RSID), new RootContext(), request());
+
+        assertThat(response.getStatus().getCode()).isEqualTo(404);
+        assertThat(bodyOf(response)).containsEntry("error", "not_found");
+        assertThat(response.getHeaders().getFirst("Content-Type")).isEqualTo("application/json");
     }
 
     @Test

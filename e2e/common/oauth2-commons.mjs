@@ -36,6 +36,10 @@ export const OAUTH2_REALM = "root";
 
 export const AUTHORIZE_URL = `${OPENAM_BASE}/oauth2/realms/${OAUTH2_REALM}/authorize`;
 
+/** Where a device with no browser asks for a user code, and where the user then types it in. */
+export const DEVICE_CODE_URL = `${OPENAM_BASE}/oauth2/realms/${OAUTH2_REALM}/device/code`;
+export const DEVICE_USER_URL = `${OPENAM_BASE}/oauth2/realms/${OAUTH2_REALM}/device/user`;
+
 /** A client for which consent is implied: an authorization request never reaches the consent screen. */
 export const CLIENT_ID = "test_client_app";
 

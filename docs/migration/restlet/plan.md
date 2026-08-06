@@ -46,8 +46,8 @@ Written 2026-07-08; branch `features/restlet-migration`.
 | 5b-2 | `device/user`, `connect/checkSession`, `connect/endSession` (split 3-way; gate **5-E3**) | done 2026-07-28 ([spec](phase-5b-2.md) · [as-built](phase-5b-2-asbuilt.md)) |
 | 5c | `/oauth2/resource_set` + the conditional-request helper (split; gate **5-E4**) | done 2026-07-30 ([spec](phase-5c.md) · [as-built](phase-5c-asbuilt.md)) |
 | 5d-1 | **the flip** — `OAuth2HttpRouteProvider` (18 attachments + audit matrix) + `META-INF/services` + the web.xml mapping move; Restlet left dormant behind a one-line revert **done 2026-08-05** — **5-E5** ✅ 2026-08-04 · **5d-1a** ✅ · **5d-1b** ✅ · **5d-1c** ✅ the flip, e2e 131 passed / 1 skipped / 0 failed, divergence rows 14–30 recorded ([spec](phase-5d-1.md) · [as-built](phase-5d-1-asbuilt.md)). Criteria 12–16 all green **and recorded** — 16 on 2026-08-06: CI run `31031060622`, 9/9 legs + `build-docker`, on the SHA the branch still carries ([record](phase-5d-1-asbuilt.md#criterion-16--ci-nine-legs--recorded-2026-08-06)). **criterion 17, the soak** ✅ 2026-08-06 ([record](phase-5d-1-asbuilt.md#criterion-17--the-soak--recorded-2026-08-06)) — 3 fresh-env full-suite runs with **zero flake**, both tripwires clear, a 90,689-request load probe clean, and the three coverage gaps closed with 21 new rows. It **found one regression the byte-diff missed** — confidential-client and resource-owner authentication broken in non-root realms on every path spelling — root-caused, fixed, and guarded; details in the record. ⚠ The fix is **not yet in CI**: criterion 16 covers the flip commit, not it |
-| 5d-2 | **the deletion** — after 5d-1 soaks: delete the ~40-class Restlet OAuth2 stack + `ForgeRockRest` servlet + Guice unbinds + drop Restlet hook interfaces | next — **unblocked**: criteria 13–17 all recorded. No spec doc yet. Scope, and the five traps it must not rediscover, are in [as-built § Handed to 5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2) + [inventory §12](inventory.md#12-deletion-checklist-final-state) + [§9](inventory.md#9-guice-bindings-that-changedie). ⚠ **Commit and push the soak's fix first** — it must ride a green CI run before the Restlet oracle it was diagnosed against is deleted |
-| 6 | WebFinger `/.well-known` + stragglers | pending. ⚠ **`/.well-known/webfinger` is already broken today, before any migration work** — recorded 2026-07-26 in `e2e/oauth2/webfinger-test.spec.mjs`. `web.xml` mounts the WebFinger application on **upstream** `org.restlet.ext.servlet.ServerServlet`, while `OpenIDConnectDiscovery` reads the servlet request via OpenAM's own `ServletUtils.getRequest(...)`, which only recognises OpenAM's `ServletCall` — so it returns `null` and `getRootURL(null)` NPEs: **500 on every request**. The CHF port fixes this by construction; the spec's success case is `test.fail()`-marked and will go red (= remove the annotation) once it does |
+| 5d-2 | **the deletion** — the Restlet OAuth2 stack + `ForgeRockRest` + Guice unbinds + the core de-leak | **planned 2026-08-06, split four ways / five commits** ([spec](phase-5d-2.md) · [research](phase-5d-2-research.md)); **5d-2a reviewed 2026-08-06** and split again into **5d-2a-i** (build the CHF route dormant) + **5d-2a-ii** (flip `web.xml`, delete the Restlet classes), with four corrections recorded in [research §1 review](phase-5d-2-research.md#1-review): **5d-2a** WebFinger → CHF (pulled forward from phase 6 — it holds twelve classes hostage), **5d-2b** the openam-oauth2 stack, **5d-2c** the openam-rest layer, **5d-2d** the core de-leak + exit gates. The soak's fix **is** committed and pushed (`83f465452b` on `upstream`); its CI run `31105613611` is the gate on 5d-2b's first `git rm`. ⚠ Two of [§ Handed to 5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2)'s five traps are **out of date** — see [research §5](phase-5d-2-research.md#5) and [§2](phase-5d-2-research.md#2) |
+| 6 | ~~WebFinger~~ + stragglers | **WebFinger moved to [5d-2a](phase-5d-2.md#d1)** 2026-08-06 — it cannot be deferred, because `WebFinger` + `OpenIDConnectDiscovery` import twelve of the classes 5d-2 exists to delete ([research §1](phase-5d-2-research.md#1)). The stragglers (vestigial imports, `Saml2BearerServerResource`) also fold into 5d-2b/d, so **phase 6 is fully absorbed**. ⚠ Its finding stands but was **overstated** — corrected 2026-08-06 ([research §1 review](phase-5d-2-research.md#1-review)): only the **success** path of `/.well-known/webfinger` 500s (`web.xml` mounts the application on **upstream** `org.restlet.ext.servlet.ServerServlet`, so OpenAM's `ServletUtils.getRequest(...)` returns `null` and `getRootURL(null)` NPEs). The 400s and 404s work today, via a `doCatch` path that never calls `getRootURL` — so they are **parity targets**, not part of the fix. [Row 33](#expected-divergences-at-the-flip) is the success path; [row 34](#expected-divergences-at-the-flip) is the no-match shape |
 | 7 | Outbound scripting HTTP client | pending |
 | 8 | Delete openam-restlet + vendored fork + pom sweep | pending |
 
@@ -463,6 +463,19 @@ stopped.
 | 29 | The `Server` response header | `Restlet-Framework/2.4.4` | **absent** — CHF stamps no banner | Recorded because the realm-prefixed `connect/checkSession` row used the banner as its stack discriminator; the assertion is kept as a tripwire, since a banner reappearing on either path would mean the servlet mapping regressed. **Shape-only** |
 | 30 | Both of Restlet's method tunnels | `POST /oauth2/access_token?method=GET` → **405** `"Required Method: POST found: GET"`; `GET /oauth2/tokeninfo` + `X-HTTP-Method-Override: PUT` → **405** | `?method=GET` → **200, and it issues a real access token**; the override on a GET → **200**, the request runs as the GET it is | One root cause: Restlet's `TunnelService` (POST-only) has no CHF counterpart, and `Endpoints.getMethod` reads the header and nothing else, gated on `"POST".equals(method)`. ⚠ **WIDENING — the only one in this table.** CHF mints a token for a request Restlet refused. Both legs measured on both stacks; no plan row anticipated it, which is why it gets its own row and a release-note line |
 
+#### Rows 31–34 — added by [phase 5d-2](phase-5d-2.md#divergence-rows-this-phase-adds-to-planmd)
+
+⚠ **Different incumbent.** Restlet stopped serving `/oauth2` at 5d-1c, so for these three rows the
+"before" column is the **post-flip CHF stack**, not Restlet. The table's rule is unchanged: a diff
+matching a row is expected, a diff matching none is a regression.
+
+| # | What differs | Before (post-flip CHF) | After (5d-2) | Why · direction |
+|---|---|---|---|---|
+| 31 | Errors raised as `OAuthProblemException` — token-store failures, client-registration attribute reads, id_token signing | framework CREST 500 `{code,reason,message}` | OAuth2 `{error,error_description}` carrying the exception's own status | [D5](phase-5d-2.md#d5) — the exception loses its Restlet supertype and gains an `@ExceptionHandler`. Same unifying argument as row 19. **Shape-only** (both stacks reject) |
+| 32 | Password-grant internal failures (`ResourceOwnerAuthenticator:127,145,150`) | framework CREST 500 | OAuth2 `{"error":"server_error"}` | [D6](phase-5d-2.md#d6) — the raw Restlet `ResourceException` was an artefact of the transport, never a contract. **Shape-only** |
+| 33 | `/.well-known/webfinger`, **success path only** | **500**, `{"error":"Internal Server Error"}` | 200 JRD naming the issuer | [D1](phase-5d-2.md#d1)/[D2](phase-5d-2.md#d2) — a pre-existing defect fixed by construction; `e2e/oauth2/webfinger-test.spec.mjs` already asserts the target. **Widening**, and the phase's one intentional user-visible fix. ⚠ The endpoint's 400s and 404s work today and are parity targets, not divergences |
+| 34 | `/.well-known` **no-match** — unrouted children, bare `/.well-known/`, an unresolvable realm segment | `OAuth2StatusService`: `{"error":"<reason phrase>","error_description":"<description>"}` | `OAuth2NotFoundHandler`: `{"error":"not_found","error_description":"Not Found"}` | [D1](phase-5d-2.md#d1) — the status service is one of the twelve classes 5d-2b deletes, so the shape cannot survive; `not_found` is what the rest of the migrated surface emits. **Shape-only** (both stacks 404) |
+
 ### Post-migration tickets — raised by the port, deliberately not fixed in it
 
 Bugs the migration **reproduces faithfully** because it is a parity migration, each with a live-Restlet
@@ -481,21 +494,21 @@ outlives it.
 | T7 | **`ResourceSetRegistrationExceptionFilter.setExceptionResponse` NPEs on a throwable-less error status** — a latent 500 on the live Restlet endpoint | **closed** by [D3](phase-5c.md#d3); the class dies at 5d-2 | [phase-5c.md](phase-5c.md#post-migration-tickets) — recorded so the CHF replacement's differing behaviour reads as a fix, not drift |
 | T8 | **`/oauth2/resource_set` parses request bodies with `org.json`, which is lenient** — it decides **five** wire outcomes, so swapping in Jackson is a behaviour change and not a cleanup. ⚠ Two unit rows and 5-E4 row 22 are the executable statement of what T8 changes: **edit them with the ticket, never relax them to make it pass** | `ResourceSetRegistrationHandler` (5c-2), deliberately | [phase-5c.md](phase-5c.md#t8) — full before/after table, incl. duplicate-key and key-order effects |
 
-## Phase 6 — WebFinger + stragglers
+## Phase 6 — ~~WebFinger + stragglers~~ **absorbed into 5d-2** (2026-08-06)
 
-- `WebFingerHandler` (port of `OpenIDConnectDiscovery`; GET, `resource`/`rel`, JRD JSON)
-  + `WellKnownHttpRouteProvider` (`newHttpRoute(EQUALS, ".well-known/webfinger")`,
-  chained with `RealmContextFilter` + audit). web.xml: replace the
-  `org.restlet.ext.servlet.ServerServlet` WebFinger block with `/.well-known/*` on
-  `OpenAM`.
-- Delete `WebFinger`, `OpenIDConnectDiscovery`, `GuicedRestlet`, `OAuth2StatusService`,
-  remaining restlet audit classes in openam-oauth2.
-- Strip vestigial imports: `AuthenticationServiceV1` (openam-core-rest),
-  `DefaultWsFedAuthenticator` (OpenFM).
-- Delete dead `Saml2BearerServerResource` (+ test) and restlet deps in
-  `openam-oauth2-saml2/pom.xml`.
-- Verify: `mvn -pl openam-oauth2,openam-core-rest,openam-oauth2-saml2 test`; smoke
-  `GET /openam/.well-known/webfinger?resource=...&rel=http://openid.net/specs/connect/1.0/issuer`.
+Every bullet this phase carried now has an owner inside [phase 5d-2](phase-5d-2.md), because none of
+them could wait: `WebFinger` and `OpenIDConnectDiscovery` import twelve of the classes 5d-2 deletes
+([research §1](phase-5d-2-research.md#1)), so deferring them would leave all three Restlet packages
+non-empty and the exit gate unreachable.
+
+| Was | Now |
+|---|---|
+| `WebFingerHandler` + `WellKnownHttpRouteProvider`, web.xml `/.well-known/*` → `OpenAM` | **5d-2a-i** (the handler + provider) and **5d-2a-ii** (the mapping) ([D1](phase-5d-2.md#d1)). ⚠ `STARTS_WITH ".well-known"`, not the `EQUALS ".well-known/webfinger"` this bullet specified — the provider must own the segment the servlet mapping owns |
+| Delete `WebFinger`, `OpenIDConnectDiscovery`, `GuicedRestlet`, `OAuth2StatusService`, the openam-oauth2 restlet audit classes | **5d-2a-ii** (the first two) and **5d-2b** (the rest) |
+| Vestigial imports — `AuthenticationServiceV1`, `DefaultWsFedAuthenticator` | **5d-2d**. ⚠ A third was found that is **not** vestigial: `SmsRealmProvider:25` really uses `HeaderConstants.HEADER_IF_NONE_MATCH` and needs the literal inlined ([research §2](phase-5d-2-research.md#2)) |
+| Dead `Saml2BearerServerResource` + `openam-oauth2-saml2` restlet deps | **5d-2b** |
+
+Phase 7 is unaffected and remains the next phase after 5d-2.
 
 ## Phase 7 — Outbound scripting HTTP client
 
@@ -513,22 +526,29 @@ outlives it.
 
 ## Phase 8 — Final deletion
 
-1. Relocate `RestRealmValidator` openam-restlet → openam-rest
-   (`org.forgerock.openam.rest.router`); update importers (`RealmContextFilter` et al.).
+⚠ **Reduced 2026-08-06.** Steps 1 and 4 moved into [5d-2d](phase-5d-2.md#d7) — they are what makes
+openam-rest and openam-uma Restlet-free, and leaving them here would keep four modules depending on
+`openam-restlet` for nothing but two string constants. Struck below, kept so the move is traceable.
+After 5d-2 and phase 7, this phase is a module delete plus a pom sweep and nothing else.
+
+1. ~~Relocate `RestRealmValidator` openam-restlet → openam-rest
+   (`org.forgerock.openam.rest.router`); update importers (`RealmContextFilter` et al.).~~ → **5d-2d**
 2. Delete module `openam-restlet`; delete `transform-jakarta/restlet-parent-jakarta/`
    (+ module entry in `transform-jakarta/pom.xml`).
 3. Root pom sweep: `restlet.version`, all
    `org.openidentityplatform.openam.jakarta:org.restlet*` + `org.restlet.jee:*`
    dependencyManagement entries, restlet `excludeArtifact` lines, talend repo,
    `<module>openam-restlet</module>`, openam-restlet dependencyManagement entry.
-4. openam-rest: delete `AbstractRestletAccessAuditFilter`, `RestletBodyAuditor`,
+4. ~~openam-rest: delete `AbstractRestletAccessAuditFilter`, `RestletBodyAuditor`,
    Restlet branch + inner `RestletRealmRouter` of `RealmRoutingFactory`; drop restlet
-   deps (and the "TODO until Restlet endpoints are moved to CHF" comment).
-   - Repoint the `REALM_OBJECT` readers/writers off the deleted `RestletRealmRouter.REALM_OBJECT`
-     onto the surviving `OAuth2Constants.Custom.REALM_OBJECT` (seeded by `ChfOAuth2Request` since
-     Phase 4a; the two constants share the literal `"realmObject"` and Phase 4a left a note on the
-     survivor). Sites: `OAuth2UrisFactory:68`, `UmaUrisFactory:83`, `RealmRoutingFactory:22/248-263`,
-     `IdTokenInfo:193`. After this, delete `RestletRealmRouter` with the module.
+   deps (and the "TODO until Restlet endpoints are moved to CHF" comment).~~ → **5d-2c/5d-2d**
+   - ~~Repoint the `REALM_OBJECT` readers/writers off the deleted `RestletRealmRouter.REALM_OBJECT`
+     onto the surviving `OAuth2Constants.Custom.REALM_OBJECT`.~~ → **[5d-2d D7](phase-5d-2.md#d7)**.
+     ⚠ The site list here was incomplete and one entry is wrong: the readers are **six**, not four —
+     `OAuth2UrisFactory:69`, `OAuth2RealmResolver:51`, `UmaUrisFactory:87`,
+     `UmaProviderSettingsFactory:80`, `RealmRoutingFactory:21-22/248-263` and `UmaUrisFactoryTest`;
+     `IdTokenInfo` is deleted by 5d-2b rather than repointed, and `REALM` is migrated alongside
+     `REALM_OBJECT` ([research §5](phase-5d-2-research.md#5)).
 5. Sweep remaining poms (openam-oauth2, openam-uma, openam-server-only war excludes).
 6. Gates: `grep -rn "org.restlet" --include="*.java" .` → 0 outside docs;
    `grep -rn restlet --include=pom.xml .` → 0; `mvn clean install`;

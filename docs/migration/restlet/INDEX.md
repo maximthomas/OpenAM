@@ -8,7 +8,7 @@ nothing else. Every set is sized to fit comfortably in context alongside the cod
 |---|---|
 | Where the plan lives | [plan.md](plan.md) — phase status, risk register, expected divergences |
 | What is locked | [decisions.md](decisions.md#locked-decisions) |
-| Current step | **5d-1c — the flip.** [spec](phase-5d-1.md) · [as-built so far](phase-5d-1-asbuilt.md) |
+| Current step | **5d-2 — the deletion**, split four ways / five commits; 5d-2a reviewed and re-split 2026-08-06. [spec](phase-5d-2.md) · [research](phase-5d-2-research.md) |
 
 ---
 
@@ -19,9 +19,8 @@ bug in this table — fix the table rather than reading the whole tree.
 
 | I am… | Load (≈ tokens) |
 |---|---|
-| **implementing 5d-1c (the flip)** | [phase-5d-1.md](phase-5d-1.md) 11k + [plan.md#expected-divergences-at-the-flip](plan.md#expected-divergences-at-the-flip) 5k = **~16k**. The as-built and research files are *reference* — open a section only when the spec cites it |
-| **planning 5d-2 (the deletion)** | [phase-5d-1-asbuilt.md#handed-to-5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2) + [inventory.md#12](inventory.md#12-deletion-checklist-final-state) + [inventory.md#9](inventory.md#9-guice-bindings-that-changedie) = **~7k** |
-| **planning phase 6 / 7 / 8** | [plan.md](plan.md) 14k + [inventory.md](inventory.md) 5k = **~19k** |
+| **implementing any 5d-2 sub-phase** | [phase-5d-2.md](phase-5d-2.md) 8k + the [research](phase-5d-2-research.md) section its decisions cite (~1–2k each) = **~11k**. The research file holds the per-file inventory so the source does not have to be re-read; open a section, never the file |
+| **planning phase 7 / 8** | [plan.md](plan.md) 15k + [inventory.md](inventory.md) 5k = **~20k**. ⚠ Phase 6 no longer exists — it was absorbed into 5d-2, and phase 8 lost two of its six steps to 5d-2d |
 | **writing a new CHF handler** | the [conversion template](phase-5-oauth2.md#the-conversion-template-applies-to-every-5a5b5c-handler) + the two or three [chf-patterns](chf-patterns.md) sections it names — **never the whole file** |
 | **fixing `openam-http`** | [openam-http-framework.md](openam-http-framework.md) F1–F5 + [chf-patterns §14](chf-patterns.md#14-framework-defects-fix-them-dont-pattern-around-them-2026-07-21) |
 | **answering "what did Restlet do here?"** | the `-asbuilt.md` of the phase that ported it — every live-Restlet measurement lives there. See [the oracle record](#the-oracle-record) |
@@ -89,10 +88,12 @@ landed plus the oracle rows.
 | 5b-1 — `/authorize` | [6k](phase-5b-1.md) | [5k](phase-5b-1-research.md) | [16k](phase-5b-1-asbuilt.md) | done |
 | 5b-2 — device / checkSession / endSession | [5k](phase-5b-2.md) | [7k](phase-5b-2-research.md) | [8k](phase-5b-2-asbuilt.md) | done |
 | 5c — `/oauth2/resource_set` | [10k](phase-5c.md) | [10k](phase-5c-research.md) | [16k](phase-5c-asbuilt.md) | done |
-| **5d-1 — the flip** | **[11k](phase-5d-1.md)** | [8k](phase-5d-1-research.md) | [10k](phase-5d-1-asbuilt.md) | **5-E5 / 5d-1a / 5d-1b done · 5d-1c pending** |
+| 5d-1 — the flip | [11k](phase-5d-1.md) | [8k](phase-5d-1-research.md) | [10k](phase-5d-1-asbuilt.md) | done |
+| **5d-2 — the deletion** | **[10k](phase-5d-2.md)** | [8k](phase-5d-2-research.md) | — | **planned · 5d-2a-i → 5d-2d** |
 
-Phases 6–8 (WebFinger + stragglers, outbound client, final deletion) have no doc of their own — they
-live in [plan.md](plan.md#phase-6--webfinger--stragglers).
+Phases 7–8 (outbound client, final deletion) have no doc of their own — they live in
+[plan.md](plan.md#phase-7--outbound-scripting-http-client). **Phase 6 is gone**: WebFinger and the
+stragglers were absorbed into 5d-2 on 2026-08-06, because WebFinger's imports blocked the deletion.
 
 ---
 
@@ -148,7 +149,12 @@ live in [plan.md](plan.md#phase-6--webfinger--stragglers).
 ### Deleting Restlet
 | I need… | Go to |
 |---|---|
-| What 5d-2 must delete, and the two same-named classes | [phase-5d-1-asbuilt.md#handed-to-5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2) |
+| **What 5d-2 deletes, file by file** | [phase-5d-2-research.md §2](phase-5d-2-research.md#2) — supersedes the two lists below wherever they differ |
+| Why WebFinger had to be ported first | [phase-5d-2-research.md §1](phase-5d-2-research.md#1) |
+| What the 5d-2a review corrected (the endpoint is only half-broken; dispatch is polymorphic; HEAD is handled; audit goes inside the realm layer) | [phase-5d-2-research.md §1 review](phase-5d-2-research.md#1-review) + [5d-2 D1](phase-5d-2.md#d1)/[D2](phase-5d-2.md#d2) |
+| Why `OAuthProblemException` gets a bridge, not a supertype | [phase-5d-2-research.md §3](phase-5d-2-research.md#3) + [5d-2 D5](phase-5d-2.md#d5) |
+| The realm constants, and both `RestletRealmRouter`s | [phase-5d-2-research.md §5](phase-5d-2-research.md#5) |
+| What 5d-2 must delete, and the two same-named classes | [phase-5d-1-asbuilt.md#handed-to-5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2) — ⚠ two of its five traps are stale; see the rows above |
 | What still imports Restlet | [inventory.md#3](inventory.md#3-restlet-imports-by-module-main-sources) |
 | Entry points & request flow | [inventory.md#4](inventory.md#4-entry-points-and-request-flow) |
 | Route tables | [inventory.md#5](inventory.md#5-route-tables) |

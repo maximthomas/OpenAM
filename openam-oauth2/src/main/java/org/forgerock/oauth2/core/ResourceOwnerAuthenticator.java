@@ -98,6 +98,9 @@ public class ResourceOwnerAuthenticator {
             lc = new AuthContext(realm);
             HttpServletRequest request = req.getHttpServletRequest();
             request.setAttribute(ISAuthConstants.NO_SESSION_REQUEST_ATTR, "true");
+            // Same realm cross-check as ClientAuthenticator.authenticate — see the comment there. Without
+            // this, the password grant cannot authenticate a resource owner in a path-spelled non-root realm.
+            request.setAttribute(ISAuthConstants.REALM_PARAM, realm);
             if (service != null) {
                 lc.login(AuthContext.IndexType.SERVICE, service, null, request, req.getHttpServletResponse());
             } else {

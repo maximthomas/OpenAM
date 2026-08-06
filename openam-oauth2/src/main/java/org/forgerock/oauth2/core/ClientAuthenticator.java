@@ -150,6 +150,14 @@ public class ClientAuthenticator {
             AuthContext lc = new AuthContext(realm);
             HttpServletRequest httpRequest = request.getHttpServletRequest();
             httpRequest.setAttribute(ISAuthConstants.NO_SESSION_REQUEST_ATTR, "true");
+            // AMLoginContext.processIndexType cross-checks this AuthContext's realm against
+            // AuthClientUtils.getDomainNameByRequest, which looks for the realm on the servlet request
+            // attribute first, then the query string, and finally falls back to the host name. Restlet's
+            // realm router wrote the attribute for every request it routed (RestletRealmRouter:97); the CHF
+            // realm layer publishes the realm on RealmContext instead, so without this a realm spelled in
+            // the *path* resolves to the host's realm here and the login fails with AUTH_ERROR. This is the
+            // realm the AuthContext above was built with, i.e. the same value the Restlet router wrote.
+            httpRequest.setAttribute(ISAuthConstants.REALM_PARAM, realm);
             lc.login(AuthContext.IndexType.MODULE_INSTANCE, "Application", null, httpRequest,
                     request.getHttpServletResponse());
 

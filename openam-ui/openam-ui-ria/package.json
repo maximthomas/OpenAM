@@ -10,6 +10,7 @@
     "start": "grunt",
     "build:production": "cross-env NODE_ENV=production grunt prod --verbose",
     "test": "grunt karma:build",
+    "test:e2e": "npm --prefix ../../e2e run test:xui --",
     "predeps": "npm run clean:deps -s",
     "deps": "ncu -u && mvn clean install",
     "postdeps": "npm shrinkwrap --dev"

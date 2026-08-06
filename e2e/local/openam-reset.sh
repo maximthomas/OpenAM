@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+#
 # The contents of this file are subject to the terms of the Common Development and
 # Distribution License (the License). You may not use this file except in compliance with the
 # License.
@@ -11,14 +13,17 @@
 # information: "Portions copyright [year] [name of copyright owner]".
 #
 # Copyright 2026 3A Systems, LLC.
+#
+# Reset the instance to its post-configuration baseline.
+#
+# This is the authoritative reset: it destroys both containers and rebuilds from scratch, so it
+# cannot leave residue behind whatever a failed test did -- including changes written directly
+# into the deployed /XUI by xui-deploy.sh. It costs a few minutes.
+#
+# The image layer is cached, so a reset only re-runs the configurator, not the image build. If
+# the war changed, openam-up.sh rebuilds the image; that is the slow path and it is meant to be.
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-node_modules/
-# package.json is tracked: it pins the Playwright version and names the suite commands.
-# The lock file is deliberately not, which is the same thing said the other way round -- two
-# runs a month apart may resolve different 1.x versions of Playwright, and that is accepted.
-package-lock.json
-playwright-report/
-test-results/
-# Instance diagnostics, collected by .github/workflows/xui-e2e.yml on a failed run.
-*.log
+"${HERE}/openam-down.sh"
+"${HERE}/openam-up.sh"

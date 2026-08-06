@@ -1,0 +1,21 @@
+{
+  "name": "openam-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end suite driving a deployed OpenAM through a browser. See local/README.md for the instance to run it against.",
+  "license": "CDDL-1.0",
+  "scripts": {
+    "setup": "playwright install chromium",
+    "test": "playwright test",
+    "test:xui": "playwright test xui",
+    "test:oauth2": "playwright test oauth2",
+    "test:saml": "playwright test saml",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

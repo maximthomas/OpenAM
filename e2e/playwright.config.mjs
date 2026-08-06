@@ -20,7 +20,15 @@ export default defineConfig({
     testDir: ".",
     testMatch: "**/*.spec.mjs",
     timeout: 180000,
+    // No retries: this suite is the migration's regression oracle, and a retry turns a real
+    // intermittent regression into a green run.
     retries: 0,
+    // One worker. Every spec drives the same single AM instance, and the admin specs to come
+    // (tasks 1.6 and 1.7) will create and delete realms and services in it, so parallel files
+    // would interfere through server state rather than through anything in the tests.
+    workers: 1,
+    // A stray test.only would shrink the suite without the run saying so.
+    forbidOnly: !!process.env.CI,
     use: {
         headless: true,
         ignoreHTTPSErrors: true,

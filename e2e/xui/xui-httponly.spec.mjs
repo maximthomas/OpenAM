@@ -74,15 +74,7 @@
 
 import { test, expect } from "@playwright/test";
 import { OPENAM_BASE, USERNAME, PASSWORD, ADMIN_USER, ADMIN_PASS } from "../common/openam-commons.mjs";
-
-// XUI / LESS-based OpenAM login form selectors
-const SEL = {
-    usernameInput: "#idToken1",
-    passwordInput: "#idToken2",
-    // The submit button id varies between XUI builds (loginButton / loginButton_0 / none),
-    // so match by submit type as the working SAML spec does.
-    loginButton: "#loginButton, input[type=\"submit\"], button[type=\"submit\"]",
-};
+import { SEL, idFromSession, loginViaXui } from "../common/xui-commons.mjs";
 
 // Optional hard expectation for the CI matrix ("true" | "false" | undefined)
 const EXPECT_HTTPONLY = process.env.EXPECT_COOKIE_HTTPONLY;
@@ -95,28 +87,11 @@ async function getServerInfo(request) {
     return resp.json();
 }
 
-/** Log in through the XUI login form and wait until the user leaves the #login route. */
-async function loginViaXui(page, user, pass) {
-    await page.goto(`${OPENAM_BASE}/XUI/#login/`);
-    await expect(page.locator(SEL.usernameInput)).toBeVisible({ timeout: 20_000 });
-    await page.fill(SEL.usernameInput, user);
-    await page.fill(SEL.passwordInput, pass);
-    await page.locator(SEL.loginButton).first().click();
-    await page.waitForURL((url) => !url.hash.startsWith("#login"), { timeout: 30_000 });
-}
-
-/** Resolve the username of the active session from the (auto-sent) session cookie. */
-async function idFromSession(request) {
-    const resp = await request.post(`${OPENAM_BASE}/json/users?_action=idFromSession`, {
-        headers: { "Accept-API-Version": "protocol=1.0,resource=2.0" },
-    });
-    if (!resp.ok()) {
-        return null;
-    }
-    return (await resp.json()).id;
-}
-
-test.describe("OpenAM XUI - HttpOnly session cookie", () => {
+// Deployed-AM-only: this spec asserts the session cookie's HttpOnly attribute and AM's server-side
+// session-upgrade fallback. A local stand-in would have to reimplement the behaviour under test,
+// so a green run against it would prove only that both sides were written to agree (design.md
+// D16).
+test.describe("OpenAM XUI - HttpOnly session cookie", { tag: ["@deployed-am"] }, () => {
     test("XUI login/session/logout work and cookie flag matches server mode", async ({ page, context }) => {
         // ── 1. Discover the mode the server is actually running in ──────────────
         const info = await getServerInfo(page.request);
@@ -129,29 +104,23 @@ test.describe("OpenAM XUI - HttpOnly session cookie", () => {
                 .toBe(EXPECT_HTTPONLY === "true");
         }
 
-        // ── 2. Log in through the XUI login form ────────────────────────────────
-        await page.goto(`${OPENAM_BASE}/XUI/#login/`);
-        await expect(page.locator(SEL.usernameInput)).toBeVisible({ timeout: 20_000 });
-        await page.fill(SEL.usernameInput, USERNAME);
-        await page.fill(SEL.passwordInput, PASSWORD);
-        await page.locator(SEL.loginButton).first().click();
+        // ── 2. Log in through the XUI login form, and confirm the XUI considers
+        //       the user logged in (it leaves the #login route) ──────────────────
+        await loginViaXui(page, USERNAME, PASSWORD);
 
-        // ── 3. XUI must consider the user logged in (leaves the #login route) ────
-        await page.waitForURL((url) => !url.hash.startsWith("#login"), { timeout: 30_000 });
-
-        // ── 4. The session cookie must carry the expected HttpOnly attribute ────
+        // ── 3. The session cookie must carry the expected HttpOnly attribute ────
         const cookies = await context.cookies();
         const session = cookies.find((c) => c.name === cookieName);
         expect(session, `session cookie "${cookieName}" must be present`).toBeTruthy();
         expect(session.httpOnly, `cookie HttpOnly attribute must match server mode`).toBe(httpOnly);
 
-        // ── 5. JS visibility of the cookie must match the mode ──────────────────
+        // ── 4. JS visibility of the cookie must match the mode ──────────────────
         // With HttpOnly=true the token must NOT be readable from document.cookie;
         // with HttpOnly=false it must be readable. XUI must keep working either way.
         const visibleInJs = await page.evaluate((name) => document.cookie.includes(`${name}=`), cookieName);
         expect(visibleInJs, "document.cookie visibility must be the inverse of HttpOnly").toBe(!httpOnly);
 
-        // ── 6. Logged-in detection must work WITHOUT reading the cookie in JS ────
+        // ── 5. Logged-in detection must work WITHOUT reading the cookie in JS ────
         // idFromSession resolves the session from the auto-sent (HttpOnly) cookie.
         const idResp = await page.request.post(
             `${OPENAM_BASE}/json/users?_action=idFromSession`,
@@ -161,11 +130,11 @@ test.describe("OpenAM XUI - HttpOnly session cookie", () => {
         const idJson = await idResp.json();
         expect(String(idJson.id).toLowerCase()).toBe(USERNAME.toLowerCase());
 
-        // ── 7. Logout through the XUI must end on the logged-out/login route ────
+        // ── 6. Logout through the XUI must end on the logged-out/login route ────
         await page.goto(`${OPENAM_BASE}/XUI/#logout/`);
         await page.waitForURL((url) => /^#(loggedOut|login)/.test(url.hash), { timeout: 30_000 });
 
-        // ── 8. The session must be invalidated server-side after logout ─────────
+        // ── 7. The session must be invalidated server-side after logout ─────────
         // Checking the browser cookie is not reliable: in HttpOnly mode JavaScript
         // cannot clear it and the REST logout may not emit a Set-Cookie, so a stale
         // (but dead) cookie can linger. The meaningful guarantee is that the server

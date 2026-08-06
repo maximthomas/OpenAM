@@ -29,6 +29,11 @@ export default defineConfig({
     workers: 1,
     // A stray test.only would shrink the suite without the run saying so.
     forbidOnly: !!process.env.CI,
+    // The XUI is deployed unbundled, so an assertion on a view's content is waiting on the router
+    // resolving the module, its dependency closure being fetched one file at a time, and the
+    // template being fetched and compiled. Playwright's 5s default is a cold-start flake on that;
+    // with no retries a flake is a red build.
+    expect: { timeout: 15_000 },
     use: {
         headless: true,
         ignoreHTTPSErrors: true,

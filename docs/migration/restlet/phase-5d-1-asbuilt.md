@@ -428,6 +428,7 @@ client `d8_probe`, and the audit service's `csvBuffering.bufferingEnabled` set t
 
 ---
 
+<a id="as-built-5d-1c--recorded-2026-08-05"></a>
 ## As-built — 5d-1c, recorded 2026-08-05 (the flip)
 
 `/oauth2/*` now resolves to the CHF `OpenAM` servlet. The change itself is four lines of `web.xml`; everything
@@ -487,6 +488,29 @@ purpose, so this is D7 working, not a regression. No `:-1` port appears in any r
 Skipped: 0`, BUILD SUCCESS. The WAR that booted is the one the e2e image was baked from, so the mapping move
 is exercised by both the container and the in-reactor boot.
 
+### Criterion 16 — CI, nine legs — recorded 2026-08-06
+
+| | |
+|---|---|
+| Run | [`31031060622`](https://github.com/maximthomas/OpenAM/actions/runs/31031060622), workflow `Build`, event `push` |
+| Head SHA | `bccbc9c4d95933ffefdddcf70bac66e6b7c5fef5` — **the SHA the branch still carries**, checked against `git rev-parse HEAD` rather than against the SHA the commit reported when it was written |
+| Window | 2026-08-05 17:39:46 → 18:28:10 UTC (48m24s) |
+| Result | `success`, **9** `build-maven` legs — exactly the matrix the criterion names (`build.yml:27-34`): ubuntu × 11/17/21/25/26 plus macOS and windows on 11 and 26. `build-docker` (`needs: build-maven`) is green as well — a tenth signal the criterion did not ask for |
+
+**One leg was read, not just its badge** — ubuntu/JDK 17, job `92391594843`:
+
+- `-P integration-test` **reaches the command line**. The ubuntu-only step writes `MAVEN_PROFILE_FLAG` to
+  `$GITHUB_OUTPUT` and the build step interpolates
+  `${{ steps.maven-profile-flag.outputs.MAVEN_PROFILE_FLAG }}` (`build.yml:52-61`), so the Cargo boot really is
+  an ubuntu signal and not a flag dropped between two steps. The literal appears in the log.
+- `openam-oauth2`: surefire **1305**, failsafe **63**, both 0 failures — so `OAuth2RouterIT` ran in CI on the
+  flipped commit, on all nine legs (its frames appear in the log, from the rows that log an expected error).
+  Against 5d-1b's baselines (1286 / 62) that is +19 / +1, and commit A is the only source of test rows in
+  between: `git diff --stat ca7bed6115 HEAD -- openam-oauth2/src/test` is 7 files, +299/-20, one of them the
+  new `ResourceSetRouteCompositionIT` rows.
+- `openam-server` under the integration profile: `OpenAM instance started, context=/test-am` three times,
+  `Tests run: 3, Failures: 0, Errors: 0, Skipped: 0`, 246.2 s. `BUILD SUCCESS` at 18:03:40.
+
 ### Five parity fixes the flip demanded (commit A)
 
 Each was a real wire difference the pre-flip capture did not license, so each was fixed rather than recorded:
@@ -544,10 +568,98 @@ The same claim had been copied into `ResourceSetRegistrationHandler`'s duplicate
 | `PUT /tokeninfo` — did it take the `@Get`-first path like `PATCH`? | **No.** No cache directives on either stack; the `@Get`-first behaviour was PATCH-specific |
 | `?_api` — fix or record? | **Record** (row 26). The filter is mounted application-wide and shared with `/json`, whose descriptor works; the only surgical alternative mutates a query `/authorize` echoes into `goto` |
 
-### Still owed
+<a id="criterion-17--the-soak--recorded-2026-08-06"></a>
+### Criterion 17 — the soak — recorded 2026-08-06
 
-- **Criterion 16** — CI green on the `features/**` push, 9 legs.
-- **Criterion 17** — the soak. 5d-2 does not start until 13–16 are recorded.
+Criterion 17's own condition — 13–16 recorded — was met by the paragraph above it. What it could not supply was
+*repetition* and *coverage*: `build.yml:16-18` is push-triggered with no `schedule`, so an idle branch produces
+no further signal, and [criterion 12's caveat](phase-5d-1.md#verification-criteria) says in as many words that a
+green suite proves only the rows that exist. The soak was therefore run as repetition plus the three gaps that
+caveat names, not as elapsed time.
+
+**It found one regression, which the byte-diff had missed, and the same pass fixed it.**
+
+#### What was run
+
+| | |
+|---|---|
+| Repetition | **3** full-suite runs, each on a completely recreated environment (all four containers + the network, never reused): **151 passed / 1 skipped / 0 failed** of 152 declared, 75 s / 80 s / 65 s. A pre-change baseline run reproduced the recorded single pass exactly (131/1/0 of 132) |
+| Flake | **none.** Sorting each run's rows and diffing gives byte-identical output across all three — 456 row executions, no row red in one and green in another. `2f16a47c0d`'s flake did not recur |
+| Tripwire — CREST from `/authorize` | **clear** on every run and across 23,469 concurrent authorize calls. The only CREST bodies in any transcript are `/uma`'s, which `uma-test.spec.mjs` asserts on purpose. ⚠ A naive `grep -i authorize` false-matches **"Unauthorized"** |
+| Tripwire — `:-1` in `http.request.path` | **clear**: 0 occurrences over **91,307** audit rows sampled after the load probe. The single `:80` origin is a portless `Host` on a raw 5-E5 request rendering the scheme default, which is the opposite of the failure mode |
+| Load | 90,689 requests in 240 s at 377.8/s: 46,938 tokens all **distinct**, zero `state` cross-talk across 23,469 `/authorize` calls, zero 5xx. The `client_secret_post` half — where audit, client authentication **and** the handler all re-read one body ([risk #1](plan.md#risk-register-behavioral-compatibility)) — was exactly as clean as the `client_secret_basic` control |
+| Provenance | image `openam-e2e:soak`; deployed `openam-oauth2` and `openam-http` jar md5s both equal to the local build; `/oauth2/*` → `OpenAM` asserted **inside the WAR** before baking |
+
+#### The regression, and the fix
+
+Confidential-client authentication at `/oauth2/access_token` **in a non-root realm** was broken on all three
+**path** spellings — `401 invalid_client` where pre-flip Restlet issued a token — while `?realm=` kept working.
+Measured A/B on one identical fixture against `openam-e2e:5d1b` (Restlet) and `openam-e2e:soak` (CHF). It
+matched no divergence row, and by [that table's rule](plan.md#expected-divergences-at-the-flip) an unmatched
+difference is a regression.
+
+It was worse than a parity slip: the sub-realm's **own discovery document advertises the nested path spelling
+as `token_endpoint`**, so a conformant OIDC client discovering a non-root realm was handed the one spelling
+that could not authenticate — and `/authorize` worked on every spelling, so the failure surfaced only at the
+code exchange, after the user had consented.
+
+**Cause.** `AMLoginContext.processIndexType:1730-1746` cross-checks the `AuthContext` realm against
+`AuthClientUtils.getDomainNameByRequest:1475-1502`, which resolves the realm from the **servlet request
+attribute** `realm` first, then the query string, and only then falls back to `request.getServerName()`.
+Restlet's realm router wrote that attribute on every request it routed
+([`RestletRealmRouter:97`](../../../openam-restlet/src/main/java/org/forgerock/openam/rest/service/RestletRealmRouter.java));
+CHF's realm layer publishes the realm on `RealmContext` instead. So a path-spelled realm fell through to the
+host's realm — root — and the mismatch threw `AUTH_ERROR`. Adding a redundant `?realm=` to a failing request
+made it succeed, which is what isolated the branch.
+
+⚠ **An earlier reading of this — that Restlet's `getHttpServletRequest()` returned null and skipped the branch
+— is wrong**, and is recorded because it is the plausible-looking answer: `ClientAuthenticator:150-151`
+dereferences the servlet request one line before `lc.login`, so a null would have thrown, not issued a token.
+`hreq` is non-null on both stacks; what changed is what is *on* it.
+
+**Fix.** `ClientAuthenticator.authenticate` and `ResourceOwnerAuthenticator.authenticate` set
+`ISAuthConstants.REALM_PARAM` on the servlet request to the realm they just built the `AuthContext` with —
+the same value the Restlet router used to write, so it is a no-op on the Restlet path. Chosen over restoring
+the write in `RealmContextFilter`, which is shared with `/json` and which
+[divergence row 16](plan.md#expected-divergences-at-the-flip) explicitly declines to change. The attribute has
+exactly **one** reader in the tree (`AuthClientUtils.getRealmFromAttribute:1511`), so the narrow fix is
+complete, and the migration already had the same one-liner at `IdTokenInfoHandler:151`, ported from Restlet's
+`IdTokenInfo:196`.
+
+**`ResourceOwnerAuthenticator` had the identical defect and no measurement had caught it** — it is reached only
+by the password grant, which no row exercised. That is why row 10 exists.
+
+**Verified after the fix**, image `openam-e2e:soakfix`, deployed jar md5 = local build: two clean runs on
+freshly recreated environments (151/1/0, the only red being an assertion of mine that was wrong, below), then
+a third after correcting it: **152 passed / 1 skipped / 0 failed** of 153 declared.
+
+⚠ **Two things the new row asserted wrongly, both corrected against the live oracle rather than by reasoning**
+— and the second is the more useful: a wrong password is **400 `invalid_grant`**, not 401 (RFC 6749 §5.2 — a
+bad *resource-owner* credential is a bad grant; 401 is for a bad *client* credential), and a **root-realm user
+does get a token from the sub-realm's token endpoint**, measured **200 on Restlet as well**. That is parity
+caused by the fixture — a realm created over REST has no identity store of its own, so its chain reaches the
+directory root uses. It is **not** the row-7 property, which is about an SSO session and still holds.
+
+#### What the soak added to the tree
+
+| Path | Rows | Purpose |
+|---|---|---|
+| `e2e/oauth2/realms-test.spec.mjs` | 10 | non-root realms through all four spellings. **Rows 3 and 10 are the regression guard**, asserting the correct answer so they cannot be "fixed" by rewriting an expectation |
+| `e2e/oauth2/display-test.spec.mjs` | 11 | `?display=` on `/authorize` and `/device/user` — closes the renderer half of [risk #19](plan.md#risk-register-behavioral-compatibility), which had stayed open since 3c-1 because 131 rows exercised exactly one display. Pins [T4](plan.md#post-migration-tickets--raised-by-the-port-deliberately-not-fixed-in-it), confirmed present on Restlet too |
+| `e2e/tools/oauth2-load.mjs` | — | the load probe. A tool, not a spec: it must outlive Playwright's 180 s per-test timeout, and its exit code keys on correctness only, never latency |
+
+A fixture discovery worth keeping, and the reason no earlier spec put a client in a sub-realm: a realm created
+over REST has **no `AgentService` organization config**, so every write to `realm-config/agents/OAuth2Client/…`
+answers `404 Parent service does not exist.` and `agents` is not in its `getCreatableTypes`. The only REST path
+that creates it is `connect/register`, so the fixture bootstraps through one throwaway dynamic registration.
+
+#### What the soak did not cover
+
+Single container, so nothing about the multi-server leg. No production realm with its own identity store — the
+fixture realm shares root's, which is what made the root-user row parity rather than isolation. No long
+duration: this is repetition and coverage, not elapsed time under real traffic. **And CI has not seen the fix**
+— [criterion 16](#criterion-16--ci-nine-legs--recorded-2026-08-06) covers the flip commit, not the two source
+changes above, which are still uncommitted.
 
 ---
 

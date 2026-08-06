@@ -16,118 +16,21 @@
 
 import { test, expect } from "@playwright/test";
 import { OPENAM_BASE, getAdminToken, getAuthToken, PASSWORD, USERNAME } from "../common/openam-commons.mjs";
+import {
+  CLIENT_ID,
+  // A client that does not imply consent, so the resource owner's decision must be posted explicitly. This
+  // is the situation issue #1080 reports: a non-browser client cannot obtain a token to post the decision.
+  CONSENT_CLIENT_ID,
+  OAUTH2_REALM as REALM,
+  REDIRECT_URI,
+  SCOPE,
+  ensureOAuth2ClientExists,
+  ensureOAuth2ServiceExists,
+  generateChallenge,
+  generateVerifier,
+} from "../common/oauth2-commons.mjs";
 
-const REALM = "root";
-const CLIENT_ID = "test_client_app";
-// A client that does not imply consent, so the resource owner's decision must be posted explicitly. This is
-// the situation issue #1080 reports: a non-browser client cannot obtain a token to post with the decision.
-const CONSENT_CLIENT_ID = "test_consent_app";
 const CONSENT_STATE = "consent-state";
-const SCOPE="profile"
-const REDIRECT_URI="http://app.invalid/cb"
-/**
- * Ensures the OAuth2 service exists in the OpenAM instance.
- * Creates it with default configuration if it doesn't exist.
- */
-async function ensureOAuth2ServiceExists(adminToken, request) {
-  const response = await request.get(`${OPENAM_BASE}/json/realms/${REALM}/realm-config/services/oauth-oidc`,
-    {
-      headers: {
-        "iPlanetDirectoryPro": adminToken,
-        "Accept-API-Version": "protocol=1.0,resource=1.0",
-      },
-    }
-  );
-
-  if (response.status() === 404) {
-    // OAuth2 service doesn't exist, create it
-    const createResponse = await request.post(`${OPENAM_BASE}/json/realms/${REALM}/realm-config/services/oauth-oidc?_action=create`,
-      {
-        headers: {
-          "iPlanetDirectoryPro": adminToken,
-          "Content-Type": "application/json",
-          "Accept-API-Version": "protocol=1.0,resource=1.0",
-        },
-        data: {
-          advancedOAuth2Config: {
-            clientsCanSkipConsent: true,
-            supportedScopes: [SCOPE],
-            defaultScopes: [SCOPE],
-          },
-        },
-      }
-    );
-
-    if (!createResponse.ok()) {
-      throw new Error(
-        `Failed to create OAuth2 service: ${createResponse.statusText()}`
-      );
-    }
-    console.log("OAuth2 service created successfully");
-  } else if (!response.ok()) {
-    throw new Error(
-      `Failed to check OAuth2 service: ${createResponse.statusText()}`
-    );
-  } else {
-    console.log("OAuth2 service already exists");
-  }
-}
-
-/**
- * Ensures an OAuth2 client application exists in the OpenAM instance.
- * Creates it with default configuration if it doesn't exist.
- */
-
-async function ensureOAuth2ClientExists(adminToken, request, clientId = CLIENT_ID, isConsentImplied = true) {
-  const response = await request.get(
-    `${OPENAM_BASE}/json/realms/${REALM}/realm-config/agents/OAuth2Client/${clientId}`,
-    {
-      method: "GET",
-      headers: {
-        "iPlanetDirectoryPro": adminToken,
-        "Accept-API-Version": "protocol=2.0,resource=1.0",
-      },
-    }
-  );
-
-  if (response.status() === 404) {
-    // Client doesn't exist, create it
-    const createResponse = await request.put(
-      `${OPENAM_BASE}/json/realms/${REALM}/realm-config/agents/OAuth2Client/${clientId}`,
-      {
-        headers: {
-          "iPlanetDirectoryPro": adminToken,
-          "Content-Type": "application/json",
-          "Accept-API-Version": "protocol=2.0,resource=1.0",
-        },
-        data: {
-          "com.forgerock.openam.oauth2provider.clientType": "Public",
-          "com.forgerock.openam.oauth2provider.redirectionURIs": [`[0]=${REDIRECT_URI}`],
-          "com.forgerock.openam.oauth2provider.scopes": [`[0]=${SCOPE}`],
-          "com.forgerock.openam.oauth2provider.defaultScopes": [`[0]=${SCOPE}`],
-          "com.forgerock.openam.oauth2provider.grantTypes": ["[0]=authorization_code"],
-          "com.forgerock.openam.oauth2provider.responseTypes": ["[0]=code"],
-          "com.forgerock.openam.oauth2provider.tokenEndPointAuthMethod": "none",
-          "isConsentImplied": isConsentImplied,
-          "sunIdentityServerDeviceStatus": "Active"
-        },
-      }
-    );
-
-    if (!createResponse.ok()) {
-      throw new Error(
-        `Failed to create OAuth2 client: ${createResponse.statusText}`
-      );
-    }
-    console.log(`OAuth2 client "${clientId}" created successfully`);
-  } else if (!response.ok()) {
-    throw new Error(
-      `Failed to check OAuth2 client: ${response.statusText}`
-    );
-  } else {
-    console.log(`OAuth2 client "${clientId}" already exists`);
-  }
-}
 
 test.beforeAll(async ({ request }) => {
   const adminToken = await getAdminToken(request)
@@ -142,26 +45,6 @@ test.beforeAll(async ({ request }) => {
 });
 
 let accessToken;
-
-// PKCE is mandatory for these clients: they are public and authenticate with "none", so OpenAM rejects an
-// authorization request without code_challenge before it reaches consent handling.
-function generateVerifier(length = 64) {
-    const array = new Uint32Array(length);
-    crypto.getRandomValues(array);
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-    return Array.from(array, x => chars[x % chars.length]).join('');
-}
-
-async function generateChallenge(verifier) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(verifier);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-
-    return btoa(String.fromCharCode(...new Uint8Array(hash)))
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
-}
 
 test.describe("OAuth Service test", () => {
   test("Should receive an auth code and exchange it to access token", async ({ request }) => {

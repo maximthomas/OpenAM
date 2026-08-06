@@ -42,6 +42,26 @@ export const SEL = {
     messages: "#messages",
 };
 
+/**
+ * The deployed locale bundle for an entry point's i18n namespace.
+ *
+ * Fetched from the instance rather than read from the source tree, so a spec that asserts its strings
+ * against it also asserts the bundle was packaged and served — which is what makes it a guard on the
+ * migration copying `locales/` verbatim, and on the entry point still selecting its own namespace
+ * rather than falling back to the console's.
+ *
+ * `en` and not the browser's own locale: pageData.locale carries the Accept-Language Chromium sends
+ * (en-us), the tree ships only locales/en, and i18next falls back to it. That fallback is itself part
+ * of today's behaviour.
+ */
+export async function localeBundle (request, nameSpace) {
+    const url = `${XUI_BASE}/locales/en/${nameSpace}.json`;
+    const response = await request.get(url);
+
+    expect(response.ok(), `the ${nameSpace} locale bundle must be served at ${url}`).toBeTruthy();
+    return response.json();
+}
+
 /** Absolute URL for a XUI route, e.g. xuiUrl("#login/"). */
 export function xuiUrl (hash = "") {
     return `${XUI_BASE}/${hash}`;

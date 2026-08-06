@@ -18,7 +18,7 @@
 # against that job's own containers and cover the HttpOnly matrix, which this job does not.
 name: XUI end-to-end
 
-# No schedule yet, deliberately: the suite is still thin while tasks 1.4-1.12 land, so a periodic
+# No schedule yet, deliberately: the suite is still thin while tasks 1.5-1.12 land, so a periodic
 # run would prove the harness starts and little else. Revisit once it has coverage -- an AM-side
 # change that breaks the XUI does not touch the paths below, and so does not trigger this job.
 on:

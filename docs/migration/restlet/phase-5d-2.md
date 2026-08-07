@@ -38,8 +38,8 @@ it**, so a routing surprise costs one `web.xml` hunk rather than the handler.
 twelve classes 5d-2 exists to delete ([research §1](phase-5d-2-research.md#1)). Run 5d-2 before the
 port and none of the three Restlet packages can be emptied, the exit gate is unreachable, and phase 6
 makes a second pass over the same files. The port is 239 lines and it fixes a lookup that has
-**500ed on every success since before this migration started** — the error paths still work, which is
-why [D2](#d2) treats most of the endpoint as a parity target rather than a rewrite.
+**500ed on every request since before this migration started** — success and error paths alike, as the
+[pre-flip capture](artefacts/well-known-probes-pre-flip.md) measured on 2026-08-06.
 
 ---
 
@@ -124,34 +124,48 @@ default route rather than fall through to a container 404. Set `OAuth2NotFoundHa
 route, as `OAuth2HttpRouteProvider:210` does.
 
 <a id="d2"></a>
-### D2 — the `.well-known` contract is captured before the port, and most of it is a parity target
+### D2 — the `.well-known` contract is captured before the port, and it is a 500 almost everywhere
 
-⚠ **Correction to this doc's first draft, and to `webfinger-test.spec.mjs`'s header: the endpoint is
-not wholly broken. Only the success path is.** `OpenIDConnectDiscovery:98-100` overrides `doCatch` to
-`ExceptionHandler.handle(Throwable, Response)` — the **two-arg** overload (`ExceptionHandler:147-157`),
-which renders `jacksonRepresentationFactory.create(exception.asMap())` and sets the exception's own
-status. It never calls `getRootURL`, so it cannot hit the NPE. A missing `resource` returns a **live,
-working 400** today. The four-arg overload that renders `error.ftl` and *would* NPE is only reached
-from the Restlet `OAuth2Filter`, which never wrapped this application.
+✅ **Captured 2026-08-06 — [`artefacts/well-known-probes-pre-flip.md`](artefacts/well-known-probes-pre-flip.md),
+19 probes against `openam-e2e:soakfix` with the deployed jar checksummed.** Re-run it with
+`e2e/tools/well-known-probes.sh`.
 
-So the capture is the arbiter for real contracts, not a record of 500s. Against the running
-pre-change container, capture status + headers + body bytes into
-`docs/migration/restlet/artefacts/`, alongside the 5d-1 captures:
+⚠ **The measurement refuted this doc's own correction. The endpoint *is* wholly broken, and
+`webfinger-test.spec.mjs`'s header comment was right all along.** An earlier draft claimed only the
+success path 500s, reasoning from `OpenIDConnectDiscovery:98-100`'s `doCatch` override to the two-arg
+`ExceptionHandler.handle(Throwable, Response)` (`ExceptionHandler:147-157`), which renders
+`exception.asMap()` and sets the exception's own status. That mechanism is real but never fires here,
+because of one line of ordering at `OpenIDConnectDiscovery:79-83`:
 
-| Probe | Expected incumbent | After the port |
+```java
+final String deploymentUrl =
+        baseUrlProviderFactory.get(realm).getRootURL(ServletUtils.getRequest(getRequest()));   // NPEs here
+final Map<String, Object> response = providerDiscovery.discover(resource, rel, deploymentUrl, request);
+```
+
+`getRootURL(null)` throws **before** `discover(...)` is ever called, so the `BadRequestException` /
+`NotFoundException` that would have produced the 400s and the 404 are unreachable. What reaches
+`doCatch` is a `NullPointerException`, not an `OAuth2Exception`, and it renders as the generic 500.
+**That validation contract has never once executed in this deployment.** Per
+[the oracle rule](INDEX.md#the-oracle-record), the measurement replaces the prediction:
+
+| Probe | **Measured incumbent** | After the port |
 |---|---|---|
-| `?resource=acct:demo@example.com&rel=<issuer>` | **500** — `getRootURL(null)` NPEs | **200 JRD** — the fix (row 33) |
-| `?rel=<issuer>` (no `resource`) | 400, `{"error":"invalid_request",…}` | **parity target** |
-| `?resource=…` (no `rel`), and a wrong `rel` | 400 | **parity target** |
-| `?resource=acct:nobody@…&rel=<issuer>` | 404 (`NotFoundException`) | **parity target** |
-| `?resource=…&rel=…&realm=/bogus` | realm failure, shape unknown | capture decides |
-| `/.well-known/nonsense`, `/.well-known/` bare | 404 via `OAuth2StatusService` | shape moves — row 34 |
-| a realm-spelled path, `HEAD`, `POST` | — | capture decides |
+| `?resource=acct:demo@example.com&rel=<issuer>` (± `realm=/`) | **500**, `{"error":"Internal Server Error",…}`, 149 B | **200 JRD** — the fix (row 33) |
+| `?rel=<issuer>` (no `resource`); `?resource=…` (no `rel`); a wrong `rel`; no params at all | **500 — the same 149 bytes.** Not a parity target; the 400 never ran | 400 `{"error":"bad_request",…}` — row 33 |
+| `?resource=acct:nobody@…&rel=<issuer>` | **500 — the same 149 bytes** | 404 `{"error":"not_found",…}` — row 33 |
+| `?resource=…&rel=…&realm=/bogus` | **404**, `{"error":"Not Found","error_description":"Realm \"/bogus\" not found"}` | 400 via `RealmContextFilter` + `OAuth2ErrorFilter` — **row 35** |
+| `/.well-known/nonsense`, `/a/b/c`, `/webfinger/extra`, a realm-spelled path | **500 — the same 149 bytes.** Restlet's single `attach("/webfinger",…)` matches far more than its literal path | 404 `OAuth2NotFoundHandler` — row 34 |
+| `/.well-known` and `/.well-known/` bare | **404 via `OAuth2StatusService`**, 102 B — the only two paths that reach it | 404 `OAuth2NotFoundHandler` — row 34 |
+| `HEAD` on the success URL | **500 `text/html`, 717 B** — Restlet's HTML status page, a third shape | as the success row (`Endpoints:70-72` maps HEAD→GET) — row 33 |
+| `POST` on the success URL | **500 — the same 149 bytes** | 405 + `Allow` — **row 36** |
+| `/.well-known/openid-configuration` at the **context root** | **500 — the same 149 bytes.** The real document is `/oauth2/.well-known/openid-configuration` (200, CHF-served, unaffected) | 404 `OAuth2NotFoundHandler` — row 34 |
 
-`OAuth2Error.of(e)` (`OAuth2Error:189-206`) maps `statusCode`/`error`/`message` exactly as
-`OAuth2RestletException.asMap()` (`:163-176`) does, so the four parity targets should come out
-byte-identical. Any that do not are a divergence row with a written reason, not an acceptable drift —
-the same rule [the divergence table](plan.md#expected-divergences-at-the-flip) applies everywhere else.
+**There are no parity targets.** Fourteen of the nineteen probes return one byte-identical 500
+(md5 `dd82fa5d59a42118454371b094ddfa6a`). Nothing under `/.well-known/*` currently returns a value
+worth reproducing, so every post-port answer is an improvement to be justified, not a contract to
+match. The one thing the capture still arbitrates is that the **control** row — `/oauth2/.well-known/
+openid-configuration`, md5 `74c2c745fbbdc2c4bdd52cbe748d83ed` — must not move.
 
 <a id="d3"></a>
 ### D3 — three Restlet-free classes move package; they do not die
@@ -310,13 +324,18 @@ Numbered so the as-built can cite them.
 
 **5d-2a-ii (the flip):**
 
-8. Every D2 parity target reproduced byte-for-byte against the capture; each miss carries a
-   divergence row and a reason. The success row is the fix (row 33), the 404 shapes are row 34.
+8. Re-run `e2e/tools/well-known-probes.sh` and diff against
+   [the pre-flip capture](artefacts/well-known-probes-pre-flip.md). **There are no parity targets to
+   reproduce** — the capture found one byte-identical 500 on fourteen of nineteen probes ([D2](#d2)) —
+   so the bar is the inverse: **every one of the nineteen probes must land on a divergence row 33–36
+   with a written reason, and the control row (`/oauth2/.well-known/openid-configuration`,
+   md5 `74c2c745…`) must be unchanged.** An answer matching no row is a bug.
 9. `webfinger-test.spec.mjs` — the `test.fail()` annotation removed and the row genuinely passing
-   (Playwright reports "expected to fail but passed" if it is left on), the "records the current live
-   response" 500 row deleted as the spec's own header comment instructs, and the header comment's
-   claim that the endpoint is wholly broken corrected ([D2](#d2)). New rows for the parity targets the
-   capture confirmed.
+   (Playwright reports "expected to fail but passed" if it is left on), and the "records the current
+   live response" 500 row deleted as the spec's own header comment instructs. ⚠ **Its header comment's
+   claim that the endpoint is wholly broken is correct and must be kept** — an earlier draft of
+   [D2](#d2) called for "correcting" it, and the capture showed the header right and the draft wrong.
+   New rows for the 400/404 paths, which the port makes reachable for the first time.
 10. No Restlet servlet mapping remains in `web.xml` — `grep -c "org.restlet" web.xml` → 0. This is the
     WAR's last one; after it, `ForgeRockRest` is a declaration with no mappings.
 
@@ -385,10 +404,11 @@ unexpected on `/access_token`, re-run `e2e/tools/oauth2-load.mjs` before continu
 - **R-5d2.3 — the frozen oracle is frozen wrong.** A mistyped literal in D4 turns five regression
   guards into five rubber stamps, permanently and undetectably. **Guard:** D4's capture-by-running,
   and criterion 12's mutation check.
-- **R-5d2.4 — `/.well-known` serves more than webfinger somewhere.** The WAR maps the whole segment
-  to one Restlet servlet; a deployment or a plugin could rely on a path we do not route.
-  **Guard:** D1's `OAuth2NotFoundHandler` default route makes the failure a clean 404 rather than a
-  container error, and D2's capture records what the incumbent answered for unrouted children.
+- ✅ **R-5d2.4 — `/.well-known` serves more than webfinger somewhere. Discharged by measurement,
+  2026-08-06.** The capture drove every unrouted-child spelling plus the context-root
+  `/openid-configuration`, and **all of them answer the same 149-byte 500**
+  ([D2](#d2)). Nothing real is served from the segment, so there is nothing to lose. D1's
+  `OAuth2NotFoundHandler` default route still stands, and now turns those 500s into clean 404s (row 34).
 - **R-5d2.5 — D5 widens an error into a redirect.** The browser base's error path can *redirect* when
   a `redirect_uri` is in play. An `OAuthProblemException` from deep inside the token store must not
   become a redirect carrying an unvalidated URI. **Guard:** the bridge builds through
@@ -412,13 +432,17 @@ still Restlet-served until 5d-2a-ii, so their incumbent is Restlet.
 |---|---|---|---|---|
 | 31 | Errors raised as `OAuthProblemException` — token-store failures, client-registration attribute reads, id_token signing | framework CREST 500 `{code,reason,message}` | OAuth2 `{error,error_description}` with the exception's own status | [D5](#d5). Same unifying argument as [row 8](plan.md#expected-divergences-at-the-flip): one error shape across `/oauth2` is the whole point of `OAuth2ErrorFilter` |
 | 32 | Password-grant internal failures (`ResourceOwnerAuthenticator`) | framework CREST 500 | OAuth2 `{"error":"server_error"}` | [D6](#d6). Restlet's own answer here was never a CREST body either; the raw `ResourceException` was an artefact of the transport, not a contract |
-| 33 | `/.well-known/webfinger`, **success path only** | **500**, `{"error":"Internal Server Error"}` — `ServletUtils` returns null under the upstream `ServerServlet` and `getRootURL(null)` NPEs | 200 JRD naming the issuer | [D1](#d1)/[D2](#d2). A pre-existing defect fixed by construction; `webfinger-test.spec.mjs` already asserts the target |
-| 34 | `/.well-known` **no-match** — unrouted children, bare `/.well-known/`, an unresolvable realm segment | `OAuth2StatusService` (`:17-23`): `{"error":"<reason phrase>","error_description":"<description>"}`, e.g. `{"error":"Not Found",…}` | `OAuth2NotFoundHandler`: `{"error":"not_found","error_description":"Not Found"}` | [D1](#d1). The status service is one of the twelve classes 5d-2b deletes, so this shape cannot survive. `not_found` is the RFC-6749-style code the rest of the migrated surface already emits |
+| 33 | `/.well-known/webfinger`, **every routed request** — the success JRD *and* the missing-`resource`, missing/wrong-`rel` and unknown-user paths | **500**, `{"error":"Internal Server Error"}`, 149 B — `ServletUtils` returns null under the upstream `ServerServlet` and `getRootURL(null)` NPEs *before* `discover(...)` runs | 200 JRD naming the issuer; 400 `bad_request`; 404 `not_found` | [D1](#d1)/[D2](#d2). A pre-existing defect fixed by construction. ⚠ **Widened 2026-08-06 by the capture**: the draft scoped this to the success path, believing the 400s/404 were live contracts. They are not — the NPE precedes them, so all four answers are the same 500 today and all four move |
+| 34 | `/.well-known` **no-match** — unrouted children (`/nonsense`, `/a/b/c`, `/webfinger/extra`), a realm-spelled path, context-root `/openid-configuration`, and bare `/.well-known`(`/`) | **500** (149 B) for everything with a path element — Restlet's single `attach("/webfinger",…)` matches far more than its literal path; **404 `OAuth2StatusService`** (`:17-23`, 102 B) for the two bare spellings only | `OAuth2NotFoundHandler`: `{"error":"not_found","error_description":"Not Found"}` | [D1](#d1). `EQUALS "webfinger"` is strict where Restlet's attach was loose, so this is a **narrowing** as well as a reshape. The status service is one of the twelve classes 5d-2b deletes, so its shape cannot survive either way |
+| 35 | `/.well-known/webfinger?realm=<unresolvable>` | **404**, `{"error":"Not Found","error_description":"Realm \"/bogus\" not found"}` — `RestletRealmRouter` rejects before dispatch | 400, OAuth2-shaped, via `RealmContextFilter` + `OAuth2ErrorFilter` | [D1](#d1). `RealmContextFilter` never 404s a bad realm — it is a `BadRequestException` ([chf-patterns §23](chf-patterns.md#23-route-provider-mechanics--when-handlers-are-built-and-what-a-no-match-answers-phase-5d-1)). Accepting the status move buys one realm-error shape across the whole migrated surface; preserving the 404 would make `/.well-known` the only route that disagrees |
+| 36 | `POST /.well-known/webfinger` | **500** (149 B) — the NPE again; Restlet dispatched `POST` into the `@Get` resource | 405 with an `Allow` header | [D1](#d1). `Endpoints` refuses an unmapped method; WebFinger is a read endpoint and RFC 7033 defines `GET` only |
 
-Row 33 is the phase's one intentional user-visible fix. Row 34 is a no-match shape; 31 and 32 are
-shape changes on paths that only ever produced 5xx. ⚠ **The webfinger 400s and 404s are deliberately
-not on this list** — they work today ([D2](#d2)) and criterion 8 requires them byte-identical. If the
-capture shows one moving, it becomes row 35 with a written reason, not a shrug.
+Row 33 is the phase's one intentional user-visible fix. Rows 34–36 are shapes on paths that only ever
+produced a 500 or a framework 404; 31 and 32 are shape changes on paths that only ever produced 5xx.
+⚠ **Rows 33–36 were rewritten on 2026-08-06** from the
+[pre-flip capture](artefacts/well-known-probes-pre-flip.md), which refuted the draft's claim that the
+webfinger 400s and 404s were live contracts held out of this table as parity targets. They were never
+reachable. Criterion 8 is now the inverse test: every probe must land on a row here.
 
 ---
 
@@ -427,11 +451,13 @@ capture shows one moving, it becomes row 35 with a written reason, not a shrug.
 **5d-2a-i — build the route, leave it dormant.** Each step ends where the next can start from a green
 tree; steps 3–5 are the only ones that write main source.
 
-1. Read CI `31105613611`. Not green ⇒ stop and fix before anything else.
-2. **Capture the oracle** ([D2](#d2)) — build a container from `HEAD`, drive the ten probes in D2's
-   table, write status + headers + raw bytes to `artefacts/`. This is the one step that cannot be
-   redone later: 5d-2a-ii destroys the endpoint it measures. Record what the four parity targets
-   actually answer, and note anything the table guessed wrong.
+1. ✅ Read CI `31105613611`. Not green ⇒ stop and fix before anything else. *(Green, all 10 jobs,
+   2026-08-06.)*
+2. ✅ **Capture the oracle** ([D2](#d2)) — 19 probes via `e2e/tools/well-known-probes.sh` into
+   [`artefacts/well-known-probes-pre-flip.md`](artefacts/well-known-probes-pre-flip.md), 2026-08-06.
+   This is the one step that cannot be redone later: 5d-2a-ii destroys the endpoint it measures.
+   It refuted D2's parity-target premise; [D2](#d2), criteria 8–9, R-5d2.4 and rows 33–36 were
+   rewritten from it.
 3. `WebFingerHandler` — the `@Get` of [D1](#d1), plus `WebFingerHandlerTest` covering the success
    JRD, the null-servlet-request guard, and one row per exception `discover(...)` throws (proving the
    polymorphic `@ExceptionHandler` reaches them). Unit-test-only; no wiring yet.
@@ -450,10 +476,11 @@ tree; steps 3–5 are the only ones that write main source.
 
 7. `web.xml`: delete the `WebFinger` servlet block, move the `/.well-known/*` mapping to `OpenAM`.
 8. Delete `WebFinger` and `OpenIDConnectDiscovery`.
-9. Rewrite `webfinger-test.spec.mjs`: drop `test.fail()`, delete the 500-pinning row, correct the
-   header comment ([D2](#d2)), add rows for the parity targets step 2 confirmed.
-10. Re-run the D2 probes against the new container and **diff against the capture**. Every difference
-    is row 33, row 34, or a bug.
+9. Rewrite `webfinger-test.spec.mjs`: drop `test.fail()`, delete the 500-pinning row, **keep the
+   header comment's "broken today" claim — the capture proved it right** ([D2](#d2)) — and add rows
+   for the 400/404 paths the port makes reachable for the first time.
+10. Re-run `e2e/tools/well-known-probes.sh` against the new container and **diff against the capture**.
+    Every difference is row 33, 34, 35, 36, or a bug.
 11. Criteria 1–4, 8–10.
 
 **5d-2b**
@@ -479,4 +506,4 @@ tree; steps 3–5 are the only ones that write main source.
     Restlet branch.
 24. Relocate `RestRealmValidator` ([D8](#d8)); pom sweep.
 25. Criteria 1–4, 15–17; capture the "after"; write the as-built.
-26. Update [plan.md](plan.md) — phase status, rows 31–34, and phase 6/8's now-reduced scope.
+26. Update [plan.md](plan.md) — phase status, rows 31–36, and phase 6/8's now-reduced scope.

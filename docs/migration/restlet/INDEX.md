@@ -151,7 +151,8 @@ stragglers were absorbed into 5d-2 on 2026-08-06, because WebFinger's imports bl
 |---|---|
 | **What 5d-2 deletes, file by file** | [phase-5d-2-research.md §2](phase-5d-2-research.md#2) — supersedes the two lists below wherever they differ |
 | Why WebFinger had to be ported first | [phase-5d-2-research.md §1](phase-5d-2-research.md#1) |
-| What the 5d-2a review corrected (the endpoint is only half-broken; dispatch is polymorphic; HEAD is handled; audit goes inside the realm layer) | [phase-5d-2-research.md §1 review](phase-5d-2-research.md#1-review) + [5d-2 D1](phase-5d-2.md#d1)/[D2](phase-5d-2.md#d2) |
+| What the 5d-2a review corrected (dispatch is polymorphic; HEAD is handled; audit goes inside the realm layer) | [phase-5d-2-research.md §1 review](phase-5d-2-research.md#1-review) + [5d-2 D1](phase-5d-2.md#d1)/[D2](phase-5d-2.md#d2) |
+| **What `/.well-known` actually answered before the port** (19 probes; 14 of them one byte-identical 500) | [artefacts/well-known-probes-pre-flip.md](artefacts/well-known-probes-pre-flip.md). ⚠ It refuted the review's "only half-broken" claim — [5d-2 D2](phase-5d-2.md#d2) carries the correction |
 | Why `OAuthProblemException` gets a bridge, not a supertype | [phase-5d-2-research.md §3](phase-5d-2-research.md#3) + [5d-2 D5](phase-5d-2.md#d5) |
 | The realm constants, and both `RestletRealmRouter`s | [phase-5d-2-research.md §5](phase-5d-2-research.md#5) |
 | What 5d-2 must delete, and the two same-named classes | [phase-5d-1-asbuilt.md#handed-to-5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2) — ⚠ two of its five traps are stale; see the rows above |

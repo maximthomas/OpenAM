@@ -63,22 +63,27 @@
  *     back to the list and posts "Changes saved". The two list routes use
  *     console.services.list.confirmDeleteSelected and the edit form uses
  *     console.common.confirmDeleteSelected — different keys, and only one of them mentions services;
- *   - success is silent on four of the five write paths. Only save and delete-from-the-edit-form
+ *   - success is silent on three of the five write paths. Only save and delete-from-the-edit-form
  *     say anything. A created service is confirmed by the console routing to its edit form, and a
  *     deleted one by its row leaving the list — which is why those are asserted as the outcome
  *     rather than as scenery.
  *
- * Sub-schemas (secondary configurations) are deliberately NOT covered here — they belong to a
- * separate task. A service type with sub-schema types grows a tab bar over the edit form
- * (EditSchemaComponent.createTabs adds one only when getSubSchemaTypes() is non-empty) and two
- * further routes served by two further view modules, NewServiceSubSchemaView and
- * EditServiceSubSchemaView. None of that is reachable from `baseurl`, which has none: of the 19
- * types a realm can be given, `audit` is the only one with any, so covering sub-schemas means
- * introducing a second service type purely as a vehicle — and `audit`'s sub-schemas are log handlers
- * that start writing files or opening connections when created, which is a different risk profile
- * from anything here. The edit test below asserts the tab bar is absent, so this scope boundary is
- * pinned rather than merely assumed: the day `baseurl` grows a sub-schema, that assertion fails and
- * says so.
+ * Sub-schemas (secondary configurations) are deliberately NOT covered, here or anywhere else in
+ * phase 0a — there is no later task holding them, so this is a scope decision rather than a
+ * deferral, and the reasoning belongs here where the next reader will look for it. A service type
+ * with sub-schema types grows two further routes served by two further view modules,
+ * NewServiceSubSchemaView and EditServiceSubSchemaView. None of that is reachable from `baseurl`,
+ * which has none: of the 19 types a realm can be given, `audit` is the only one with any, so
+ * covering sub-schemas means introducing a second service type purely as a vehicle — and `audit`'s
+ * sub-schemas are log handlers that start writing files or opening connections when created, which
+ * is a different risk profile from anything here. If the migration is to be tested against them,
+ * that wants its own task and its own instance to break.
+ *
+ * The edit test below asserts the tab bar is absent, so the boundary is pinned rather than merely
+ * assumed. Note that the tab bar is not a sub-schema tell on its own: EditSchemaComponent.createTabs
+ * builds tabs either from a non-empty getSubSchemaTypes() or from schema.isCollection(), and only
+ * the flat case renders the .panel-footer that SEL.save lives in. So `baseurl` staying flat is
+ * doubly pinned, and the day it stops being either flat or sub-schema-free, both fail and say so.
  *
  * Idempotency, which matters more here than in the realm spec: getCreatableTypes only offers types
  * the realm does not already have, so a service left behind by a failed run does not just pollute a
@@ -123,14 +128,22 @@ const SEL = {
     // The create form's type selector. The native <select> is hidden and selectize's control stands
     // in for it, so the click target and the value live on different elements — the assertions read
     // the select, because that is what NewServiceView's change handler reads.
+    //
+    // All four are scoped to the selector's own form group, because the schema's `source` property
+    // is a second selectize on this page once a type has been chosen. Unscoped they are unambiguous
+    // only before that, which was true while nothing re-opened the selector after choosing — the
+    // rebuild test below does exactly that.
     typeSelect: "select[data-service-selection]",
-    typeControl: ".selectize-input",
-    typeOption: (type) => `.selectize-dropdown-content .option[data-value="${type}"]`,
-    // Scoped, because the schema's own `source` property is a second selectize on this page once a
-    // type has been chosen. Unscoped .selectize-input is unambiguous only before that.
+    typeControl: ".form-group:has(select[data-service-selection]) .selectize-input",
+    typeOption: (type) =>
+        `.form-group:has(select[data-service-selection]) .selectize-dropdown-content .option[data-value="${type}"]`,
+    typeOptions: ".form-group:has(select[data-service-selection]) .selectize-dropdown-content .option",
     typeItem: ".form-group:has(select[data-service-selection]) .selectize-input .item",
     typeLabel: "label[for=\"serviceSelection\"]",
     create: "[data-create]",
+    // Where NewServiceView appends the generated form, and so the only part of the create screen
+    // that changes when the chosen type does.
+    jsonForm: "[data-json-form]",
 
     // The generated fields, by the names json-editor derives from the schema. Not by
     // [data-schemapath]: the edit form's payload carries _id and _type, so [data-schemapath="root._id"]
@@ -304,10 +317,13 @@ test.describe("XUI service administration (create, edit, delete)", {
      * generated inputs have the same names on both forms, so waiting for one of those after leaving
      * the create form is satisfied by the create form still on screen, and the assertions that
      * follow run against the wrong view. [data-delete] exists only here.
+     *
+     * `timeout` is for the callers that wait through a cold start rather than a route change; left
+     * undefined it takes the config's default, which is what an in-console navigation needs.
      */
-    async function awaitEditForm (page) {
-        await expect(page.locator(SEL.delete)).toBeVisible();
-        await expect(page.locator(SEL.fixedValue)).toBeVisible();
+    async function awaitEditForm (page, timeout) {
+        await expect(page.locator(SEL.delete)).toBeVisible({ timeout });
+        await expect(page.locator(SEL.fixedValue)).toBeVisible({ timeout });
     }
 
     async function openServiceEditForm (page, realmPath, type) {
@@ -347,6 +363,14 @@ test.describe("XUI service administration (create, edit, delete)", {
         // Released only once json-editor has finished building the form it will read.
         await expect(page.locator(SEL.create)).toBeEnabled();
 
+        // The other half of showOnlyRequiredAndEmpty, and the half the request body cannot show:
+        // the withheld properties are *built and hidden*, not skipped. A migration in which
+        // json-editor stopped building the non-default editors at all would send the same two keys
+        // and leave every other assertion in this file green.
+        await expect(page.locator(SEL.contextPath),
+            "the withheld properties must be built, not skipped").toHaveCount(1);
+        await expect(page.locator(SEL.contextPath)).toBeHidden();
+
         await page.fill(SEL.fixedValue, CREATED_VALUE);
         await page.locator(SEL.create).click();
 
@@ -375,6 +399,52 @@ test.describe("XUI service administration (create, edit, delete)", {
             .toHaveAttribute("href", `${realmHash(path, "services")}/edit/${SERVICE_TYPE}`);
     });
 
+    test("changing the chosen type rebuilds the create form", async ({ page, request }) => {
+        const { path } = await givenRealm(request);
+
+        // Any second type will do — what is under test is the swap, not the schema — so it comes
+        // from AM's own answer rather than being named here, and nothing below mentions its fields.
+        const offered = await creatableServiceTypes(adminToken, request, path);
+        const otherType = offered.find((candidate) => candidate._id !== SERVICE_TYPE);
+        expect(otherType, "changing our mind needs a second type on offer").toBeTruthy();
+
+        await openAdminConsole(page);
+        await openServiceList(page, path);
+        await openCreateForm(page, path);
+        await chooseServiceType(page, SERVICE_TYPE);
+
+        // NewServiceView.selectService disables create, tears the old form down, and builds the new
+        // one in its place. Only the end state is asserted: the disabled moment lasts exactly as
+        // long as the schema and template requests, so whether it can be observed at all depends on
+        // how warm AM's caches are — it is real behaviour, but it is not a fact a test can hold.
+        await page.locator(SEL.typeControl).click();
+        await page.locator(SEL.typeOption(otherType._id)).click();
+        await expect(page.locator(SEL.typeSelect)).toHaveValue(otherType._id);
+
+        // The old schema's inputs are gone rather than covered up. This is the jsonSchemaView.remove()
+        // that a migration touching view teardown would break, and the shape of that break is two
+        // forms stacked on one page — which would leave every other test in this file green, since
+        // they only ever assert about the form they asked for.
+        await expect(page.locator(SEL.fixedValue),
+            "the abandoned type's form must have been torn down").toHaveCount(0);
+
+        // ... and something was built in its place. Attached rather than visible, and that is not a
+        // weakened assertion but the same showOnlyRequiredAndEmpty rule seen from the other side: a
+        // type with no required-and-empty properties renders a form that is entirely hidden. Which
+        // is why what follows is asserted generically — the point is that the swap happened, not
+        // what the second schema contains.
+        await expect(page.locator(SEL.jsonForm).locator(".form-group").first(),
+            "the newly chosen type must have produced a form").toBeAttached();
+        // Create being enabled is the app's own account of the rebuild having finished:
+        // selectService re-enables only from the new form's onRendered callback, and leaves it
+        // disabled if fetching the schema failed.
+        await expect(page.locator(SEL.create)).toBeEnabled();
+
+        // And changing our mind back rebuilds the original — once, not beside what it replaced.
+        await chooseServiceType(page, SERVICE_TYPE);
+        await expect(page.locator(SEL.fixedValue)).toHaveCount(1);
+    });
+
     test("the create form stops offering a type the realm already has", async ({ page, request }) => {
         // The console's rule, and the one this spec's own structure depends on: a realm may have at
         // most one service of a type, and the create form is built from what the realm does not yet
@@ -392,8 +462,12 @@ test.describe("XUI service administration (create, edit, delete)", {
         await openCreateForm(page, path);
 
         await page.locator(SEL.typeControl).click();
-        // The dropdown is populated, and this type is the one thing missing from it.
-        await expect(page.locator(".selectize-dropdown-content .option")).toHaveCount(offered.length);
+        // The dropdown is populated, and this type is the one thing missing from it. The count is
+        // AM's list exactly: the template also renders a disabled empty-value placeholder option,
+        // which selectize drops rather than offering.
+        await expect(page.locator(SEL.typeOptions),
+            "the dropdown must offer every type AM still allows, and no others")
+            .toHaveCount(offered.length);
         await expect(page.locator(SEL.typeOption(SERVICE_TYPE))).toHaveCount(0);
     });
 
@@ -415,7 +489,8 @@ test.describe("XUI service administration (create, edit, delete)", {
         // The scope boundary described in the file header, pinned: no sub-schema types means no tab
         // bar, and this whole spec is written for the flat form.
         await expect(page.locator(SEL.tabs),
-            "baseurl has no sub-schemas, so the edit form must be a single panel").toHaveCount(0);
+            "baseurl is flat and sub-schema-free, so the edit form must be a single panel")
+            .toHaveCount(0);
 
         const messages = await captureMessages(page);
         await page.fill(SEL.fixedValue, EDITED_VALUE);
@@ -441,8 +516,11 @@ test.describe("XUI service administration (create, edit, delete)", {
         // ... and it survives the console being rebuilt around it. A reload rather than a second
         // goto: Backbone does not re-fire a route for the hash it is already on, so navigating to
         // this one would be a no-op and would assert against the form still on screen.
+        // A cold start, not a route change: this re-fetches the whole unbundled dependency closure,
+        // so it gets the budget xui-commons gives its own boot waits rather than the assertion
+        // default. With retries at 0 this is the difference between a slow run and a red one.
         await page.reload();
-        await awaitEditForm(page);
+        await awaitEditForm(page, 30_000);
         await expect(page.locator(SEL.fixedValue)).toHaveValue(EDITED_VALUE);
     });
 

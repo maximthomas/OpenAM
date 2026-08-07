@@ -25,7 +25,7 @@
  */
 
 import { expect } from "@playwright/test";
-import { OPENAM_BASE } from "./openam-commons.mjs";
+import { ADMIN_PASS, ADMIN_USER, OPENAM_BASE } from "./openam-commons.mjs";
 
 export const XUI_BASE = `${OPENAM_BASE}/XUI`;
 
@@ -40,6 +40,9 @@ export const SEL = {
     loginButton: "#loginButton, input[type=\"submit\"], button[type=\"submit\"]",
     // Where commons' Messages component renders notifications.
     messages: "#messages",
+    // The realm list's own toolbar — the last thing the admin landing route renders, and so the
+    // signal that the console has arrived. See openAdminConsole.
+    realmListToolbar: "#toggleCardList .page-toolbar",
 };
 
 /**
@@ -85,6 +88,24 @@ export async function loginViaXui (page, user, pass) {
     await openLoginForm(page);
     await submitCredentials(page, user, pass);
     await page.waitForURL((url) => !url.hash.startsWith("#login"), { timeout: 30_000 });
+}
+
+/**
+ * Log in as the administrator and wait until the admin console has finished arriving.
+ *
+ * The wait is not decoration. loginViaXui returns as soon as the router leaves #login, and where an
+ * administrator lands is decided after that — EVENT_HANDLE_DEFAULT_ROUTE routes them to the realms
+ * console, which then resolves its view module and fetches its template. A spec that navigates to an
+ * admin route in that window has its navigation overwritten by the landing one still in flight, and
+ * fails looking for a form on a page that is now the realm list.
+ *
+ * Every admin spec starts here, so this waits on the realm list specifically rather than on "some
+ * view rendered": it is the console's landing page and the entry point to everything else.
+ */
+export async function openAdminConsole (page) {
+    await loginViaXui(page, ADMIN_USER, ADMIN_PASS);
+    await page.waitForURL((url) => url.hash.startsWith("#realms"), { timeout: 30_000 });
+    await expect(page.locator(SEL.realmListToolbar)).toBeVisible();
 }
 
 /** Log out through the XUI and wait until it settles on the logged-out or login route. */

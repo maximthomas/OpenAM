@@ -29,7 +29,7 @@
  * instance's baseline.
  */
 
-import { OPENAM_BASE } from "./openam-commons.mjs";
+import { OPENAM_BASE, describeFailure } from "./openam-commons.mjs";
 
 /** The realm as the OAuth2 endpoints name it. The REST API calls the same realm "/". */
 export const OAUTH2_REALM = "root";
@@ -69,23 +69,6 @@ export async function generateChallenge (verifier) {
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
         .replace(/=+$/, "");
-}
-
-/**
- * A failure message worth reading. The status alone is not enough here: AM answers a rejected SMS
- * write with an empty 500 body, and the cause is usually the instance rather than the request.
- */
-async function describeFailure (what, response) {
-    const body = (await response.text()).trim();
-    let message = `${what}: HTTP ${response.status()}${body ? ` — ${body}` : ""}`;
-
-    if (response.status() === 500) {
-        message += "\nA 500 with no body from an SMS endpoint is usually the instance, not the request: "
-            + "AM caches a ServiceSchemaManager per service holding the SSO token it was built with, and "
-            + "once that token expires every create against that service fails schema validation. Run "
-            + "e2e/local/openam-reset.sh.";
-    }
-    return new Error(message);
 }
 
 /**

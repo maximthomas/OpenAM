@@ -25,6 +25,27 @@ export async function getAdminToken(request) {
     return getAuthToken(request, ADMIN_USER, ADMIN_PASS)
 }
 
+/**
+ * A failure message worth reading, for a REST call that was expected to succeed.
+ *
+ * The status alone is not enough against AM's SMS endpoints: they answer a rejected write with an
+ * empty 500 body, and the cause is usually the instance rather than the request. Shared because both
+ * fixture modules provision through those endpoints and would otherwise each carry their own copy of
+ * the same explanation.
+ */
+export async function describeFailure(what, response) {
+  const body = (await response.text()).trim();
+  let message = `${what}: HTTP ${response.status()}${body ? ` — ${body}` : ""}`;
+
+  if (response.status() === 500) {
+    message += "\nA 500 with no body from an SMS endpoint is usually the instance, not the request: "
+      + "AM caches a ServiceSchemaManager per service holding the SSO token it was built with, and "
+      + "once that token expires every write against that service fails schema validation. Run "
+      + "e2e/local/openam-reset.sh.";
+  }
+  return new Error(message);
+}
+
 export async function getAuthToken(request, username, password) {
   const resp = await request.post(`${OPENAM_BASE}/json/authenticate`, {
     headers: { 

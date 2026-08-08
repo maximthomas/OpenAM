@@ -29,6 +29,33 @@ poms declare artifacts without versions.
 Root pom pins surefire at `pom.xml:1830-1842` with `<argLine>${java.surefire.options}</argLine>` and no
 `<includes>`.
 
+### `-Dtest=` runs one class fast — and writes its result to a different file (2026-08-07)
+
+`mvn -q -pl <module> test -Dtest=SomeTest -DfailIfNoSpecifiedTests=false` turns a ~20 s module run into a
+~7 s one, which makes red/green and mutation checks affordable. But the two modes report to **different
+files**, and confusing them will have you reading a stale number:
+
+| run | report file | contents |
+|---|---|---|
+| whole module | `target/surefire-reports/TestSuite.txt` | the TestNG suite total, e.g. `Tests run: 1309` |
+| `-Dtest=SomeTest` | `target/surefire-reports/<fqcn>.txt` | just that class, e.g. `Tests run: 4` |
+
+A `-Dtest=` run **does not touch `TestSuite.txt`**. It keeps whatever total the last full run left there, so
+`cat TestSuite.txt` after a single-class run reports a number that has nothing to do with what just ran —
+a fresh instance of [the stale-`target/` trap](#gotchas-that-have-actually-bitten). Check the mtime, or read
+the `<fqcn>.txt`. `-q` also suppresses surefire's `Tests run:` line on success (it survives on failure, via
+the `[ERROR]` stream), so on a green `-q` run the report file is the only place the count exists.
+
+⚠ **`-Dtest=<SomethingIT>` makes *surefire* run your IT** (measured 2026-08-07, step 5d-2a-i-5). The `test`
+parameter replaces surefire's default includes rather than filtering them, so a class surefire would
+normally never see is run — and then run **again** by failsafe in the same `verify`. Two consequences:
+the class appears in **both** `surefire-reports/<fqcn>.txt` and `failsafe-reports/<fqcn>.txt` with the same
+counts, and a failure aborts at `maven-surefire-plugin:3.1.2:test` **before failsafe's
+`integration-test` ever runs**, so `failsafe-reports/` still holds the *previous* run's result at its
+previous mtime. Reading it then reports the last green as if it were the failure you were looking for.
+Use the incantation in [the gotchas](#gotchas-that-have-actually-bitten) — `-Dtest=NoSuchUnitTest
+-Dit.test=<TheIT>` — which keeps the two plugins on their own classes.
+
 ## Layer 2 — in-process ITs (failsafe)
 
 **The root pom binds `maven-failsafe-plugin` unconditionally** in `<build><plugins>` (`pom.xml:1843-1856`;

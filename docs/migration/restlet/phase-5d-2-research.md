@@ -374,3 +374,131 @@ and leaves phase 8 as a mechanical module + pom deletion once phase 7 lands.
   `d52496710e`. [plan.md's 5d-2 row](plan.md#phase-status) makes this run the precondition for
   starting the deletion; it is not a task, only a gate to read before 5d-2b's first `git rm`.
 - The previous green run, `31031060622`, is on `bccbc9c4d9` — the flip, without the fix.
+
+---
+
+<a id="9"></a>
+## 9 — What `WebFingerHandler` actually returns, measured (2026-08-07, step 3)
+
+D1 predicted the error shapes from reading the exception classes. The unit suite
+(`WebFingerHandlerTest`, four rows, driven through the real `Endpoints.from(handler)` so the base
+`@ExceptionHandler` genuinely runs) now **measures** them. These are the numbers 5d-2a-ii's divergence
+rows and the container probes must be compared against — they are not predictions:
+
+| row | thrown by | status | `error` | note |
+|---|---|---|---|---|
+| success | — | **200** | — | `Content-Type: application/json; charset=UTF-8` |
+| no servlet request | `ServerException` | **400** | `server_error` | **not 500** — `ServerException` hardcodes 400 |
+| bad resource / rel | `BadRequestException` | **400** | `bad_request` | no handler of its own |
+| unknown account | `NotFoundException` | **404** | `not_found` | no handler of its own |
+
+The last two rows are the ones that prove **polymorphic `@ExceptionHandler` dispatch** empirically. Neither
+exception has a registered handler; both are caught by the base class's `OAuth2Exception` mapper. This
+retires the last doubt from [§1's correction](#1) — it is no longer an argument from `AnnotatedMethod:195-202`,
+it is a passing test.
+
+`server_error` at **400** is worth pausing on. It reads like a 500 and it is not one; anything that asserts
+"the guard gives a 500" is wrong. `ServerException` sets 400 in its constructor.
+
+### The two collaborators, and who has to bind them
+
+`WebFingerHandler` injects two things the base class does not supply. Both are **concrete classes with
+`@Inject` constructors**, so Guice just-in-time binds them and **no production module needs a new binding**:
+
+- `org.forgerock.openidconnect.OpenIDConnectProviderDiscovery` — ctor takes `OpenIDConnectProvider`.
+- `org.forgerock.openam.services.baseurl.BaseURLProviderFactory` — `@Singleton`, ctor takes
+  `@Named(ServletContextCache.CONTEXT_REFERENCE) ServletContext`.
+
+**Tests are the exception, and this is load-bearing for the IT.** `Endpoints.from(Class)` resolves the
+instance through `InjectorHolder.getInstance(key)` (`Endpoints.java:113-124`) at **route-build time**, not
+per-request. So an IT that builds the route must bind both in its test module or the router build itself
+throws — `BaseURLProviderFactory` in particular cannot JIT-construct without a `ServletContext`.
+`OAuth2RouterIT:248` already binds it to a mock; that is the seam to copy.
+
+This is also why the `META-INF/services` line in step 4 is a genuine production change even with the
+servlet mapping unmoved: it makes this injection graph load-bearing for the single router that serves
+`/json`, `/xui`, `/xacml` and `/uma`. Both types are proven creatable in the running server — the OAuth2
+route provider chain already builds `BaseURLProviderFactory`, and the outgoing Restlet route already built
+`OpenIDConnectProviderDiscovery` — so the graph is not new risk, only newly load-bearing.
+
+### The guard is mutation-checked
+
+Disabling the null-guard branch (leaving the rest of the method intact) turns row 2 red with
+`expected: 400 but was: 200` and leaves the other three green. The test has teeth on the one line that is
+the entire point of the port; it is not asserting a tautology.
+
+---
+
+<a id="10"></a>
+## 10 — Driving `/.well-known` through the live router in a test (2026-08-07, step 5)
+
+`WellKnownRouterIT` (7 rows) dispatches real requests through the router built from the live
+`WellKnownHttpRouteProvider.get()`, the way `OAuth2RouterIT` does for `/oauth2`. Three things it cost time
+to discover; none of them should have to be discovered again.
+
+### The servlet request must be planted on the context by hand
+
+`WebFingerHandler` guards on `OAuth2Request.getHttpServletRequest()` ([§9](#9), row 2). On the CHF
+transport that resolves to `ChfContexts.servletRequest(context)` (`ChfOAuth2Request.java:266-268`), which
+reads the `AttributesContext` attribute map under the **class name string** — commons publishes no constant
+for it, and `openam-http/.../ChfContexts.java` exists precisely to keep that undocumented key in one place.
+A test that copies `OAuth2RouterIT.handle(...)` verbatim builds
+`new AttributesContext(new RequestAuditContext(ClientContext…))`, gets `null` back, and sees **400
+`server_error` on every row that should be 200**. One line fixes it:
+
+```java
+context.getAttributes().put(HttpServletRequest.class.getName(), servletRequest);
+```
+
+`OAuth2RouterIT` never needed it because no `/oauth2` endpoint it exercises reads the servlet request.
+
+### The audit event's realm field is `realm`, and a missing realm is *absent*, not empty
+
+`OAuth2HttpAccessAuditFilter.getRealm(Context)` (`:113-119`) reads `RealmContext` and returns `null` when
+there is none. `AuditEventFactory.accessEvent(String)` (`:43-49`) calls `builder.realm(...)` **only** when
+the string is non-blank, and `AMAuditEventBuilderUtils:65` writes it under `AuditConstants.EVENT_REALM`,
+which is the literal `"realm"` (`AuditConstants.java:292`).
+
+So an audit filter hoisted **out** of the realm layer does not publish `realm: ""` that a reader would
+notice — it publishes an event with **no `realm` key at all**, and nothing fails. The assertion that
+catches it is on the value:
+
+```java
+assertThat(event.getValue().get(AuditConstants.EVENT_REALM).asString()).isEqualTo("/subrealm");
+```
+
+An `isNotNull()` on the event, or a `times(2)` on `tryPublish`, both pass with the filter hoisted.
+
+### The four realm spellings, measured on this surface
+
+Each row below is a real dispatch through the provider's own chain; the resolved realm is what
+`WebFingerHandler` hands to `BaseURLProviderFactory.get(...)`, hence what picks the issuer in the JRD.
+
+| request | resolved realm | resolved by |
+|---|---|---|
+| `/.well-known/webfinger` | `/` | `RealmContextFilter`, DNS alias of the request host |
+| `/.well-known/realms/root/webfinger` | `/` | `RealmRoutingFactory`'s recursive router (`root` is special-cased) |
+| `/.well-known/subrealm/webfinger` | `/subrealm` | `RealmContextFilter`'s greedy path walk |
+| `/.well-known/webfinger?realm=/subrealm` | `/subrealm` | `RealmContextFilter`'s override branch (`:250-257`) |
+| `/.well-known/webfinger?realm=bogus` | — | **400** `{"error":"invalid_request","error_description":"Invalid realm, bogus"}` |
+
+The last row is the repo's **first test of the CREST→OAuth2 error conversion on a realm failure**.
+`RealmContextFilter:88-89` returns a CREST `{code,reason,message}` 400 — it is a `Filter`, so it never
+reaches an endpoint's `@ExceptionHandler` — and only the root `OAuth2ErrorFilter`, mounted **outside**
+`root` at `WellKnownHttpRouteProvider:135-136`, rewrites it. Mount it inside `root` and that body reaches
+the wire unchanged.
+
+### Mutation-checked
+
+Changing the URI template at `WellKnownHttpRouteProvider:116` from `"webfinger"` to `"webfingerX"` turns
+**4 of the 7 rows red**, every one of them with `expected: 200 but was: 404` — the endpoint router's
+`EQUALS` match fails and `OAuth2NotFoundHandler` answers. The other three stay green and should:
+`anUnroutedChildGetsTheOAuth2NotFound` and `anUnresolvableRealmComesBackInTheOAuth2ErrorShape` never reach
+the endpoint, and the `InvalidRealmNames` row reads `ENDPOINT_SEGMENTS`, not the template.
+
+### Counts
+
+`mvn -am -pl openam-oauth2 verify` after this step: failsafe **70** (was 63, +7), surefire **1309**
+(unchanged — `*IT` is failsafe's, and a plain `verify` does not hand it to surefire). Both read from
+`target/{failsafe,surefire}-reports/TestSuite.txt`. ⚠ `-Dtest=<TheIT>` **does** hand it to surefire; see
+the trap now recorded in [test-infrastructure.md](../../test-infrastructure.md#layer-1--unit-tests-surefire).

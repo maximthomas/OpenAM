@@ -458,19 +458,23 @@ tree; steps 3–5 are the only ones that write main source.
    This is the one step that cannot be redone later: 5d-2a-ii destroys the endpoint it measures.
    It refuted D2's parity-target premise; [D2](#d2), criteria 8–9, R-5d2.4 and rows 33–36 were
    rewritten from it.
-3. `WebFingerHandler` — the `@Get` of [D1](#d1), plus `WebFingerHandlerTest` covering the success
+3. ✅ `WebFingerHandler` — the `@Get` of [D1](#d1), plus `WebFingerHandlerTest` covering the success
    JRD, the null-servlet-request guard, and one row per exception `discover(...)` throws (proving the
    polymorphic `@ExceptionHandler` reaches them). Unit-test-only; no wiring yet.
-4. `WellKnownHttpRouteProvider` — the chain of [D1](#d1) verbatim, including `OAuth2ErrorFilter`, the
+4. ✅ `WellKnownHttpRouteProvider` — the chain of [D1](#d1) verbatim, including `OAuth2ErrorFilter`, the
    audit filter *inside* the realm layer, `OAuth2NotFoundHandler` as default route, and the
    `invalidRealmNames` registration. Append it to `META-INF/services/…HttpRouteProvider`.
-5. `WellKnownRouterIT`, modelled on `OAuth2RouterIT` (534 lines; this one is far smaller — one
+5. ✅ `WellKnownRouterIT`, modelled on `OAuth2RouterIT` (534 lines; this one is far smaller — one
    endpoint). Rows: `webfinger` matches; `/realms/{realm}/webfinger` and the subrealm spelling both
    resolve; an unrouted child hits `OAuth2NotFoundHandler`; the audit event carries the realm; a bad
    `?realm=` comes back OAuth2-shaped. Then **mutation-check it** — break the URI template, confirm
    red, restore.
-6. Criteria 1–7. Criterion 7 is the one specific to this step: the endpoint must still answer exactly
-   what step 2 captured, because nothing has been flipped yet.
+6. ✅ Criteria 1–7. Criterion 7 is the one specific to this step: the endpoint must still answer exactly
+   what step 2 captured, because nothing has been flipped yet. *(All seven green, 2026-08-08 — the
+   19-probe capture is byte-identical bar `Date:`. Recorded in
+   [phase-5d-2-asbuilt.md](phase-5d-2-asbuilt.md#as-built-5d-2a-i--recorded-2026-08-08), which also
+   carries two traps for 5d-2a-ii: the oracle needs a **post-suite** container, and the WAR build
+   banner is not provenance.)*
 
 **5d-2a-ii — the flip.** One commit, one-hunk revert.
 

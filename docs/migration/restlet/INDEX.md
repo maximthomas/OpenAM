@@ -89,7 +89,7 @@ landed plus the oracle rows.
 | 5b-2 — device / checkSession / endSession | [5k](phase-5b-2.md) | [7k](phase-5b-2-research.md) | [8k](phase-5b-2-asbuilt.md) | done |
 | 5c — `/oauth2/resource_set` | [10k](phase-5c.md) | [10k](phase-5c-research.md) | [16k](phase-5c-asbuilt.md) | done |
 | 5d-1 — the flip | [11k](phase-5d-1.md) | [8k](phase-5d-1-research.md) | [10k](phase-5d-1-asbuilt.md) | done |
-| **5d-2 — the deletion** | **[10k](phase-5d-2.md)** | [8k](phase-5d-2-research.md) | — | **planned · 5d-2a-i → 5d-2d** |
+| **5d-2 — the deletion** | **[10k](phase-5d-2.md)** | [8k](phase-5d-2-research.md) | [6k](phase-5d-2-asbuilt.md) | **5d-2a-i done · 5d-2a-ii → 5d-2d** |
 
 Phases 7–8 (outbound client, final deletion) have no doc of their own — they live in
 [plan.md](plan.md#phase-7--outbound-scripting-http-client). **Phase 6 is gone**: WebFinger and the
@@ -153,6 +153,9 @@ stragglers were absorbed into 5d-2 on 2026-08-06, because WebFinger's imports bl
 | Why WebFinger had to be ported first | [phase-5d-2-research.md §1](phase-5d-2-research.md#1) |
 | What the 5d-2a review corrected (dispatch is polymorphic; HEAD is handled; audit goes inside the realm layer) | [phase-5d-2-research.md §1 review](phase-5d-2-research.md#1-review) + [5d-2 D1](phase-5d-2.md#d1)/[D2](phase-5d-2.md#d2) |
 | **What `/.well-known` actually answered before the port** (19 probes; 14 of them one byte-identical 500) | [artefacts/well-known-probes-pre-flip.md](artefacts/well-known-probes-pre-flip.md). ⚠ It refuted the review's "only half-broken" claim — [5d-2 D2](phase-5d-2.md#d2) carries the correction |
+| **What 5d-2a-i landed, and the dormancy proof** (19 probes byte-identical; the gate rows) | [phase-5d-2-asbuilt.md](phase-5d-2-asbuilt.md#as-built-5d-2a-i--recorded-2026-08-08) |
+| ⚠ Why a probe capture must be taken on a **post-suite** container | [phase-5d-2-asbuilt.md](phase-5d-2-asbuilt.md#the-oracle-needs-a-post-suite-container) — the `oauth-oidc` service is fixture-created, so the control row 404s on a virgin one |
+| ⚠ Why the WAR's build banner is not provenance | [phase-5d-2-asbuilt.md](phase-5d-2-asbuilt.md#the-war-build-banner-lies) — use jar md5s; `openam-server-only` needs a `clean` |
 | Why `OAuthProblemException` gets a bridge, not a supertype | [phase-5d-2-research.md §3](phase-5d-2-research.md#3) + [5d-2 D5](phase-5d-2.md#d5) |
 | The realm constants, and both `RestletRealmRouter`s | [phase-5d-2-research.md §5](phase-5d-2-research.md#5) |
 | What 5d-2 must delete, and the two same-named classes | [phase-5d-1-asbuilt.md#handed-to-5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2) — ⚠ two of its five traps are stale; see the rows above |

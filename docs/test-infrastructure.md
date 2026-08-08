@@ -46,6 +46,12 @@ a fresh instance of [the stale-`target/` trap](#gotchas-that-have-actually-bitte
 the `<fqcn>.txt`. `-q` also suppresses surefire's `Tests run:` line on success (it survives on failure, via
 the `[ERROR]` stream), so on a green `-q` run the report file is the only place the count exists.
 
+⚠ **The build log carries no per-class counts at all** (2026-08-08). TestNG runs each module as **one
+`TestSuite`**, so a module like `openam-oauth2` emits a single `Tests run:` line for the whole of it and none
+per class — grepping a build log for `WellKnownRouterIT` returns nothing **even when it ran**. Only the
+aggregate is observable from the log; for one class read `target/{surefire,failsafe}-reports/<fqcn>.txt` (or
+`junitreports/TEST-<fqcn>.xml`), which is also the only place a `-q` green run records anything.
+
 ⚠ **`-Dtest=<SomethingIT>` makes *surefire* run your IT** (measured 2026-08-07, step 5d-2a-i-5). The `test`
 parameter replaces surefire's default includes rather than filtering them, so a class surefire would
 normally never see is run — and then run **again** by failsafe in the same `verify`. Two consequences:
@@ -433,6 +439,16 @@ and `021c345061` for 5b-2b, which had been wrong in committed docs since 5b-2b l
   [D6](migration/restlet/phase-3b-collaborators.md#d6--the-bearer-parse-is-unreachable-from-a-plainly-constructed-restlet-request).
 - **Guice binding errors are invisible to every build.** Nothing fails until a server starts. If you rebind,
   bring your own guard.
+- ⚠ **A bare CHF route base *with* a trailing slash answers a bodyless 500, not a 404** (measured 2026-08-08).
+  `/json/`, `/oauth2/`, `/uma/` and `/.well-known/` all answer **500 with `Content-Length: 0`, no body and no
+  `Content-Type`**, while the same paths without the slash answer a proper 404. Nothing reaches
+  `catalina.out` — the exception is swallowed — so there is no server-side trace to chase. The cause is
+  commons `RouteMatchers.getRemainingRequestUri:164-170` sublisting without a guard
+  (`IllegalArgumentException: fromIndex > toIndex`), and it predates the migration (`/json` is the oldest CHF
+  surface in the product), recorded as [divergence rows 27 and 37](migration/restlet/plan.md#expected-divergences-at-the-flip)
+  and, as a decision, in [decisions.md](migration/restlet/decisions.md#chf-cleanup-backlog). ⇒ when a probe
+  script drives bare-segment spellings, **expect that 500** and do not read it as a regression in whatever
+  route you just flipped.
 - **In `e2e`, a session cookie silently outranks the `iPlanetDirectoryPro` header.**
   `POST /json/authenticate` sets an `iPlanetDirectoryPro` **cookie**, and Playwright's `request` fixture keeps
   a cookie jar for the whole spec file. `LocalSSOTokenSessionModule.validate:207-210` reads the cookie

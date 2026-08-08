@@ -478,14 +478,30 @@ tree; steps 3–5 are the only ones that write main source.
 
 **5d-2a-ii — the flip.** One commit, one-hunk revert.
 
-7. `web.xml`: delete the `WebFinger` servlet block, move the `/.well-known/*` mapping to `OpenAM`.
-8. Delete `WebFinger` and `OpenIDConnectDiscovery`.
-9. Rewrite `webfinger-test.spec.mjs`: drop `test.fail()`, delete the 500-pinning row, **keep the
+7. ✅ `web.xml`: delete the `WebFinger` servlet block, move the `/.well-known/*` mapping to `OpenAM`.
+   *(Done 2026-08-08 — the block was `:1046-1068`, the WAR's last four `org.restlet` references; the
+   mapping now sits contiguously after `/oauth2/*`. Verified structurally, not by eye: 105 mappings
+   before and after, one servlet declaration removed. ⚠ `ForgeRockRest` already had **no** mappings
+   before this commit — [correction 3](phase-5d-2-asbuilt.md#four-corrections).)*
+8. ✅ Delete `WebFinger` and `OpenIDConnectDiscovery`. *(Done — 85 + 101 lines. Nothing else named
+   either class; `GuicedRestlet` and `OAuth2StatusService` are now self-referencing orphans, left in
+   place for 5d-2b.)*
+9. ✅ Rewrite `webfinger-test.spec.mjs`: drop `test.fail()`, delete the 500-pinning row, **keep the
    header comment's "broken today" claim — the capture proved it right** ([D2](#d2)) — and add rows
-   for the 400/404 paths the port makes reachable for the first time.
-10. Re-run `e2e/tools/well-known-probes.sh` against the new container and **diff against the capture**.
-    Every difference is row 33, 34, 35, 36, or a bug.
-11. Criteria 1–4, 8–10.
+   for the 400/404 paths the port makes reachable for the first time. *(Done — 2 rows → 8, all
+   passing; the header comment kept, reframed as the historical record of what the port fixed and
+   citing the byte evidence.)*
+10. ✅ Re-run `e2e/tools/well-known-probes.sh` against the new container and **diff against the capture**.
+    Every difference is row 33, 34, 35, 36, or a bug. *(Done 2026-08-08 on a **post-suite** container —
+    [`artefacts/well-known-probes-post-flip.md`](artefacts/well-known-probes-post-flip.md). 18 of 19
+    land on rows 33–36 and the control's md5 is unchanged; probe 10, bare `/.well-known/`, matched no
+    row and got **[row 37](plan.md#expected-divergences-at-the-flip)** — a pre-existing CHF
+    trailing-slash 500 that `/json/`, `/oauth2/` and `/uma/` share.)*
+11. ✅ Criteria 1–4, 8–10. *(All green, 2026-08-08 — recorded in
+    [phase-5d-2-asbuilt.md](phase-5d-2-asbuilt.md#as-built-5d-2a-ii--recorded-2026-08-08). surefire
+    1309 / failsafe 70, unchanged because this commit deletes no test; e2e 159 declared / 158 passed /
+    1 skipped / 0 failed, **+6** and exactly the sanctioned movement; `grep -c "org.restlet" web.xml`
+    → 0.)*
 
 **5d-2b**
 12. Run the five parity tests, capture the Restlet-leg values, inline them ([D4](#d4)) — **own commit**.

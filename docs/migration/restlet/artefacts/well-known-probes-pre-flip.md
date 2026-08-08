@@ -80,12 +80,30 @@ and one more reason row 34 needs rewriting.
 | 03, 04, 05, 07 | 500 | 400 `{"error":"bad_request",…}` from `discover(...)` | row 33 — **not** a parity target |
 | 06 | 500 | 404 `{"error":"not_found",…}` | row 33 — **not** a parity target |
 | 08 | 404 `Realm "/bogus" not found` | 400 `{"error":…}` via `RealmContextFilter` + `OAuth2ErrorFilter` | **new row** — status moves 404→400 |
-| 09, 11, 12, 18, 19 | 500 | 404 `{"error":"not_found","error_description":"Not Found"}` | row 34, widened |
+| 09, 12, 18, 19 | 500 | 404 `{"error":"not_found","error_description":"Not Found"}` | row 34, widened |
+| 11 | 500 | ⚠ **prediction corrected 2026-08-08 — 200 JRD**, see the note below | **row 33**, not row 34 |
 | 10, 17 | 404 `OAuth2StatusService` | 404 `OAuth2NotFoundHandler` | row 34 as written |
 | 13 (`HEAD`) | 500 `text/html`, 717 B | as row 01 (`Endpoints:70-72` maps HEAD→GET), no body | row 33 |
 | 14 (`POST`) | 500 | 405 with `Allow` | **new row** — no `@Post` on the handler |
 | 15 | 500 | 404 `OAuth2NotFoundHandler` | row 34 |
 | 16 | 200 | 200, unchanged | control — must not move |
+
+⚠ **One row of this table was a wrong prediction, and the flip corrected it — 2026-08-08, per
+[the oracle rule](../INDEX.md#the-oracle-record).** Probe 11,
+`/.well-known/realms/root/webfinger`, was grouped with the no-match probes on the assumption that the
+`/realms/{realm}` spelling would not resolve under the ported route. It does: the flip measured **200 with the
+same JRD as probes 01 and 02** (152 B, md5 `2df598686034f3c5ecae01102e6a3c39`) — which is what
+`WellKnownRouterIT.theRealmsPathStyleReachesTheEndpoint` and
+[research §10](../phase-5d-2-research.md#10) had said all along, and what
+[D1](../phase-5d-2.md#d1) predicted when it noted the `/realms/{realm}` form comes "for free". So probe 11 is
+**row 33**, not row 34.
+
+**Only the expectation changed.** Every *measured* value in this file — statuses, headers, byte counts, md5s,
+including probe 11's own 500 above and below — is the Restlet oracle, is not re-derivable, and is untouched.
+The post-flip measurement is
+[`well-known-probes-post-flip.md`](well-known-probes-post-flip.md#11--realmsrealm-path-spelling); the
+classification is recorded in
+[phase-5d-2-asbuilt.md](../phase-5d-2-asbuilt.md#criterion-8--where-the-nineteen-probes-landed).
 
 ---
 

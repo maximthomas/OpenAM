@@ -152,6 +152,18 @@ fix at source, but that no in-flight phase strictly needs. Per
 [docs/framework-ownership.md](../../framework-ownership.md) a commons fix costs a release cycle, so these are
 routed around in-phase and fixed here only when a phase actually requires the corrected behaviour.
 
+- **A bare trailing slash on any CHF mount answers a bodyless 500** — `/.well-known/`, `/json/`,
+  `/oauth2/` and `/uma/` all do it, and all did before this migration. Measured 2026-08-08 as
+  [divergence row 37](phase-5d-2-asbuilt.md#row-37) while capturing the post-flip `/.well-known` oracle;
+  it is not caused by the flip. Unlike the entries below this is **`openam-http`, which is in-tree and
+  ours** — [chf-patterns §14](chf-patterns.md#14-framework-defects-fix-them-dont-pattern-around-them-2026-07-21)
+  says fix it rather than pattern around it, so it costs no release cycle. **Status: deferred out of
+  5d-2, decided 2026-08-08.** 5d-2's remaining commits are deletions whose value is being trivially
+  revertible, and this is a live-behaviour change on four route prefixes at once; it wants its own
+  commit and its own four-prefix e2e capture. **Proposed fix:** make the router treat a trailing slash
+  on a mount root as the mount root itself, and confirm the default route answers rather than the
+  framework. Do it before phase 7, or whenever a phase needs the corrected shape.
+
 - **`Form.fromRequestEntity` exact-matches the whole `Content-Type` header** (`Form.java:231-239`:
   `"application/x-www-form-urlencoded".equalsIgnoreCase(header)`), so a legitimate
   `application/x-www-form-urlencoded;charset=UTF-8` body is silently parsed as **empty**; `Request.getForm()`

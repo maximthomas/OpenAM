@@ -505,3 +505,213 @@ the endpoint, and the `InvalidRealmNames` row reads `ENDPOINT_SEGMENTS`, not the
 (unchanged — `*IT` is failsafe's, and a plain `verify` does not hand it to surefire). Both read from
 `target/{failsafe,surefire}-reports/TestSuite.txt`. ⚠ `-Dtest=<TheIT>` **does** hand it to surefire; see
 the trap now recorded in [test-infrastructure.md](../../test-infrastructure.md#layer-1--unit-tests-surefire).
+
+---
+
+<a id="11"></a>
+## 11 — The 2026-08-08 re-measurement, and what it corrected
+
+Measured on the working tree after 5d-2a-ii and the master merge `a8c13e07ec`. **Sections 2, 3, 6 and
+7 are amended by what follows** — where they disagree, this section is the measurement and they are
+the prediction. It exists so the tail of 5d-2 can be planned and implemented without re-reading the
+source.
+
+### 11.1 — The Restlet footprint as it stands
+
+`grep -rl "org.restlet" --include="*.java"`, excluding `docs/`:
+
+| Module | main | test | lines | Fate |
+|---|---|---|---|---|
+| openam-oauth2 | 49 | 16 | 9,319 + 3,484 | 5d-2b-i / -ii / -iii, then 5d-2d-ii |
+| openam-rest | 8 | 3 | 1,525 | 5d-2c |
+| openam-uma | 2 | 0 | — | 5d-2b-iii ([11.3](#113)) |
+| openam-oauth2-saml2 | 1 | 0 | — | 5d-2b-ii |
+| openam-core-rest | 2 | 0 | — | 5d-2d-ii |
+| openam-federation/OpenFM | 1 | 0 | — | 5d-2d-ii |
+| **openam-entitlements** | 0 | 1 | — | **5d-2d-ii — in no earlier list** ([11.5](#115)) |
+| openam-restlet | 13 | 2 | — | phase 8 |
+| openam-http-client | 3 | 0 | — | phase 7 |
+
+`org.forgerock.oauth2.restlet` now holds 24 files + 3 in `resources/`;
+`org.forgerock.openidconnect.restlet` holds 8 — `WebFinger` and `OpenIDConnectDiscovery` left with
+5d-2a-ii, so §2's "9 of 10 die" is now **7 of 8 die**.
+
+### 11.2 — Nine tests carry a Restlet leg, not five
+
+§6 named five. Four more construct a live `RestletOAuth2Request` or `org.restlet.Request` and stop
+compiling with it:
+
+| Test | Lines | Restlet test methods | Leg asserts |
+|---|---|---|---|
+| `QueryParameterAccessTokenVerifierTest` | 141 | 5 | token read from a Restlet query string |
+| `HeaderAccessTokenVerifierTest` | 186 | 7 | token read from a `ChallengeResponse` / raw header |
+| `FormBodyAccessTokenVerifierTest` | 165 | 6 | token read from a Restlet form entity |
+| `OpenAMClientAuthenticationFailureFactoryTest` | 153 | 3 | challenge decision for a Restlet request |
+
+**21 declared test methods**, all named `restlet*`. The first three are phase-3b dual-transport tests
+for the access-token verifiers; the fourth is the test of a class §2 correctly lists as Restlet-free —
+the *subject* imports no Restlet, the *test* does (`:31-33`, rows at `:113,124,133`).
+
+This drove [D9](phase-5d-2.md#d9): these four assert how a *deleted* transport parsed input, so a
+frozen golden literal would pin nothing. The five in §6 assert output bytes a live producer must keep
+emitting, so they are frozen. Each of the five also has a CHF-only sibling already in the tree —
+`HttpBodyAuditorTest`, `OAuth2ErrorResponseFactoryTest`, `OAuth2ErrorTest`,
+`FreemarkerTemplateRendererTest` — so the freeze preserves the cross-check, not the only coverage.
+
+⚠ `RestletAuditParityTest`'s leg is `org.forgerock.openam.rest.audit.RestletBodyAuditor`, which lives
+in **openam-rest** and dies at 5d-2c, not 5d-2b. Its own class javadoc predicted it would "degrade to
+a plain characterization test"; [D4](phase-5d-2.md#d4) overrides that.
+
+<a id="113"></a>
+### 11.3 — openam-uma is not "constants only": two real `org.restlet.Request` overloads
+
+§2's row for openam-uma says "`RestletRealmRouter` **constants only** … the `import org.restlet.Request`
+on each is vestigial". **Both halves are wrong.** Each factory declares a package-private overload
+whose body constructs a `RestletOAuth2Request`:
+
+```java
+// UmaProviderSettingsFactory:75-77
+UmaProviderSettings get(Request req) throws NotFoundException {
+    return get(new RestletOAuth2Request(jacksonRepresentationFactory, req));
+}
+// UmaUrisFactory:82-84
+UmaUris get(Request req) throws NotFoundException, ServerException {
+    return get(new RestletOAuth2Request(jacksonRepresentationFactory, req));
+}
+```
+
+Consequences, all load-bearing for the split:
+
+1. **Deleting `RestletOAuth2Request` breaks openam-uma's compile**, so the transport deletion cannot
+   sit in a sub-phase that touches only openam-oauth2.
+2. Removing the overloads orphans the `jacksonRepresentationFactory` field, and it is a constructor
+   parameter on both `@Inject` constructors. Dropping it **changes the Guice graph** — a change that
+   compiles cleanly and that no unit test constructing the class by hand can detect ([R-5d2.6](phase-5d-2.md#risk-register)).
+3. Four tests construct these (or `OAuth2RequestFactory`, same parameter) by hand and must drop one
+   mock argument: `UmaRouterIT`, `UmaUrisFactoryTest`, `OAuth2RouterIT:244`, `WellKnownRouterIT:194`.
+   Two of those are the ITs criterion 16 requires to be otherwise unchanged.
+
+The full set of `RestletOAuth2Request` references is five main files
+(`OAuth2RequestFactory:75`, `OAuth2Request:35,54-62`, the two above, and `ChfOAuth2Request:241`'s
+javadoc) plus five tests — see [D10](phase-5d-2.md#d10).
+
+### 11.4 — `@ExceptionHandler` dispatch is polymorphic; §3's warning is wrong
+
+§3 warns that dispatch is "by exact type, not by hierarchy walk" and concludes UMA's
+`onError(Throwable)` is therefore unaffected by [D5](phase-5d-2.md#d5). The code says otherwise —
+`AnnotatedMethod:197-202`:
+
+```java
+for (Class<? extends Throwable> candidate : exceptionHandlers.keySet()) {
+    if (candidate.isInstance(t) && (match == null || match.isAssignableFrom(candidate))) {
+        match = candidate;
+    }
+}
+```
+
+That is a **polymorphic, most-specific-wins** lookup. What *is* keyed by exact type is
+*registration* — `:69` holds a `Map<Class<? extends Throwable>, AnnotatedMethod>` and `:251` rejects a
+duplicate key — which is what stops a collision, not a hierarchy walk. (This matches
+[§1's review](#1-review), which already corrected the same claim for `OAuth2Exception` subclasses; §3
+was written before that landed.)
+
+D5's conclusion survives on re-derived evidence:
+
+| Base | Declared handlers | Effect of adding `onProblem(OAuthProblemException)` |
+|---|---|---|
+| `AbstractOAuth2HttpJsonEndpoint:49` | `OAuth2Exception` | new handler is the only match; today it escapes to F1's 500 |
+| `AbstractOAuth2HttpBrowserEndpoint:64,105` | `OAuth2Exception`, `IllegalArgumentException` | neither is a supertype; same |
+| `AbstractUmaHttpEndpoint:35-36` | `Throwable` | **already catches it today** — `OAuthProblemException` is a `RuntimeException` via Restlet's `ResourceException` — and `UmaErrorResponseFactory:47-50` branches only on `UmaException` / `OAuth2Exception`, so it lands in the same default arm before and after |
+
+So there is no UMA behaviour change, and no OAuth2-side handler for the bridge to lose to.
+
+<a id="115"></a>
+### 11.5 — `RestRealmValidator` has eleven consumers across five modules
+
+§7 named `RealmContextFilter` plus three mocks. `grep -rn "import org.forgerock.openam.rest.router.RestRealmValidator"`:
+
+| Module | Files |
+|---|---|
+| openam-rest | `RealmContextFilter:60` (main), `RestRouterIT:92`, `RealmContextFilterTest:59` |
+| **openam-sts/openam-publish-sts** | `STSPublishServiceHttpRouteProvider:39`, `SoapSTSPublishServiceRequestHandler:48`, `RestSTSPublishServiceRequestHandler:48`, `STSPublishModule:27` — **all main source** |
+| openam-oauth2 | `OAuth2RouterIT:88`, `WellKnownRouterIT:60` |
+| openam-uma | `UmaRouterIT:81` |
+| **openam-entitlements** | `XacmlRouterIT:62` |
+
+`openam-publish-sts/pom.xml:51` already depends on openam-rest, so the [D8](phase-5d-2.md#d8)
+relocation needs no new dependency — eleven import rewrites and nothing else.
+
+**Two modules in that list appear in no other 5d-2 document.** openam-entitlements also carries the
+only remaining unlisted `org.restlet` import in the tree: `PolicyResourceTest:55` imports
+`org.restlet.resource.Resource` and uses it at `:82` as `ResultHandler<Resource>` — an IDE
+auto-import of the wrong `Resource`, not a real dependency. Both are in the criterion-23 exit gate's
+blast radius ([R-5d2.7](phase-5d-2.md#risk-register)).
+
+### 11.6 — Guice, web.xml and the doclint trap
+
+- **`OAuth2GuiceModule`** loses: `:150` `import org.restlet.Restlet`, `:32`
+  `import static …RestletUtils.wrap`, the `@Provides @Named(RSR_ENDPOINT) Restlet
+  createResourceSetRegistrationEndpoint` at `:405-413`, and the two Restlet multibinder blocks at
+  `:228-234`. The two CHF multibinders at `:236-242` and the `ResourceSetRegistrationHook` set binder
+  at `:253` stay.
+- **`OAuth2RestGuiceModule`** loses only the `bind(Key.get(Router.class, Names.named("OAuth2Router")))`
+  at `:44-45` and three imports. Its `Config<TokenStore>` binding stays, so **the module survives**.
+- `@Named("OAuth2Router")` has four consumers: three Restlet resources deleted at 5d-2b-ii, and
+  `OAuth2ServiceEndpointApplication:45`, which resolves it via `InjectorHolder` at **runtime**. That
+  is not a compile break — which is why the `ForgeRockRest` declaration
+  (`web.xml:1119-1120` → `RestEndpointServlet`) must be dropped in the same commit as the unbind, even
+  though the class itself dies at 5d-2c. It already has **no** servlet mappings
+  ([correction 3](phase-5d-2-asbuilt.md#four-corrections)).
+- `OAuth2Constants.Custom.RSR_ENDPOINT` (openam-core `:808`) has no reader after 5d-2b-ii.
+- **Doclint is `all,-missing`** (`pom.xml:140-141`, applied at `:1946-1958`), so `{@link}` at a deleted
+  class fails the javadoc build. `ChfOAuth2Request:241` links `RestletOAuth2Request#getEndpointPath()`;
+  `ChfOAuth2RequestTest:278,353` use `{@code}` and are safe. `WellKnownHttpRouteProvider:48` already
+  names a deleted file in `{@code}` for the same reason
+  ([handed to 5d-2b](phase-5d-2-asbuilt.md#handed-to-5d-2b)).
+- `JacksonRepresentationFactory` (openam-restlet) has 29 importers, but the only surviving-code ones
+  are the constructor parameters of [11.3](#113) and the tests that mock them.
+  `OAuth2ErrorResponseFactory:49` mentions it **in a comment only** — there is no live CHF dependency
+  on openam-restlet outside `RestRealmValidator`.
+
+<a id="117"></a>
+### 11.7 — The D3 move is 20 import sites across two modules
+
+The four classes [D3](phase-5d-2.md#d3) relocates are imported far more widely than "move the file"
+suggests. `grep -rn "import org.forgerock.oauth2.restlet.OpenAMClientAuthenticationFailureFactory|…resources.ResourceSetDescriptionValidator|…resources.ResourceSetRegistrationHook|import org.forgerock.openidconnect.restlet.LoginHintHook"`:
+
+| Module | main | test | Sites |
+|---|---|---|---|
+| openam-oauth2 | 4 | 6 | `OAuth2GuiceModule:86,89,142`; `ResourceSetRegistrationEndpoint:45,46` *(dies)*; `ResourceSetRegistrationHandler:45,46`; `OpenAMClientRegistrationStoreTest:36`; `ResourceSetRegistrationEndpointTest:50,51` *(dies)*; `ResourceSetRegistrationHandlerTest:50,51`; **`OAuth2RouterIT:69,70`**; **`ResourceSetRouteCompositionIT:55,56`** |
+| **openam-uma** | 3 | 1 | `UmaGuiceModule:44`, `UmaResourceSetRegistrationHook:31`, `ResourceSetResource:73`, `ResourceSetResourceTest:49` |
+
+Two consequences the original split did not account for:
+
+1. **5d-2b-ii is a two-module commit.** openam-uma must be built and booted in it, even though its
+   Restlet *imports* do not go until 5d-2b-iii. `-pl openam-oauth2` alone will not catch a bad move.
+2. **Two of the ITs criterion 16 governs must change.** `OAuth2RouterIT` and
+   `ResourceSetRouteCompositionIT` import `ResourceSetDescriptionValidator` and
+   `ResourceSetRegistrationHook` and bind them at `OAuth2RouterIT:276,283` and
+   `ResourceSetRouteCompositionIT:144,153`. The criterion was originally written as "unchanged"; it is
+   now "import lines only, no assertion or binding moved".
+
+`ResourceSetDescriptionValidator` and `ResourceSetRegistrationHook` are the pair
+[5c finding 8](phase-5c-research.md#8--the-restlet-resources-package-is-not-deletable-at-5d-2) named —
+this measures the blast radius that finding predicted.
+
+<a id="118"></a>
+### 11.8 — The pom map, and which sub-phase may touch it
+
+Measured 2026-08-08. §7 counted the `openam-restlet` dependents correctly but said nothing about the
+direct `org.restlet` artifacts, and the difference decides when a pom may be edited.
+
+| Module | Direct restlet artifacts | `openam-restlet` | Droppable at |
+|---|---|---|---|
+| openam-oauth2 | 5 — `org.restlet` `:142`, `.ext.json` `:122`, `.ext.jackson` `:146`, `.ext.freemarker` `:149`, `.ext.servlet` `:161` | `:172` | **5d-2d-ii** — `StatefulTokenStore`, `TokenResource` et al. still import `org.restlet` until then |
+| **openam-uma** | **none** | `:34` | **5d-2d-ii.** It resolves `org.restlet.Request` *transitively*, so 5d-2b-iii makes its Java Restlet-free with **no pom edit at all**; the `openam-restlet` dep is held by `RestletRealmRouter` ([§5](#5)) and `RestRealmValidator` ([11.5](#115)) |
+| openam-rest | none | `:60` | **5d-2c** for the Restlet layer; the `openam-restlet` dep waits for `RestRealmValidator` to relocate at 5d-2d-ii |
+| openam-oauth2-saml2 | 2 — `org.restlet` `:63`, `.ext.jackson` `:68` | none | **5d-2b-ii**, with `Saml2BearerServerResource` |
+
+⚠ **A module can be Java-Restlet-free and still need its pom**, and the reverse: openam-uma has no
+restlet artifact to drop, openam-rest has none either, and both keep `openam-restlet` for a
+Restlet-free class. Criterion 23's second grep is over `pom.xml` files, so it only goes green once
+5d-2d-ii has moved `RestRealmValidator` and repointed the realm constants — not when the Java greps do.

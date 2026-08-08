@@ -8,7 +8,7 @@ nothing else. Every set is sized to fit comfortably in context alongside the cod
 |---|---|
 | Where the plan lives | [plan.md](plan.md) — phase status, risk register, expected divergences |
 | What is locked | [decisions.md](decisions.md#locked-decisions) |
-| Current step | **5d-2 — the deletion**, split four ways / five commits; 5d-2a reviewed and re-split 2026-08-06. [spec](phase-5d-2.md) · [research](phase-5d-2-research.md) |
+| Current step | **5d-2 — the deletion.** 5d-2a done; the tail **re-planned 2026-08-08 into six sub-phases** off a fresh measurement ([research §11](phase-5d-2-research.md#11)). Next up: **5d-2b-i**, the oracle freeze. [spec](phase-5d-2.md) · [research](phase-5d-2-research.md) |
 
 ---
 
@@ -19,7 +19,7 @@ bug in this table — fix the table rather than reading the whole tree.
 
 | I am… | Load (≈ tokens) |
 |---|---|
-| **implementing any 5d-2 sub-phase** | [phase-5d-2.md](phase-5d-2.md) 8k + the [research](phase-5d-2-research.md) section its decisions cite (~1–2k each) = **~11k**. The research file holds the per-file inventory so the source does not have to be re-read; open a section, never the file |
+| **implementing any 5d-2 sub-phase** | [phase-5d-2.md](phase-5d-2.md) 9k + **[research §11](phase-5d-2-research.md#11) 3k — always, it amends §2/§3/§6/§7** + the other research section its decisions cite (~1–2k each) = **~14k**. The research file holds the per-file inventory so the source does not have to be re-read; open a section, never the file |
 | **planning phase 7 / 8** | [plan.md](plan.md) 15k + [inventory.md](inventory.md) 5k = **~20k**. ⚠ Phase 6 no longer exists — it was absorbed into 5d-2, and phase 8 lost two of its six steps to 5d-2d |
 | **writing a new CHF handler** | the [conversion template](phase-5-oauth2.md#the-conversion-template-applies-to-every-5a5b5c-handler) + the two or three [chf-patterns](chf-patterns.md) sections it names — **never the whole file** |
 | **fixing `openam-http`** | [openam-http-framework.md](openam-http-framework.md) F1–F5 + [chf-patterns §14](chf-patterns.md#14-framework-defects-fix-them-dont-pattern-around-them-2026-07-21) |
@@ -89,7 +89,7 @@ landed plus the oracle rows.
 | 5b-2 — device / checkSession / endSession | [5k](phase-5b-2.md) | [7k](phase-5b-2-research.md) | [8k](phase-5b-2-asbuilt.md) | done |
 | 5c — `/oauth2/resource_set` | [10k](phase-5c.md) | [10k](phase-5c-research.md) | [16k](phase-5c-asbuilt.md) | done |
 | 5d-1 — the flip | [11k](phase-5d-1.md) | [8k](phase-5d-1-research.md) | [10k](phase-5d-1-asbuilt.md) | done |
-| **5d-2 — the deletion** | **[10k](phase-5d-2.md)** | [8k](phase-5d-2-research.md) | [6k](phase-5d-2-asbuilt.md) | **5d-2a done · 5d-2b → 5d-2d** |
+| **5d-2 — the deletion** | **[9k](phase-5d-2.md)** | [11k](phase-5d-2-research.md) | [6k](phase-5d-2-asbuilt.md) | **5d-2a done · six-way tail: 5d-2b-i → 5d-2d-ii** |
 
 Phases 7–8 (outbound client, final deletion) have no doc of their own — they live in
 [plan.md](plan.md#phase-7--outbound-scripting-http-client). **Phase 6 is gone**: WebFinger and the
@@ -149,7 +149,13 @@ stragglers were absorbed into 5d-2 on 2026-08-06, because WebFinger's imports bl
 ### Deleting Restlet
 | I need… | Go to |
 |---|---|
-| **What 5d-2 deletes, file by file** | [phase-5d-2-research.md §2](phase-5d-2-research.md#2) — supersedes the two lists below wherever they differ |
+| **What 5d-2 deletes, file by file** | [phase-5d-2-research.md §2](phase-5d-2-research.md#2), **as amended by [§11](phase-5d-2-research.md#11)** — supersedes the two lists below wherever they differ |
+| **Why the tail is six sub-phases** | [5d-2 § scope & sizing](phase-5d-2.md#scope--sizing--the-tail-split-six-ways) |
+| Which Restlet-legged tests get frozen and which lose their leg (nine, not five) | [research §11.2](phase-5d-2-research.md#112--nine-tests-carry-a-restlet-leg-not-five) + [5d-2 D4](phase-5d-2.md#d4)/[D9](phase-5d-2.md#d9) |
+| ⚠ openam-uma has two **real** `org.restlet.Request` overloads — it is not "constants only" | [research §11.3](phase-5d-2-research.md#113) + [5d-2 D10](phase-5d-2.md#d10) |
+| ⚠ `@ExceptionHandler` dispatch is **polymorphic** — research §3 says otherwise and is wrong | [research §11.4](phase-5d-2-research.md#114--exceptionhandler-dispatch-is-polymorphic-3s-warning-is-wrong) |
+| ⚠ `RestRealmValidator` reaches **openam-sts and openam-entitlements**, modules no inventory lists | [research §11.5](phase-5d-2-research.md#115) + [5d-2 D8](phase-5d-2.md#d8) |
+| Guice unbinds, the `ForgeRockRest` declaration, and the doclint trap | [research §11.6](phase-5d-2-research.md#116--guice-webxml-and-the-doclint-trap) |
 | Why WebFinger had to be ported first | [phase-5d-2-research.md §1](phase-5d-2-research.md#1) |
 | What the 5d-2a review corrected (dispatch is polymorphic; HEAD is handled; audit goes inside the realm layer) | [phase-5d-2-research.md §1 review](phase-5d-2-research.md#1-review) + [5d-2 D1](phase-5d-2.md#d1)/[D2](phase-5d-2.md#d2) |
 | **What `/.well-known` actually answered before the port** (19 probes; 14 of them one byte-identical 500) | [artefacts/well-known-probes-pre-flip.md](artefacts/well-known-probes-pre-flip.md). ⚠ It refuted the review's "only half-broken" claim — [5d-2 D2](phase-5d-2.md#d2) carries the correction |

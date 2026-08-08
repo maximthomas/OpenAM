@@ -15,3 +15,4 @@
 #
 org.forgerock.openam.oauth2.rest.OAuth2RestHttpRouteProvider
 org.openidentityplatform.openam.oauth2.http.OAuth2HttpRouteProvider
+org.openidentityplatform.openam.oauth2.http.WellKnownHttpRouteProvider

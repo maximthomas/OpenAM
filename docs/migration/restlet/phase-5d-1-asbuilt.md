@@ -135,6 +135,20 @@ row. The `FQDNValidationFilter` redirect on `/oauth2/authorize` is unaffected ei
 
 Added to [plan.md](plan.md#expected-divergences-at-the-flip) with measured bytes **in 5d-1c's commit**, not now:
 
+⚠ **These are draft numbers, and four of the six moved when 5d-1c measured the flip** (mapping added
+2026-08-08 — the numbers below were never reconciled with the final table, and in this doc set a divergence
+row number *is* the contract, so an unmapped draft number is a live cross-reference hazard). The rows are kept
+under their draft numbers as the record of what was predicted; **cite the landed number, never these**:
+
+| Draft | Landed as | Note |
+|---|---|---|
+| 16 | **16** | unchanged |
+| 17 | **17** | unchanged |
+| 18 | **23** | an erroring `HEAD`. Draft 18's "no `Content-Length`" CHF half was **inverted** by measurement — see [row 22](plan.md#expected-divergences-at-the-flip) and the [5d-1a finding](#5d-1a-content-length) |
+| 19 | **nothing — it is parity, not divergence** | the guard landed in 5d-1b (`AuthorizeHandler:106,276`), so `HEAD /oauth2/authorize` is **405 on both stacks**. Its absence from rows 14–30 is the correct outcome, not an omission |
+| 20 | **30** | both method tunnels. ⚠ The draft's CHF column *predicted* the 200s; 5d-1c measured that `?method=GET` **issues a real access token**, which is the table's one **widening** |
+| 14 *(widened)* | **21** | the `/tokeninfo` unmapped-verb behaviour became its **own** row. Final **row 14 is a different subject** — `PATCH /oauth2/resource_set/{rsid}` — so a reader following "row 14 (widened)" into plan.md lands on the wrong row |
+
 | # | What differs | Restlet (measured 2026-08-04) | CHF (expected) |
 |---|---|---|---|
 | 16 | `?realm=<bogus>` | **404** `{"code":404,…,"message":"No mapping organization found for organization identifier: bogus"}`, no cache headers | **400** `{"error":"invalid_request","error_description":"Invalid realm, bogus"}` |
@@ -212,7 +226,11 @@ header diff *will* show — unlike [D4](phase-5d-1.md#d4)'s three, which a body 
 
 | # | What differs | Restlet (measured) | CHF (measured 2026-08-05, pre-flip, on `/json` `/xacml` `/uma`) |
 |---|---|---|---|
-| 21 | `Content-Length` on a successful `HEAD` | **absent** | **present**, equal to the `GET`'s |
+| 21 *(draft — **landed as [row 22](plan.md#expected-divergences-at-the-flip)**)* | `Content-Length` on a successful `HEAD` | **absent** | **present**, equal to the `GET`'s |
+
+⚠ **Draft number, corrected 2026-08-08.** Final row 21 is a different subject (the `/tokeninfo` unmapped-verb
+behaviour); this one landed as **row 22**. Same hazard, and same fix, as the
+[5-E5 draft table](#divergence-rows-this-gate-hands-to-5d-1c) above.
 
 Nothing to fix: RFC 7231 §3.3.2 explicitly permits — and §4.3.2 encourages — a `HEAD` to carry the
 `Content-Length` its `GET` would have sent. It is the *better* answer; it is simply not the incumbent's.
@@ -657,9 +675,16 @@ that creates it is `connect/register`, so the fixture bootstraps through one thr
 
 Single container, so nothing about the multi-server leg. No production realm with its own identity store — the
 fixture realm shares root's, which is what made the root-user row parity rather than isolation. No long
-duration: this is repetition and coverage, not elapsed time under real traffic. **And CI has not seen the fix**
-— [criterion 16](#criterion-16--ci-nine-legs--recorded-2026-08-06) covers the flip commit, not the two source
-changes above, which are still uncommitted.
+duration: this is repetition and coverage, not elapsed time under real traffic.
+
+⚠ **CI had not seen the fix when this was written; it has now** (corrected 2026-08-08). The paragraph above
+ended "the two source changes above, which are still uncommitted", and
+[criterion 16](#criterion-16--ci-nine-legs--recorded-2026-08-06) does cover only the flip commit
+(`bccbc9c4d9`, run `31031060622`). The two changes landed as **`d52496710e`**, and run **`31105613611`** on
+**`83f465452b`** — a descendant — is green across all nine legs. That run is what
+[5d-2 criterion 11](phase-5d-2.md#verification-criteria) names as the gate on the first `git rm`, so the
+sentence being stale is load-bearing in both directions: it was the reason 5d-2 waited, and its closure is the
+reason 5d-2b may proceed.
 
 ---
 
@@ -667,8 +692,19 @@ changes above, which are still uncommitted.
 
 Recorded here so the deletion step reads one list:
 
+⚠ **Two of these six were overtaken by 5d-2's own research (marked in place, 2026-08-08). Read the correction
+before acting on the trap** — [plan.md's 5d-2 row](plan.md#phase-status) flags the pair but does not say which,
+and both are the kind of claim that is acted on by `git rm`.
+
 1. **The Restlet hook interfaces** — `TokenRequestHook`, `AuthorizeRequestHook`, and `LoginHintHook`'s two
    Restlet methods ([finding 1](phase-5d-1-research.md#1--the-hook-re-sign-is-already-done)); the CHF halves stay.
+   ⚠ **Corrected by [research §2](phase-5d-2-research.md#2): `LoginHintHook`'s Restlet methods are *three*, not
+   two** — `beforeAuthorizeHandling:54`, `afterAuthorizeSuccess:73`, `afterTokenHandling:90`, each the
+   `(OAuth2Request, Request, Response)` overload of a hook point that exists twice, once per transport. "Two"
+   is the count of Restlet `Multibinder` blocks (`OAuth2GuiceModule:228-234`), not of methods. Stripping two
+   and leaving the third would leave the class implementing a deleted interface — a compile break, so this one
+   fails loudly rather than silently. The class also **moves** out of its `.restlet` package
+   ([D3](phase-5d-2.md#d3)).
 2. **`ForgeRockRest`** — after 5d-1c it is a declared servlet with **no mapping**
    ([finding 12](phase-5d-1-research.md#12--the-webxml-change-is-one-line-and-oauth2-is-forgerockrests-last-mapping)); delete the
    declaration with the stack.
@@ -685,6 +721,12 @@ Recorded here so the deletion step reads one list:
    5d-2 — it is `RealmRoutingFactory`'s Restlet overload, and other Restlet consumers still call it. Deleting
    by simple name would take the wrong one
    ([finding 15](phase-5d-1-research.md#15--the-realm-layer-has-its-own-404-and-400-and-they-are-crest-shaped)).
+   ⚠ **Corrected by [research §5](phase-5d-2-research.md#5), in both directions: *both* classes die at 5d-2.**
+   The "must survive" premise was that other Restlet consumers still call
+   `RealmRoutingFactory.createRouter(org.restlet.routing.Router)`; after 5d-2a ported WebFinger and 5d-2b
+   deletes `OAuth2RouterProvider`, that overload has **no callers at all**, and [D7](phase-5d-2.md#d7) removes
+   it with the inner class. The trap's *operational* content stands and is the half worth keeping: they are
+   different classes in different modules, so **never delete by simple name**.
 6. **The golden/parity tests degrade to `golden == CHF`** when the Restlet leg goes
    ([risk #19](plan.md#risk-register-behavioral-compatibility)) — expected, and the reason 5d-2 waits for a
    green soak.

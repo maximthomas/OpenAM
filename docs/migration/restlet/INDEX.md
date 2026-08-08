@@ -161,7 +161,7 @@ stragglers were absorbed into 5d-2 on 2026-08-06, because WebFinger's imports bl
 | ⚠ Why the WAR's build banner is not provenance | [phase-5d-2-asbuilt.md](phase-5d-2-asbuilt.md#the-war-build-banner-lies) — use jar md5s; `openam-server-only` needs a `clean` |
 | Why `OAuthProblemException` gets a bridge, not a supertype | [phase-5d-2-research.md §3](phase-5d-2-research.md#3) + [5d-2 D5](phase-5d-2.md#d5) |
 | The realm constants, and both `RestletRealmRouter`s | [phase-5d-2-research.md §5](phase-5d-2-research.md#5) |
-| What 5d-2 must delete, and the two same-named classes | [phase-5d-1-asbuilt.md#handed-to-5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2) — ⚠ two of its five traps are stale; see the rows above |
+| What 5d-2 must delete, and the two same-named classes | [phase-5d-1-asbuilt.md#handed-to-5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2) — ⚠ two of its **six** items are stale (**trap 1**, `LoginHintHook`'s three Restlet methods; **trap 5**, both `RestletRealmRouter`s die), each corrected in place 2026-08-08; see the rows above |
 | What still imports Restlet | [inventory.md#3](inventory.md#3-restlet-imports-by-module-main-sources) |
 | Entry points & request flow | [inventory.md#4](inventory.md#4-entry-points-and-request-flow) |
 | Route tables | [inventory.md#5](inventory.md#5-route-tables) |

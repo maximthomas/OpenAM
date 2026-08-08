@@ -6,7 +6,10 @@ read that source again**. The spec that consumes this is [phase-5d-2.md](phase-5
 
 Where a finding contradicts [§ Handed to 5d-2](phase-5d-1-asbuilt.md#handed-to-5d-2) or
 [inventory §12](inventory.md#12-deletion-checklist-final-state), the contradiction is called out —
-those lists were written before the /oauth2 flip and two of their five traps are now wrong.
+those lists were written before the /oauth2 flip, and two of § Handed to 5d-2's **six** items are now wrong:
+**trap 1** (`LoginHintHook`'s Restlet methods are three, not two — [§2](#2)) and **trap 5** (both
+`RestletRealmRouter`s die — [§5](#5)). Both are corrected in place at the source list as well, 2026-08-08;
+the count said "five".
 
 ---
 

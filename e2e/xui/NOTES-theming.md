@@ -178,5 +178,283 @@ fall outside task 1.9. Neither blocks the spec.
 
 | | |
 | --- | --- |
-| **Extract the deployed-`/XUI` helpers at task 1.10** | `xui-theming.spec.mjs` keeps `readDeployedConfig` / `writeDeployedConfig` / `deployedSha256` / `waitForServedConfig` local, which is right for one caller. Task 1.10 (theme template override) and task 1.11 (`AppConfiguration.loginHelperClass` pointing at a module added to the deployed tree) both need the identical write-into-container → wait-out-the-Tomcat-cache → restore machinery. Move them to `common/deployed-xui-commons.mjs` when 1.10 lands, so it is a planned extraction rather than a third copy. |
+| **Extract the deployed-`/XUI` helpers — deferred from 1.10 to 1.11** | Originally raised as "do this when 1.10 lands". 1.10 landed *inside* `xui-theming.spec.mjs` rather than as a second spec file, so there is still exactly one copy and extracting would have been churn against a single caller. The helper set has grown to seven — `readDeployedConfig`, `writeDeployedConfig`, `deployedSha256`, `placeDeployedFile`, `removeDeployedOverride`, `deployedPathExists`, `waitForServed` — and task 1.11 (`AppConfiguration.loginHelperClass` pointing at a module added to the deployed tree) needs `placeDeployedFile` + `waitForServed` + the remove-and-verify pattern essentially unchanged, in a different file. **1.11 is the forcing function**: extract to `common/deployed-xui-commons.mjs` there, before writing a second copy. |
 | **No escape hatch for a hard-killed run** | The spec restores the config in fixture teardown, which covers assertion failure, timeout and `SIGINT`. It cannot cover `SIGKILL` on the worker or the docker daemon dying mid-run — those leave the mutated config deployed, and then every later spec gets the wrong theme. `xui-deploy.sh` is the wrong granularity for putting one file back (see Restore above) and fails outright without a Maven `-www.zip`. Consider a one-file reset in `local/`. Mitigated but not solved today: the leaked mapping names realms that no longer exist, so other specs still fall through to `default`. |
+
+## Theme template override — what a spec can rely on
+
+Verified empirically against `openam-idp` (OpenAM 16.2.0-SNAPSHOT) on 2026-08-10, five throwaway Chromium
+runs against `XUI/#login/` in the root realm. Instance returned to pristine afterwards (see Restore of the
+override, below).
+
+### Correction: `ThemeManager.js` does *not* resolve templates
+
+`ThemeManager.js` only ever passes `theme.path` to the favicon:
+
+```js
+applyThemeToPage(theme.path, theme.icon, stylesheets);   // line 190
+```
+```js
+applyThemeToPage = function (path, icon, stylesheets) {  // line 33
+    $("link").remove();
+    $("<link/>", { rel: "icon", type: "image/x-icon", href: require.toUrl(path + icon) }).appendTo("head");
+```
+
+Template resolution lives in **`org/forgerock/commons/ui/common/util/UIUtils.js`**, which consumes the theme
+object that `ThemeManager.getTheme()` resolves. That file is **not in the OpenAM source tree** — it is
+unpacked at build time from the Maven artifact `org.openidentityplatform.commons.ui:user:zip:www`
+(`openam-ui/openam-ui-ria/pom.xml`, execution `unpack-forgerock-ui-user`). Read it at
+`openam-ui/openam-ui-ria/target/XUI/org/forgerock/commons/ui/common/util/UIUtils.js`, or in the container at
+`/usr/local/tomcat/webapps/openam/XUI/org/forgerock/commons/ui/common/util/UIUtils.js` — the deployed copy is
+byte-equivalent in behaviour (same `was not found. Trying` strings at lines 102 / 128 / 165).
+
+### The mechanism, quoted
+
+Three call sites, one shape: try `theme.path + url`, and on **any** failure retry the bare `url`.
+
+`compileTemplate` (single template, the one the login page hits most):
+
+```js
+obj.compileTemplate = function (templateUrl, data) {
+    if (templateUrl) {
+        return ThemeManager.getTheme().then(function (theme) {
+            var templateUrlWithPath = theme.path + templateUrl,
+                templateSavedPath = theme.path ? templateUrlWithPath : templateUrl;
+
+            if (obj.templates[templateSavedPath]) {
+                return Handlebars.compile(obj.templates[templateSavedPath])(data);
+            } else if (theme.path) {
+                return fetchAndCompileTemplate(templateUrlWithPath, templateUrlWithPath, data)
+                    .then(null, function fallBackToDefaultPath() {
+                        console.log(templateUrlWithPath + " was not found. Trying " + templateUrl);
+                        return fetchAndCompileTemplate(templateUrl, templateUrlWithPath, data);
+                    });
+            } else {
+                return fetchAndCompileTemplate(templateUrl, templateUrl, data);
+            }
+        });
+    }
+```
+
+`preloadTemplates` and `preloadPartial` repeat it verbatim for bulk templates and Handlebars partials:
+
+```js
+        promises.push(
+            fetchAndSaveTemplate(urlWithPath, urlWithPath).then(null, function fallBackToDefaultPath() {
+                console.log(urlWithPath + " was not found. Trying " + templateUrl);
+                promises.push(fetchAndSaveTemplate(templateUrl, urlWithPath));
+            }));
+```
+```js
+            } else if (theme.path) {
+                return registerPartial(name, theme.path + url)
+                    .then(null, function fallBackToDefaultPath() {
+                        console.log(theme.path + url + " was not found. Trying " + url);
+                        return registerPartial(name, url);
+                    });
+```
+
+Two consequences that matter for the spec:
+
+- The **memo key is always the themed path** (`urlToSave = templateUrlWithPath` on *both* branches). So the
+  miss is paid once per template per page load, not once per render.
+- The fetch is `$.ajax({ type: "GET", url: require.toUrl(url), dataType: "html" })`, so every template URL
+  carries the same `?v=<build version>` suffix as the stylesheets.
+
+### `path` is only ever set by the theme author
+
+`default` ships `path: ""`; **`fr-dark-theme` does not declare `path` at all**, and `extendTheme` merges it
+over `default`, so it inherits `""`. Selecting `fr-dark-theme` therefore changes stylesheets and the login
+logo but **does not redirect a single template**. A spec that wants to exercise template resolution must
+inject a theme that declares a non-empty `path` — reuse the `context.route(...)` config interception from the
+sections above and add `path: "themes/dark/"`. Measured: `themes/dark/` on disk contains only `css/`,
+`images/` and `config.json` — **no templates** — which makes it a free, realistic fallback fixture.
+
+### The subject template: `templates/common/FooterTemplate.html`
+
+| criterion | why it qualifies |
+| --- | --- |
+| small | 16 lines, no partials, no sub-includes |
+| visibly distinct | renders into `#footer`, plain visible text, no CSS needed to see it |
+| no setup | present on `XUI/#login/` in the root realm — no realm, no user, no authentication |
+| unambiguous | the theme inherits `settings.footer` from `default`, so **no** theme setting can change the footer text. Literal text appearing there can only have come from an overridden template. |
+
+Rejected alternatives: `templates/common/LoginHeaderTemplate.html` renders `img.main-logo` but its content is
+driven by `settings.loginLogo`, so an assertion there cannot distinguish "template was overridden" from
+"setting was applied" — exactly the confusion this test exists to avoid. `templates/common/LoginBaseTemplate.html`
+is structural (`#content` lives inside it); overriding it breaks the rest of the page.
+
+### Placing and removing the override
+
+Absolute path in the deployed tree:
+
+```
+/usr/local/tomcat/webapps/openam/XUI/themes/dark/templates/common/FooterTemplate.html
+```
+
+`themes/dark/templates/` and `themes/dark/templates/common/` do **not** exist out of the box — both are
+created by the test and both must be removed.
+
+```sh
+X=/usr/local/tomcat/webapps/openam/XUI
+# place
+docker exec openam-idp sh -c "mkdir -p $X/themes/dark/templates/common && \
+  printf '%s\n' '<div class=\"container\"><p id=\"e2e-tpl-marker\">E2E-TEMPLATE-OVERRIDE-OK</p></div>' \
+  > $X/themes/dark/templates/common/FooterTemplate.html"
+# wait out the Tomcat WebResourceRoot cache — poll, never sleep (see Editing the deployed config)
+curl -sS -o /dev/null -w '%{http_code}' \
+  http://openam.example.org:8080/openam/XUI/themes/dark/templates/common/FooterTemplate.html   # until 200
+# remove
+docker exec openam-idp sh -c "rm -f $X/themes/dark/templates/common/FooterTemplate.html && \
+  rmdir $X/themes/dark/templates/common $X/themes/dark/templates"
+```
+
+`docker exec` runs as `openam:root`, so the created file is `644 openam:root` (the surrounding tree is `640`
+/ `750`); it is world-readable for the few seconds it exists, which Tomcat does not care about. Because the
+file is *new*, there is nothing to back up — restore is `rm` + `rmdir`, not a byte restore.
+
+**Preferred alternative, same as for the config:** `context.route("**/themes/dark/templates/common/FooterTemplate.html*",
+route => route.fulfill({ body }))` was verified to produce an identical result with the deployed `/XUI` left
+completely untouched. Use interception; keep the disk recipe as a fallback for the case where the migration
+stops serving templates over the network.
+
+### The assertion that proves the override rendered
+
+DOM, not network:
+
+```js
+await expect(page.locator("#footer #e2e-tpl-marker")).toHaveText("E2E-TEMPLATE-OVERRIDE-OK");
+```
+
+Measured: `#e2e-tpl-marker` count 1, visible `true`, `#footer` innerText exactly `E2E-TEMPLATE-OVERRIDE-OK`
+(the default footer text `open-identity-platform-openam@googlegroups.com … Join OpenAM Community` is gone).
+Identical result via disk override and via `route.fulfill`. Survives `page.reload()`.
+
+### The fallback path — measured network sequence
+
+Themed (`path: "themes/dark/"`), **no** override anywhere, one `#login/` page load:
+
+| | |
+| --- | --- |
+| requests for `*.html` | **54** — 27 × `404 themes/dark/<url>` immediately followed by 27 × `200 <url>` |
+| default theme, same page | 27 × `200 <url>`, zero 404s |
+| with the one override in place | 26 × 404 + 26 × 200, plus `200 themes/dark/templates/common/FooterTemplate.html` and **no** request for `templates/common/FooterTemplate.html` |
+| is a 404 really issued | **yes** — real HTTP 404 from Tomcat, one per template, in strict try-then-retry order (e.g. `404 themes/dark/templates/common/FooterTemplate.html` → `200 templates/common/FooterTemplate.html`) |
+| once or every render | **once per template per page load.** In-page navigation `#login/ → #profile/details → #login/` issued **0** further `.html` requests and **0** further fallback logs — `UIUtils.templates` is memoised under the *themed* key. |
+| across a full reload | **repeats in full** — `page.reload()` re-issued all 26 404s and 26 fallback logs. The memo is a JS object, not an HTTP cache, and Tomcat sends no cache headers on the 404. |
+| swallowed or surfaced | **swallowed.** `.then(null, fallBackToDefaultPath)` catches the jQuery ajax rejection. `pageerror` count is **0** in every themed run. Nothing reaches the user. |
+
+### How to assert the fallback without asserting on the 404
+
+**Behavioural requirement (assert this):** with a theme whose `path` supplies no override for a template, the
+page still renders that template's content from the default location. Concretely, for a theme with
+`path: "themes/dark/"` and no `themes/dark/templates/common/FooterTemplate.html`:
+
+```js
+await expect(page.locator("#footer")).toContainText("Join OpenAM Community");
+await expect(page.locator("#e2e-tpl-marker")).toHaveCount(0);
+```
+
+plus the guard the theming spec already uses — fail loudly if the `ThemeConfiguration.js` route handler was
+never invoked, otherwise the test silently degrades into "the default theme renders", which proves nothing.
+Optionally pin that the theme really was applied by checking a stylesheet href, so a broken injection cannot
+pass this test.
+
+**Mechanism (do NOT assert this):** the `404 themes/dark/…` → `200 …` pair, the request count 54, the ordering,
+and the `console.log("… was not found. Trying …")` line. Every one of those is an artefact of RequireJS +
+jQuery ajax + a runtime probe. A Vite build knows the theme's file list at build time and can legitimately
+resolve the override statically, emit zero 404s, and still satisfy the requirement. A spec that counts 404s
+fails the migration for being *better*. Assert the rendered text; let the transport change.
+
+The one mechanism fact worth recording as a **baseline note rather than an assertion**: the fallback costs one
+404 per template per page load (27 on the login page). If a spec ever wants to guard the *cost*, phrase it as
+an upper bound that a zero-404 implementation also passes, e.g. `expect(count404).toBeLessThanOrEqual(27)` —
+never an equality.
+
+### Correction: the footer assertions above are not sufficient — partials are the larger half
+
+Raised by the code review of the 1.10 spec (2026-08-10) and verified with two interception-only probes
+(deployed tree untouched, theme injected via `context.route`, root realm).
+
+The "27 × 404" above is **19 partials + 8 templates**, and the two come from *different* `UIUtils` call
+sites. The footer and the login logo are both `compileTemplate` output; nothing about them exercises
+`preloadPartial`, which is where the 19 are and where the login form comes from. `#idToken1` is
+rendered by `partials/login/_Default.html`, one of the 19 `partialUrls` in `AppConfiguration.js:74`.
+
+Measured, themed path in both cases, one login page load each:
+
+| probe | `#idToken1` | submit | `img.main-logo` | `#footer` mailto | `pageerror` |
+| --- | --- | --- | --- | --- | --- |
+| A — nothing blocked | 1 | 1 | 1 | 1 | 0 |
+| B — only `partials/login/_Default.html` made to fail on the **default** path | **0** | **0** | 1 | 1 | 0 |
+
+Probe B is what a loader that kept `compileTemplate`'s fallback and lost `preloadPartial`'s looks
+like. Every assertion the section above recommends passes against it, on a login page with no form on
+it. So the fallback assertion set must include one observable from a partial:
+
+```js
+await expect(page.locator("#idToken1")).toBeVisible();
+```
+
+Still behaviour, not mechanism — it names a rendered element, not a request. `xui-login.spec.mjs` does
+not close this gap: it runs under the default theme, where `theme.path` is `""` and `preloadPartial`
+takes the `else` branch that never falls back.
+
+### Console noise — a strict test cannot pass, theme or no theme
+
+| run | `console` errors | `pageerror` |
+| --- | --- | --- |
+| default theme | 2 | 0 |
+| themed, no override | 29 (2 baseline + 27 template 404s) | 0 |
+
+The themed run adds one browser-generated `[error] Failed to load resource: … 404` per missed template, plus
+one explicit `[log] themes/dark/<url> was not found. Trying <url>` per template — **57 console messages** on a
+single login page load. There is no way to suppress either from the page.
+
+Critically, the **default** login page already emits two console errors with no theming involved at all:
+
+```
+404 /openam/XUI/locales/en-US/translation.json?v=16.2.0-SNAPSHOT
+401 /openam/json/users?_action=idFromSession
+```
+
+So a "fail on any console error" harness is already unusable on `XUI/#login/` and this spec does not make it
+newly unusable. `pageerror` is clean (0) in **every** run, themed or not — if a strict guard is wanted, guard
+`pageerror`, never `console`.
+
+### Restore of the override
+
+| | |
+| --- | --- |
+| what was mutated | one new file `themes/dark/templates/common/FooterTemplate.html` plus its two new parent dirs. `config/ThemeConfiguration.js` was **never written** — all theme selection went through `context.route`. |
+| current state | file and both dirs removed; `themes/dark/` back to `config.json`, `css/`, `images/`. `GET …/themes/dark/templates/common/FooterTemplate.html` → **404**; `GET …/templates/common/FooterTemplate.html` → **200**; `GET /openam/XUI/` → **200**. `ThemeConfiguration.js` sha256 `f34dcefd0196b0db4314c009e3d5ee078146a3d4f98734f8b42cd98dc044cbca`, `640 openam:root` — matches the pristine value recorded above. Browser re-check: `themeName` `default`, logo `./images/login-logo.png`, footer back to the community text, `#e2e-tpl-marker` count 0, zero `.html` 404s. |
+
+### Phase-2 (D6) dependency, for this spec specifically
+
+- The DOM assertions are transport-agnostic and D6-safe.
+- The **fixture** depends on `config/ThemeConfiguration.js` staying a separately fetched module (already
+  recorded above) *and* on templates being separately fetched `.html` files at `<theme.path><url>`. Vite will
+  almost certainly inline templates into the bundle; when it does, the override fixture must move from
+  "serve a file at a URL" to whatever the new build's theme-asset mechanism is. Write the spec so that the
+  fixture is one helper and the assertions do not know how the override got there.
+- The template fallback lives in a **third-party artifact** (`org.openidentityplatform.commons.ui:user`), not
+  in OpenAM. Any migration that keeps `UIUtils.js` keeps this behaviour for free; any migration that replaces
+  it must reimplement the try-themed-then-default rule deliberately. Flag it in the phase-2 plan.
+
+### Trap: `main-authorize.js` uses `theme.path` with **no** fallback
+
+`openam-ui/openam-ui-ria/src/main/js/main-authorize.js` (the OAuth2 consent page, deployed as
+`XUI/main-authorize.js`) prefixes its templates with the theme path too, but through the RequireJS `text!`
+plugin and with no error branch:
+
+```js
+var themePath = Configuration.globalData.theme.path;
+templatePaths = _.map(templatePaths, function (templatePath) {
+    return `text!${themePath}${templatePath}`;
+});
+```
+
+A theme that sets `path` but ships no `templates/common/LoginBaseTemplate.html`,
+`templates/common/FooterTemplate.html`, `templates/common/LoginHeaderTemplate.html` or the authorize template
+will therefore **break the consent page**, not fall back. Do not reuse a themed-`path` fixture in
+`xui-authorize.spec.mjs` without also placing those four templates.

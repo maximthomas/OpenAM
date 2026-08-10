@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-08-08
+goal: Turn OAuth2Request into a framework-agnostic facade with a Restlet
+  adapter, so the OAuth2 core stops importing org.restlet while Restlet still
+  serves all traffic

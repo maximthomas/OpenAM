@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-08-08
+goal: Serve /xacml/policies on CHF instead of Restlet — the canary that proves
+  the endpoint-migration pattern end to end on one route across three files.

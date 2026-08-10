@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-08-08
+goal: Serve the UMA endpoints on CHF — permission request, authorization request
+  and well-known configuration — including the UMA audit filter and exception
+  handler.

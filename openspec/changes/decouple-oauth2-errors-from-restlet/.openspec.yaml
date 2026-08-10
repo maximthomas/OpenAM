@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-08-08
+goal: Delete OAuthProblemException, a dead Restlet-typed duplicate of
+  OAuth2Exception, retargeting its 15 throw sites onto the neutral hierarchy so
+  the OAuth2 core stops importing org.restlet and stops flattening errors to
+  server_error

@@ -82,17 +82,20 @@
  */
 
 import { test as base, expect } from "@playwright/test";
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { getAdminToken } from "../common/openam-commons.mjs";
 import { createRealm, removeRealm, uniqueRealmName } from "../common/realms-commons.mjs";
 import { DEFAULT_REALM, XUI_BASE } from "../common/xui-commons.mjs";
-
-/** The container the deployed `/XUI` lives in — `AM_CONTAINER` in local/lib.sh. */
-const AM_CONTAINER = process.env.OPENAM_CONTAINER ?? "openam-idp";
-
-/** The deployed `/XUI`, at the path local/xui-deploy.sh writes the tree to. */
-const XUI_ROOT = process.env.OPENAM_XUI_ROOT ?? "/usr/local/tomcat/webapps/openam/XUI";
+import {
+    XUI_ROOT,
+    deployedPathExists,
+    deployedSha256,
+    placeDeployedFile,
+    readDeployedFile,
+    removeDeployedFile,
+    sha256,
+    waitForServed,
+    writeDeployedFile,
+} from "../common/deployed-xui-commons.mjs";
 
 const THEME_CONFIG_PATH = process.env.OPENAM_THEME_CONFIG
     ?? `${XUI_ROOT}/config/ThemeConfiguration.js`;
@@ -183,76 +186,35 @@ function normalizeHref (href) {
     return String(href).replace(/^\.\//, "").replace(/\?.*$/, "");
 }
 
-function sha256 (text) {
-    return createHash("sha256").update(text).digest("hex");
-}
+/*
+ * The deployed-tree primitives themselves live in common/deployed-xui-commons.mjs, shared with
+ * xui-operator-module.spec.mjs (task 1.11), which needs the same write-in-place-and-poll mechanics
+ * for a file of its own. What stays here is only this spec's binding of them to its own paths.
+ */
 
 function readDeployedConfig () {
-    return execFileSync("docker", ["exec", AM_CONTAINER, "cat", THEME_CONFIG_PATH], {
-        encoding: "utf8",
-    });
+    return readDeployedFile(THEME_CONFIG_PATH);
 }
 
-/**
- * Overwrite the deployed config in place.
- *
- * `docker exec … 'cat > path'` rather than `docker cp`: the deployed file is 640 openam:root and
- * `docker cp` would replace it with one owned by root, which the Tomcat process — running as
- * openam — then cannot read. Truncating in place keeps the owner and the mode.
- */
 function writeDeployedConfig (contents) {
-    execFileSync("docker", ["exec", "-i", AM_CONTAINER, "sh", "-c", `cat > "${THEME_CONFIG_PATH}"`], {
-        input: contents,
-    });
+    writeDeployedFile(THEME_CONFIG_PATH, contents);
 }
 
-function deployedSha256 () {
-    const output = execFileSync("docker", ["exec", AM_CONTAINER, "sha256sum", THEME_CONFIG_PATH], {
-        encoding: "utf8",
-    });
-    return output.trim().split(/\s+/)[0];
-}
-
-/**
- * Add a file to the deployed tree, creating the directories above it.
- *
- * The path goes to `sh` as a positional argument rather than being interpolated into the script:
- * every value here is this file's own constant today, and passing it as `$1` keeps that from
- * mattering the day one of them comes from a realm name or an environment variable.
- *
- * No backup is taken because nothing is being replaced — this file does not exist in the shipped
- * tree, so the restore is a removal (below), not a byte restore.
- */
-function placeDeployedFile (path, contents) {
-    execFileSync("docker", ["exec", "-i", AM_CONTAINER, "sh", "-c",
-        "mkdir -p \"$(dirname \"$1\")\" && cat > \"$1\"", "sh", path], { input: contents });
+function deployedConfigSha256 () {
+    return deployedSha256(THEME_CONFIG_PATH);
 }
 
 /**
  * Take the override and the two directories it needed back out of the deployed tree.
  *
- * `rmdir` rather than `rm -r`: it removes an empty directory and refuses a populated one, so this
- * can only ever take away the two directories the fixture itself created. A directory that has
- * something else in it survives, and both callers then fail on it — the setup because a theme with
- * its own templates invalidates the fallback test, the teardown because the tree no longer matches
- * what the product ships.
- *
- * The script's exit status is always 0, so a failing `rm` is swallowed as silently as a failing
- * `rmdir`. That is not relied on: nothing here reports success, and every caller establishes the
- * outcome afterwards with `waitForOverrideAbsent` or `deployedPathExists`.
+ * Both callers rely on `removeDeployedFile` refusing to remove a populated directory — the setup
+ * because a theme with its own templates invalidates the fallback test, the teardown because the
+ * tree would no longer match what the product ships.
  *
  * Callable when nothing was placed, which is what lets the teardown run unconditionally.
  */
 function removeDeployedOverride () {
-    execFileSync("docker", ["exec", AM_CONTAINER, "sh", "-c",
-        "rm -f \"$1\"; rmdir \"$2\" \"$3\" 2>/dev/null || true",
-        "sh", OVERRIDE_PATH, ...OVERRIDE_DIRS]);
-}
-
-function deployedPathExists (path) {
-    const output = execFileSync("docker", ["exec", AM_CONTAINER, "sh", "-c",
-        "if [ -e \"$1\" ]; then echo yes; else echo no; fi", "sh", path], { encoding: "utf8" });
-    return output.trim() === "yes";
+    removeDeployedFile(OVERRIDE_PATH, OVERRIDE_DIRS);
 }
 
 /**
@@ -323,32 +285,6 @@ function withThemes (source, themes) {
         .join("\n");
     const at = start + opening.length;
     return `${source.slice(0, at)}\n${rendered}\n${source.slice(at)}`;
-}
-
-let probe = 0;
-
-/**
- * Wait until the bytes served at a URL satisfy a predicate.
- *
- * Not decoration, and not replaceable by a sleep. Tomcat's WebResourceRoot caches static resources
- * for `cacheTtl` — 5s by default — so for several seconds after the write the file on disk and the
- * file on the wire disagree, and a page opened in that window silently gets the previous bytes.
- * There is no way round it from the client: RequireJS's `urlArgs` is the fixed build version, the
- * same string before and after the edit, so the request URL cannot be varied to miss the cache.
- *
- * The probe parameter is not an attempt to dodge that cache — Tomcat keys it on the path, so it
- * cannot be dodged. It is there so that no client-side cache answers this poll instead of Tomcat.
- */
-async function waitForServed (request, url, predicate, what) {
-    await expect.poll(async () => {
-        probe += 1;
-        const response = await request.get(`${url}?probe=${probe}`);
-        return predicate(response.status(), response.ok() ? await response.text() : "");
-    }, {
-        message: `${url} must be served ${what}`,
-        timeout: 30_000,
-        intervals: [250, 500, 1000],
-    }).toBe(true);
 }
 
 function waitForServedConfig (request, predicate, what) {
@@ -433,7 +369,7 @@ const test = base.extend({
                 .toEqual(mappings);
 
             writeDeployedConfig(mutated);
-            expect(deployedSha256(), "the mapping must have reached the container")
+            expect(deployedConfigSha256(), "the mapping must have reached the container")
                 .toBe(sha256(mutated));
             // The realm names are unique per run, so finding one in the served body cannot be
             // satisfied by a cached copy of anything earlier.
@@ -455,7 +391,7 @@ const test = base.extend({
                     await removeRealm(adminToken, request, realm);
                 }
             }
-            expect(deployedSha256(), "the deployed config must be back to its original bytes")
+            expect(deployedConfigSha256(), "the deployed config must be back to its original bytes")
                 .toBe(pristineSha);
         }
     },
@@ -511,7 +447,7 @@ const test = base.extend({
                 .toEqual(mappings);
 
             writeDeployedConfig(mutated);
-            expect(deployedSha256(), "the mapping must have reached the container")
+            expect(deployedConfigSha256(), "the mapping must have reached the container")
                 .toBe(sha256(mutated));
             await waitForServedConfig(request, (body) => body.includes(realm),
                 "with this test's themed-path mapping");
@@ -571,7 +507,7 @@ const test = base.extend({
                     await removeRealm(adminToken, request, realm);
                 }
             }
-            expect(deployedSha256(), "the deployed config must be back to its original bytes")
+            expect(deployedConfigSha256(), "the deployed config must be back to its original bytes")
                 .toBe(pristineSha);
             // The directories are checked as well as the file. They did not exist before this
             // fixture ran, and an empty `themes/dark/templates/` left behind is a deployed tree

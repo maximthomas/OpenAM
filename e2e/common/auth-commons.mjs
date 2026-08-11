@@ -38,6 +38,12 @@
  *
  * Task 1.15 (authentication chains) assembles a chain out of module instances and will need
  * createModule in particular, which is why these live here rather than inside the spec.
+ *
+ * The chain fixtures below were added for that task and sit beside the module ones because a chain is
+ * built out of module instances in the same realm — the two are one fixture surface, not two. Three
+ * differences from the module endpoints are called out where they bite, because all three are places
+ * where code copied from the module helpers above would be subtly wrong: a chain has no type segment,
+ * a GET for a deleted chain really is a 404, and the `_id eq` query filter is not implemented here.
  */
 
 import { OPENAM_BASE, describeFailure } from "./openam-commons.mjs";
@@ -216,4 +222,111 @@ export async function removeModule (adminToken, request, realmPath, type, name) 
         throw await describeFailure(
             `Failed to remove the "${type}" module "${name}" in "${realmPath}"`, response);
     }
+}
+
+function chainsUrl (realmPath, path = "", query = "") {
+    return `${realmRestBase(realmPath)}/realm-config/authentication/chains${path}${query ? `?${query}` : ""}`;
+}
+
+/**
+ * Create an empty authentication chain and return what AM stored.
+ *
+ * A chain has no type — unlike a module it is addressed by name alone, so there is no type segment
+ * here and none in the console's routes either. What comes back is an empty chain: AM stores
+ * `authChainConfiguration: []` and the links are added by a later update.
+ */
+export async function createChain (adminToken, request, realmPath, name) {
+    const response = await request.post(chainsUrl(realmPath, "", "_action=create"), {
+        headers: headers(adminToken, true),
+        data: { _id: name },
+    });
+
+    if (!response.ok()) {
+        throw await describeFailure(`Failed to create the chain "${name}" in "${realmPath}"`, response);
+    }
+    return response.json();
+}
+
+/**
+ * Read a chain back, or null if there is no such chain.
+ *
+ * This is also the only way to ask whether a chain exists, and there is deliberately no chainExists
+ * here mirroring moduleExists: the `_id eq "x"` query filter AddModuleView uses for modules answers
+ * **501 Not Implemented** on this endpoint, so a second way to ask would only invite the 501.
+ *
+ * No `_id` guard, unlike readModule, and that difference is real rather than an oversight: a GET for a
+ * deleted *chain* is a clean 404, where the modules endpoint answers 200 with the type's template
+ * defaults under an empty `_id`. Verified both ways — see NOTES-auth-chains.md §11. Do not add the
+ * guard back "for symmetry"; it would be dead code that implies a hazard this endpoint does not have.
+ */
+export async function readChain (adminToken, request, realmPath, name) {
+    const response = await request.get(chainsUrl(realmPath, `/${encodeURIComponent(name)}`), {
+        headers: headers(adminToken),
+    });
+
+    if (response.status() === 404) {
+        return null;
+    }
+    if (!response.ok()) {
+        throw await describeFailure(`Failed to read the chain "${name}" in "${realmPath}"`, response);
+    }
+    return response.json();
+}
+
+/**
+ * Replace a chain's ordered links, and return what AM stored.
+ *
+ * `links` is the whole `authChainConfiguration` array — `[{module, criteria, options}, ...]` — because
+ * that is what the console's own save sends (EditChainView.saveChain posts exactly this one key). The
+ * array's order *is* the chain's order, which is what makes it the oracle a reorder is checked against.
+ */
+export async function updateChain (adminToken, request, realmPath, name, links) {
+    const response = await request.put(chainsUrl(realmPath, `/${encodeURIComponent(name)}`), {
+        headers: headers(adminToken, true),
+        data: { authChainConfiguration: links },
+    });
+
+    if (!response.ok()) {
+        throw await describeFailure(`Failed to update the chain "${name}" in "${realmPath}"`, response);
+    }
+    return response.json();
+}
+
+/**
+ * Remove a chain, tolerating one that is already gone.
+ *
+ * Unused by teardown for the same reason removeModule is: a chain belongs to a realm and every test
+ * gets its own scratch realm, so removing the realm removes its chains with it. This is here for the
+ * same future test — one that needs a chain gone without its realm going too. Asserting that a
+ * deletion happened is readChain returning null, not this.
+ */
+export async function removeChain (adminToken, request, realmPath, name) {
+    const response = await request.delete(chainsUrl(realmPath, `/${encodeURIComponent(name)}`), {
+        headers: headers(adminToken),
+    });
+
+    if (!response.ok() && response.status() !== 404) {
+        throw await describeFailure(`Failed to remove the chain "${name}" in "${realmPath}"`, response);
+    }
+}
+
+/**
+ * A realm's authentication configuration — the service that names its default chains.
+ *
+ * Read only, and never written by anything in this suite. `core.orgConfig` and `core.adminAuthModule`
+ * name the chains AM authenticates a realm's users and its administrators against, so repointing
+ * either at a broken chain is how an instance stops being able to log in. It is here because
+ * xui-auth-chains.spec.mjs asserts what AM's *shape* is: the two keys are nested under `core`, and the
+ * console looks for them at the top level. See that spec's guard test and NOTES-auth-chains.md §9.
+ */
+export async function realmAuthenticationConfig (adminToken, request, realmPath) {
+    const response = await request.get(`${realmRestBase(realmPath)}/realm-config/authentication`, {
+        headers: headers(adminToken),
+    });
+
+    if (!response.ok()) {
+        throw await describeFailure(
+            `Failed to read the authentication configuration of "${realmPath}"`, response);
+    }
+    return response.json();
 }

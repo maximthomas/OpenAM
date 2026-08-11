@@ -70,9 +70,22 @@ fi
 
 # Replace rather than merge: a stale file left behind by the previous build is exactly the kind
 # of thing that makes a migration comparison lie.
+# Each docker exec here runs as root (-u 0) rather than exec's default openam. See the chown
+# below for why the tree can end up owned by a UID the container does not know: once it is,
+# openam can neither unlink those files nor write into their directories, so `rm -rf` fails
+# partway and `set -e` aborts leaving a half-deleted /XUI that Tomcat then serves as 404s.
 log "replacing ${XUI_PATH}"
-docker exec "$AM_CONTAINER" rm -rf "$XUI_PATH"
-docker exec "$AM_CONTAINER" mkdir -p "$XUI_PATH"
+docker exec -u 0 "$AM_CONTAINER" rm -rf "$XUI_PATH"
+docker exec -u 0 "$AM_CONTAINER" mkdir -p "$XUI_PATH"
 docker cp "${STAGE}/." "${AM_CONTAINER}:${XUI_PATH}/"
+
+# `docker cp` preserves the staging files' host ownership. On native Linux that is the invoking
+# host UID verbatim (typically 1000), while the container runs as openam (1001) -- so the copied
+# tree lands owned by nobody the container knows. Tomcat still serves it, which is why this went
+# unnoticed, but specs that write into the deployed /XUI through `docker exec` (the theme and
+# operator-module ones) fail with EACCES. Docker Desktop's VM maps UIDs on copy and hides this;
+# native Linux does not. Tomcat's own war-expanded /XUI is openam-owned, so this restores what
+# the tests were written against.
+docker exec -u 0 "$AM_CONTAINER" chown -R openam:root "$XUI_PATH"
 
 log "deployed. ${AM_BASE}/XUI/ now serves $(find "$STAGE" -type f | wc -l | tr -d ' ') files"

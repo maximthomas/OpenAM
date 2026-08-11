@@ -47,8 +47,13 @@ die()  { printf '\033[1;31merror\033[0m %s\n' "$*" >&2; exit 1; }
 
 # Resolve the project version from the reactor root pom, so the harness follows a version bump
 # without being edited. The root pom declares no <parent>, so its first <version> is the project's.
+#
+# sed quits on the first match rather than piping to `head -1`: under the `set -o pipefail` above,
+# `head` exiting early makes sed take SIGPIPE, and 141 propagates as the pipeline's status and
+# kills every script that sources this file -- silently, since it happens inside a command
+# substitution before anything is logged.
 am_version() {
-    sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p' "${REPO_ROOT}/pom.xml" | head -1
+    sed -n '/.*<version>.*<\/version>.*/{s/.*<version>\(.*\)<\/version>.*/\1/p;q;}' "${REPO_ROOT}/pom.xml"
 }
 
 require_cmd() {

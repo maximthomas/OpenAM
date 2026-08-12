@@ -41,11 +41,13 @@
  * AM rather than something assumed to match it. A zip is unpacked to a temp directory that this
  * file removes on the way out; see server-lib/xui-source.mjs.
  *
- * **What it answers today: the XUI tree, and the administrative reads.** Task 2.6 builds an
- * in-memory baseline from local/capture at startup and answers realm and service reads out of it
- * (server-lib/state.mjs); authentication, sessions, `serverinfo`, the writes and reset are tasks
- * 2.7-2.13 and still answer a labelled 501. See server-lib/rest.mjs for why this stops there
- * rather than faking enough of a backend to get the login form to render.
+ * **What it answers today: the XUI tree, the administrative reads, and authentication.** Task 2.6
+ * builds an in-memory baseline from local/capture at startup and answers realm and service reads
+ * out of it (server-lib/state.mjs); task 2.7 adds the credential exchange and the session cookie
+ * (server-lib/auth.mjs). Session resolution and logout, `serverinfo`, the writes and reset are
+ * tasks 2.8-2.13 and still answer a labelled 501 — so a login completes and establishes a session
+ * that nothing yet resolves, and the XUI stays on the login route. See server-lib/rest.mjs for why
+ * this stops there rather than faking the rest of a session.
  *
  * This file is the process: settings, startup guards, the socket, the log and the shutdown. What
  * it answers with is in server-lib/, which is also where the tests are — same split as capture.mjs
@@ -219,7 +221,7 @@ Something is on it -- an earlier run of this server, or the AM container if you 
 
   XUI   ${origin}/${options.context}/XUI/
   REST  ${origin}/${options.context}/json/   (${state.realms.size} realm(s) from the capture;
-                                              501 outside the administrative reads)
+                                              501 outside the reads and authentication)
 
 Point the suite or a fixture at it with:
   OPENAM_BASE_URL=${origin}/${options.context}

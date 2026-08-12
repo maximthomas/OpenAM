@@ -78,7 +78,26 @@
  * returns.
  */
 
+import { ADMIN_PASS, ADMIN_USER, PASSWORD, USERNAME } from "../../common/openam-commons.mjs";
+import { createAuthState } from "./auth.mjs";
 import { captureFileFor, loadCapture } from "./capture-store.mjs";
+
+/**
+ * Who can log in, taken from the suite's own constants rather than restated here.
+ *
+ * The stand-in has to accept exactly the credentials the specs log in with, and those are already
+ * declared once — with their environment overrides — in common/openam-commons.mjs, because the
+ * deployed instance needs the same two accounts. Importing them is what stops the two copies
+ * drifting: a run that points the suite at a different user by exporting `OPENAM_USERNAME` moves
+ * this server's directory with it, where a second hardcoded pair would quietly fail every login.
+ *
+ * The passwords are the container instance's well-known ones, not secrets. This server holds them
+ * in memory, compares them in the clear and has no password policy, lockout or expiry — see
+ * NOTES-auth.md §9.7 on why lockout in particular must stay absent: xui-login.spec.mjs fails a
+ * login as the same user its other tests use, and a stand-in that locked the account would poison
+ * every test after it.
+ */
+const CREDENTIALS = { [USERNAME]: PASSWORD, [ADMIN_USER]: ADMIN_PASS };
 
 /**
  * Where each part of the baseline is read from, and the capture order that makes it the baseline.
@@ -218,7 +237,11 @@ export function buildBaselineState (captureDir, { context, hostname }) {
     const statics = new Map(capture.filesForActions(VERBATIM_ACTIONS)
         .map((file) => [file, capture.body(file)]));
 
-    return createState({ realms, globalServices, listingEnvelopes, statics });
+    // Built from the same capture handle and returned as part of the same state, so the sessions
+    // and in-flight logins of task 2.7 are cleared by whatever clears the rest of the store.
+    const auth = createAuthState(capture, { credentials: CREDENTIALS });
+
+    return createState({ realms, globalServices, listingEnvelopes, statics, auth });
 }
 
 /**
@@ -252,10 +275,12 @@ function renderListing (envelope, result) {
  * through `buildBaselineState` rather than hold a `loadCapture` handle and re-read from it — reusing
  * one would hand the new state documents an earlier state had already mutated in place.
  */
-function createState ({ realms, globalServices, listingEnvelopes, statics }) {
+function createState ({ realms, globalServices, listingEnvelopes, statics, auth }) {
     return {
         realms,
         globalServices,
+        /** The authentication exchange and the sessions it establishes; see auth.mjs. */
+        auth,
 
         /** `GET /json/global-config/realms?_queryFilter=true` */
         realmsListing () {

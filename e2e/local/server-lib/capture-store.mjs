@@ -142,12 +142,16 @@ export function loadCapture (captureDir, deployment) {
         return call;
     }
 
+    /** The recorded envelope for one capture file, as written. */
+    function envelope (file) {
+        requireCall(file);
+        return JSON.parse(readFileSync(join(captureDir, file), "utf8"));
+    }
+
     /** The recorded response body for one capture file, resolved and cached. */
     function body (file) {
         if (!bodies.has(file)) {
-            requireCall(file);
-            const envelope = JSON.parse(readFileSync(join(captureDir, file), "utf8"));
-            bodies.set(file, resolveDeployment(envelope.response.body, deployment, file));
+            bodies.set(file, resolveDeployment(envelope(file).response.body, deployment, file));
         }
         return bodies.get(file);
     }
@@ -163,6 +167,36 @@ export function loadCapture (captureDir, deployment) {
          * re-record can produce, so the guard must not misname it.
          */
         order: (file) => requireCall(file).order,
+        /**
+         * One top-level field of a recorded response body, resolved on its own.
+         *
+         * `body` resolves the whole document and throws on any placeholder this server has no value
+         * for. That is the right rule for a payload being *served* and the wrong one for a scalar
+         * being *consulted*, and the session cookie's name is the live case: it is recorded in
+         * `serverinfo/*` beside a `domains` array holding `{{COOKIE_DOMAIN}}`, and what this
+         * deployment puts in that array is task 2.9's decision — the notes are emphatic that a
+         * server on another host must serve `[]` there rather than the recorded domain. Selecting
+         * the field first keeps the two apart: the cookie name is still read from the recording
+         * rather than hardcoded, and nothing about the rest of that document is decided early.
+         *
+         * The selected value is still resolved, so a field that *does* carry an unresolvable marker
+         * throws exactly as it would when served — and an absent field throws too, in the same
+         * voice as a missing file. Answering `undefined` would be the one failure mode every other
+         * guard in this module exists to prevent: a re-record that dropped `cookieName` would set a
+         * cookie literally named `undefined` on every login, and nothing about that says which
+         * recording stopped carrying which field.
+         */
+        bodyField (file, key) {
+            const body = envelope(file).response.body;
+            if (body === null || typeof body !== "object" || !(key in body)) {
+                throw new Error(
+                    `The capture's ${file} has no "${key}" in its response body. The local API `
+                    + "server reads that field rather than hardcoding it, so a re-record that "
+                    + "dropped it has to stop the server rather than leave it serving nothing.",
+                );
+            }
+            return resolveDeployment(body[key], deployment, file);
+        },
         /** Every recorded call whose `_action` is one of `actions`, as capture file paths. */
         filesForActions (actions) {
             return index.calls

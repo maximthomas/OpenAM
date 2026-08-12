@@ -18,8 +18,8 @@
  * Two surfaces on one origin, and nothing else.
  *
  * `/{context}/XUI/` is the built UI tree and `/{context}/json/` is the AM REST API (administrative
- * reads from task 2.6; 501 for the rest until 2.13). Everything outside them is a 404 that names
- * the two. It would be friendlier to
+ * reads from task 2.6, authentication from 2.7; 501 for the rest until 2.13). Everything outside
+ * them is a 404 that names the two. It would be friendlier to
  * proxy the unknown paths to a real AM, and wrong — the local backend's scope is the request list
  * in local/REQUESTS.md, and a silent fallthrough to something else is how that scope stops being
  * true without anyone noticing.
@@ -71,7 +71,7 @@ export function createRequestHandler ({ root, context, state }) {
 
         return sendText(req, res, 404, `${url.pathname} is not served by the local API server.\n\n`
             + `  XUI   ${xuiMount}/\n`
-            + `  REST  ${jsonMount}/   (501 outside the administrative reads)\n`);
+            + `  REST  ${jsonMount}/   (501 outside the reads and authentication)\n`);
     };
 }
 

@@ -26,8 +26,9 @@
  * without its trailing slash redirects, and that `?v=…` is not part of a file name.
  *
  * Every case here is a request the XUI makes or an attack on the one that serves it. None of them
- * need the AM: the administrative reads come out of the committed capture, and everything else is
- * 501 until tasks 2.7-2.13. The last block below is what says so.
+ * need the AM: the administrative reads come out of the committed capture, authentication out of
+ * task 2.7 (auth.test.mjs), and everything else is 501 until tasks 2.8-2.13. The last block below
+ * is what says so.
  */
 
 import assert from "node:assert/strict";
@@ -246,16 +247,22 @@ describe("the REST surface", () => {
     });
 
     it("names the request that got it, because that is the first thing asked", async () => {
-        const response = await get("/openam/json/realms/root/authenticate", { method: "POST" });
+        const response = await get("/openam/json/realms/root/realm-config/services/baseurl", {
+            method: "PUT",
+        });
         assert.equal(response.status, 501);
-        assert.match(JSON.parse(response.body).message, /POST \/openam\/json\/realms\/root/);
+        assert.match(JSON.parse(response.body).message, /PUT \/openam\/json\/realms\/root/);
     });
 
-    it("does not let the XUI past the login form", async () => {
-        // Faking these two is what would make tasks 2.7-2.13 unverifiable: a UI past the login
-        // form on invented responses cannot tell you whether the real authentication works.
-        for (const path of ["/openam/json/users?_action=idFromSession",
-            "/openam/json/serverinfo/version", "/openam/json/sessions?_action=getSessionInfo"]) {
+    it("does not let the XUI past a session it has not resolved", async () => {
+        // Task 2.7 authenticates; resolving a session and ending one are 2.8's. Faking these is
+        // what would make the tasks after it unverifiable -- a UI holding a session on invented
+        // responses cannot tell you whether the real resolution works. No Set-Cookie on any of
+        // them either: the only response in this server that establishes a session is a successful
+        // authenticate, which auth.test.mjs covers.
+        for (const path of ["/openam/json/serverinfo/version",
+            "/openam/json/sessions?_action=getSessionInfo",
+            "/openam/json/sessions?_action=logout"]) {
             const response = await fetch(`${origin}${path}`, { method: "POST" });
             assert.equal(response.status, 501, path);
             assert.equal(response.headers.get("set-cookie"), null, path);

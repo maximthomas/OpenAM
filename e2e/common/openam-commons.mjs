@@ -14,6 +14,18 @@
  * Copyright 2026 3A Systems, LLC.
  */
 
+/**
+ * Keep this file free of imports.
+ *
+ * It is no longer only the specs' — `local/server-lib/state.mjs` reads the credentials below to
+ * build the local API server's user directory, so the server and the specs cannot disagree about
+ * who can log in. That server runs under plain `node`, and `local/server.mjs` is deliberately
+ * Node-standard-library-only because `e2e/package.json`'s single devDependency is the cache key for
+ * the Playwright browser download in CI. So an `import` added here — `@playwright/test` above all —
+ * reaches further than it looks. The unit tests import this module under `node --test`, which is
+ * what would catch it.
+ */
+
 export const OPENAM_BASE = process.env.OPENAM_BASE_URL ?? "http://openam.example.org:8080/openam";
 export const ADMIN_USER = process.env.OPENAM_ADMIN_USER ?? "amadmin";
 export const ADMIN_PASS = process.env.OPENAM_ADMIN_PASS ?? "ampassword";

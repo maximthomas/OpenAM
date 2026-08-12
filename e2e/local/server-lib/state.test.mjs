@@ -103,6 +103,29 @@ async function syntheticCapture ({ realms, listingOrder = 1, createOrder = 9, om
             totalPagedResults: 0,
             totalPagedResultsPolicy: "EXACT",
         },
+        // The authentication exchange (task 2.7, auth.mjs), which buildBaselineState loads along
+        // with the rest. Here because every real recording has it and a state built without it
+        // could log nobody in -- not because these tests exercise it. auth.test.mjs does that,
+        // against the committed capture, where the bodies are the recorded ones.
+        "json/realms/root/authenticate/POST.callbacks.json": {
+            authId: "<AUTHID>",
+            callbacks: [
+                { input: [{ name: "IDToken1", value: "" }], output: [], type: "NameCallback" },
+                { input: [{ name: "IDToken2", value: "" }], output: [], type: "PasswordCallback" },
+            ],
+            stage: "DataStore1",
+        },
+        "json/realms/root/authenticate/POST.success.json": {
+            realm: "/", successUrl: "/{{CONTEXT}}/console", tokenId: "<TOKEN>",
+        },
+        "json/realms/root/authenticate/POST.failure.json": {
+            code: 401, message: "Authentication Failed", reason: "Unauthorized",
+        },
+        "json/users/POST.action=idFromSession.401.json": {
+            code: 401, message: "Access Denied", reason: "Unauthorized",
+        },
+        // Read for its `cookieName` field alone; serving this document is task 2.9's.
+        "json/serverinfo/star/GET.resource=1.1.json": { cookieName: "iPlanetDirectoryPro" },
     };
 
     const orders = {
@@ -195,6 +218,26 @@ describe("the baseline built from the capture", () => {
         assert.throws(
             () => loadCapture(CAPTURE_DIR, {}).body("json/nothing/GET.json"),
             /The capture has no json\/nothing\/GET\.json/,
+        );
+    });
+
+    it("reads one field without resolving the markers in the rest of the document", () => {
+        // How the session cookie's name is taken from `serverinfo/*` without deciding anything
+        // about the `domains` array beside it, which carries a marker and belongs to task 2.9.
+        const capture = loadCapture(CAPTURE_DIR, {});
+        const file = "json/serverinfo/star/GET.resource=1.1.json";
+
+        assert.equal(capture.bodyField(file, "cookieName"), "iPlanetDirectoryPro");
+        assert.throws(() => capture.body(file), /\{\{COOKIE_DOMAIN\}\}/);
+    });
+
+    it("refuses a field the recording does not have, rather than answering undefined", () => {
+        // A re-record that dropped `cookieName` would otherwise put a cookie named `undefined` on
+        // every login, which says nothing about which field stopped being recorded.
+        assert.throws(
+            () => loadCapture(CAPTURE_DIR, {})
+                .bodyField("json/serverinfo/star/GET.resource=1.1.json", "notARecordedField"),
+            /has no "notARecordedField" in its response body/,
         );
     });
 });

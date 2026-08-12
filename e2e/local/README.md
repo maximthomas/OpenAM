@@ -166,7 +166,7 @@ directory, which is removed when the server stops; nothing is cached between run
 | | |
 |---|---|
 | XUI | <http://127.0.0.1:8090/openam/XUI/> |
-| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads; 501 for the rest, until tasks 2.7–2.13 |
+| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads and authentication; 501 for the rest, until tasks 2.8–2.13 |
 
 Ready in about a second, from a checkout, with no war build and no container runtime — which is the
 entire point of it, against the 3–8 minutes and the Docker daemon the instance above needs. It is
@@ -187,10 +187,19 @@ console generates its forms from. They come from an in-memory baseline built at 
 `local/capture/`, not from replaying it, so a write will show up in the next read once tasks
 2.10–2.12 add the writes.
 
-Everything else answers a labelled 501, deliberately: a stub that let the XUI past the login form on
-invented responses would make the real authentication in tasks 2.7–2.13 unverifiable. So
-authentication, sessions, `serverinfo`, every write and reset are still 501, and until they land you
-need the deployed instance above to run a spec that logs in.
+It also answers the authentication exchange: the credential requirements, the submission, and the
+session cookie a completed authentication sets. The credentials are the suite's own — whatever
+`OPENAM_USERNAME` / `OPENAM_ADMIN_USER` and their passwords resolve to, so this server and the specs
+cannot disagree about who can log in. The cookie is **host-only**: it carries AM's `Path=/` and
+`SameSite=Lax` but not its `Domain`, which names the recording deployment and which a browser would
+reject here. See `NOTES-auth.md` for the whole exchange.
+
+Everything else answers a labelled 501, deliberately: a stub that let the XUI past a session it had
+not resolved would make the real resolution in tasks 2.8–2.13 unverifiable. So session resolution
+and logout, `serverinfo`, every write and reset are still 501. A logged-in browser therefore does
+not get past the login route yet — authentication succeeds and the session exists, but nothing
+resolves it until 2.8 — so a spec that needs to *be* logged in still needs the deployed instance
+above.
 
 **This backend is not the acceptance oracle.** A green run against it does not satisfy sign-off; that
 needs the suite green against a deployed AM.

@@ -154,9 +154,14 @@ The second backend: the XUI and the AM REST surface on one origin, and no AM at 
 `e2e/`, not from here:
 
 ```
-npm run local-server                     # serves openam-ui-ria/target/compiled
-npm run local-server -- path/to/outDir   # e.g. a Vite build directory
+npm run local-server                     # serves the built openam-ui-ria-<version>-www.zip
+npm run local-server -- path/to/www.zip  # serves some other zip
+npm run local-server -- path/to/outDir   # serves a directory, e.g. a Vite build
 ```
+
+Those are `xui-deploy.sh`'s three inputs, deliberately — the artifact you point at this server is
+the artifact you deploy to AM, not something assumed to match it. A zip is unpacked to a temp
+directory, which is removed when the server stops; nothing is cached between runs.
 
 | | |
 |---|---|
@@ -171,7 +176,7 @@ Both surfaces sit under one context because the XUI has no configurable backend 
 is `""` and the context is derived from `location.pathname`, so it asks whatever origin served it,
 under the path it was served from. That is what lets one build run against either backend unmodified.
 
-`--port`, `--context`, `--host` and the tree each override their default, as do `OPENAM_LOCAL_PORT`,
+`--port`, `--context`, `--host` and the zip or tree each override their default, as do `OPENAM_LOCAL_PORT`,
 `OPENAM_LOCAL_CONTEXT`, `OPENAM_LOCAL_HOST` and `OPENAM_LOCAL_XUI`. Port 8090 avoids both 8080 (the
 AM container) and 8081 (`sp.mycompany.org` in the SAML specs), so this and the instance above can run
 at the same time — comparing them is the point. `node local/server.mjs --help` lists the rest.

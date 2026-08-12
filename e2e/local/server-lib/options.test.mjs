@@ -33,16 +33,17 @@ import { describe, it } from "node:test";
 
 import { defaults, parseArgs, USAGE } from "./options.mjs";
 
-const REPO = "/repo";
 const NO_ENV = {};
 
-/** parseArgs with the two things the process would otherwise supply. */
-const parse = (argv, env = NO_ENV) => parseArgs(argv, { env, repoRoot: REPO });
+/** parseArgs with the one thing the process would otherwise supply. */
+const parse = (argv, env = NO_ENV) => parseArgs(argv, { env });
 
 describe("defaults", () => {
-    it("serves the tree the www zip is packed from, on 8090, under openam, on loopback", () => {
-        assert.deepEqual(defaults(NO_ENV, REPO), {
-            xui: "/repo/openam-ui/openam-ui-ria/target/compiled",
+    it("serves the built www zip, on 8090, under openam, on loopback", () => {
+        // xui is null rather than a path: naming the zip means reading the version out of the
+        // reactor pom, which xui-source.mjs does at startup and this must not do for --help.
+        assert.deepEqual(defaults(NO_ENV), {
+            xui: null,
             port: "8090",
             context: "openam",
             host: "127.0.0.1",
@@ -55,7 +56,7 @@ describe("defaults", () => {
             OPENAM_LOCAL_PORT: "9999",
             OPENAM_LOCAL_CONTEXT: "am",
             OPENAM_LOCAL_HOST: "0.0.0.0",
-        }, REPO), { xui: "/elsewhere", port: "9999", context: "am", host: "0.0.0.0" });
+        }), { xui: "/elsewhere", port: "9999", context: "am", host: "0.0.0.0" });
     });
 
     it("treats a set-but-blank variable as unset, rather than as a value", () => {
@@ -65,7 +66,7 @@ describe("defaults", () => {
             OPENAM_LOCAL_PORT: "",
             OPENAM_LOCAL_CONTEXT: "  ",
             OPENAM_LOCAL_HOST: "",
-        }, REPO), defaults(NO_ENV, REPO));
+        }), defaults(NO_ENV));
     });
 });
 
@@ -75,16 +76,21 @@ describe("parseArgs precedence", () => {
         assert.equal(options.port, 9000);
     });
 
-    it("takes the tree positionally, as xui-deploy.sh does", () => {
+    it("takes the zip or tree positionally, as xui-deploy.sh does", () => {
         assert.equal(parse(["/some/tree"]).xui, "/some/tree");
+        assert.equal(parse(["/some/build-www.zip"]).xui, "/some/build-www.zip");
     });
 
-    it("takes the tree by name too, and the two agree", () => {
+    it("takes it by name too, and the two agree", () => {
         assert.equal(parse(["--xui", "/some/tree"]).xui, parse(["/some/tree"]).xui);
     });
 
-    it("resolves a relative tree against the working directory", () => {
+    it("resolves a relative path against the working directory", () => {
         assert.equal(parse(["target/compiled"]).xui, `${process.cwd()}/target/compiled`);
+    });
+
+    it("leaves the unnamed default unresolved, rather than resolving null to the cwd", () => {
+        assert.equal(parse([]).xui, null);
     });
 
     it("refuses a second positional rather than silently ignoring it", () => {

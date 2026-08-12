@@ -18,8 +18,9 @@
 /**
  * The local API server: the XUI and the AM REST surface on one origin, with no AM.
  *
- *     npm run local-server                       # serve the built XUI from target/compiled
- *     npm run local-server -- path/to/outDir     # serve some other tree
+ *     npm run local-server                       # serve the built openam-ui-ria-*-www.zip
+ *     npm run local-server -- path/to/www.zip    # serve some other zip
+ *     npm run local-server -- path/to/outDir     # serve a directory, e.g. a Vite outDir
  *     node local/server.mjs --port 9000 --context am
  *
  * The second backend from D13. `openam-up.sh` gives you a real AM in three to eight minutes and a
@@ -35,6 +36,11 @@
  * XUI/` and `/{context}/json/` on a single port, with `{context}` defaulting to the `openam` the
  * container instance uses.
  *
+ * **One artifact, either backend.** What it serves is a `www` zip or a directory — the same two
+ * inputs `xui-deploy.sh` takes, so the build proved against this server is the build deployed to
+ * AM rather than something assumed to match it. A zip is unpacked to a temp directory that this
+ * file removes on the way out; see server-lib/xui-source.mjs.
+ *
  * **What it answers today: the XUI tree, and 501 for every REST call.** The REST surface is tasks
  * 2.6-2.13. See server-lib/rest.mjs for why this stops at a labelled 501 rather than faking enough
  * of a backend to get the login form to render.
@@ -49,54 +55,19 @@
  */
 
 import { createServer } from "node:http";
-import { realpath, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { rmSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs, USAGE } from "./server-lib/options.mjs";
 import { createRequestHandler } from "./server-lib/router.mjs";
+import { resolveXuiSource } from "./server-lib/xui-source.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // As in lib.sh: this file sits at <repo>/e2e/local/.
 const REPO_ROOT = resolve(HERE, "..", "..");
 
 const log = (message) => process.stdout.write(`${message}\n`);
-
-/**
- * Refuse to start on something that is not a deployed XUI tree.
- *
- * The failure this prevents is a server that starts happily and answers 404 for every module, at
- * which point the browser console blames RequireJS and the tree that was never there is the last
- * thing anyone checks. Same guard, and mostly the same wording, as xui-deploy.sh.
- */
-async function checkXuiTree (dir) {
-    let info;
-    try {
-        info = await stat(dir);
-    } catch {
-        throw new Error(`no XUI tree at ${dir}
-
-Build it first:
-    cd ${REPO_ROOT}/openam-ui/openam-ui-ria && mvn -DskipTests package
-
-or name a tree to serve:
-    npm run local-server -- path/to/outDir`);
-    }
-
-    if (!info.isDirectory()) {
-        throw new Error(`${dir} is a file, not a directory.`
-            + (dir.endsWith(".zip")
-                ? " Unpacking a www zip is task 2.5; until then, pass a directory."
-                : ""));
-    }
-
-    const index = join(dir, "index.html");
-    try {
-        await stat(index);
-    } catch {
-        throw new Error(`${dir} does not look like an XUI build -- no index.html at its root`);
-    }
-}
 
 /**
  * One line per request that carries information, written when the response is done.
@@ -118,16 +89,67 @@ function logRequest (req, res, jsonMount) {
 }
 
 async function main () {
-    const options = parseArgs(process.argv.slice(2), { repoRoot: REPO_ROOT });
+    const options = parseArgs(process.argv.slice(2));
     if (options.help) {
         log(USAGE);
         return;
     }
 
-    await checkXuiTree(options.xui);
-    // Links resolved once, here, so every containment check downstream compares against a path
-    // the filesystem agrees is canonical -- including on macOS, where it also settles the casing.
-    const root = await realpath(options.xui);
+    // Armed before the source is resolved, not after the socket is up, because unpacking a zip
+    // *is* most of startup: ~650 files, and for that whole window a Ctrl-C used to meet Node's
+    // default handler, which kills the process without running a `finally` and leaves the staging
+    // directory on disk for good. That is also the likeliest Ctrl-C there is -- you start the
+    // server, read the artifact it names in the banner, and stop it because it is the wrong one.
+    //
+    // One controller rather than two signal handlers per phase: every stage below asks the same
+    // question, and asking it in one place is what stops a stage being added later that answers
+    // it differently.
+    const stopping = new AbortController();
+    let staging = null;
+    let stopped = false;
+
+    const onSignal = (signal) => {
+        // A second Ctrl-C means the graceful stop is taking longer than the operator is willing to
+        // wait -- an unresponsive close, or the rm of ~650 files the first one started. Honour it,
+        // but not by leaving the tree behind: remove it synchronously, because an async rm started
+        // here would be abandoned unfinished, and then go. 128 + SIGINT, as a shell expects.
+        if (stopped) {
+            if (staging) {
+                rmSync(staging, { recursive: true, force: true });
+            }
+            process.exit(130);
+        }
+        stopped = true;
+        log(`\n${signal} -- stopping`);
+        stopping.abort();
+    };
+    // `on` rather than `once`: the second signal has work to do above, and letting it reach Node's
+    // default handler instead is what used to strand the tree. SIGKILL is now the only leak left,
+    // and nothing in a process can do anything about that one.
+    process.on("SIGINT", () => onSignal("SIGINT"));
+    process.on("SIGTERM", () => onSignal("SIGTERM"));
+
+    const xui = await resolveXuiSource(options.xui, {
+        repoRoot: REPO_ROOT,
+        signal: stopping.signal,
+        // Not `xui.staging` after the fact: the handler above may need this while the unpack it
+        // belongs to is still running, which is before there is an `xui` to read it from.
+        onStaging: (dir) => { staging = dir; },
+    });
+    try {
+        await serve(options, xui, stopping.signal);
+    } finally {
+        await xui.cleanup();
+    }
+}
+
+/** Everything from the socket to the shutdown, with `root` already a canonical directory. */
+async function serve (options, { root, source, staging }, stopping) {
+    // Stopped during the unpack above: there is a tree staged and nothing else, and binding a port
+    // only to close it again would put a banner on screen after the "stopping" line.
+    if (stopping.aborted) {
+        return;
+    }
 
     const handle = createRequestHandler({ root, context: options.context });
     const jsonMount = `/${options.context}/json`;
@@ -170,7 +192,11 @@ Something is on it -- an earlier run of this server, or the AM container if you 
     const displayHost = ["0.0.0.0", "::"].includes(options.host) ? "localhost" : options.host;
     const origin = `http://${displayHost}:${boundPort}`;
 
-    log(`local API server -- serving ${root}
+    // The source, not the root: after a zip, `root` is a temp path that names nothing anyone
+    // pointed at. The staging line is there so an unpacked tree is never a mystery directory.
+    log(`local API server -- serving ${source}${staging
+        ? `\n  unpacked to ${staging}  (removed on stop)`
+        : ""}
 
   XUI   ${origin}/${options.context}/XUI/
   REST  ${origin}/${options.context}/json/   (501 until tasks 2.6-2.13)
@@ -181,22 +207,30 @@ Point the suite or a fixture at it with:
 Ctrl-C to stop.`);
 
     await new Promise((resolveClosed) => {
-        const shutdown = (signal) => {
-            log(`\n${signal} -- stopping`);
+        const close = () => {
             // Without this, an idle keep-alive connection from the browser holds the port for its
             // full timeout after close() is called, and the next start fails with EADDRINUSE for
             // reasons that look nothing like the cause. Node 18.2 and later.
             server.closeAllConnections();
             server.close(() => resolveClosed());
         };
-        process.once("SIGINT", () => shutdown("SIGINT"));
-        process.once("SIGTERM", () => shutdown("SIGTERM"));
+        // Checked before the listener is attached, not only inside it: a signal delivered between
+        // `listen` resolving and this line has already fired `abort`, and waiting for a second one
+        // that is never coming would hang the process with the port still held.
+        if (stopping.aborted) {
+            return close();
+        }
+        stopping.addEventListener("abort", close, { once: true });
     });
 }
 
 try {
     await main();
 } catch (error) {
-    process.stderr.write(`error ${error.message}\n`);
-    process.exitCode = 1;
+    // A stop asked for during startup unwinds through here. It is not a failure, and reporting it
+    // as one would make an ordinary Ctrl-C look like a broken zip.
+    if (error.name !== "AbortError") {
+        process.stderr.write(`error ${error.message}\n`);
+        process.exitCode = 1;
+    }
 }

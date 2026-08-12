@@ -19,6 +19,13 @@
  *
  * Argument beats environment beats default, each setting independently.
  *
+ * **One default is deliberately not resolved here.** With nothing named, the XUI to serve is the
+ * built `www` zip, whose file name carries the project version — so working it out reads the
+ * reactor pom. That must not happen for `--help`, which is answered before anything is validated
+ * precisely because a wrong argument is the usual reason for asking, and it must not happen when a
+ * path was named anyway. So `xui` stays `null` here, meaning "the built distributable", and
+ * xui-source.mjs turns that into a path at startup.
+ *
  * **Blank is not a value.** `??` falls back only on `undefined`, so an exported-but-empty variable
  * used to pass straight through, and each of them fails in a direction nobody asked for:
  * `OPENAM_LOCAL_HOST=` reaches `server.listen(port, "")`, which binds *every* interface rather than
@@ -31,13 +38,15 @@
  * capture.mjs and capture-lib.
  */
 
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
-export const USAGE = `node local/server.mjs [XUI-DIR] [options]
+export const USAGE = `node local/server.mjs [XUI] [options]
 
-  XUI-DIR           the built XUI tree to serve, as xui-deploy.sh takes it
-                    [openam-ui/openam-ui-ria/target/compiled]  (OPENAM_LOCAL_XUI)
-  --xui DIR         the same tree, named rather than positional
+  XUI               the built XUI to serve, as xui-deploy.sh takes it: a www zip,
+                    which is unpacked, or a directory, which is served as it is
+                    [openam-ui/openam-ui-ria/target/openam-ui-ria-<version>-www.zip]
+                                                                (OPENAM_LOCAL_XUI)
+  --xui SOURCE      the same, named rather than positional
   --port N          listen on N; 0 takes any free port  [8090]  (OPENAM_LOCAL_PORT)
   --context NAME    serve both surfaces under /NAME/  [openam]  (OPENAM_LOCAL_CONTEXT)
   --host ADDRESS    bind address; 0.0.0.0 for every interface
@@ -65,10 +74,10 @@ function fromEnv (env, name) {
  * *Context `openam`:* what the container deploys under, so one `OPENAM_BASE_URL` shape works
  * against both backends and the XUI derives the same context from either.
  *
- * *XUI `target/compiled`:* the tree `src/main/assembly/zip.xml` packs into
- * `openam-ui-ria-<version>-www.zip`, so what is served here is what a deployment would get.
- * Note `target/XUI` next to it is *not* this tree — it is the pre-filter composition directory,
- * still carrying the literal `urlArgs : "v=${version}"`. A `www` zip is task 2.5.
+ * *XUI, the built `www` zip:* the distributable itself, so what is served here is what a
+ * deployment would get — not a tree that resembles it. `target/compiled`, which the zip is packed
+ * from, works too and is a directory; `target/XUI` next to it does *not* — it is the pre-filter
+ * composition directory, still carrying the literal `urlArgs : "v=${version}"`.
  *
  * *Host 127.0.0.1:* this serves a build tree off the contributor's disk; reaching it from the
  * network should be something you asked for.
@@ -77,10 +86,9 @@ function fromEnv (env, name) {
  * variables common/openam-commons.mjs reads: those point a test run at a backend, these configure
  * one, and a run that does both at once must be able to set them independently.
  */
-export function defaults (env, repoRoot) {
+export function defaults (env) {
     return {
-        xui: fromEnv(env, "OPENAM_LOCAL_XUI")
-            ?? join(repoRoot, "openam-ui", "openam-ui-ria", "target", "compiled"),
+        xui: fromEnv(env, "OPENAM_LOCAL_XUI") ?? null,
         port: fromEnv(env, "OPENAM_LOCAL_PORT") ?? "8090",
         context: fromEnv(env, "OPENAM_LOCAL_CONTEXT") ?? "openam",
         host: fromEnv(env, "OPENAM_LOCAL_HOST") ?? "127.0.0.1",
@@ -94,8 +102,8 @@ export function defaults (env, repoRoot) {
  * asking, and printing the error instead of the usage would be the least helpful moment to be
  * strict.
  */
-export function parseArgs (argv, { env = process.env, repoRoot } = {}) {
-    const options = { ...defaults(env, repoRoot), help: false };
+export function parseArgs (argv, { env = process.env } = {}) {
+    const options = { ...defaults(env), help: false };
     let positional = 0;
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -112,7 +120,7 @@ export function parseArgs (argv, { env = process.env, repoRoot } = {}) {
         } else if (flag.startsWith("-")) {
             throw new Error(`Unknown argument "${flag}". Try --help.`);
         } else if (positional === 0) {
-            // The tree to serve, positionally, as xui-deploy.sh takes it.
+            // The zip or tree to serve, positionally, as xui-deploy.sh takes it.
             options.xui = flag;
             positional += 1;
         } else {
@@ -124,7 +132,10 @@ export function parseArgs (argv, { env = process.env, repoRoot } = {}) {
         return options;
     }
 
-    options.xui = resolve(options.xui);
+    // null stays null: it is not a path yet, and resolve() would turn it into the cwd.
+    if (options.xui !== null) {
+        options.xui = resolve(options.xui);
+    }
 
     if (!PORT_PATTERN.test(options.port.trim()) || Number(options.port) > 65535) {
         throw new Error(`"${options.port}" is not a port number`);

@@ -17,8 +17,9 @@
 /**
  * Two surfaces on one origin, and nothing else.
  *
- * `/{context}/XUI/` is the built UI tree and `/{context}/json/` is the AM REST API (501 until
- * tasks 2.6-2.13). Everything outside them is a 404 that names the two. It would be friendlier to
+ * `/{context}/XUI/` is the built UI tree and `/{context}/json/` is the AM REST API (administrative
+ * reads from task 2.6; 501 for the rest until 2.13). Everything outside them is a 404 that names
+ * the two. It would be friendlier to
  * proxy the unknown paths to a real AM, and wrong — the local backend's scope is the request list
  * in local/REQUESTS.md, and a silent fallthrough to something else is how that scope stops being
  * true without anyone noticing.
@@ -28,12 +29,12 @@
  * HTTP parser allows through — look like a malformed URL.
  */
 
-import { serveRestStub } from "./rest.mjs";
+import { serveRest } from "./rest.mjs";
 import { serveStatic } from "./static-tree.mjs";
 
 const PARSE_BASE = "http://localhost";
 
-export function createRequestHandler ({ root, context }) {
+export function createRequestHandler ({ root, context, state }) {
     const xuiMount = `/${context}/XUI`;
     const jsonMount = `/${context}/json`;
 
@@ -51,7 +52,10 @@ export function createRequestHandler ({ root, context }) {
             return serveStatic(req, res, { root, mount: xuiMount, url });
         }
         if (isUnder(jsonMount)) {
-            return serveRestStub(req, res, { url });
+            // The path below the context, which is the path the capture records and the only one
+            // the REST layer reasons about -- it never has to know what `--context` was chosen.
+            const apiPath = url.pathname.slice(`/${context}`.length);
+            return serveRest(req, res, { url, apiPath, state });
         }
         // A convenience for a human who opened the port: the deployed AM answers `/openam/` with
         // its own console, which is not in scope, so send them where the UI actually is.
@@ -67,7 +71,7 @@ export function createRequestHandler ({ root, context }) {
 
         return sendText(req, res, 404, `${url.pathname} is not served by the local API server.\n\n`
             + `  XUI   ${xuiMount}/\n`
-            + `  REST  ${jsonMount}/   (501 until tasks 2.6-2.13)\n`);
+            + `  REST  ${jsonMount}/   (501 outside the administrative reads)\n`);
     };
 }
 

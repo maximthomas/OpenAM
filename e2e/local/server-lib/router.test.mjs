@@ -26,18 +26,22 @@
  * without its trailing slash redirects, and that `?v=…` is not part of a file name.
  *
  * Every case here is a request the XUI makes or an attack on the one that serves it. None of them
- * need the AM: the REST surface is 501 by construction until tasks 2.6-2.13, and the last block
- * below is what says so.
+ * need the AM: the administrative reads come out of the committed capture, and everything else is
+ * 501 until tasks 2.7-2.13. The last block below is what says so.
  */
 
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { chmod, mkdtemp, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { after, before, describe, it } from "node:test";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
 import { createRequestHandler } from "./router.mjs";
+import { buildBaselineState } from "./state.mjs";
+
+const CAPTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "capture");
 
 const MAIN_JS = "define([], function () { return {}; });\n";
 const INDEX_HTML = "<!DOCTYPE html><title>XUI</title>\n";
@@ -91,7 +95,11 @@ async function get (path, init = {}) {
 
 before(async () => {
     const root = await buildTree();
-    const handle = createRequestHandler({ root, context: "openam" });
+    const handle = createRequestHandler({
+        root,
+        context: "openam",
+        state: buildBaselineState(CAPTURE_DIR, { context: "openam", hostname: "localhost" }),
+    });
     server = createServer((req, res) => {
         handle(req, res).catch((error) => {
             res.writeHead(500);
@@ -219,7 +227,16 @@ describe("what the XUI surface refuses to read", () => {
 });
 
 describe("the REST surface", () => {
-    it("answers every path under the mount with 501, in AM's error envelope", async () => {
+    it("answers an administrative read from the baseline state", async () => {
+        // Only that the mount reaches the state at all -- that what comes back agrees with the
+        // capture is state.test.mjs's business, where it can be asserted against the recording.
+        const response = await get("/openam/json/global-config/realms?_queryFilter=true");
+        assert.equal(response.status, 200);
+        assert.equal(response.type, "application/json;charset=UTF-8");
+        assert.deepEqual(JSON.parse(response.body).result.map((realm) => realm.name), ["/"]);
+    });
+
+    it("answers a path it does not implement with 501, in AM's error envelope", async () => {
         const response = await get("/openam/json/serverinfo/*");
         assert.equal(response.status, 501);
         assert.equal(response.type, "application/json;charset=UTF-8");

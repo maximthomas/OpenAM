@@ -41,9 +41,11 @@
  * AM rather than something assumed to match it. A zip is unpacked to a temp directory that this
  * file removes on the way out; see server-lib/xui-source.mjs.
  *
- * **What it answers today: the XUI tree, and 501 for every REST call.** The REST surface is tasks
- * 2.6-2.13. See server-lib/rest.mjs for why this stops at a labelled 501 rather than faking enough
- * of a backend to get the login form to render.
+ * **What it answers today: the XUI tree, and the administrative reads.** Task 2.6 builds an
+ * in-memory baseline from local/capture at startup and answers realm and service reads out of it
+ * (server-lib/state.mjs); authentication, sessions, `serverinfo`, the writes and reset are tasks
+ * 2.7-2.13 and still answer a labelled 501. See server-lib/rest.mjs for why this stops there
+ * rather than faking enough of a backend to get the login form to render.
  *
  * This file is the process: settings, startup guards, the socket, the log and the shutdown. What
  * it answers with is in server-lib/, which is also where the tests are — same split as capture.mjs
@@ -61,11 +63,14 @@ import { fileURLToPath } from "node:url";
 
 import { parseArgs, USAGE } from "./server-lib/options.mjs";
 import { createRequestHandler } from "./server-lib/router.mjs";
+import { buildBaselineState } from "./server-lib/state.mjs";
 import { resolveXuiSource } from "./server-lib/xui-source.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // As in lib.sh: this file sits at <repo>/e2e/local/.
 const REPO_ROOT = resolve(HERE, "..", "..");
+/** The recording the REST surface is built from. Committed alongside the server, by design (D15). */
+const CAPTURE_DIR = resolve(HERE, "capture");
 
 const log = (message) => process.stdout.write(`${message}\n`);
 
@@ -151,7 +156,22 @@ async function serve (options, { root, source, staging }, stopping) {
         return;
     }
 
-    const handle = createRequestHandler({ root, context: options.context });
+    // The host as the XUI will reach it, which is what the root realm's aliases have to agree
+    // with. It depends on --host alone, so it is known before the socket is bound; the bound port
+    // is not, and deliberately does not matter here -- capture/README.md records that `{{PORT}}`
+    // appears nowhere in the capture and `{{BASE_URL}}` only in the `location` header of the realm
+    // create, which is task 2.10's to serve and 2.10's to resolve from the bound port.
+    const displayHost = ["0.0.0.0", "::"].includes(options.host) ? "localhost" : options.host;
+
+    // Before the socket, so a capture that cannot be loaded stops the server without first taking
+    // the port -- the failure an operator then has to diagnose is the one that happened, not an
+    // EADDRINUSE from the corpse of this start.
+    const state = buildBaselineState(CAPTURE_DIR, {
+        context: options.context,
+        hostname: displayHost,
+    });
+
+    const handle = createRequestHandler({ root, context: options.context, state });
     const jsonMount = `/${options.context}/json`;
 
     const server = createServer((req, res) => {
@@ -189,7 +209,6 @@ Something is on it -- an earlier run of this server, or the AM container if you 
 
     // Port 0 means "any free port", which is how a test harness starts one without picking.
     const boundPort = server.address().port;
-    const displayHost = ["0.0.0.0", "::"].includes(options.host) ? "localhost" : options.host;
     const origin = `http://${displayHost}:${boundPort}`;
 
     // The source, not the root: after a zip, `root` is a temp path that names nothing anyone
@@ -199,7 +218,8 @@ Something is on it -- an earlier run of this server, or the AM container if you 
         : ""}
 
   XUI   ${origin}/${options.context}/XUI/
-  REST  ${origin}/${options.context}/json/   (501 until tasks 2.6-2.13)
+  REST  ${origin}/${options.context}/json/   (${state.realms.size} realm(s) from the capture;
+                                              501 outside the administrative reads)
 
 Point the suite or a fixture at it with:
   OPENAM_BASE_URL=${origin}/${options.context}

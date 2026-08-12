@@ -166,7 +166,7 @@ directory, which is removed when the server stops; nothing is cached between run
 | | |
 |---|---|
 | XUI | <http://127.0.0.1:8090/openam/XUI/> |
-| REST | `http://127.0.0.1:8090/openam/json/` — 501 for everything, until tasks 2.6–2.13 |
+| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads; 501 for the rest, until tasks 2.7–2.13 |
 
 Ready in about a second, from a checkout, with no war build and no container runtime — which is the
 entire point of it, against the 3–8 minutes and the Docker daemon the instance above needs. It is
@@ -181,9 +181,16 @@ under the path it was served from. That is what lets one build run against eithe
 AM container) and 8081 (`sp.mycompany.org` in the SAML specs), so this and the instance above can run
 at the same time — comparing them is the point. `node local/server.mjs --help` lists the rest.
 
-The REST surface answers a labelled 501 today, deliberately: a stub that let the XUI past the login
-form on invented responses would make the real authentication in tasks 2.7–2.13 unverifiable. Until
-it lands, run the suite against the deployed instance above.
+The REST surface answers the administrative reads — realms, the global REST service, and a realm's
+authentication configuration and service instances, plus the SMS schema and template documents the
+console generates its forms from. They come from an in-memory baseline built at startup out of
+`local/capture/`, not from replaying it, so a write will show up in the next read once tasks
+2.10–2.12 add the writes.
+
+Everything else answers a labelled 501, deliberately: a stub that let the XUI past the login form on
+invented responses would make the real authentication in tasks 2.7–2.13 unverifiable. So
+authentication, sessions, `serverinfo`, every write and reset are still 501, and until they land you
+need the deployed instance above to run a spec that logs in.
 
 **This backend is not the acceptance oracle.** A green run against it does not satisfy sign-off; that
 needs the suite green against a deployed AM.

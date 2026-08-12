@@ -6,17 +6,19 @@
   "license": "CDDL-1.0",
   "scripts": {
     "setup": "playwright install chromium",
+    "local-server": "node local/server.mjs",
     "test": "playwright test",
     "test:xui": "playwright test xui",
     "test:oauth2": "playwright test oauth2",
     "test:saml": "playwright test saml",
     "test:capture": "node --test 'local/capture-lib/*.test.mjs'",
+    "test:server": "node --test 'local/server-lib/*.test.mjs'",
     "report": "playwright show-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.2"
   }
 }

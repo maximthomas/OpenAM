@@ -148,6 +148,45 @@ Two runs against an unchanged instance produce identical trees; `diff -r` betwee
 that the normalisation rules still hold. If that diff is not empty, the instance changed — which is
 the signal, not a bug in the tool.
 
+## The local API server
+
+The second backend: the XUI and the AM REST surface on one origin, and no AM at all. Run from
+`e2e/`, not from here:
+
+```
+npm run local-server                     # serves openam-ui-ria/target/compiled
+npm run local-server -- path/to/outDir   # e.g. a Vite build directory
+```
+
+| | |
+|---|---|
+| XUI | <http://127.0.0.1:8090/openam/XUI/> |
+| REST | `http://127.0.0.1:8090/openam/json/` — 501 for everything, until tasks 2.6–2.13 |
+
+Ready in about a second, from a checkout, with no war build and no container runtime — which is the
+entire point of it, against the 3–8 minutes and the Docker daemon the instance above needs. It is
+what the inner loop and the pull-request checks run against.
+
+Both surfaces sit under one context because the XUI has no configurable backend URL: `Constants.host`
+is `""` and the context is derived from `location.pathname`, so it asks whatever origin served it,
+under the path it was served from. That is what lets one build run against either backend unmodified.
+
+`--port`, `--context`, `--host` and the tree each override their default, as do `OPENAM_LOCAL_PORT`,
+`OPENAM_LOCAL_CONTEXT`, `OPENAM_LOCAL_HOST` and `OPENAM_LOCAL_XUI`. Port 8090 avoids both 8080 (the
+AM container) and 8081 (`sp.mycompany.org` in the SAML specs), so this and the instance above can run
+at the same time — comparing them is the point. `node local/server.mjs --help` lists the rest.
+
+The REST surface answers a labelled 501 today, deliberately: a stub that let the XUI past the login
+form on invented responses would make the real authentication in tasks 2.7–2.13 unverifiable. Until
+it lands, run the suite against the deployed instance above.
+
+**This backend is not the acceptance oracle.** A green run against it does not satisfy sign-off; that
+needs the suite green against a deployed AM.
+
+```
+npm run test:server      # the server's own unit tests, from e2e/
+```
+
 ## Tear down
 
 ```

@@ -122,6 +122,32 @@ the *deployed* tree work — a theme template override, or an operator-supplied 
 `xui-deploy.sh` replaces rather than merges, so nothing from the previous build survives. Run
 `./openam-reset.sh` afterwards to get back to the war's own XUI.
 
+## Recording the capture for the local backend
+
+```
+node capture.mjs                          # writes ./capture
+node capture.mjs --out /tmp/capture-b     # somewhere else, e.g. to diff two runs
+```
+
+Drives this instance through every request in [REQUESTS.md](REQUESTS.md) and records what it
+answers, so the local backend serves shapes a real AM produced rather than shapes somebody guessed.
+
+Three documents govern it, and they are worth reading before changing anything:
+
+| | |
+|---|---|
+| [REQUESTS.md](REQUESTS.md) | The scope. A request absent from it is out of scope by construction, and the tool refuses to run unless every in-scope row is covered and no extra one is. |
+| [NOTES-volatility.md](NOTES-volatility.md) | Why the output is byte-identical across runs. Fourteen measured rules, each one something AM was observed to vary. |
+| [capture-lib/manifest.mjs](capture-lib/manifest.mjs) | The capture order, the request bodies, and the reason for each. The order is load-bearing — several calls only answer what they answer because of what ran before them. |
+
+The run creates a realm named `e2e-capture`, uses it, and deletes it. It removes one an earlier
+failed run left behind before it starts, and it ends every session it opened even when it fails, so
+re-running it is safe. It needs Node 20 or later.
+
+Two runs against an unchanged instance produce identical trees; `diff -r` between them is the check
+that the normalisation rules still hold. If that diff is not empty, the instance changed — which is
+the signal, not a bug in the tool.
+
 ## Tear down
 
 ```

@@ -1,0 +1,34 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/sessions",
+    "query": {
+      "_action": "getSessionInfo",
+      "tokenId": "<TOKEN>"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=2.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=2.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "latestAccessTime": "<TS>",
+      "maxIdleExpirationTime": "<TS>",
+      "maxSessionExpirationTime": "<TS>",
+      "realm": "/",
+      "sessionHandle": "<SESSION-HANDLE>",
+      "universalId": "id=amadmin,ou=user,{{CONFIG_SUFFIX}}",
+      "username": "amadmin"
+    }
+  }
+}

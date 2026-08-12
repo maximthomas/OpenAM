@@ -1,0 +1,485 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/global-config/authentication",
+    "query": {
+      "_action": "schema"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "properties": {
+        "authenticators": {
+          "description": "List of configured authentication modules<br><br>The list of configured authentication modules available to OpenAM. All modules must extend from the <code>com.sun.identity.authentication.spi.AMLoginModule</code> class.",
+          "exampleValue": "",
+          "items": {
+            "type": "string"
+          },
+          "propertyOrder": 500,
+          "required": true,
+          "title": "Pluggable Authentication Module Classes",
+          "type": "array"
+        },
+        "defaults": {
+          "properties": {
+            "accountlockout": {
+              "properties": {
+                "invalidAttemptsDataAttributeName": {
+                  "description": "The name of the attribute used to store information about failed authentications.<br><br>OpenAM can be configured to store information about invalid authentications in the users profile. This allows multiple instances of OpenAM in the same site to share information about a users invalid authentication attempts. By default the custom attribute; <code>sunAMAuthInvalidAttemptsData</code> defined in the <code>sunAMAuthAccountLockout</code> objectclass is used to store this data. Use this property to change the attribute used by OpenAM to store this information.<br/><br/><i>NB </i>Any attribute specified must be a valid attribute in the data store.",
+                  "exampleValue": "",
+                  "propertyOrder": 1700,
+                  "required": true,
+                  "title": "Invalid Attempts Data Attribute Name",
+                  "type": "string"
+                },
+                "lockoutAttributeName": {
+                  "description": "Name of custom lockout attribute <br><br>When OpenAM locks an account, the <code>inetuserstatus</code> attribute in the locked account is set to Inactive. In addition, OpenAM can set the value of another attribute in the users profile. ",
+                  "exampleValue": "",
+                  "propertyOrder": 1500,
+                  "required": true,
+                  "title": "Lockout Attribute Name",
+                  "type": "string"
+                },
+                "lockoutAttributeValue": {
+                  "description": "Value to set in custom lockout attribute<br><br>This is the value that will be set on the custom attribute in the users profile when they account is locked.",
+                  "exampleValue": "",
+                  "propertyOrder": 1600,
+                  "required": true,
+                  "title": "Lockout Attribute Value",
+                  "type": "string"
+                },
+                "lockoutDuration": {
+                  "description": "The duration of the users account lockout, in minutes.<br><br>OpenAM can either lockout the users account indefinitely (until administration action) by setting the duration to 0, (the default) or OpenAM can lock the users account for a given number of minutes. After the lockout interval, the user will be able to successfully authenticate to OpenAM.",
+                  "exampleValue": "",
+                  "propertyOrder": 1300,
+                  "required": true,
+                  "title": "Login Failure Lockout Duration",
+                  "type": "integer"
+                },
+                "lockoutDurationMultiplier": {
+                  "description": "Value multiplied to the Login Failure Lockout Duration for each successive lockout.<br><br>This property is used to enable OpenAM to increase the account lockout duration for each successive account lockout. For example: If the lockout duration is set to 10 and the duration multiplier is set to 2; the duration of the first lockout will be 10 minutes and the duration of the second lockout will be 20 minutes.<br/><br/>The default value of 1 disables this function.  ",
+                  "exampleValue": "",
+                  "propertyOrder": 1400,
+                  "required": true,
+                  "title": "Lockout Duration Multiplier",
+                  "type": "integer"
+                },
+                "lockoutEmailAddress": {
+                  "description": "An email address or set of email addresses that receive notifications about account lockout events.<br><br>OpenAM can be configured to send a localisable email message to a set of email addresses when account lockout events occur. The contents of the email message is configured using the following properties in the <code>amAuth.properties</code> file.<br/><ul><li><code>lockOutEmailFrom</code> : The \"From\" address of the email message</li><li><code>lockOutEmailSub</code> : The subject of the email message</li><li><code>lockOutEmailMsg</code> : The contents of the email message</li></ul><br/>The identity for whom the account has been locked is included in the email message.<br/><br/>The format of this property is:<br/><code>emailaddress|locale|charset</code>. Multiple email addresses are space-separated.<br/>Email addresses must include the domain name, such as <code>admin@example.com</code>.",
+                  "exampleValue": "",
+                  "propertyOrder": 1100,
+                  "required": true,
+                  "title": "Email Address to Send Lockout Notification",
+                  "type": "string"
+                },
+                "lockoutWarnUserCount": {
+                  "description": "Warn the user when they reach this level of failed authentications.<br><br>The user will be given a warning when they reach this level of failed authentications during the lockout interval.<br/>The text of the lockout warning is configured using the <code>lockOutWarning</code> property in the <code>amAuth.properties</code> file.",
+                  "exampleValue": "",
+                  "propertyOrder": 1200,
+                  "required": true,
+                  "title": "Warn User After N Failures",
+                  "type": "integer"
+                },
+                "loginFailureCount": {
+                  "description": "The maximum number of failed authentications for a user before their account is locked.<br><br>This setting controls the maximum number of failed authentications a user can have during the lockout interval before OpenAM locks the users account.",
+                  "exampleValue": "",
+                  "propertyOrder": 900,
+                  "required": true,
+                  "title": "Login Failure Lockout Count",
+                  "type": "integer"
+                },
+                "loginFailureDuration": {
+                  "description": "The lockout interval time is in minutes.<br><br>OpenAM tracks the failed authentication count for a user over the lockout interval.<br/><br/>For example: If the lockout interval is 5 minutes and the lockout count is 5; the user will have to have failed to authenticate 5 times over the previous 5 minutes for the account to be locked. Failed authentications the occurred outside of the 5 minute interval are ignored.",
+                  "exampleValue": "",
+                  "propertyOrder": 1000,
+                  "required": true,
+                  "title": "Login Failure Lockout Interval",
+                  "type": "integer"
+                },
+                "loginFailureLockoutMode": {
+                  "description": "Enables account lockout functionality for users authenticating to this realm.<br><br>OpenAM can track the number of failed authentications by a user over time and if a pre-defined limit is breached, OpenAM can lockout the users account and perform additional functions.<br/><br/><i>NB </i>This functionality is in addition to any account lockout behaviour implemented by the LDAP Directory Server.",
+                  "exampleValue": "",
+                  "propertyOrder": 800,
+                  "required": true,
+                  "title": "Login Failure Lockout Mode",
+                  "type": "boolean"
+                },
+                "storeInvalidAttemptsInDataStore": {
+                  "description": "Enables sharing of login failure attempts across AM Instances<br><br>When this setting is enabled OpenAM will store the users invalid authentication information in the data store under the attribute configured in the <i>Invalid Attempts Data Attribute Name</i> property.",
+                  "exampleValue": "",
+                  "propertyOrder": 2700,
+                  "required": true,
+                  "title": "Store Invalid Attempts in Data Store",
+                  "type": "boolean"
+                }
+              },
+              "propertyOrder": 2,
+              "title": "Account Lockout",
+              "type": "object"
+            },
+            "core": {
+              "properties": {
+                "adminAuthModule": {
+                  "description": "Default Authentication Chain for administrators<br><br>This is the authentication chain that will be used to authentication administrative users to this realm.",
+                  "enum": [
+                    "[Empty]",
+                    "amsterService",
+                    "ldapService"
+                  ],
+                  "exampleValue": "",
+                  "options": {
+                    "enum_titles": [
+                      "[empty]",
+                      "amsterService",
+                      "ldapService"
+                    ]
+                  },
+                  "propertyOrder": 200,
+                  "required": true,
+                  "title": "Administrator Authentication Configuration",
+                  "type": "string"
+                },
+                "orgConfig": {
+                  "description": "Default Authentication Chain for users<br><br>This is the authentication chain that will be used to authenticate users to this realm.",
+                  "enum": [
+                    "[Empty]",
+                    "amsterService",
+                    "ldapService"
+                  ],
+                  "exampleValue": "",
+                  "options": {
+                    "enum_titles": [
+                      "[empty]",
+                      "amsterService",
+                      "ldapService"
+                    ]
+                  },
+                  "propertyOrder": 700,
+                  "required": true,
+                  "title": "Organization Authentication Configuration",
+                  "type": "string"
+                }
+              },
+              "propertyOrder": -1,
+              "title": "Core",
+              "type": "object"
+            },
+            "general": {
+              "properties": {
+                "defaultAuthLevel": {
+                  "description": "The default authentication level for modules in this realm.<br><br>If the authentication module does not set it's own auth level then the module will have the default authentication level for the realm.",
+                  "exampleValue": "",
+                  "propertyOrder": 4100,
+                  "required": true,
+                  "title": "Default Authentication Level",
+                  "type": "integer"
+                },
+                "identityType": {
+                  "description": "",
+                  "exampleValue": "",
+                  "items": {
+                    "enum": [
+                      "agent",
+                      "agentonly",
+                      "agentgroup",
+                      "user",
+                      "group"
+                    ],
+                    "options": {
+                      "enum_titles": [
+                        "Agent",
+                        "agentonly",
+                        "agentgroup",
+                        "User",
+                        "Group"
+                      ]
+                    },
+                    "type": "string"
+                  },
+                  "propertyOrder": 2500,
+                  "required": true,
+                  "title": "Identity Types",
+                  "type": "array"
+                },
+                "locale": {
+                  "description": "",
+                  "exampleValue": "",
+                  "propertyOrder": 600,
+                  "required": true,
+                  "title": "Default Authentication Locale",
+                  "type": "string"
+                },
+                "statelessSessionsEnabled": {
+                  "description": "Enables stateless sessions.<br><br>Stateless sessions provide elastic scalability by storing all session state on the client in the SSO cookie. See Session service configuration to enable signing and encryption (HIGHLY RECOMMENDED).",
+                  "exampleValue": "",
+                  "propertyOrder": 3800,
+                  "required": true,
+                  "title": "Use Stateless Sessions",
+                  "type": "boolean"
+                },
+                "twoFactorRequired": {
+                  "description": "",
+                  "exampleValue": "",
+                  "propertyOrder": 3900,
+                  "required": true,
+                  "title": "Two Factor Authentication Mandatory",
+                  "type": "boolean"
+                },
+                "userStatusCallbackPlugins": {
+                  "description": "List of classes to be called when status of the user account changes.<br><br>When the status of a users account changes, OpenAM can be configured to call into a custom class. The custom class can then be used to perform some action as required. The built in status change events are:<br/><br/><ul><li>Account locked</li><li>Password changed</li></ul><br/>Custom code can also extend this mechanism.",
+                  "exampleValue": "",
+                  "items": {
+                    "type": "string"
+                  },
+                  "propertyOrder": 2600,
+                  "required": true,
+                  "title": "Pluggable User Status Event Classes",
+                  "type": "array"
+                }
+              },
+              "propertyOrder": 3,
+              "title": "General",
+              "type": "object"
+            },
+            "postauthprocess": {
+              "properties": {
+                "loginFailureUrl": {
+                  "description": "Failed logins will be forwarded to this URL<br><br>This is the URL to which clients will be forwarded upon failed authentication. Enter a URL or URI relative to the local OpenAM. URL or URI can be prefixed with ClientType|URL if client specific. URL without http(s) protocol will be appended to the current URI of OpenAM.",
+                  "exampleValue": "",
+                  "items": {
+                    "type": "string"
+                  },
+                  "propertyOrder": 1900,
+                  "required": true,
+                  "title": "Default Failure Login URL ",
+                  "type": "array"
+                },
+                "loginPostProcessClass": {
+                  "description": "A list of post authentication processing classes for all users in this realm.<br><br>This is a list of Post Processing Classes that will be called by OpenAM for all users that authenticate to this realm. Refer to the documentation for the places where the list of post authentication classes can be set and their precedence. <br/><br/>For example: org.forgerock.auth.PostProcessClass<br/><i>NB </i>OpenAM must be able to find these classes on the <code>CLASSPATH</code> and must implement the interface <code>com.sun.identity.authentication.spi.AMPostAuthProcessInterface</code>.",
+                  "exampleValue": "",
+                  "items": {
+                    "type": "string"
+                  },
+                  "propertyOrder": 2000,
+                  "required": true,
+                  "title": "Authentication Post Processing Classes",
+                  "type": "array"
+                },
+                "loginSuccessUrl": {
+                  "description": "Successful logins will be forwarded to this URL<br><br>This is the URL to which clients will be forwarded upon successful authentication. Enter a URL or URI relative to the local OpenAM. URL or URI can be prefixed with the ClientType|URL if client specific. URL without http(s) protocol will be appended to the current URI of OpenAM.",
+                  "exampleValue": "",
+                  "items": {
+                    "type": "string"
+                  },
+                  "propertyOrder": 1800,
+                  "required": true,
+                  "title": "Default Success Login URL",
+                  "type": "array"
+                },
+                "userAttributeSessionMapping": {
+                  "description": "Mapping of user profile attribute name to session attribute name.<br><br>The setting causes OpenAM to read the named attributes from the users profile in the data store and store their values in the users session.<br/></br>Format: User Profile Attribute|Session Attribute name. ",
+                  "exampleValue": "",
+                  "items": {
+                    "type": "string"
+                  },
+                  "propertyOrder": 3000,
+                  "required": true,
+                  "title": "User Attribute Mapping to Session Attribute",
+                  "type": "array"
+                },
+                "usernameGeneratorClass": {
+                  "description": "The name of the default implementation of the user name generator class.<br><br>The name of the class used to return a list of usernames to the Membership auth module.<br/><br/><i>NB </i>This class must implement the interface <code>com.sun.identity.authentication.spi.UserIDGenerator</code>",
+                  "exampleValue": "",
+                  "propertyOrder": 2200,
+                  "required": true,
+                  "title": "Pluggable User Name Generator Class",
+                  "type": "string"
+                },
+                "usernameGeneratorEnabled": {
+                  "description": "Enables this mode in the Membership auth module.<br><br>When this mode is enabled, if the Membership auth module detects that the supplied username already exists in the data store then a list of valid usernames can be shown to the user, if requested by said user.",
+                  "exampleValue": "",
+                  "propertyOrder": 2100,
+                  "required": true,
+                  "title": "Generate UserID Mode",
+                  "type": "boolean"
+                }
+              },
+              "propertyOrder": 5,
+              "title": "Post Authentication Processing",
+              "type": "object"
+            },
+            "security": {
+              "properties": {
+                "keyAlias": {
+                  "description": "Keystore Alias for encrypting Persistent Cookies.<br><br>This is the alias for the private/public keys in the Keystore used in Persistent Cookie authentication requests.",
+                  "exampleValue": "",
+                  "propertyOrder": 3300,
+                  "required": true,
+                  "title": "Persistent Cookie Encryption Certificate Alias",
+                  "type": "string"
+                },
+                "moduleBasedAuthEnabled": {
+                  "description": "Allows a user to authenticate via module based authentication.<br><br>The feature allow users to override the realm configuration and use a named authentication module to authenticate.<br/><br/><i>NB </i>Recommended to turn this feature off in production environments.",
+                  "exampleValue": "",
+                  "propertyOrder": 2800,
+                  "required": true,
+                  "title": "Module Based Authentication",
+                  "type": "boolean"
+                },
+                "sharedSecret": {
+                  "description": "HMAC shared secret for signing RESTful Authentication requests.<br><br>This is the shared secret for signing state used in RESTful authentication requests. Should be at Base-64 encoded and at least 128-bits in length. By default a cryptographically secure random value is generated.",
+                  "exampleValue": "",
+                  "format": "password",
+                  "propertyOrder": 4000,
+                  "required": true,
+                  "title": "Organization Authentication Signing Secret",
+                  "type": "string"
+                },
+                "zeroPageLoginAllowedWithoutReferrer": {
+                  "description": "Whether to allow Zero Page Login if the HTTP Referer header is missing.<br><br>The HTTP Referer header is sometimes missing from requests (e.g., if making a request to HTTP from HTTPS). This setting controls whether such requests should be allowed or not. Setting to 'true' will reduce the risk of Login CSRF attacks with Zero Page Login, but may potentially deny legitimate requests.",
+                  "exampleValue": "",
+                  "propertyOrder": 3700,
+                  "required": true,
+                  "title": "Zero Page Login Allowed without Referer?",
+                  "type": "boolean"
+                },
+                "zeroPageLoginEnabled": {
+                  "description": "Allows a user to authenticate using GET request parameters without showing the login screen.<br><br>Enable this feature if the authentication mechanism uses a single authentication screen or the first authentication screen should always be invisible to users (since it is auto-submitted). Use caution when enabling this feature as it can be used to authenticate using regular GET parameters, which could be cached by browsers and logged in server and proxy access logs exposing the values of the GET parameters.",
+                  "exampleValue": "",
+                  "propertyOrder": 3400,
+                  "required": true,
+                  "title": "Zero Page Login",
+                  "type": "boolean"
+                },
+                "zeroPageLoginReferrerWhiteList": {
+                  "description": "List of allowed HTTP Referer (sic) URLs from which Zero Page Login requests are allowed.<br><br>Enter here all URLs from which you want to allow Zero Page Login. This provides some mitigation against Login CSRF attacks. Leave empty to allow from any Referer. Applies to both GET and POST login requests.",
+                  "exampleValue": "",
+                  "items": {
+                    "type": "string"
+                  },
+                  "propertyOrder": 3600,
+                  "required": true,
+                  "title": "Zero Page Login Referer Whitelist",
+                  "type": "array"
+                }
+              },
+              "propertyOrder": 4,
+              "title": "Security",
+              "type": "object"
+            },
+            "userprofile": {
+              "properties": {
+                "aliasAttributeName": {
+                  "description": "The secondary LDAP attribute retrieves the user profile if the primary LDAP attribute specified in 'User Naming Attribute' fails.<br><br>This list of LDAP attributes is used to extend the set of attributes searched by OpenAM to find the users profile.<br>For example: <ul><li>cn</li><li>mail</li><li>givenname</li></ul><br/>A user authenticates to OpenAM under the id of steve, OpenAM will first search using the naming attribute (uid by default) so uid=steve, if no match is found then cn=steve will be searched until a match is found or the list is exhausted.<br><br/><br/><i>NB </i> Only used when User Profile searching is enabled.",
+                  "exampleValue": "",
+                  "items": {
+                    "type": "string"
+                  },
+                  "propertyOrder": 400,
+                  "required": true,
+                  "title": "Alias Search Attribute Name",
+                  "type": "array"
+                },
+                "defaultRole": {
+                  "description": "List of roles of which dynamically created users will be a member.<br><br>Enter the DN for each role that will be assigned to a new user when their profile has been dynamically created by OpenAM.<br/><br/><i>NB </i> Deprecated functionality in OpenAM.",
+                  "exampleValue": "",
+                  "items": {
+                    "type": "string"
+                  },
+                  "propertyOrder": 300,
+                  "required": true,
+                  "title": "User Profile Dynamic Creation Default Roles",
+                  "type": "array"
+                },
+                "dynamicProfileCreation": {
+                  "description": "Controls the result of the user profile success post successful authentication.<br><br>Controls whether a user profile is required for authentication to be successful or if the profile will be dynamically created if none already exists. Choose ignore if you do not have a data store configured in the realm.",
+                  "enum": [
+                    "true",
+                    "createAlias",
+                    "ignore",
+                    "false"
+                  ],
+                  "exampleValue": "",
+                  "options": {
+                    "enum_titles": [
+                      "Create",
+                      "Create With Alias",
+                      "Ignore",
+                      "Required"
+                    ]
+                  },
+                  "propertyOrder": 100,
+                  "required": true,
+                  "title": "User Profile",
+                  "type": "string"
+                }
+              },
+              "propertyOrder": 0,
+              "title": "User Profile",
+              "type": "object"
+            }
+          },
+          "title": "Realm Defaults",
+          "type": "object"
+        },
+        "keepPostProcessInstances": {
+          "description": "Store Post Processing Classes for the duration of the session.<br><br>Enabling this setting will cause OpenAM to store instances of post processing classes into the users session. When the user logs out the original instances of the post processing classes will be called instead of new instances. This may be needed for special logout processing.<br/><br/><i>NB </i>Enabling this setting will increase the memory usage of OpenAM.",
+          "exampleValue": "",
+          "propertyOrder": 3100,
+          "required": true,
+          "title": "Keep Post Process Objects for Logout Processing",
+          "type": "boolean"
+        },
+        "ldapConnectionPoolDefaultSize": {
+          "description": "The default connection pool size; format is: mininum:maximum",
+          "exampleValue": "",
+          "propertyOrder": 2400,
+          "required": true,
+          "title": "Default LDAP Connection Pool Size",
+          "type": "string"
+        },
+        "ldapConnectionPoolSize": {
+          "description": "Controls the size of the LDAP connection pool used for authentication<br><br>Control the size of the connection pool to the LDAP directory server used by any of the authentication modules that use LDAP directly such as LDAP or Active Directory.Different OpenAM servers can be configured with different connection pool settings.<br/><br/>Format: host:port:minimum:maximum",
+          "exampleValue": "",
+          "items": {
+            "type": "string"
+          },
+          "propertyOrder": 2300,
+          "required": true,
+          "title": "LDAP Connection Pool Size",
+          "type": "array"
+        },
+        "remoteAuthSecurityEnabled": {
+          "description": "OpenAM requires authentication client to authenticate itself before authenticating users.<br><br>When this setting is enabled, OpenAM will require the authentication client (such as a policy agent) to authentication itself to OpenAM before the client will be allow to use the remote authentication API to authenticate users. ",
+          "exampleValue": "",
+          "propertyOrder": 2900,
+          "required": true,
+          "title": "Remote Auth Security",
+          "type": "boolean"
+        },
+        "xuiInterfaceEnabled": {
+          "description": "Determines if XUI is the default interface for OpenAM<br><br>This setting determines if XUI is the default interface for OpenAM.  When enabled, OpenAM will redirect any requests to the /UI/* and idm/EndUser pages to their respective XUI counterparts.  If disabled OpenAM will pass all requests to UI/* and the idm/EndUser pages to the classic UI like normal.",
+          "exampleValue": "",
+          "propertyOrder": 3500,
+          "required": true,
+          "title": "XUI interface",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

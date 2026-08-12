@@ -1,0 +1,77 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/realms/root/realms/e2e-capture/realm-config/services/baseurl",
+    "query": {
+      "_action": "schema"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "properties": {
+        "contextPath": {
+          "description": "If provided, the base URL used will include the deployment context path appended to the url calculated.",
+          "exampleValue": "",
+          "propertyOrder": 400,
+          "required": true,
+          "title": "Context path",
+          "type": "string"
+        },
+        "extensionClassName": {
+          "description": "",
+          "exampleValue": "",
+          "propertyOrder": 300,
+          "required": true,
+          "title": "Extension class name",
+          "type": "string"
+        },
+        "fixedValue": {
+          "description": "",
+          "exampleValue": "",
+          "propertyOrder": 200,
+          "required": true,
+          "title": "Fixed value base URL",
+          "type": "string"
+        },
+        "source": {
+          "description": "",
+          "enum": [
+            "FIXED_VALUE",
+            "FORWARDED_HEADER",
+            "X_FORWARDED_HEADERS",
+            "REQUEST_VALUES",
+            "EXTENSION_CLASS"
+          ],
+          "exampleValue": "",
+          "options": {
+            "enum_titles": [
+              "FIXED_VALUE",
+              "FORWARDED_HEADER",
+              "X_FORWARDED_HEADERS",
+              "REQUEST_VALUES",
+              "EXTENSION_CLASS"
+            ]
+          },
+          "propertyOrder": 100,
+          "required": true,
+          "title": "Base URL Source",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

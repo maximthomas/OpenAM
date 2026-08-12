@@ -1,0 +1,47 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/json/serverinfo/*",
+    "query": {},
+    "acceptApiVersion": "protocol=1.0,resource=1.1",
+    "session": "none",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.1",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "cookieHttpOnly": false,
+      "cookieName": "iPlanetDirectoryPro",
+      "cookieSameSite": "Lax",
+      "domains": [
+        "{{COOKIE_DOMAIN}}"
+      ],
+      "forgotPassword": "false",
+      "forgotUsername": "false",
+      "kbaEnabled": "false",
+      "lang": "en-US",
+      "protectedUserAttributes": [],
+      "realm": "/",
+      "referralsEnabled": "false",
+      "secureCookie": false,
+      "selfRegistration": "false",
+      "socialImplementations": [],
+      "successfulUserRegistrationDestination": "default",
+      "xuiUserSessionValidationEnabled": true,
+      "zeroPageLogin": {
+        "allowedWithoutReferer": true,
+        "enabled": false,
+        "refererWhitelist": []
+      }
+    }
+  }
+}

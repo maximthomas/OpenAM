@@ -1,0 +1,40 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/realms/root/realms/e2e-capture/realm-config/services/dashboard",
+    "query": {
+      "_action": "schema"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "properties": {
+        "assignedDashboard": {
+          "description": "",
+          "exampleValue": "",
+          "items": {
+            "type": "string"
+          },
+          "propertyOrder": 700,
+          "required": true,
+          "title": "Available Dashboard Apps",
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

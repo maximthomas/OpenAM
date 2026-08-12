@@ -1,0 +1,31 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/realms/root/users",
+    "query": {
+      "_action": "idFromSession"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=2.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=2.1",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "dn": "id=amadmin,ou=user,{{CONFIG_SUFFIX}}",
+      "fullLoginURL": "/{{CONTEXT}}/UI/Login?realm=%2F",
+      "id": "amadmin",
+      "realm": "/",
+      "successURL": "/{{CONTEXT}}/console"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/json/realm-config/services/baseurl",
+    "query": {
+      "realm": "/e2e-capture"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": null
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "code": 404,
+      "message": "Not Found",
+      "reason": "Not Found"
+    }
+  }
+}

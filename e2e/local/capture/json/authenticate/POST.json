@@ -1,0 +1,33 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/authenticate",
+    "query": {},
+    "acceptApiVersion": "resource=2.0, protocol=1.0",
+    "session": "none",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache, no-store, must-revalidate",
+      "connection": "keep-alive",
+      "content-api-version": "resource=2.1",
+      "content-type": "application/json;charset=UTF-8",
+      "expires": "0",
+      "keep-alive": "timeout=20",
+      "pragma": "no-cache",
+      "x-frame-options": "SAMEORIGIN",
+      "set-cookie": [
+        "iPlanetDirectoryPro=<TOKEN>;path=/;domain={{COOKIE_DOMAIN}};SameSite=Lax",
+        "amlbcookie={{SERVER_ID}};path=/;domain={{COOKIE_DOMAIN}};SameSite=Lax",
+        "AMAuthCookie=LOGOUT; Expires=Thu, 01 Jan 1970 00:00:10 GMT; Domain={{COOKIE_DOMAIN}}; Path=/"
+      ]
+    },
+    "body": {
+      "realm": "/",
+      "successUrl": "/{{CONTEXT}}/console",
+      "tokenId": "<TOKEN>"
+    }
+  }
+}

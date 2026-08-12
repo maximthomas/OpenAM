@@ -1,0 +1,65 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/global-config/services/rest",
+    "query": {
+      "_action": "schema"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "properties": {
+        "defaultVersion": {
+          "description": "The API version to use when the REST request does not specify a desired version<br><br>Latest: If an explicit version is not specified the most up-to-date version of an API should be used.<br/><br/>Oldest: If an explicit version is not specified the oldest supported version of an API should be used. Note, since APIs may be deprecated and fall out of support, the oldest supported version may not be the first version.<br/><br/>None: If an explicit version is not specified in the request, it will not be defaulted. The result is that the request will not be handled and an error status will be returned.",
+          "enum": [
+            "Latest",
+            "Oldest",
+            "None"
+          ],
+          "exampleValue": "",
+          "options": {
+            "enum_titles": [
+              "Latest",
+              "Oldest",
+              "None"
+            ]
+          },
+          "propertyOrder": 100,
+          "required": true,
+          "title": "Default Version",
+          "type": "string"
+        },
+        "descriptionsEnabled": {
+          "description": "Whether API Descriptions are enabled.",
+          "exampleValue": "",
+          "propertyOrder": 300,
+          "required": true,
+          "title": "API Descriptions Enabled",
+          "type": "boolean"
+        },
+        "warningHeader": {
+          "description": "Whether to include a warning header in the response to a request which fails to include the Accept-API-Version header.",
+          "exampleValue": "",
+          "propertyOrder": 200,
+          "required": true,
+          "title": "Warning Header",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

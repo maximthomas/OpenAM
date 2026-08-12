@@ -10,6 +10,7 @@
     "test:xui": "playwright test xui",
     "test:oauth2": "playwright test oauth2",
     "test:saml": "playwright test saml",
+    "test:capture": "node --test 'local/capture-lib/*.test.mjs'",
     "report": "playwright show-report"
   },
   "devDependencies": {

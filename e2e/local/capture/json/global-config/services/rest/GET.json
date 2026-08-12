@@ -1,0 +1,33 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/json/global-config/services/rest",
+    "query": {},
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "_id": "",
+      "_type": {
+        "_id": "rest",
+        "collection": false,
+        "name": "REST APIs"
+      },
+      "defaultVersion": "Latest",
+      "descriptionsEnabled": true,
+      "warningHeader": false
+    }
+  }
+}

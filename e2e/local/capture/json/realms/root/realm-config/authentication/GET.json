@@ -1,0 +1,85 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/json/realms/root/realm-config/authentication",
+    "query": {},
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "_id": "",
+      "_type": {
+        "_id": "EMPTY",
+        "collection": false,
+        "name": "Core"
+      },
+      "accountlockout": {
+        "invalidAttemptsDataAttributeName": null,
+        "lockoutAttributeName": null,
+        "lockoutAttributeValue": null,
+        "lockoutDuration": 0,
+        "lockoutDurationMultiplier": 1,
+        "lockoutEmailAddress": null,
+        "lockoutWarnUserCount": 0,
+        "loginFailureCount": 5,
+        "loginFailureDuration": 300,
+        "loginFailureLockoutMode": false,
+        "storeInvalidAttemptsInDataStore": true
+      },
+      "core": {
+        "adminAuthModule": "ldapService",
+        "orgConfig": "ldapService"
+      },
+      "general": {
+        "defaultAuthLevel": 0,
+        "identityType": [
+          "agent",
+          "user"
+        ],
+        "locale": "en_US",
+        "statelessSessionsEnabled": false,
+        "twoFactorRequired": false,
+        "userStatusCallbackPlugins": []
+      },
+      "postauthprocess": {
+        "loginFailureUrl": [
+          ""
+        ],
+        "loginPostProcessClass": [],
+        "loginSuccessUrl": [
+          "/{{CONTEXT}}/console"
+        ],
+        "userAttributeSessionMapping": [],
+        "usernameGeneratorClass": "com.sun.identity.authentication.spi.DefaultUserIDGenerator",
+        "usernameGeneratorEnabled": true
+      },
+      "security": {
+        "keyAlias": "test",
+        "moduleBasedAuthEnabled": true,
+        "sharedSecret": null,
+        "zeroPageLoginAllowedWithoutReferrer": true,
+        "zeroPageLoginEnabled": false,
+        "zeroPageLoginReferrerWhiteList": []
+      },
+      "userprofile": {
+        "aliasAttributeName": [
+          "uid"
+        ],
+        "defaultRole": [],
+        "dynamicProfileCreation": "false"
+      }
+    }
+  }
+}

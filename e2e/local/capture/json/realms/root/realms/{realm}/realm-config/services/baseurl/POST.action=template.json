@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/realms/root/realms/e2e-capture/realm-config/services/baseurl",
+    "query": {
+      "_action": "template"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "contextPath": "/{{CONTEXT}}",
+      "extensionClassName": null,
+      "fixedValue": null,
+      "source": "REQUEST_VALUES"
+    }
+  }
+}

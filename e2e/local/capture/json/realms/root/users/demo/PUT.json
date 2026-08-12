@@ -1,0 +1,89 @@
+{
+  "request": {
+    "method": "PUT",
+    "path": "/json/realms/root/users/demo",
+    "query": {},
+    "acceptApiVersion": "protocol=1.0,resource=2.0",
+    "session": "admin",
+    "body": {
+      "cn": [
+        "Demo Demo"
+      ],
+      "givenName": [
+        "Demo"
+      ],
+      "mail": [
+        "demo@example.com"
+      ],
+      "sn": [
+        "Demo"
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=2.1",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "cn": [
+        "Demo Demo"
+      ],
+      "createTimestamp": [
+        "<TS>"
+      ],
+      "dn": [
+        "uid=demo,ou=people,{{USER_SUFFIX}}"
+      ],
+      "givenName": [
+        "Demo"
+      ],
+      "inetUserStatus": [
+        "Active"
+      ],
+      "mail": [
+        "demo@example.com"
+      ],
+      "modifyTimestamp": [
+        "<TS>"
+      ],
+      "objectClass": [
+        "iplanet-am-managed-person",
+        "inetuser",
+        "sunFederationManagerDataStore",
+        "sunFMSAML2NameIdentifier",
+        "devicePrintProfilesContainer",
+        "inetorgperson",
+        "sunIdentityServerLibertyPPService",
+        "iPlanetPreferences",
+        "pushDeviceProfilesContainer",
+        "iplanet-am-user-service",
+        "forgerock-am-dashboard-service",
+        "organizationalperson",
+        "top",
+        "kbaInfoContainer",
+        "sunAMAuthAccountLockout",
+        "person",
+        "oathDeviceProfilesContainer",
+        "iplanet-am-auth-configuration-service"
+      ],
+      "realm": "/",
+      "sn": [
+        "Demo"
+      ],
+      "uid": [
+        "demo"
+      ],
+      "universalid": [
+        "id=demo,ou=user,{{CONFIG_SUFFIX}}"
+      ],
+      "username": "demo"
+    }
+  }
+}

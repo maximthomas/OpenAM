@@ -1,0 +1,56 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/json/realms/root/users/amadmin",
+    "query": {},
+    "acceptApiVersion": "protocol=1.0,resource=2.0",
+    "session": "admin",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=2.1",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "cn": [
+        "amAdmin"
+      ],
+      "dn": [
+        "uid=amAdmin,ou=people,{{CONFIG_SUFFIX}}"
+      ],
+      "employeeNumber": [],
+      "givenName": [
+        "amAdmin"
+      ],
+      "inetUserStatus": [
+        "Active"
+      ],
+      "iplanet-am-user-alias-list": [],
+      "iplanet-am-user-failure-url": [],
+      "iplanet-am-user-success-url": [],
+      "mail": [],
+      "postalAddress": [],
+      "realm": "/",
+      "roles": [
+        "ui-global-admin",
+        "ui-realm-admin"
+      ],
+      "sn": [
+        "amAdmin"
+      ],
+      "sunIdentityMSISDNNumber": [],
+      "telephoneNumber": [],
+      "universalid": [
+        "id=amadmin,ou=user,{{CONFIG_SUFFIX}}"
+      ],
+      "username": "amadmin"
+    }
+  }
+}

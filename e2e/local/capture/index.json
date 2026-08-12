@@ -1,0 +1,863 @@
+{
+  "rules": "local/NOTES-volatility.md",
+  "placeholders": {
+    "<TS>": "a timestamp AM regenerates on every call",
+    "<TOKEN>": "an SSO token minted for this run",
+    "<AUTHID>": "the JWT carrying authentication-chain state between callback exchanges",
+    "<AUTH-COOKIE>": "the in-progress authentication cookie",
+    "<SESSION-HANDLE>": "the session handle returned by getSessionInfo",
+    "<PASSWORD>": "a password this run authenticated with; never recorded",
+    "{{BASE_URL}}": "the AM origin and deployment URI the capture was recorded against",
+    "{{HOSTNAME}}": "the fully-qualified name of the AM host",
+    "{{HOST_ALIAS}}": "the AM host's bare name, carried as a root-realm DNS alias",
+    "{{PORT}}": "the port AM was reached on",
+    "{{COOKIE_DOMAIN}}": "the domain AM writes its cookies for",
+    "{{CONTEXT}}": "the servlet context AM is deployed under, without its leading slash",
+    "{{CONFIG_SUFFIX}}": "the config store's LDAP suffix",
+    "{{USER_SUFFIX}}": "the user store's LDAP suffix",
+    "{{SERVER_ID}}": "the AM server id, as carried by the load-balancer cookie"
+  },
+  "pathPlaceholders": {
+    "{realm}": "e2e-capture",
+    "{realmId}": "L2UyZS1jYXB0dXJl"
+  },
+  "callCount": 48,
+  "calls": [
+    {
+      "order": 1,
+      "id": "users-idfromsession-anonymous",
+      "file": "json/users/POST.action=idFromSession.401.json",
+      "method": "POST",
+      "path": "/json/users",
+      "query": {
+        "_action": "idFromSession"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=2.0",
+      "session": "none",
+      "status": 401,
+      "row": {
+        "method": "POST",
+        "path": "/json/users",
+        "query": "_action=idFromSession"
+      },
+      "note": "The XUI fires this on every page load before it has a session. 60 of 72 occurrences in the recording were anonymous and every one got a 401 — the bootstrap's normal path, not an error path (REQUESTS.md, Fact 1)."
+    },
+    {
+      "order": 2,
+      "id": "serverinfo-star-1.1",
+      "file": "json/serverinfo/star/GET.resource=1.1.json",
+      "method": "GET",
+      "path": "/json/serverinfo/*",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.1",
+      "session": "none",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/serverinfo/*",
+        "query": ""
+      }
+    },
+    {
+      "order": 3,
+      "id": "serverinfo-star-1.0",
+      "file": "json/serverinfo/star/GET.resource=1.0.json",
+      "method": "GET",
+      "path": "/json/serverinfo/*",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "none",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/serverinfo/*",
+        "query": ""
+      },
+      "note": "The same path at a second resource version. AM answers both; a strict stand-in would not, and `_id`/`_rev` presence depends on the negotiation."
+    },
+    {
+      "order": 4,
+      "id": "authenticate-callbacks",
+      "file": "json/realms/root/authenticate/POST.callbacks.json",
+      "method": "POST",
+      "path": "/json/realms/root/authenticate",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=2.1",
+      "session": "none",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/authenticate",
+        "query": ""
+      }
+    },
+    {
+      "order": 5,
+      "id": "authenticate-success",
+      "file": "json/realms/root/authenticate/POST.success.json",
+      "method": "POST",
+      "path": "/json/realms/root/authenticate",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=2.1",
+      "session": "none",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/authenticate",
+        "query": ""
+      }
+    },
+    {
+      "order": 6,
+      "id": "authenticate-failure",
+      "file": "json/realms/root/authenticate/POST.failure.json",
+      "method": "POST",
+      "path": "/json/realms/root/authenticate",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=2.1",
+      "session": "none",
+      "status": 401,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/authenticate",
+        "query": ""
+      }
+    },
+    {
+      "order": 7,
+      "id": "authenticate-legacy-admin",
+      "file": "json/authenticate/POST.json",
+      "method": "POST",
+      "path": "/json/authenticate",
+      "query": {},
+      "acceptApiVersion": "resource=2.0, protocol=1.0",
+      "session": "none",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/authenticate",
+        "query": ""
+      },
+      "note": "The legacy realm-in-query shape the Playwright fixtures use, header spelling included — reversed order and a space, which is semantically the same request and textually a different one (REQUESTS.md, 'Header spelling is not canonical')."
+    },
+    {
+      "order": 8,
+      "id": "serverinfo-version",
+      "file": "json/serverinfo/version/GET.json",
+      "method": "GET",
+      "path": "/json/serverinfo/version",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/serverinfo/version",
+        "query": ""
+      }
+    },
+    {
+      "order": 9,
+      "id": "users-idfromsession-realm",
+      "file": "json/realms/root/users/POST.action=idFromSession.json",
+      "method": "POST",
+      "path": "/json/realms/root/users",
+      "query": {
+        "_action": "idFromSession"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=2.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/users",
+        "query": "_action=idFromSession"
+      }
+    },
+    {
+      "order": 10,
+      "id": "users-idfromsession-admin",
+      "file": "json/users/POST.action=idFromSession.json",
+      "method": "POST",
+      "path": "/json/users",
+      "query": {
+        "_action": "idFromSession"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=2.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/users",
+        "query": "_action=idFromSession"
+      }
+    },
+    {
+      "order": 11,
+      "id": "users-amadmin",
+      "file": "json/realms/root/users/amadmin/GET.json",
+      "method": "GET",
+      "path": "/json/realms/root/users/amadmin",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=2.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/realms/root/users/amadmin",
+        "query": ""
+      }
+    },
+    {
+      "order": 12,
+      "id": "sessions-getsessioninfo",
+      "file": "json/sessions/POST.action=getSessionInfo.json",
+      "method": "POST",
+      "path": "/json/sessions",
+      "query": {
+        "_action": "getSessionInfo",
+        "tokenId": "<TOKEN>"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=2.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/sessions",
+        "query": "_action=getSessionInfo&tokenId=<token>"
+      }
+    },
+    {
+      "order": 13,
+      "id": "global-services-rest",
+      "file": "json/global-config/services/rest/GET.json",
+      "method": "GET",
+      "path": "/json/global-config/services/rest",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/global-config/services/rest",
+        "query": ""
+      }
+    },
+    {
+      "order": 14,
+      "id": "global-services-rest-schema",
+      "file": "json/global-config/services/rest/POST.action=schema.json",
+      "method": "POST",
+      "path": "/json/global-config/services/rest",
+      "query": {
+        "_action": "schema"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/global-config/services/rest",
+        "query": "_action=schema"
+      }
+    },
+    {
+      "order": 15,
+      "id": "global-realms-list",
+      "file": "json/global-config/realms/GET.queryFilter=true.json",
+      "method": "GET",
+      "path": "/json/global-config/realms",
+      "query": {
+        "_queryFilter": "true"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/global-config/realms",
+        "query": "_queryFilter=true"
+      }
+    },
+    {
+      "order": 16,
+      "id": "global-realms-schema",
+      "file": "json/global-config/realms/POST.action=schema.json",
+      "method": "POST",
+      "path": "/json/global-config/realms",
+      "query": {
+        "_action": "schema"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/global-config/realms",
+        "query": "_action=schema"
+      }
+    },
+    {
+      "order": 17,
+      "id": "global-realms-template",
+      "file": "json/global-config/realms/POST.action=template.json",
+      "method": "POST",
+      "path": "/json/global-config/realms",
+      "query": {
+        "_action": "template"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/global-config/realms",
+        "query": "_action=template"
+      }
+    },
+    {
+      "order": 18,
+      "id": "global-authentication-schema",
+      "file": "json/global-config/authentication/POST.action=schema.json",
+      "method": "POST",
+      "path": "/json/global-config/authentication",
+      "query": {
+        "_action": "schema"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/global-config/authentication",
+        "query": "_action=schema"
+      },
+      "note": "The largest payload in the capture, and the one that reorders its `properties` keys on every single call. Rule 14 is what makes it stable."
+    },
+    {
+      "order": 19,
+      "id": "global-authentication-template",
+      "file": "json/global-config/authentication/POST.action=template.json",
+      "method": "POST",
+      "path": "/json/global-config/authentication",
+      "query": {
+        "_action": "template"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/global-config/authentication",
+        "query": "_action=template"
+      }
+    },
+    {
+      "order": 20,
+      "id": "root-authentication",
+      "file": "json/realms/root/realm-config/authentication/GET.json",
+      "method": "GET",
+      "path": "/json/realms/root/realm-config/authentication",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/realms/root/realm-config/authentication",
+        "query": ""
+      }
+    },
+    {
+      "order": 21,
+      "id": "root-authentication-schema",
+      "file": "json/realms/root/realm-config/authentication/POST.action=schema.json",
+      "method": "POST",
+      "path": "/json/realms/root/realm-config/authentication",
+      "query": {
+        "_action": "schema"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/realm-config/authentication",
+        "query": "_action=schema"
+      }
+    },
+    {
+      "order": 22,
+      "id": "realm-get-missing",
+      "file": "json/global-config/realms/{realmId}/GET.404.json",
+      "method": "GET",
+      "path": "/json/global-config/realms/L2UyZS1jYXB0dXJl",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 404,
+      "row": {
+        "method": "GET",
+        "path": "/json/global-config/realms/<realm>",
+        "query": ""
+      },
+      "note": "The 'does it exist yet' probe. Only answers 404 before the create below, which is why capture order is recorded rather than inferred."
+    },
+    {
+      "order": 23,
+      "id": "realm-create",
+      "file": "json/global-config/realms/POST.action=create.json",
+      "method": "POST",
+      "path": "/json/global-config/realms",
+      "query": {
+        "_action": "create"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 201,
+      "row": {
+        "method": "POST",
+        "path": "/json/global-config/realms",
+        "query": "_action=create"
+      }
+    },
+    {
+      "order": 24,
+      "id": "realm-get",
+      "file": "json/global-config/realms/{realmId}/GET.json",
+      "method": "GET",
+      "path": "/json/global-config/realms/L2UyZS1jYXB0dXJl",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/global-config/realms/<realm>",
+        "query": ""
+      }
+    },
+    {
+      "order": 25,
+      "id": "realm-authentication",
+      "file": "json/realms/root/realms/{realm}/realm-config/authentication/GET.json",
+      "method": "GET",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/authentication",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/realms/root/realms/<realm>/realm-config/authentication",
+        "query": ""
+      }
+    },
+    {
+      "order": 26,
+      "id": "realm-authentication-schema",
+      "file": "json/realms/root/realms/{realm}/realm-config/authentication/POST.action=schema.json",
+      "method": "POST",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/authentication",
+      "query": {
+        "_action": "schema"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/realms/<realm>/realm-config/authentication",
+        "query": "_action=schema"
+      }
+    },
+    {
+      "order": 27,
+      "id": "realm-authentication-put",
+      "file": "json/realms/root/realms/{realm}/realm-config/authentication/PUT.json",
+      "method": "PUT",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/authentication",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "PUT",
+        "path": "/json/realms/root/realms/<realm>/realm-config/authentication",
+        "query": ""
+      }
+    },
+    {
+      "order": 28,
+      "id": "realm-services-list",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/GET.queryFilter=true.json",
+      "method": "GET",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services",
+      "query": {
+        "_queryFilter": "true"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services",
+        "query": "_queryFilter=true"
+      }
+    },
+    {
+      "order": 29,
+      "id": "realm-services-creatable",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/POST.action=getCreatableTypes.json",
+      "method": "POST",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services",
+      "query": {
+        "_action": "getCreatableTypes",
+        "forUI": "true"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services",
+        "query": "_action=getCreatableTypes&forUI=true"
+      },
+      "note": "19 entries in a deliberately non-alphabetical order, which survived a full destroy-and-reconfigure. Listings must not be sorted."
+    },
+    {
+      "order": 30,
+      "id": "legacy-services-creatable",
+      "file": "json/realm-config/services/POST.action=getCreatableTypes.json",
+      "method": "POST",
+      "path": "/json/realm-config/services",
+      "query": {
+        "_action": "getCreatableTypes",
+        "forUI": "true",
+        "realm": "/e2e-capture"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realm-config/services",
+        "query": "_action=getCreatableTypes&forUI=true&realm=<realm>"
+      },
+      "note": "The legacy realm-in-query shape. Fixture-only, but in scope: a @local-server spec cannot provision itself if these go unanswered (REQUESTS.md, Fact 2)."
+    },
+    {
+      "order": 31,
+      "id": "baseurl-getalltypes",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/baseurl/POST.action=getAllTypes.json",
+      "method": "POST",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services/baseurl",
+      "query": {
+        "_action": "getAllTypes"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services/baseurl",
+        "query": "_action=getAllTypes"
+      }
+    },
+    {
+      "order": 32,
+      "id": "baseurl-schema",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/baseurl/POST.action=schema.json",
+      "method": "POST",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services/baseurl",
+      "query": {
+        "_action": "schema"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services/baseurl",
+        "query": "_action=schema"
+      }
+    },
+    {
+      "order": 33,
+      "id": "baseurl-template",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/baseurl/POST.action=template.json",
+      "method": "POST",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services/baseurl",
+      "query": {
+        "_action": "template"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services/baseurl",
+        "query": "_action=template"
+      }
+    },
+    {
+      "order": 34,
+      "id": "legacy-baseurl-missing",
+      "file": "json/realm-config/services/baseurl/GET.404.json",
+      "method": "GET",
+      "path": "/json/realm-config/services/baseurl",
+      "query": {
+        "realm": "/e2e-capture"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 404,
+      "row": {
+        "method": "GET",
+        "path": "/json/realm-config/services/baseurl",
+        "query": "realm=<realm>"
+      }
+    },
+    {
+      "order": 35,
+      "id": "baseurl-create",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/baseurl/POST.action=create.json",
+      "method": "POST",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services/baseurl",
+      "query": {
+        "_action": "create"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 201,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services/baseurl",
+        "query": "_action=create"
+      }
+    },
+    {
+      "order": 36,
+      "id": "baseurl-get",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/baseurl/GET.json",
+      "method": "GET",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services/baseurl",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services/baseurl",
+        "query": ""
+      }
+    },
+    {
+      "order": 37,
+      "id": "legacy-baseurl-get",
+      "file": "json/realm-config/services/baseurl/GET.json",
+      "method": "GET",
+      "path": "/json/realm-config/services/baseurl",
+      "query": {
+        "realm": "/e2e-capture"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/realm-config/services/baseurl",
+        "query": "realm=<realm>"
+      }
+    },
+    {
+      "order": 38,
+      "id": "baseurl-put",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/baseurl/PUT.json",
+      "method": "PUT",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services/baseurl",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "PUT",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services/baseurl",
+        "query": ""
+      }
+    },
+    {
+      "order": 39,
+      "id": "baseurl-delete",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/baseurl/DELETE.json",
+      "method": "DELETE",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services/baseurl",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "DELETE",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services/baseurl",
+        "query": ""
+      }
+    },
+    {
+      "order": 40,
+      "id": "legacy-baseurl-create",
+      "file": "json/realm-config/services/baseurl/POST.action=create.json",
+      "method": "POST",
+      "path": "/json/realm-config/services/baseurl",
+      "query": {
+        "_action": "create",
+        "realm": "/e2e-capture"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 201,
+      "row": {
+        "method": "POST",
+        "path": "/json/realm-config/services/baseurl",
+        "query": "_action=create&realm=<realm>"
+      }
+    },
+    {
+      "order": 41,
+      "id": "dashboard-schema",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/dashboard/POST.action=schema.json",
+      "method": "POST",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services/dashboard",
+      "query": {
+        "_action": "schema"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services/dashboard",
+        "query": "_action=schema"
+      }
+    },
+    {
+      "order": 42,
+      "id": "dashboard-template",
+      "file": "json/realms/root/realms/{realm}/realm-config/services/dashboard/POST.action=template.json",
+      "method": "POST",
+      "path": "/json/realms/root/realms/e2e-capture/realm-config/services/dashboard",
+      "query": {
+        "_action": "template"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/realms/root/realms/<realm>/realm-config/services/dashboard",
+        "query": "_action=template"
+      }
+    },
+    {
+      "order": 43,
+      "id": "realm-put",
+      "file": "json/global-config/realms/{realmId}/PUT.json",
+      "method": "PUT",
+      "path": "/json/global-config/realms/L2UyZS1jYXB0dXJl",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "PUT",
+        "path": "/json/global-config/realms/<realm>",
+        "query": ""
+      }
+    },
+    {
+      "order": 44,
+      "id": "realm-delete",
+      "file": "json/global-config/realms/{realmId}/DELETE.json",
+      "method": "DELETE",
+      "path": "/json/global-config/realms/L2UyZS1jYXB0dXJl",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "DELETE",
+        "path": "/json/global-config/realms/<realm>",
+        "query": ""
+      }
+    },
+    {
+      "order": 45,
+      "id": "realm-delete-missing",
+      "file": "json/global-config/realms/{realmId}/DELETE.404.json",
+      "method": "DELETE",
+      "path": "/json/global-config/realms/L2UyZS1jYXB0dXJl",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=1.0",
+      "session": "admin",
+      "status": 404,
+      "row": {
+        "method": "DELETE",
+        "path": "/json/global-config/realms/<realm>",
+        "query": ""
+      },
+      "note": "The 'is it gone' probe the realm teardown fixture makes, which treats an already deleted realm as the successful case."
+    },
+    {
+      "order": 46,
+      "id": "users-demo-put",
+      "file": "json/realms/root/users/demo/PUT.json",
+      "method": "PUT",
+      "path": "/json/realms/root/users/demo",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=2.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "PUT",
+        "path": "/json/realms/root/users/demo",
+        "query": ""
+      }
+    },
+    {
+      "order": 47,
+      "id": "users-demo-get",
+      "file": "json/realms/root/users/demo/GET.json",
+      "method": "GET",
+      "path": "/json/realms/root/users/demo",
+      "query": {},
+      "acceptApiVersion": "protocol=1.0,resource=2.0",
+      "session": "admin",
+      "status": 200,
+      "row": {
+        "method": "GET",
+        "path": "/json/realms/root/users/demo",
+        "query": ""
+      },
+      "note": "After the PUT above, always. The PUT creates a `modifyTimestamp` key that never goes away, so reading first would record one shape on a fresh instance and a different one on every later run — a field appearing, which no rule should hide."
+    },
+    {
+      "order": 48,
+      "id": "sessions-logout",
+      "file": "json/sessions/POST.action=logout.json",
+      "method": "POST",
+      "path": "/json/sessions",
+      "query": {
+        "_action": "logout",
+        "tokenId": "<TOKEN>"
+      },
+      "acceptApiVersion": "protocol=1.0,resource=2.0",
+      "session": "demo",
+      "status": 200,
+      "row": {
+        "method": "POST",
+        "path": "/json/sessions",
+        "query": "_action=logout&tokenId=<token>"
+      },
+      "note": "The end-user row. Logging the admin out here would destroy the tool's own credential mid-capture, so it runs against the demo session and the admin session is ended after the capture finishes."
+    }
+  ]
+}

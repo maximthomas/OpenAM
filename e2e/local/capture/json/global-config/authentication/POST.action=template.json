@@ -1,0 +1,69 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/global-config/authentication",
+    "query": {
+      "_action": "template"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "authenticators": [
+        "com.sun.identity.authentication.modules.ad.AD",
+        "org.forgerock.openam.authentication.modules.saml2.SAML2",
+        "org.forgerock.openam.authentication.modules.oath.OATH",
+        "com.sun.identity.authentication.modules.membership.Membership",
+        "com.sun.identity.authentication.modules.windowsdesktopsso.WindowsDesktopSSO",
+        "org.forgerock.openam.authentication.modules.deviceprint.DeviceIdSave",
+        "com.sun.identity.authentication.modules.jdbc.JDBC",
+        "org.forgerock.openam.authentication.modules.deviceprint.DeviceIdMatch",
+        "com.sun.identity.authentication.modules.federation.Federation",
+        "com.sun.identity.authentication.modules.radius.RADIUS",
+        "org.openidentityplatform.openam.authentication.modules.webauthn.WebAuthnRegistration",
+        "com.sun.identity.authentication.modules.wss.WSSAuthModule",
+        "com.sun.identity.authentication.modules.anonymous.Anonymous",
+        "com.sun.identity.authentication.modules.cert.Cert",
+        "org.forgerock.openam.authentication.modules.push.registration.AuthenticatorPushRegistration",
+        "com.sun.identity.authentication.modules.httpbasic.HTTPBasic",
+        "org.forgerock.openam.authentication.modules.oidc.OpenIdConnect",
+        "com.sun.identity.authentication.modules.sae.SAE",
+        "org.forgerock.openam.authentication.modules.persistentcookie.PersistentCookie",
+        "org.openidentityplatform.openam.authentication.modules.recaptcha.ReCaptcha",
+        "org.openidentityplatform.openam.authentication.modules.webauthn.WebAuthnAuthentication",
+        "com.sun.identity.authentication.modules.ldap.LDAP",
+        "org.forgerock.openam.authentication.modules.push.AuthenticatorPush",
+        "com.sun.identity.authentication.modules.nt.NT",
+        "org.forgerock.openam.authentication.modules.oauth2.OAuth",
+        "org.openidentityplatform.openam.authentication.modules.QR",
+        "com.sun.identity.authentication.modules.application.Application",
+        "org.forgerock.openam.authentication.modules.scripted.Scripted",
+        "com.sun.identity.authentication.modules.hotp.HOTP",
+        "org.forgerock.openam.authentication.modules.adaptive.Adaptive",
+        "com.sun.identity.authentication.modules.msisdn.MSISDN",
+        "org.forgerock.openam.authentication.modules.fr.oath.AuthenticatorOATH",
+        "com.sun.identity.authentication.modules.datastore.DataStore",
+        "com.sun.identity.authentication.modules.securid.SecurID",
+        "org.forgerock.openam.authentication.modules.amster.Amster",
+        "org.openidentityplatform.openam.authentication.modules.Ntlm"
+      ],
+      "keepPostProcessInstances": false,
+      "ldapConnectionPoolDefaultSize": "1:10",
+      "ldapConnectionPoolSize": [],
+      "remoteAuthSecurityEnabled": false,
+      "xuiInterfaceEnabled": true
+    }
+  }
+}

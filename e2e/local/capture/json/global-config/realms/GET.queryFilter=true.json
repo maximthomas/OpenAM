@@ -1,0 +1,43 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/json/global-config/realms",
+    "query": {
+      "_queryFilter": "true"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "protocol=1.0,resource=1.0, resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "pagedResultsCookie": null,
+      "remainingPagedResults": -1,
+      "result": [
+        {
+          "_id": "Lw",
+          "active": true,
+          "aliases": [
+            "{{HOST_ALIAS}}",
+            "{{HOSTNAME}}"
+          ],
+          "name": "/",
+          "parentPath": null
+        }
+      ],
+      "resultCount": 1,
+      "totalPagedResults": -1,
+      "totalPagedResultsPolicy": "NONE"
+    }
+  }
+}

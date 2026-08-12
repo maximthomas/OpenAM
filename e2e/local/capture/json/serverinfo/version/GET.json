@@ -1,0 +1,27 @@
+{
+  "request": {
+    "method": "GET",
+    "path": "/json/serverinfo/version",
+    "query": {},
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": null
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "date": "2026-August-04 10:48",
+      "revision": "fc8e2e67c7",
+      "version": "16.2.0-SNAPSHOT"
+    }
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/realms/root/authenticate",
+    "query": {},
+    "acceptApiVersion": "protocol=1.0,resource=2.1",
+    "session": "none",
+    "body": {
+      "authId": "<AUTHID>",
+      "callbacks": [
+        {
+          "input": [
+            {
+              "name": "IDToken1",
+              "value": "demo"
+            }
+          ],
+          "output": [
+            {
+              "name": "prompt",
+              "value": "User Name:"
+            }
+          ],
+          "type": "NameCallback"
+        },
+        {
+          "input": [
+            {
+              "name": "IDToken2",
+              "value": "not-the-password"
+            }
+          ],
+          "output": [
+            {
+              "name": "prompt",
+              "value": "Password:"
+            }
+          ],
+          "type": "PasswordCallback"
+        }
+      ],
+      "header": "Sign in to OpenAM",
+      "infoText": [
+        "",
+        ""
+      ],
+      "stage": "DataStore1",
+      "template": ""
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "connection": "keep-alive",
+      "content-api-version": "resource=2.1",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "code": 401,
+      "message": "Authentication Failed",
+      "reason": "Unauthorized"
+    }
+  }
+}

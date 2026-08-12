@@ -35,7 +35,7 @@
  * good enough reason to invalidate it.
  */
 
-import { readdir, rm } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,10 +44,11 @@ import {
 } from "../common/openam-commons.mjs";
 import { buildManifest, CAPTURE_REALM, encodeRealmId } from "./capture-lib/manifest.mjs";
 import {
-    maskCredentials, normaliseBaseUrl, normaliseHeaders, normaliseJson,
+    auditPortability, maskCredentials, normaliseHeaders, normaliseJson, normalisePortableText,
+    normalisePortableValues, PLACEHOLDERS, portabilityTargets,
 } from "./capture-lib/normalise.mjs";
 import { checkCoverage, readInScope } from "./capture-lib/requests-md.mjs";
-import { writeCapture } from "./capture-lib/tree.mjs";
+import { removeGenerated, writeCapture } from "./capture-lib/tree.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -135,10 +136,15 @@ async function checkOutput (outDir) {
         throw error;
     }
 
-    if (existing.length > 0 && !existing.includes("index.json")) {
+    // README.md does not count towards "looks like a capture": it is committed alongside the tree and
+    // is not written by this tool, so on its own it says nothing about what the directory is.
+    const written = existing.filter((name) => name !== "README.md");
+
+    if (written.length > 0 && !written.includes("index.json")) {
         throw new Error(
             `${outDir} is not empty and does not look like a capture (no index.json). Refusing to `
-            + "delete it — pass --out somewhere else.",
+            + "delete it. If a previous run died partway through writing, restore the directory "
+            + `(git checkout -- ${outDir}) or empty it; otherwise pass --out somewhere else.`,
         );
     }
 }
@@ -167,6 +173,9 @@ async function main () {
 
     const realmId = encodeRealmId(`/${options.realm}`);
     const manifest = buildManifest(options);
+
+    /** What about this deployment must not survive into the committed capture. */
+    const targets = portabilityTargets(options.baseUrl);
 
     // Refuse to record anything until the plan and the scope document agree.
     const rows = await readInScope(join(HERE, "REQUESTS.md"));
@@ -400,18 +409,22 @@ async function main () {
                 sessions[entry.ends] = null;
             }
 
-            // The two rules that are not about volatility, kept out of the fourteen on purpose. The
-            // base URL is stable between runs and the credential is constant within one, so neither
-            // can affect determinism either way: one is here so the committed capture is portable,
-            // the other so it carries no working password.
+            // The rules that are not about volatility, kept out of the fourteen on purpose: what may
+            // not be committed at all (the password this run authenticated with) and what pins the
+            // capture to this box (its origin, deployment URI, cookie domain, DNS aliases, LDAP
+            // suffixes and server id). Every value either one touches was measured stable across a
+            // reconfigure, so neither can create or hide a re-record diff.
             const scrub = (value) => (value === null || value === undefined
                 ? value
                 : maskCredentials(
-                    JSON.parse(normaliseBaseUrl(JSON.stringify(value), options.baseUrl)),
+                    normalisePortableValues(
+                        JSON.parse(normalisePortableText(JSON.stringify(value), targets)),
+                        targets,
+                    ),
                     credentials,
                 ));
 
-            records.push({
+            const record = {
                 entry,
                 request: {
                     method: entry.method,
@@ -427,16 +440,36 @@ async function main () {
                         response.headers.getSetCookie())),
                     body: scrub(normaliseJson(parsed)),
                 },
-            });
+            };
+
+            // Checked here rather than over the finished tree so the failure names the call that
+            // produced it, and so nothing is written at all: a capture is committed once and read for
+            // the rest of the change, and a host value that reaches it outlives the revert.
+            const survivors = auditPortability(
+                JSON.stringify({ request: record.request, response: record.response }),
+                targets,
+            );
+            if (survivors.length > 0) {
+                throw new Error(
+                    `${entry.id}: after normalisation the response still carries `
+                    + `${survivors.join(", ")}. The instance no longer matches what `
+                    + "local/capture-lib/normalise.mjs was told to erase. Fix the rule, not the "
+                    + "recorded file — task 2.15 re-records this capture and a hand edit is lost.",
+                );
+            }
+
+            records.push(record);
             log(`  ${String(records.length).padStart(2)} ${response.status} ${entry.id}`);
         }
 
         // Only now: the whole capture is in memory, so the previous one can be replaced rather than
-        // destroyed on the way to a run that might not finish.
-        await rm(options.out, { recursive: true, force: true });
+        // destroyed on the way to a run that might not finish. Scoped to what this tool generates, so
+        // the README committed alongside the tree survives a re-record.
+        const removed = await removeGenerated(options.out, records);
+        log(`\nreplacing ${removed.sort().join(", ")} in ${options.out}`);
         written = await writeCapture(options.out, records, {
             rules: "local/NOTES-volatility.md",
-            baseUrlPlaceholder: "{{BASE_URL}}",
+            placeholders: PLACEHOLDERS,
             pathPlaceholders: { "{realm}": options.realm, "{realmId}": realmId },
         });
         completed = true;

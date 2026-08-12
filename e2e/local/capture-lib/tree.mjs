@@ -35,8 +35,8 @@
  * files behave in a diff.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, sep } from "node:path";
 
 /** `*` is a legal path segment for AM and an illegal filename on some platforms. */
 function segment (text) {
@@ -79,6 +79,45 @@ export function relativePathFor (entry) {
 /** Serialise with a trailing newline, so the file ends the way a text file should. */
 function serialise (value) {
     return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+/**
+ * Remove what this run is about to write, and nothing else.
+ *
+ * A blanket delete of the output directory would take `capture/README.md` with it — the document
+ * tasks 2.6, 2.10 and 2.11 read *instead of* the capture — and it would come back only if whoever
+ * re-recorded happened to notice it had gone. Task 2.15 re-records on a schedule, with nobody
+ * watching, so "happened to notice" is not a mechanism.
+ *
+ * Scoped to `index.json` plus the top-level directory each recorded call lands under, derived from the
+ * records rather than hard-coded to `json/`, so a request path that does not begin `/json` cleans up
+ * after itself too. Note the consequence of deriving it: a top-level directory that a *previous* run
+ * wrote and this one no longer produces is left behind. Staleness inside `json/` is fully handled,
+ * since that whole subtree goes; only a request path losing its first segment entirely would strand
+ * anything, and a re-record then leaves a directory the index no longer references.
+ *
+ * The segment is checked before it reaches a recursive delete. It is assembled by string manipulation
+ * from a manifest path, and `..` would resolve to the parent of `--out` — for the default that is
+ * `local/`, holding the tool itself. Nothing in the manifest can produce it and nothing should have
+ * to prove that again.
+ */
+export async function removeGenerated (outDir, records) {
+    const generated = new Set(["index.json"]);
+    for (const record of records) {
+        const segment = relativePathFor(record.entry).split(sep)[0];
+        if (segment === "" || segment === "." || segment === ".." || isAbsolute(segment)) {
+            throw new Error(
+                `Refusing to delete "${segment}" under ${outDir}: ${record.entry.id} derives a `
+                + "capture path whose first segment escapes the output directory.",
+            );
+        }
+        generated.add(segment);
+    }
+
+    for (const name of generated) {
+        await rm(join(outDir, name), { recursive: true, force: true });
+    }
+    return [...generated];
 }
 
 /**
@@ -160,9 +199,11 @@ export async function writeCapture (outDir, records, meta) {
         join(outDir, "index.json"),
         serialise({
             rules: meta.rules,
-            // What the recorded origin was replaced with, so a reader who meets it in a response
-            // body knows it is a substitution and not something AM said.
-            baseUrlPlaceholder: meta.baseUrlPlaceholder,
+            // Every placeholder the capture can contain and what it stands for, so a reader who meets
+            // one in a response body knows it is a substitution and not something AM said, and the
+            // local server knows which of its own values to fill in. Meanings rather than the values
+            // that were replaced — see PLACEHOLDERS in capture-lib/normalise.mjs.
+            placeholders: meta.placeholders,
             // The placeholders that survive in file paths, and what they resolved to when this
             // capture was taken. A file path is a route and keeps them; the `path` recorded inside
             // each file is a transcript and does not.

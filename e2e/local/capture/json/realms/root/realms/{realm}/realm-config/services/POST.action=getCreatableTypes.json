@@ -1,0 +1,124 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/realms/root/realms/e2e-capture/realm-config/services",
+    "query": {
+      "_action": "getCreatableTypes",
+      "forUI": "true"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "result": [
+        {
+          "_id": "dashboard",
+          "collection": false,
+          "name": "Dashboard"
+        },
+        {
+          "_id": "globalization",
+          "collection": false,
+          "name": "Globalization Settings"
+        },
+        {
+          "_id": "session",
+          "collection": false,
+          "name": "Session"
+        },
+        {
+          "_id": "user",
+          "collection": false,
+          "name": "User"
+        },
+        {
+          "_id": "passwordreset",
+          "collection": false,
+          "name": "Password Reset"
+        },
+        {
+          "_id": "authenticatorOathService",
+          "collection": false,
+          "name": "Authenticator (OATH) Service"
+        },
+        {
+          "_id": "saml2",
+          "collection": false,
+          "name": "SAMLv2 Service Configuration"
+        },
+        {
+          "_id": "oauth-oidc",
+          "collection": false,
+          "name": "OAuth2 Provider"
+        },
+        {
+          "_id": "uma",
+          "collection": false,
+          "name": "UMA Provider"
+        },
+        {
+          "_id": "email",
+          "collection": false,
+          "name": "Email Service"
+        },
+        {
+          "_id": "security",
+          "collection": false,
+          "name": "Legacy User Self Service"
+        },
+        {
+          "_id": "validation",
+          "collection": false,
+          "name": "Validation Service"
+        },
+        {
+          "_id": "socialauthentication",
+          "collection": false,
+          "name": "Social Authentication Implementations"
+        },
+        {
+          "_id": "baseurl",
+          "collection": false,
+          "name": "Base URL Source"
+        },
+        {
+          "_id": "audit",
+          "collection": false,
+          "name": "Audit Logging"
+        },
+        {
+          "_id": "amSessionPropertyWhitelist",
+          "collection": false,
+          "name": "Session Property Whitelist Service"
+        },
+        {
+          "_id": "selfService",
+          "collection": false,
+          "name": "User Self Service"
+        },
+        {
+          "_id": "pushNotification",
+          "collection": false,
+          "name": "Push Notification Service"
+        },
+        {
+          "_id": "authenticatorPushService",
+          "collection": false,
+          "name": "Authenticator (Push) Service"
+        }
+      ]
+    }
+  }
+}

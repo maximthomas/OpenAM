@@ -1,0 +1,37 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/global-config/realms",
+    "query": {
+      "_action": "create"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": {
+      "active": true,
+      "aliases": [],
+      "name": "e2e-capture",
+      "parentPath": "/"
+    }
+  },
+  "response": {
+    "status": 201,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "location": "{{BASE_URL}}/json/global-config/L2UyZS1jYXB0dXJl",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "_id": "L2UyZS1jYXB0dXJl",
+      "active": true,
+      "aliases": [],
+      "name": "e2e-capture",
+      "parentPath": "/"
+    }
+  }
+}

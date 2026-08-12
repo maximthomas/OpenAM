@@ -1,0 +1,61 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/json/global-config/realms",
+    "query": {
+      "_action": "schema"
+    },
+    "acceptApiVersion": "protocol=1.0,resource=1.0",
+    "session": "admin",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "content-api-version": "resource=1.0",
+      "content-type": "application/json;charset=UTF-8",
+      "keep-alive": "timeout=20",
+      "transfer-encoding": "chunked",
+      "x-frame-options": "SAMEORIGIN"
+    },
+    "body": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "description": "Represents a Realm Resource",
+      "properties": {
+        "active": {
+          "description": "True if the Realm is active",
+          "title": "Active",
+          "type": "boolean"
+        },
+        "aliases": {
+          "description": "Aliases which can be used reference to the Realm",
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "name": {
+          "description": "The name of the Realm",
+          "title": "Name",
+          "type": "string"
+        },
+        "parentPath": {
+          "description": "The path of the Realm's parent Realm",
+          "title": "Parent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "active",
+        "parentPath",
+        "aliases"
+      ],
+      "title": "Realm",
+      "type": "object"
+    }
+  }
+}

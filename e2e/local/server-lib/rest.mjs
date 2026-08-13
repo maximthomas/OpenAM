@@ -20,9 +20,9 @@
  * Task 2.6 answers the administrative *reads* out of the baseline state in state.mjs — realms, the
  * global REST service, and a realm's authentication config and service instances — plus the SMS
  * schema and template documents served verbatim. Task 2.7 adds the authentication exchange
- * (auth.mjs) and the no-session half of `users?_action=idFromSession`. Everything else is still a
- * labelled 501: session resolution and logout (2.8), `serverinfo` (2.9), every write (2.10-2.12)
- * and reset (2.13).
+ * (auth.mjs), and 2.8 the rest of a session's life: `users?_action=idFromSession` whole, and the
+ * `sessions` collection's `getSessionInfo` and `logout`. Everything else is still a labelled 501:
+ * `serverinfo` (2.9), every write (2.10-2.12) and reset (2.13).
  *
  * **501 rather than something the XUI can proceed past, deliberately.** The shortcut task 2.6
  * refused was to answer the two bootstrap calls with something plausible and get the login form to
@@ -31,11 +31,13 @@
  * implements the exchange rather than faking its outcome — the callbacks document, the credential
  * check and the token are real, and they come from the recording (D15).
  *
- * It is also why `idFromSession` is split rather than answered whole. Its no-session answer is
- * task 2.7's, because a rejected login proves itself by it; resolving a session that exists is task
- * 2.8's, and until then a request that carries a credential gets the 501. Answering 401 to those
- * as well would have this server tell a logged-in browser it has no session — which the reload and
- * logout specs would then appear to confirm.
+ * **Which token a request carries is decided here, and once.** A session-bearing call may name its
+ * token three ways (NOTES-auth.md §7): the `tokenId` query parameter the XUI adds when it can read
+ * the cookie, the session cookie the browser sends on its own, and the bare `iPlanetDirectoryPro`
+ * request header the Playwright fixtures use (REQUESTS.md Fact 6). Any one alone must work, and the
+ * cookie alone is the one the reload requirement turns on — a re-bootstrapped XUI has nothing else.
+ * `sessionCredential` is the single place that reads them, so a route cannot accidentally support
+ * fewer carriers than another; what a token *means* is auth.mjs's, which never learns how it came.
  *
  * **Both path shapes route to one resource.** REQUESTS.md §2: `fetchUrl.jsm` produces the
  * realm-scoped form and the fixtures use the legacy realm-in-query form, both appear in the same
@@ -128,6 +130,14 @@ export function parseRoute (apiPath, query) {
     // no way to reach the login form at all.
     if (["realm-config", "authenticate", "users"].includes(rest[0])) {
         return { ...realmScopedRoute(rest, realmPathFromQuery(query), query), routePath: apiPath };
+    }
+
+    // The session endpoint has no realm in it at all, under either shape: `SessionService.jsm`
+    // builds `…/json/sessions` from `Constants.context` directly rather than through `fetchUrl`,
+    // and REQUESTS.md records only that one form. A session knows its own realm, which is what it
+    // answers `getSessionInfo` with.
+    if (rest[0] === "sessions" && rest.length === 1) {
+        return { kind: "sessions", routePath: apiPath };
     }
 
     return { kind: "other", routePath: apiPath };
@@ -241,6 +251,14 @@ export async function serveRest (req, res, { url, apiPath, state }) {
         && query._action === "idFromSession") {
         return serveIdFromSession(req, res, { url, state });
     }
+    if (route.kind === "sessions" && req.method === "POST") {
+        if (query._action === "getSessionInfo") {
+            return serveGetSessionInfo(req, res, { url, state });
+        }
+        if (query._action === "logout") {
+            return serveLogout(req, res, { url, state });
+        }
+    }
 
     // Any action at all is offered to the store, which holds only the documents state.mjs decided
     // to serve verbatim and answers `undefined` for everything else. Keeping a second copy of that
@@ -329,40 +347,86 @@ async function serveAuthenticate (req, res, { url, route, state }) {
 }
 
 /**
- * `POST …/users?_action=idFromSession` — but only its no-session half, which is task 2.7's.
+ * `POST …/users?_action=idFromSession` — who the caller is, or AM's `Access Denied`.
  *
- * Resolving a session that *does* exist is task 2.8, so a request that carries a credential gets
- * the labelled 501 rather than a guess. That split is the honest one: answering 401 for every call
- * would let this server tell a logged-in browser it has no session, which is a lie the reload and
- * logout specs would then appear to confirm, and answering 501 for every call would break the two
- * negative assertions that are the whole point of the rejected-credential test.
+ * Both answers matter and they are asserted by different tests. The 200 is how a reloaded XUI finds
+ * out whose session the cookie names; the 401 is not an error state but the bootstrap's normal path
+ * on every cold load, and it is what a rejected login and a completed logout prove themselves by
+ * (`sessionInfo` in common/xui-commons.mjs reads 401 or 403 as "no session" and anything else as a
+ * hard failure).
  */
 function serveIdFromSession (req, res, { url, state }) {
-    if (hasSessionCredential(req, url, state.auth.cookieName)) {
-        return sendNotImplemented(req, res, url);
-    }
-    const answer = state.auth.anonymous();
+    const session = resolveSession(req, url, state);
+    const answer = session === undefined
+        ? state.auth.anonymous()
+        : state.auth.idFromSession(session);
     return sendJson(req, res, answer.status, answer.body);
 }
 
 /**
- * Does this request carry something that could name a session?
+ * `POST /json/sessions?_action=getSessionInfo` — the session behind the token, if it is still one.
  *
- * The three ways one arrives, in the precedence NOTES-auth.md §7 sets out: the `tokenId` query
- * parameter the XUI adds when it can read the cookie, the cookie itself, and the bare
- * `iPlanetDirectoryPro` request header, which is how the Playwright `APIRequestContext` fixtures
- * pass a token (REQUESTS.md Fact 6). Whether the value resolves to a live session is task 2.8's
- * question; this only asks whether one was offered.
+ * The XUI calls this on every bootstrap and repeatedly afterwards (`checkForDifferences`, the
+ * session validator), and it is also the guard `logout.jsm` puts in front of the logout itself: a
+ * rejection here skips the logout entirely (NOTES-auth.md §6), so answering a live session anything
+ * but 200 would leave the session unclosable.
  */
-function hasSessionCredential (req, url, cookieName) {
-    // All three tested the same way. An empty value is not a credential, whichever carrier it
-    // arrives in -- and the carriers disagreeing about that is how one of them ends up answering a
-    // question the other two would have declined.
+function serveGetSessionInfo (req, res, { url, state }) {
+    const session = resolveSession(req, url, state);
+    const answer = session === undefined
+        ? state.auth.anonymous()
+        : state.auth.getSessionInfo(session);
+    return sendJson(req, res, answer.status, answer.body);
+}
+
+/**
+ * `POST /json/sessions?_action=logout` — end the session, and answer nothing else.
+ *
+ * No `Set-Cookie`: AM's logout response carries no cookie headers at all, and the browser's copy is
+ * cleared by the XUI itself. Expiring the cookie here as well would be harmless and is deliberately
+ * not done, because it would make it possible for this to pass the spec while the token still
+ * resolved — the one thing the test is checking (NOTES-auth.md §6).
+ *
+ * **Any carrier ends the session, and that knowingly diverges from AM.** §7's precedence is applied
+ * here exactly as it is on the two read routes, so there is one rule for what counts as a credential
+ * rather than one rule per route. AM is stricter on this route alone: `_action=logout` carrying a
+ * correct `tokenId` in the query but no cookie answers 401 [live, §6], because the parameter names
+ * the session to end without authenticating the caller. Nothing under test sends that shape — the
+ * XUI always logs out through `#logout/`, with the cookie — so the divergence is unobservable here,
+ * and it is written down rather than closed because a second definition of "authenticated" is the
+ * more expensive of the two mistakes. D15 is explicit that these rules are ours and can be wrong;
+ * this is one of the places to look first if a later task finds AM disagreeing.
+ */
+function serveLogout (req, res, { url, state }) {
+    const answer = state.auth.logout(sessionCredential(req, url, state.auth.cookieName));
+    return sendJson(req, res, answer.status, answer.body);
+}
+
+/** The live session this request names, or `undefined` — the two questions kept apart. */
+function resolveSession (req, url, state) {
+    return state.auth.resolve(sessionCredential(req, url, state.auth.cookieName));
+}
+
+/**
+ * The token this request carries, in NOTES-auth.md §7's precedence: `tokenId`, then the session
+ * cookie, then the bare `iPlanetDirectoryPro` header.
+ *
+ * The order is AM's and it is only visible when a request carries two that disagree, which nothing
+ * under test does. What the order must not do is make any single carrier weaker than the others:
+ * the cookie on its own is what a reloaded page has, and the header on its own is what the
+ * Playwright `APIRequestContext` fixtures send.
+ *
+ * An empty value is not a credential, whichever carrier it arrives in — a blank cookie is what a
+ * browser holds after a write that failed — so all three are filtered the same way. Returns
+ * `undefined` when the request carries no token at all, which `auth.resolve` and `auth.logout` both
+ * read as "no session", not as "a session named by nothing".
+ */
+function sessionCredential (req, url, cookieName) {
     return [
         url.searchParams.get("tokenId"),
-        req.headers[cookieName.toLowerCase()],
         cookieValue(req.headers.cookie, cookieName),
-    ].some(Boolean);
+        req.headers[cookieName.toLowerCase()],
+    ].find(Boolean);
 }
 
 /** One cookie out of a `Cookie` header, or `undefined`. */
@@ -447,8 +511,9 @@ function sendNotImplemented (req, res, url) {
         code: 501,
         message: `The local API server does not implement ${req.method} ${url.pathname} yet. `
             + "Its administrative reads arrive in task 2.6 of modernize-openam-ui-build, "
-            + "authentication in 2.7 and the rest of its REST surface in 2.8-2.13; until then, run "
-            + "the suite against a deployed AM (e2e/local/openam-up.sh).",
+            + "authentication in 2.7, session resolution and logout in 2.8, and the rest of its "
+            + "REST surface in 2.9-2.13; until then, run the suite against a deployed AM "
+            + "(e2e/local/openam-up.sh).",
         reason: NOT_IMPLEMENTED_REASON,
     }, null, 2)}\n`, "utf8");
 

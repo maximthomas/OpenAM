@@ -15,15 +15,17 @@
  */
 
 /**
- * The authentication exchange, over a real socket.
+ * The authentication exchange and the session it establishes, over a real socket.
  *
- *     node --test local/server-lib/
+ *     npm run test:server
  *
  * Over HTTP rather than against `createAuthState` directly, because half of what task 2.7 owes is
  * in the response headers: a `Set-Cookie` that a browser on `localhost` will actually keep. A unit
  * test of the state machine would agree with a cookie carrying AM's `Domain=example.org`, and a
  * browser would silently discard it — the failure this suite exists to catch, and one that surfaces
- * as a login that appears to work and a reload that logs you out.
+ * as a login that appears to work and a reload that logs you out. Task 2.8's half needs the same
+ * reach for the same reason: what a reload resolves a session from is a request header nobody in
+ * the browser chose to send, so a test that passed the token in would be proving something else.
  *
  * The credentials are the suite's own (common/openam-commons.mjs), which is what this server's
  * directory is built from; they are imported here for the same reason state.mjs imports them, so a
@@ -39,7 +41,7 @@ import { after, before, describe, it } from "node:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PASSWORD, USERNAME } from "../../common/openam-commons.mjs";
+import { ADMIN_PASS, ADMIN_USER, PASSWORD, USERNAME } from "../../common/openam-commons.mjs";
 import { createRequestHandler } from "./router.mjs";
 import { buildBaselineState } from "./state.mjs";
 
@@ -363,7 +365,7 @@ describe("the session cookie", () => {
     });
 });
 
-describe("idFromSession, the half task 2.7 owns", () => {
+describe("idFromSession without a session", () => {
     it("answers a request carrying no session with AM's 401", async () => {
         for (const path of ["/openam/json/users", "/openam/json/realms/root/users"]) {
             const response = await fetch(`${origin}${path}?_action=idFromSession`,
@@ -393,28 +395,338 @@ describe("idFromSession, the half task 2.7 owns", () => {
         }
     });
 
-    it("leaves a request that does carry one to task 2.8, rather than calling it anonymous",
-        async () => {
-            const { token } = await (async () => {
-                const response = await submit((await begin()).body, USERNAME, PASSWORD);
-                return { token: response.body.tokenId };
-            })();
+    it("does not read a token this server never issued as one", async () => {
+        // A stale cookie left over from an earlier run, which is what a browser holds after the
+        // server it logged into was restarted. NOTES-auth.md §5: both bootstrap calls must 401,
+        // and the XUI then falls through to the login form.
+        for (const path of ["/openam/json/users?_action=idFromSession",
+            "/openam/json/sessions?_action=getSessionInfo"]) {
+            const response = await fetch(`${origin}${path}`, {
+                method: "POST",
+                headers: { Cookie: `${state.auth.cookieName}=not-a-token-from-this-server` },
+            });
 
-            // The three ways a session credential arrives. None of them resolves yet, and none of
-            // them may be answered "no session" -- that would be this server telling a logged-in
-            // browser it is logged out.
-            const carriers = [
-                { query: `&tokenId=${token}` },
-                { headers: { Cookie: `${state.auth.cookieName}=${token}` } },
-                { headers: { [state.auth.cookieName]: token } },
-            ];
-            for (const carrier of carriers) {
-                const response = await fetch(
-                    `${origin}/openam/json/users?_action=idFromSession${carrier.query ?? ""}`,
-                    { method: "POST", headers: carrier.headers ?? {} },
-                );
+            assert.equal(response.status, 401, path);
+            assert.equal((await response.json()).message, "Access Denied", path);
+        }
+    });
+});
 
-                assert.equal(response.status, 501, JSON.stringify(carrier));
-            }
+/**
+ * Task 2.8: what a logged-in browser gets on its next page load.
+ *
+ * A fresh page has no JavaScript state at all -- only the cookie jar -- so these drive the two
+ * bootstrap calls with the carriers a browser and the fixtures actually use, rather than with the
+ * token in hand.
+ */
+describe("resolving a session", () => {
+    /** Log in, and keep only what a browser would still have after a reload. */
+    async function loggedIn (user = USERNAME, pass = PASSWORD) {
+        const response = await submit((await begin()).body, user, pass);
+        assert.equal(response.status, 200, "precondition: the login completed");
+        const [pair] = response.cookies[0].split(";");
+        return { token: response.body.tokenId, cookie: pair };
+    }
+
+    /** A session-bearing call, made the way one carrier makes it. */
+    function call (path, { query = "", headers = {} } = {}) {
+        return fetch(`${origin}${path}${query}`, { method: "POST", headers });
+    }
+
+    it("resolves from the session cookie alone, which is all a reload has", async () => {
+        // The requirement, in one assertion: no tokenId, no header, nothing this client chose to
+        // send -- only the cookie the browser attaches on its own.
+        const { cookie } = await loggedIn();
+
+        const identity = await call("/openam/json/users?_action=idFromSession",
+            { headers: { Cookie: cookie } });
+        const session = await call("/openam/json/sessions?_action=getSessionInfo",
+            { headers: { Cookie: cookie } });
+
+        assert.equal(identity.status, 200);
+        assert.equal((await identity.json()).id, USERNAME);
+        assert.equal(session.status, 200);
+        assert.equal((await session.json()).username, USERNAME);
+    });
+
+    it("resolves the same session from any one carrier on its own", async () => {
+        // The precedence in NOTES-auth.md §7. What matters is not the order -- nothing under test
+        // sends two that disagree -- but that no carrier is weaker than the others: the cookie is
+        // what a reloaded page has, and the bare header is what the Playwright fixtures send.
+        const { token, cookie } = await loggedIn();
+
+        for (const carrier of [
+            { query: `&tokenId=${token}` },
+            { headers: { Cookie: cookie } },
+            { headers: { [state.auth.cookieName]: token } },
+        ]) {
+            const response = await call("/openam/json/users?_action=idFromSession", carrier);
+
+            assert.equal(response.status, 200, JSON.stringify(carrier));
+            assert.equal((await response.json()).id, USERNAME, JSON.stringify(carrier));
+        }
+    });
+
+    it("finds its own cookie among the several a browser sends", async () => {
+        // Every test above sends the session cookie by itself, which no browser does: the XUI sets
+        // `i18next`, and against a deployed AM there is `amlbcookie` and `AMAuthCookie` besides. A
+        // parser that read the whole header, or only the first pair, passes those tests and fails
+        // every real page load.
+        const { cookie } = await loggedIn();
+
+        const response = await call("/openam/json/users?_action=idFromSession", {
+            headers: { Cookie: `i18next=en; ${cookie}; amlbcookie=01` },
         });
+
+        assert.equal(response.status, 200);
+        assert.equal((await response.json()).id, USERNAME);
+    });
+
+    it("does not read a cookie whose name merely contains its own", async () => {
+        // `iPlanetDirectoryPro` is a substring of both of these. Matching on the pair's whole name
+        // is what keeps them out; matching with `includes`, or on the header as one string, would
+        // let either of them authenticate.
+        const { token } = await loggedIn();
+
+        const response = await call("/openam/json/users?_action=idFromSession", {
+            headers: {
+                Cookie: `X${state.auth.cookieName}=${token}; ${state.auth.cookieName}X=${token}`,
+            },
+        });
+
+        assert.equal(response.status, 401);
+    });
+
+    it("treats a blank cookie as no cookie, and falls through to the carrier behind it", async () => {
+        // What a browser holds after a write that failed -- and the XUI writes this cookie itself
+        // on some paths. An empty value is not a credential, so the header behind it is the one
+        // that answers; reading the blank as "a session named by nothing" would 401 a request that
+        // carries a perfectly good token.
+        const { token } = await loggedIn();
+
+        const response = await call("/openam/json/users?_action=idFromSession", {
+            headers: {
+                Cookie: `${state.auth.cookieName}=; i18next=en`,
+                [state.auth.cookieName]: token,
+            },
+        });
+
+        assert.equal(response.status, 200);
+        assert.equal((await response.json()).id, USERNAME);
+    });
+
+    it("takes the tokenId parameter ahead of the cookie, as AM does", async () => {
+        // The only assertion that can see the precedence at all: two carriers that disagree. AM
+        // reads the parameter first (NOTES-auth.md §7), so a stale tokenId is not quietly rescued
+        // by a live cookie sitting behind it -- which is the direction that would hide a bug.
+        const { cookie } = await loggedIn();
+
+        const response = await call("/openam/json/users?_action=idFromSession", {
+            query: "&tokenId=not-a-token-from-this-server",
+            headers: { Cookie: cookie },
+        });
+
+        assert.equal(response.status, 401);
+    });
+
+    it("answers at both path shapes, as a single login hits both", async () => {
+        const { cookie } = await loggedIn();
+
+        for (const path of ["/openam/json/users", "/openam/json/realms/root/users"]) {
+            const response = await call(`${path}?_action=idFromSession`,
+                { headers: { Cookie: cookie } });
+
+            assert.equal(response.status, 200, path);
+        }
+    });
+
+    it("names the user who logged in, not the one the capture was recorded as", async () => {
+        // The recorded documents are amadmin's. Serving them as they stand would tell a demo
+        // session it is logged in as the administrator -- and xui-login.spec.mjs asserts the id.
+        const { cookie } = await loggedIn();
+        const identity = await (await call("/openam/json/users?_action=idFromSession",
+            { headers: { Cookie: cookie } })).json();
+        const session = await (await call("/openam/json/sessions?_action=getSessionInfo",
+            { headers: { Cookie: cookie } })).json();
+
+        assert.equal(identity.id, USERNAME);
+        assert.equal(identity.dn, `id=${USERNAME},ou=user,dc=openam,dc=openidentityplatform,dc=org`);
+        assert.equal(session.username, USERNAME);
+        assert.equal(session.universalId, identity.dn);
+        // The fields that are the recording's, unchanged.
+        assert.equal(identity.successURL, "/openam/console");
+        assert.equal(identity.realm, "/");
+        assert.equal(session.realm, "/");
+        assert.equal(identity.fullLoginURL, "/openam/UI/Login?realm=%2F");
+    });
+
+    it("puts this session's realm into fullLoginURL, which the XUI parses back out", async () => {
+        // `getSuccessfulLoginUrlParams` reads the query string of this field, so a realm left at
+        // the recorded one is a wrong answer rather than an unused field. Root encodes to the same
+        // `%2F` the recording carries, so the substitution is only observable from another realm.
+        const requirements = (await begin("/openam/json/realms/root/realms/alpha/authenticate")).body;
+        const filled = structuredClone(requirements);
+        filled.callbacks[0].input[0].value = USERNAME;
+        filled.callbacks[1].input[0].value = PASSWORD;
+        const login = await authenticate(
+            "/openam/json/realms/root/realms/alpha/authenticate", JSON.stringify(filled));
+
+        const identity = await (await fetch(`${origin}/openam/json/users?_action=idFromSession`, {
+            method: "POST",
+            headers: { Cookie: `${state.auth.cookieName}=${login.body.tokenId}` },
+        })).json();
+
+        assert.equal(identity.realm, "/alpha");
+        assert.equal(identity.fullLoginURL, "/openam/UI/Login?realm=%2Falpha");
+    });
+
+    it("reports a session with time left on it, in AM's instant format", async () => {
+        // SessionService.getTimeLeft subtracts both expiries from `moment()`, so a recorded
+        // instant -- which the capture strips as volatile anyway -- would be in the past.
+        const { cookie } = await loggedIn();
+        const session = await (await call("/openam/json/sessions?_action=getSessionInfo",
+            { headers: { Cookie: cookie } })).json();
+
+        for (const field of ["latestAccessTime", "maxIdleExpirationTime",
+            "maxSessionExpirationTime"]) {
+            assert.match(session[field], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/, field);
+        }
+        assert.ok(Date.parse(session.maxIdleExpirationTime) > Date.now(), "idle expiry is ahead");
+        assert.ok(Date.parse(session.maxSessionExpirationTime) > Date.now(), "max expiry is ahead");
+        assert.ok(Date.parse(session.maxSessionExpirationTime)
+            > Date.parse(session.maxIdleExpirationTime), "the session outlasts one idle period");
+    });
+
+    it("keeps one session handle for the life of the session", async () => {
+        // `updateSessionInfo` puts it in the store and SessionsService invalidates *by* it, so a
+        // handle that changed between two reads would name a session nothing could act on.
+        const { cookie } = await loggedIn();
+        const read = async () => (await (await call(
+            "/openam/json/sessions?_action=getSessionInfo", { headers: { Cookie: cookie } })
+        ).json()).sessionHandle;
+
+        const handle = await read();
+        assert.match(handle, /^shandle:/);
+        assert.equal(await read(), handle);
+    });
+
+    it("tells two live sessions apart", async () => {
+        const demo = await loggedIn();
+        const admin = await loggedIn(ADMIN_USER, ADMIN_PASS);
+
+        const asDemo = await call("/openam/json/users?_action=idFromSession",
+            { headers: { Cookie: demo.cookie } });
+        const asAdmin = await call("/openam/json/users?_action=idFromSession",
+            { headers: { Cookie: admin.cookie } });
+
+        assert.equal((await asDemo.json()).id, USERNAME);
+        assert.equal((await asAdmin.json()).id, ADMIN_USER);
+    });
+
+    it("establishes nothing of its own", async () => {
+        // Only a successful authenticate sets a cookie. A resolution that set one would make a
+        // stale token self-renewing.
+        const { cookie } = await loggedIn();
+        const response = await call("/openam/json/users?_action=idFromSession",
+            { headers: { Cookie: cookie } });
+
+        assert.deepEqual(response.headers.getSetCookie(), []);
+    });
+});
+
+describe("logout", () => {
+    /** Log in, then log out the way SessionService does, and hold on to both. */
+    async function loggedOut (carrier = "cookie") {
+        const login = await submit((await begin()).body, USERNAME, PASSWORD);
+        const token = login.body.tokenId;
+        const [cookie] = login.cookies[0].split(";");
+        const response = await fetch(
+            `${origin}/openam/json/sessions?_action=logout${
+                carrier === "token" ? `&tokenId=${token}` : ""}`,
+            { method: "POST", headers: carrier === "cookie" ? { Cookie: cookie } : {} },
+        );
+        return { token, cookie, response };
+    }
+
+    it("answers AM's recorded confirmation", async () => {
+        const { response } = await loggedOut();
+
+        assert.equal(response.status, 200);
+        assert.deepEqual(await response.json(), { result: "Successfully logged out" });
+    });
+
+    it("accepts the cookie-only form, which is what an HttpOnly deployment sends", async () => {
+        // `SessionService.logout` omits tokenId whenever the token is not client-readable.
+        assert.equal((await loggedOut("cookie")).response.status, 200);
+    });
+
+    it("ends a session named by the tokenId parameter alone, which AM does not", async () => {
+        // Pinned as the divergence it is, in its own test rather than inside the one above: §7's
+        // precedence is applied to logout exactly as it is to the two read routes, where AM instead
+        // wants an authenticated request context on this route and answers this shape 401 (§6).
+        // Nothing under test sends it. See serveLogout in rest.mjs for why it is left open.
+        assert.equal((await loggedOut("token")).response.status, 200);
+    });
+
+    it("stops the session resolving, whichever carrier asks", async () => {
+        // The point of the whole task, and what xui-login.spec.mjs checks rather than the browser
+        // cookie: the token must die server-side.
+        const { token, cookie } = await loggedOut();
+
+        for (const carrier of [
+            { query: `&tokenId=${token}` },
+            { headers: { Cookie: cookie } },
+            { headers: { [state.auth.cookieName]: token } },
+        ]) {
+            for (const path of ["/openam/json/users?_action=idFromSession",
+                "/openam/json/sessions?_action=getSessionInfo"]) {
+                const response = await fetch(`${origin}${path}${carrier.query ?? ""}`,
+                    { method: "POST", headers: carrier.headers ?? {} });
+
+                assert.equal(response.status, 401, `${path} ${JSON.stringify(carrier)}`);
+                assert.equal((await response.json()).message, "Access Denied");
+            }
+        }
+    });
+
+    it("answers a replay as an unauthenticated request", async () => {
+        const { cookie, response } = await loggedOut();
+        assert.equal(response.status, 200, "precondition: the first logout succeeded");
+
+        const replay = await fetch(`${origin}/openam/json/sessions?_action=logout`,
+            { method: "POST", headers: { Cookie: cookie } });
+
+        assert.equal(replay.status, 401);
+        assert.equal((await replay.json()).message, "Access Denied");
+    });
+
+    it("refuses a logout that names no session at all", async () => {
+        const response = await fetch(`${origin}/openam/json/sessions?_action=logout`,
+            { method: "POST" });
+
+        assert.equal(response.status, 401);
+    });
+
+    it("clears no cookie, because AM does not either", async () => {
+        // AM's logout response carries no cookie headers at all; the XUI's own SessionToken.remove
+        // clears the browser's copy. Expiring it here would be harmless -- and would make it
+        // possible to pass the spec with a token that still resolved, which is the one thing it
+        // checks.
+        const { response } = await loggedOut();
+
+        assert.deepEqual(response.headers.getSetCookie(), []);
+    });
+
+    it("ends one session without touching another", async () => {
+        const staying = await submit((await begin()).body, ADMIN_USER, ADMIN_PASS);
+        const [stayingCookie] = staying.cookies[0].split(";");
+
+        await loggedOut();
+
+        const response = await fetch(`${origin}/openam/json/users?_action=idFromSession`,
+            { method: "POST", headers: { Cookie: stayingCookie } });
+
+        assert.equal(response.status, 200);
+        assert.equal((await response.json()).id, ADMIN_USER);
+    });
 });

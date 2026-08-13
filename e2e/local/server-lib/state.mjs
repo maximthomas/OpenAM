@@ -158,17 +158,25 @@ export function realmPathFor (document) {
 /**
  * The placeholder values this server substitutes into recorded payloads.
  *
- * Deliberately only the three the payloads served here actually contain. A value invented for a
- * placeholder in a payload no route serves is a decision taken where nothing can test it — the two
- * LDAP suffixes are the live example: `{{CONFIG_SUFFIX}}` and `{{USER_SUFFIX}}` appear only in the
- * two user documents, whose routes are task 2.12's, so 2.12 chooses them when it has a read that
- * would notice a wrong choice. capture-store.mjs throws on any placeholder missing from this map,
- * which is what stops that deferral turning into a marker served to the browser.
+ * Deliberately only the four the payloads served here actually contain. A value invented for a
+ * placeholder in a payload no route serves is a decision taken where nothing can test it —
+ * `{{USER_SUFFIX}}` is the live example: it appears only in `demo`'s user document, whose route is
+ * task 2.12's, so 2.12 chooses it when it has a read that would notice a wrong choice.
+ * capture-store.mjs throws on any placeholder missing from this map, which is what stops that
+ * deferral turning into a marker served to the browser.
  */
 function deploymentFor ({ context, hostname }) {
     return {
         CONTEXT: context,
         HOSTNAME: hostname,
+        // The config store's LDAP suffix, which task 2.8 needs because it is in the distinguished
+        // name every resolved session reports (`dn`, `universalId`). Not a choice: it is the value
+        // the recording had stripped out of it, and both ends of that stripping are in this
+        // repository -- openam-up.sh sets `ROOT_SUFFIX` to it when it brings the container up, and
+        // capture-lib/normalise.mjs's LDAP_SUFFIXES maps that exact string to the placeholder. The
+        // user store's suffix is a *different* one, which is why this resolves only the one it can
+        // account for.
+        CONFIG_SUFFIX: "dc=openam,dc=openidentityplatform,dc=org",
         // The bare first label, as the recording's rule took it from the AM host's FQDN -- but
         // only where the host *has* labels. This server's default bind address is 127.0.0.1, and
         // splitting an address on its dots yields "127", which would go into the root realm's

@@ -55,6 +55,7 @@ const RESOLVED = {
     "{{CONTEXT}}": "openam",
     "{{HOSTNAME}}": "localhost",
     "{{HOST_ALIAS}}": "localhost",
+    "{{CONFIG_SUFFIX}}": "dc=openam,dc=openidentityplatform,dc=org",
 };
 
 /** A recorded response body, with the markers this server substitutes already substituted. */
@@ -124,6 +125,25 @@ async function syntheticCapture ({ realms, listingOrder = 1, createOrder = 9, om
         "json/users/POST.action=idFromSession.401.json": {
             code: 401, message: "Access Denied", reason: "Unauthorized",
         },
+        // The rest of a session's life (task 2.8), loaded by the same call and here for the same
+        // reason as the three above.
+        "json/users/POST.action=idFromSession.json": {
+            dn: "id=amadmin,ou=user,{{CONFIG_SUFFIX}}",
+            fullLoginURL: "/{{CONTEXT}}/UI/Login?realm=%2F",
+            id: "amadmin",
+            realm: "/",
+            successURL: "/{{CONTEXT}}/console",
+        },
+        "json/sessions/POST.action=getSessionInfo.json": {
+            latestAccessTime: "<TS>",
+            maxIdleExpirationTime: "<TS>",
+            maxSessionExpirationTime: "<TS>",
+            realm: "/",
+            sessionHandle: "<SESSION-HANDLE>",
+            universalId: "id=amadmin,ou=user,{{CONFIG_SUFFIX}}",
+            username: "amadmin",
+        },
+        "json/sessions/POST.action=logout.json": { result: "Successfully logged out" },
         // Read for its `cookieName` field alone; serving this document is task 2.9's.
         "json/serverinfo/star/GET.resource=1.1.json": { cookieName: "iPlanetDirectoryPro" },
     };

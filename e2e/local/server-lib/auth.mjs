@@ -15,7 +15,8 @@
  */
 
 /**
- * Authentication: the callback exchange, and the session it establishes.
+ * Authentication: the callback exchange, the session it establishes, and how that session is
+ * resolved afterwards and ended.
  *
  * Task 2.7. The XUI's login is two round trips against one endpoint (local/NOTES-auth.md §1):
  *
@@ -27,11 +28,42 @@
  * credential *requirements*; the second submits them and gets either the next requirement or a
  * completed authentication. Only the second sets the session cookie.
  *
+ * Task 2.8 is the other end of that session's life (NOTES-auth.md §5, §6):
+ *
+ *     POST …/users?_action=idFromSession       -> 200 {id, realm, dn, successURL, fullLoginURL}
+ *     POST /json/sessions?_action=getSessionInfo -> 200 {username, realm, sessionHandle, 3×time}
+ *     POST /json/sessions?_action=logout       -> 200 {result} and the token stops resolving
+ *
+ * **A session resolves from the token, and the token may arrive three ways — but the cookie alone
+ * has to be enough.** That is the requirement's actual content: a page reload re-bootstraps the XUI
+ * with no in-memory state, so whatever resolves the session has to be something the browser sends
+ * on its own. Which carrier a token came in is rest.mjs's question; this module is handed a token
+ * and never learns how it arrived, which is what stops one carrier resolving a session another
+ * would have declined.
+ *
+ * **Logout invalidates server-side, and nothing else ends a session.** AM sends no `Set-Cookie` on
+ * the logout response at all — the browser's copy is cleared by the XUI's own `SessionToken.remove`
+ * — so the token dying here is the whole mechanism (NOTES-auth.md §6). xui-login.spec.mjs says so
+ * in as many words: "The browser cookie is not the thing to check … What matters is that the server
+ * stops resolving it."
+ *
+ * **No clock expires a session, deliberately** — the same refusal as the `authId` below. The three
+ * timestamps `getSessionInfo` reports are computed per call and, for the length of any run that
+ * exists, lie in the future, because `SessionService.getTimeLeft` subtracts two of them from
+ * `moment()` and the XUI's session validator acts on the result; but nothing here *enforces* them.
+ * The one exception is deliberate and is AM's own: `maxSessionExpirationTime` is anchored at the
+ * session's creation, so past `MAX_SESSION_MINUTES` the XUI would log itself out while this server
+ * still resolved the token — which is what AM does too, and which no spec comes close to reaching.
+ * A stand-in that *expired* sessions would be inventing a deadline every spec then races against,
+ * and no spec asks for one.
+ *
  * **Shapes from the capture, values minted here** — D15, and the division capture-store.mjs already
  * draws: `{{DOUBLE_BRACE}}` markers are this deployment's values and are resolved at load, while
- * `<ANGLE>` markers stand for what varies per call and are left for the task that mints them. All
- * three bodies below are recorded, and this module fills in exactly the two angle markers in them:
- * `<AUTHID>` and `<TOKEN>`. Nothing here hand-authors a response.
+ * `<ANGLE>` markers stand for what varies per call and are left for the task that mints them. Every
+ * body in `RECORDED` below is recorded, and this module fills in exactly the angle markers they
+ * carry: `<AUTHID>`, `<TOKEN>`, `<SESSION-HANDLE>` and `<TS>` ×3. Nothing here hand-authors a
+ * response, and the per-principal fields that cannot be markers are rebuilt from the recorded value
+ * rather than restated — see `principalIn`.
  *
  * **`authId` is an opaque handle into `inFlight`, not AM's JWT.** Real AM signs an HS256 token
  * carrying `otk`, the realm in DN form and its own session id, and answers a tampered one with
@@ -82,6 +114,15 @@ const RECORDED = {
     /** order 1 — the bootstrap's own 401, which is not an error state. See `anonymous` below. */
     anonymous: "json/users/POST.action=idFromSession.401.json",
     /**
+     * order 10 — a resolved session's identity. Recorded for `amadmin`, so the fields that name the
+     * principal are rebuilt per session; see `principalIn` and `idFromSession`.
+     */
+    identity: "json/users/POST.action=idFromSession.json",
+    /** order 12 — the session document, `<TS>` ×3 and `<SESSION-HANDLE>` unfilled. */
+    sessionInfo: "json/sessions/POST.action=getSessionInfo.json",
+    /** order 48 — the answer to a logout that ended a session. No markers. */
+    logout: "json/sessions/POST.action=logout.json",
+    /**
      * order 2 — read for its `cookieName` field alone. Serving this document is task 2.9's, and
      * the field is consulted rather than served; see `capture.bodyField`.
      */
@@ -94,6 +135,54 @@ const RECORDED = {
  */
 function opaque () {
     return randomBytes(24).toString("base64url");
+}
+
+/**
+ * How long a session claims to have left, as the recording showed AM answering.
+ *
+ * NOTES-auth.md §1 #6 is the measurement — "Idle +30 min, max +2 h [live]" — and the sample document
+ * quoted just above it is what says *from when*: `latestAccessTime` `16:56:22Z`, `maxIdleExpiration`
+ * `17:26:22Z`, `maxSessionExpiration` `18:56:21Z`. The idle expiry is thirty minutes from that
+ * access; the maximum is two hours from a moment one second *earlier* than it, which is the session
+ * being created and then accessed a second later. So the idle one moves per call and the maximum
+ * does not, and that is why `createdAt` is on the session record at all.
+ *
+ * NOTES-volatility.md rules 2-4 are consistent with this but could not establish it alone: they
+ * record two samples ten seconds apart in which all three instants moved by ten seconds, which two
+ * *different* sessions would also produce. The absolute values cannot come from the capture in any
+ * case — they are the volatile half, stripped by design — so the deltas are what is reproduced.
+ *
+ * §1 #6 also says both expiries "must keep moving", which is the XUI's requirement rather than AM's
+ * behaviour: `SessionValidator` reschedules on `min(idle, max) − now`, and the idle one moving is
+ * enough to keep that rescheduling forever. Anchoring the maximum is what makes it a maximum.
+ */
+const MAX_IDLE_MINUTES = 30;
+const MAX_SESSION_MINUTES = 120;
+
+/** AM's instants are second-precision UTC — `2026-08-12T02:40:41Z`, no milliseconds. */
+function instant (epochMillis) {
+    return `${new Date(epochMillis).toISOString().slice(0, 19)}Z`;
+}
+
+/**
+ * A principal's distinguished name for this session, from the one the recording carries.
+ *
+ * `id=amadmin,ou=user,dc=…` is recorded twice — as `dn` in `idFromSession` and as `universalId` in
+ * `getSessionInfo` — and only the first component names the user. Rewriting that component and
+ * keeping the rest takes the container's directory layout and config suffix from the recording
+ * rather than restating them here, which matters because they are exactly the sort of value that is
+ * plausible to invent and wrong: `ou=user` is not `ou=people`, and the config store's suffix is not
+ * the user store's (capture/README.md's placeholder table warns about that pair specifically).
+ *
+ * The replacement is a function rather than a string because `String.replace` reads `$&`, `` $` ``
+ * and `$1` out of a string one — and the username here comes from `OPENAM_USERNAME`, which an
+ * operator can set to anything. Nothing in the suite has a `$` in it; this is a two-character
+ * defence against a value that arrives from outside the repo. A username carrying `,`, `+` or `=`
+ * would still need RFC 4514 escaping to be a valid DN, and is left alone: AM's own directory would
+ * not hold such an account, so escaping it here would be inventing a shape the recording never had.
+ */
+function principalIn (recordedDn, username) {
+    return recordedDn.replace(/^id=[^,]*/, () => `id=${username}`);
 }
 
 /**
@@ -131,11 +220,30 @@ export function createAuthState (capture, { credentials }) {
     const successDocument = capture.body(RECORDED.success);
     const failureBody = capture.body(RECORDED.failure);
     const anonymousBody = capture.body(RECORDED.anonymous);
+    const identityDocument = capture.body(RECORDED.identity);
+    const sessionInfoDocument = capture.body(RECORDED.sessionInfo);
+    const logoutBody = capture.body(RECORDED.logout);
 
     /** authId -> the login it belongs to. */
     const inFlight = new Map();
-    /** token -> the session it names. Task 2.8 resolves these; 2.7 only creates them. */
+    /** token -> the session it names. Created by `submit`, read by `resolve`, ended by `logout`. */
     const sessions = new Map();
+
+    /** The answer to a session-bearing call with no live session behind it. See `anonymous`. */
+    const accessDenied = () => ({ status: 401, body: anonymousBody });
+
+    /**
+     * The one rule for "is this token a session", behind both `resolve` and `logout`.
+     *
+     * Logout could delete straight out of the map and be right today, because there is nothing to
+     * this beyond a lookup. It goes through here anyway so that there is no second place holding an
+     * opinion: the moment a later task puts a condition in — an idle timer, a realm scope, 2.13's
+     * reset — a logout that had its own copy would start answering 200 for a session the two read
+     * routes were already answering 401 for, and that divergence is invisible until something
+     * happens to test both.
+     */
+    const sessionFor = (token) =>
+        (typeof token === "string" && token !== "" ? sessions.get(token) : undefined);
 
     return {
         /**
@@ -156,6 +264,16 @@ export function createAuthState (capture, { credentials }) {
          *
          * The document is cloned because it is handed to a caller that serialises it, and the
          * template has to survive for the next login unmodified.
+         *
+         * **Two things this does not do, both of which 2.8 made reachable rather than introduced.**
+         * It does not check that `realmPath` names a realm, so a login into a realm that does not
+         * exist now succeeds *and* gets reported back as that realm by `idFromSession` and
+         * `getSessionInfo` — nothing under test does it, and realm existence is 2.10's, which owns
+         * the realm collection. And it ignores `?sessionUpgradeSSOTokenId=`, which NOTES-auth.md
+         * §9.5 flags as "worth a deliberate decision rather than an accident": AM upgrades the named
+         * session, this answers a fresh callbacks document. It is unreachable until a browser can
+         * hold a session across a load of `#login/`, which is exactly what task 2.9 unblocks — so it
+         * is 2.9's to decide, and this comment is the handover.
          */
         begin (realmPath) {
             const authId = opaque();
@@ -199,7 +317,18 @@ export function createAuthState (capture, { credentials }) {
             // `begin` and carries it inside the `authId`, so a submission cannot move a login to
             // another realm by changing its path; keying off the flight is how that holds here
             // without the JWT.
-            sessions.set(token, { username: account.username, realmPath: flight.realmPath });
+            sessions.set(token, {
+                username: account.username,
+                realmPath: flight.realmPath,
+                // Minted with the session rather than per call, because `updateSessionInfo` puts it
+                // in the store and `SessionsService` invalidates *by handle*: one that changed
+                // between two reads of the same session would name a session nothing could act on.
+                // `shandle:` is the form AM's takes (NOTES-volatility.md rule 10).
+                sessionHandle: `shandle:${opaque()}`,
+                // What `maxSessionExpirationTime` counts from. The idle expiry counts from now on
+                // every call, as AM's does; this one does not move.
+                createdAt: Date.now(),
+            });
 
             // `successUrl` is the recorded one, with this server's context already substituted. It
             // does not decide where the user lands -- that is the XUI's own default-route decision,
@@ -210,6 +339,101 @@ export function createAuthState (capture, { credentials }) {
                 body: { ...successDocument, tokenId: token, realm: flight.realmPath },
                 sessionToken: token,
             };
+        },
+
+        /**
+         * The session a token names, or `undefined`.
+         *
+         * The single point at which a token becomes a session, which is what makes "resolvable from
+         * the cookie alone" a property of this server rather than of one route: every carrier
+         * rest.mjs accepts arrives here as the same string, so no carrier can resolve a session
+         * another would have declined. An empty or absent token is not a session — a blank cookie
+         * is what a browser sends after something failed to write one, and reading it as anything
+         * else would authenticate a request that carries no credential at all.
+         */
+        resolve (token) {
+            return sessionFor(token);
+        },
+
+        /**
+         * `POST …/users?_action=idFromSession` for a session that exists — NOTES-auth.md §5 #2.
+         *
+         * The recorded document with the four session-dependent fields rebuilt — `dn`, `id` and
+         * `realm` name the principal, and `fullLoginURL` carries the realm a second time. It was
+         * recorded for `amadmin` in the root realm, and serving that for a `demo` session would tell
+         * the XUI it is logged in as somebody else. `successURL` and the shape of `fullLoginURL` are
+         * the recording's, with only the realm this session actually belongs to substituted into the
+         * latter — the XUI parses its query string back out (`getSuccessfulLoginUrlParams`), so a
+         * realm left at the recorded one would be a wrong answer rather than an unused field.
+         *
+         * The `realm=` pattern is anchored on its delimiter so it cannot match the tail of some
+         * other parameter name (`?xrealm=`). The recorded URL has one parameter and could not, but a
+         * regex that is right only for the value it was written against is the kind that survives
+         * into a task where it is wrong.
+         */
+        idFromSession (session) {
+            return {
+                status: 200,
+                body: {
+                    ...identityDocument,
+                    dn: principalIn(identityDocument.dn, session.username),
+                    id: session.username,
+                    realm: session.realmPath,
+                    fullLoginURL: identityDocument.fullLoginURL.replace(
+                        /([?&])realm=[^&]*/,
+                        (_whole, delimiter) =>
+                            `${delimiter}realm=${encodeURIComponent(session.realmPath)}`),
+                },
+            };
+        },
+
+        /**
+         * `POST /json/sessions?_action=getSessionInfo` — NOTES-auth.md §5 #3, and the guard the XUI
+         * puts in front of its own logout.
+         *
+         * `username` is what makes this answer a session at all: `SessionService.isSessionValid`
+         * tests for that field and nothing else. The three timestamps are computed here rather than
+         * recorded, because the recording's are the volatile half the capture strips by design and
+         * a fixed instant would be in the past by the second run — `getTimeLeft` would then report a
+         * negative number to the session validator.
+         */
+        getSessionInfo (session) {
+            const now = Date.now();
+            return {
+                status: 200,
+                body: {
+                    ...sessionInfoDocument,
+                    latestAccessTime: instant(now),
+                    maxIdleExpirationTime: instant(now + MAX_IDLE_MINUTES * 60_000),
+                    maxSessionExpirationTime:
+                        instant(session.createdAt + MAX_SESSION_MINUTES * 60_000),
+                    realm: session.realmPath,
+                    sessionHandle: session.sessionHandle,
+                    universalId: principalIn(sessionInfoDocument.universalId, session.username),
+                    username: session.username,
+                },
+            };
+        },
+
+        /**
+         * `POST /json/sessions?_action=logout` — NOTES-auth.md §6.
+         *
+         * Ends the session by forgetting the token, which is the entire mechanism: no cookie is
+         * cleared here because AM clears none either, and a stand-in that ended the session by
+         * expiring the cookie would pass the spec's assertion while leaving a token that still
+         * resolves for anything not holding that cookie.
+         *
+         * A replay — or a logout naming a token this server never issued — is `Access Denied`, as
+         * AM answers it. That is the same 401 an anonymous call gets, and it has to be: the specs
+         * prove a logout by asking `idFromSession` afterwards, so the two must agree about what
+         * "there is no session here" looks like.
+         */
+        logout (token) {
+            if (sessionFor(token) === undefined) {
+                return accessDenied();
+            }
+            sessions.delete(token);
+            return { status: 200, body: logoutBody };
         },
 
         /**
@@ -225,8 +449,6 @@ export function createAuthState (capture, { credentials }) {
          * Note the message: AM says "Access Denied" here and "Authentication Failed" for a rejected
          * credential. Two different 401 bodies, and both are recorded (NOTES-auth.md §4).
          */
-        anonymous () {
-            return { status: 401, body: anonymousBody };
-        },
+        anonymous: accessDenied,
     };
 }

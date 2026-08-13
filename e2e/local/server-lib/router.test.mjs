@@ -254,17 +254,26 @@ describe("the REST surface", () => {
         assert.match(JSON.parse(response.body).message, /PUT \/openam\/json\/realms\/root/);
     });
 
-    it("does not let the XUI past a session it has not resolved", async () => {
-        // Task 2.7 authenticates; resolving a session and ending one are 2.8's. Faking these is
-        // what would make the tasks after it unverifiable -- a UI holding a session on invented
-        // responses cannot tell you whether the real resolution works. No Set-Cookie on any of
-        // them either: the only response in this server that establishes a session is a successful
-        // authenticate, which auth.test.mjs covers.
-        for (const path of ["/openam/json/serverinfo/version",
-            "/openam/json/sessions?_action=getSessionInfo",
+    it("does not let the XUI past a route it has not implemented", async () => {
+        // `serverinfo` is task 2.9's. Faking it is what would make the tasks after it unverifiable
+        // -- a UI proceeding on invented responses cannot tell you whether the real thing works.
+        const response = await fetch(`${origin}/openam/json/serverinfo/version`,
+            { method: "POST" });
+
+        assert.equal(response.status, 501);
+        assert.equal(response.headers.get("set-cookie"), null);
+    });
+
+    it("answers the session routes without establishing or ending anything by itself", async () => {
+        // Reached with no session, they are 401 rather than 501 (task 2.8). No Set-Cookie on
+        // either: the only response in this server that establishes a session is a successful
+        // authenticate, and the only one that ends a session ends it server-side -- both
+        // auth.test.mjs's, where the sessions to resolve exist.
+        for (const path of ["/openam/json/sessions?_action=getSessionInfo",
             "/openam/json/sessions?_action=logout"]) {
             const response = await fetch(`${origin}${path}`, { method: "POST" });
-            assert.equal(response.status, 501, path);
+
+            assert.equal(response.status, 401, path);
             assert.equal(response.headers.get("set-cookie"), null, path);
         }
     });

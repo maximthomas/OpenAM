@@ -166,7 +166,7 @@ directory, which is removed when the server stops; nothing is cached between run
 | | |
 |---|---|
 | XUI | <http://127.0.0.1:8090/openam/XUI/> |
-| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads and authentication; 501 for the rest, until tasks 2.8–2.13 |
+| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads, authentication and sessions; 501 for the rest, until tasks 2.9–2.13 |
 
 Ready in about a second, from a checkout, with no war build and no container runtime — which is the
 entire point of it, against the 3–8 minutes and the Docker daemon the instance above needs. It is
@@ -194,12 +194,25 @@ cannot disagree about who can log in. The cookie is **host-only**: it carries AM
 `SameSite=Lax` but not its `Domain`, which names the recording deployment and which a browser would
 reject here. See `NOTES-auth.md` for the whole exchange.
 
-Everything else answers a labelled 501, deliberately: a stub that let the XUI past a session it had
-not resolved would make the real resolution in tasks 2.8–2.13 unverifiable. So session resolution
-and logout, `serverinfo`, every write and reset are still 501. A logged-in browser therefore does
-not get past the login route yet — authentication succeeds and the session exists, but nothing
-resolves it until 2.8 — so a spec that needs to *be* logged in still needs the deployed instance
-above.
+And it answers the rest of that session's life: `users?_action=idFromSession` and the `sessions`
+collection's `getSessionInfo` and `logout`. A session resolves from the `tokenId` parameter, the
+session cookie or the `iPlanetDirectoryPro` header, **any one of them alone** — the cookie by itself
+is what a reloaded page has, and it is all it needs. Logout invalidates the token server-side and
+clears no cookie, because AM clears none either.
+
+Everything else answers a labelled 501, deliberately: a stub that let the XUI past something it had
+not actually done would make the real thing in tasks 2.9–2.13 unverifiable. So `serverinfo`, every
+write and reset are still 501.
+
+**A browser still does not get past the login route**, and the reason is now `serverinfo` rather
+than the session — at bootstrap, not at login. `ServerService.getConfiguration` answers a rejection
+by dispatching the realm from the URL's query string, which on a plain `#login/` load is
+`undefined`, and the reducer calls `.toLowerCase()` on it. So the 501 becomes a `TypeError` in the
+handler that would have returned the configuration, and the XUI never learns the session cookie's
+*name* — which it learns from `GET /json/serverinfo/*` and nowhere else, so it cannot read its own
+token back. The session underneath is established and this server resolves it correctly for
+anything that asks. `npm run test:server` is what exercises that today; a spec that needs to *be*
+logged in in a browser still needs the deployed instance above.
 
 **This backend is not the acceptance oracle.** A green run against it does not satisfy sign-off; that
 needs the suite green against a deployed AM.

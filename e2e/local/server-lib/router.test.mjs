@@ -251,6 +251,105 @@ describe("the REST surface", () => {
         assert.equal(JSON.parse(version.body).version, "16.2.0-SNAPSHOT");
     });
 
+    it("carries a realm write from the wire into the state and back out of a read", async () => {
+        // Task 2.10 over HTTP. What the store does with a realm is state.test.mjs's; this is that
+        // a `_action=create` body arrives parsed, and that the realm it made is in the listing the
+        // next request gets -- the whole of D15's "not a replayer" as a client can observe it.
+        const created = await get("/openam/json/global-config/realms?_action=create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "wire", parentPath: "/", active: true, aliases: [] }),
+        });
+        assert.equal(created.status, 201);
+        const realmId = JSON.parse(created.body)._id;
+
+        const listed = await get("/openam/json/global-config/realms?_queryFilter=true");
+        assert.deepEqual(JSON.parse(listed.body).result.map((realm) => realm.name),
+            ["/", "wire"]);
+
+        const removed = await get(`/openam/json/global-config/realms/${realmId}`,
+            { method: "DELETE" });
+        assert.equal(removed.status, 200);
+        const after = await get("/openam/json/global-config/realms?_queryFilter=true");
+        assert.deepEqual(JSON.parse(after.body).result.map((realm) => realm.name), ["/"]);
+    });
+
+    it("addresses a realm it created itself by the name in the URL", async () => {
+        // The property the console's create depends on and that no unit test can reach: the segment
+        // `parseRoute` pulls out of the URL has to be the same string `createRealm` filed the realm
+        // under. EditRealmView's save is two writes, and it reports a failure of this second one as
+        // a failed create -- so if the URL segment and the store key ever stopped agreeing, the
+        // console would say the realm was not created while the listing showed it was.
+        const created = await get("/openam/json/global-config/realms?_action=create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "paired", parentPath: "/", active: true, aliases: [] }),
+        });
+        assert.equal(created.status, 201);
+
+        const saved = await get(
+            "/openam/json/realms/root/realms/paired/realm-config/authentication",
+            {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ statelessSessionsEnabled: true }),
+            },
+        );
+        assert.equal(saved.status, 200);
+        // Not merely "not a 404": the realm the write landed on is the one that was created, and
+        // the recorded sections a later render reads from are still there.
+        assert.ok(JSON.parse(saved.body).general);
+
+        await get(`/openam/json/global-config/realms/${JSON.parse(created.body)._id}`,
+            { method: "DELETE" });
+    });
+
+    it("answers a body that is not JSON with 400 rather than acting on nothing", async () => {
+        const response = await get("/openam/json/global-config/realms?_action=create", {
+            method: "POST",
+            body: "{not json",
+        });
+
+        assert.equal(response.status, 400);
+        assert.equal(JSON.parse(response.body).reason, "Bad Request");
+    });
+
+    it("keeps an action the request list does not record out of the write path", async () => {
+        // `create` is the only action REQUESTS.md records against this collection. Any other is
+        // out of scope by construction, and out of scope reads as 501 here as it does everywhere.
+        const response = await get("/openam/json/global-config/realms?_action=somethingElse", {
+            method: "POST",
+            body: JSON.stringify({ name: "never" }),
+        });
+
+        assert.equal(response.status, 501);
+        const listed = await get("/openam/json/global-config/realms?_queryFilter=true");
+        assert.deepEqual(JSON.parse(listed.body).result.map((realm) => realm.name), ["/"]);
+    });
+
+    it("answers the profile read that ends a login, because roles are what leave #login", async () => {
+        // Task 2.12's resource, borrowed by 2.10 (state.user). It is asserted here rather than left
+        // to the browser specs because nothing else in `npm run test:server` covers it: break the
+        // keying or the route shape and every unit test stays green while every console spec fails
+        // in `waitForURL`, which is a long way from the cause. `RESTLoginHelper.getLoggedUser`
+        // fetches this last, and RealmsRoutes gates every admin route on the roles it carries.
+        const response = await get("/openam/json/realms/root/users/amadmin");
+        assert.equal(response.status, 200);
+        assert.equal(response.type, "application/json;charset=UTF-8");
+        assert.ok(JSON.parse(response.body).roles.includes("ui-realm-admin"));
+    });
+
+    it("holds the borrowed profile read to the one document and realm it was borrowed for", async () => {
+        // Both halves are 2.10 scope discipline rather than AM's behaviour, and both are 2.12's to
+        // widen: `demo` is a profile this server has not implemented, not one a directory is
+        // missing, and 404 is the answer `RESTLoginHelper` clears the session cookie for.
+        const other = await get("/openam/json/realms/root/users/demo");
+        assert.equal(other.status, 501);
+
+        const scoped = await get("/openam/json/realms/root/realms/alpha/users/amadmin");
+        assert.equal(scoped.status, 501);
+    });
+
     it("answers a path it does not implement with 501, in AM's error envelope", async () => {
         // The realm-scoped site configuration, which task 2.9 deliberately did not answer: it is
         // not in the capture (REQUESTS.md:151-152, reached only by the @deployed-am theming spec),
@@ -274,17 +373,18 @@ describe("the REST surface", () => {
     });
 
     it("does not let a caller past a route it does not implement", async () => {
-        // Header authentication, which `getAuthToken` in common/openam-commons.mjs uses: the
-        // credentials go up as headers and `tokenId` comes straight back. It is deliberately not
-        // implemented and is not scheduled to be (NOTES-auth.md §9.6), which is what makes it a
-        // stable guard -- unlike a not-yet route, it will not quietly turn into a 200 two tasks
-        // from now and stop asserting anything. Answering it with a callbacks document would hand
-        // the caller an `undefined` token that surfaces as an unexplained 401 several calls later.
-        // 501 rather than 404 because the resource is not missing: this server does not serve it.
-        const response = await fetch(`${origin}/openam/json/realms/root/authenticate`, {
-            method: "POST",
-            headers: { "X-OpenAM-Username": "demo", "X-OpenAM-Password": "changeit" },
-        });
+        // A login into a named chain or module. Every spec that drives one is @deployed-am and this
+        // server holds only the recorded DataStore1 chain, so the route is deliberately not
+        // implemented and is not scheduled to be -- which is what makes it a stable guard, unlike a
+        // not-yet route that will quietly turn into a 200 two tasks from now and stop asserting
+        // anything. Answering it with the default chain's callbacks would let a caller log in
+        // through a chain that was never asked for. 501 rather than 404 because the resource is not
+        // missing: this server does not serve it.
+        const response = await fetch(
+            `${origin}/openam/json/realms/root/authenticate?authIndexType=service`
+            + "&authIndexValue=ldapService",
+            { method: "POST" },
+        );
 
         assert.equal(response.status, 501);
         assert.equal(response.headers.get("set-cookie"), null);

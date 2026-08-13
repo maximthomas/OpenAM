@@ -112,8 +112,26 @@ const CREDENTIALS = { [USERNAME]: PASSWORD, [ADMIN_USER]: ADMIN_PASS };
 const BASELINE = {
     /** order 15 — before the create at 23, so this is the realm set of a reset instance. */
     realms: "json/global-config/realms/GET.queryFilter=true.json",
+    /**
+     * order 17 — the defaults AM itself declares for a new realm, and the reason `createRealm`
+     * invents none of them. `{active: true, parentPath: "/"}`: a create body that omits either gets
+     * the value the console's own new-realm form would have been pre-filled with, because it is the
+     * same document the form takes its defaults from (`SMSServiceUtils.schemaWithDefaults`).
+     */
+    realmTemplate: "json/global-config/realms/POST.action=template.json",
     /** order 20 — root's authentication config; the only PUT in the capture is on another realm. */
     rootAuthentication: "json/realms/root/realm-config/authentication/GET.json",
+    /**
+     * order 25 — a *created* realm's authentication config, and the document every realm task 2.10
+     * creates starts life holding.
+     *
+     * The order is the whole reason this file and not the PUT at 27: 25 is the read AM answered for
+     * a realm that had just been created and never written to, which is exactly the state a realm
+     * created through the console is in. Reading 27's would seed every new realm with the edit that
+     * recording happened to make.
+     */
+    createdRealmAuthentication:
+        "json/realms/root/realms/{realm}/realm-config/authentication/GET.json",
     /** order 13 — the global REST service; never mutated anywhere in the capture. */
     restService: "json/global-config/services/rest/GET.json",
     /** order 28 — a realm's service listing, kept for its paging envelope only; see below. */
@@ -135,6 +153,22 @@ const BASELINE = {
     siteConfiguration: "json/serverinfo/star/GET.resource=1.1.json",
     /** order 8 — `version`, `revision`, `date`, for the footer of a realm administrator. */
     serverVersion: "json/serverinfo/version/GET.json",
+    /**
+     * order 11 — the administrator's profile, and the read that decides whether a browser ever
+     * lands anywhere.
+     *
+     * **This is a slice of task 2.12's resource, served here because 2.10 cannot be verified
+     * without it.** `RESTLoginHelper.getLoggedUser` fetches it as the last step of a login and puts
+     * it on `Configuration.loggedUser`; the `roles` it carries — `ui-global-admin`,
+     * `ui-realm-admin` — are what every admin route in `RealmsRoutes.js` is gated on, so without it
+     * a completed authentication leaves the browser on `#login` and no console spec can run at all.
+     *
+     * Only this one document. The `demo` profile is left to 2.12 with the update and the
+     * `{{USER_SUFFIX}}` decision its payload carries — see the note on `deploymentFor`, which is
+     * explicit that the placeholder is chosen by the task that has a read which would notice a
+     * wrong choice. Nothing here needs it: the specs that read `demo` are 2.12's.
+     */
+    adminProfile: "json/realms/root/users/amadmin/GET.json",
 };
 
 /**
@@ -173,6 +207,18 @@ function notFound (message) {
     return { code: 404, message, reason: "Not Found" };
 }
 
+/**
+ * The same envelope for a request this server cannot act on at all.
+ *
+ * Not recorded: the capture holds no 400, because nothing the capture tool or the console sends is
+ * malformed. It is the shape of the two recorded 404s with the status changed, which is as close to
+ * the recording as an unrecorded status can be — and it is reachable only by a client that sent a
+ * realm with no name, which is not a request the console can produce.
+ */
+function badRequest (message) {
+    return { code: 400, message, reason: "Bad Request" };
+}
+
 /** A realm id is unpadded base64url of the realm path — REQUESTS.md §5. `/` is `Lw`. */
 export function realmIdFor (realmPath) {
     return Buffer.from(realmPath, "utf8").toString("base64url");
@@ -194,6 +240,33 @@ const REALM_ID = /^[A-Za-z0-9_-]+$/;
  */
 export function realmPathFor (document) {
     return Buffer.from(document._id, "base64url").toString("utf8");
+}
+
+/** The realm every AM has. Its path, its `name`, and the parent of everything created below it. */
+const TOP_LEVEL_REALM = "/";
+
+/**
+ * The path a realm gets from its name and its parent's path — `RealmsService.getRealmPath`'s rule,
+ * which is the console's and the fixtures' both (`realmPathOf` in common/realms-commons.mjs).
+ *
+ * A child of the top level realm is `/name` rather than `//name`, and that single special case is
+ * the whole of it. It is restated here rather than derived because the store key and the id the
+ * console addresses a realm by have to be the same string as the one the browser computed, and the
+ * browser computed it with this rule.
+ */
+function realmPathOf (name, parentPath) {
+    return parentPath === TOP_LEVEL_REALM ? `${TOP_LEVEL_REALM}${name}` : `${parentPath}/${name}`;
+}
+
+/**
+ * Whether a property of an SMS service document is one of the named blocks its `_action=schema`
+ * declares — `general`, `security` and the rest — rather than the `_id` and `_type` metadata AM
+ * carries beside them. Underscore-prefixed is the whole distinction, and it matters because `_type`
+ * holds a `name` of its own that a value routed by key alone would otherwise land in.
+ */
+function isSection (name, value) {
+    return !name.startsWith("_") && value !== null && typeof value === "object"
+        && !Array.isArray(value);
 }
 
 /**
@@ -260,21 +333,41 @@ export function buildBaselineState (captureDir, { context, hostname }) {
         const realmPath = realmPathFor(document);
         realms.set(realmPath, {
             document,
-            // Root's is recorded; a realm task 2.10 creates gets its own, for which the capture's
-            // order-25 read of the created realm is the prototype.
+            // Root's is recorded; a realm task 2.10 creates gets its own, seeded from the capture's
+            // order-25 read of the created realm. See `realmPrototype` below.
             authentication: realmPath === "/"
                 ? capture.body(BASELINE.rootAuthentication)
                 : undefined,
             // Empty because the capture records no service listing for root, not because AM's root
             // realm has no services: no spec asks for one, so the request list task 2.1 fixed as
             // this server's scope does not contain it (REQUESTS.md has only the
-            // `/realms/root/realms/<realm>/realm-config/services` form). A realm created in 2.10
-            // is seeded from the order-28 listing, where a fresh realm has `policyconfiguration`.
+            // `/realms/root/realms/<realm>/realm-config/services` form).
+            //
+            // A realm task 2.10 creates starts empty too, which is a *change* from what this
+            // comment used to anticipate — that 2.10 would seed one from the order-28 listing,
+            // where a fresh realm has `policyconfiguration`. Deferred to 2.11 deliberately: no read
+            // task 2.10 implements can tell the two apart, and the header's own note on
+            // `getCreatableTypes` records that whether it is state-dependent was never determined,
+            // which is the question seeding turns on. 2.11 owns both halves of it.
             services: new Map(),
         });
     }
 
     const globalServices = new Map([["rest", capture.body(BASELINE.restService)]]);
+
+    // What a realm created through the console is made of, both halves taken from the recording:
+    // the defaults AM declares for a realm document, and the authentication configuration a realm
+    // has the moment it exists. Neither is hand-authored, which is the D15 rule applied to a
+    // resource that is created rather than read.
+    const realmPrototype = {
+        document: capture.body(BASELINE.realmTemplate),
+        authentication: capture.body(BASELINE.createdRealmAuthentication),
+    };
+
+    // The profiles this server can answer a read for, keyed by the name the account logs in under.
+    // One entry: the administrator, under whatever `OPENAM_ADMIN_USER` resolved to, so that the
+    // directory this serves and the directory `auth` authenticates against name the same person.
+    const users = new Map([[ADMIN_USER.toLowerCase(), capture.body(BASELINE.adminProfile)]]);
 
     // Shape only. `result` is always rendered from state; these supply the paging fields, which
     // differ between the two collections.
@@ -301,6 +394,7 @@ export function buildBaselineState (captureDir, { context, hostname }) {
 
     return createState({
         realms, globalServices, listingEnvelopes, statics, auth, siteConfiguration, serverVersion,
+        realmPrototype, users,
     });
 }
 
@@ -337,7 +431,40 @@ function renderListing (envelope, result) {
  */
 function createState ({
     realms, globalServices, listingEnvelopes, statics, auth, siteConfiguration, serverVersion,
+    realmPrototype, users,
 }) {
+    /**
+     * The realm an id addresses, as the `[path, record]` pair the store holds it under.
+     *
+     * The store is keyed by path and the URL names a realm by id, so every route that addresses one
+     * realm needs this translation. It searches rather than decoding the id, because the id in the
+     * store is the authority on what a realm is called: decoding would answer with a path for an id
+     * no realm has, and the write routes have to tell "no such realm" from "some realm".
+     */
+    function entryById (realmId) {
+        for (const [realmPath, realm] of realms) {
+            if (realm.document._id === realmId) {
+                return [realmPath, realm];
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * AM's own message for a realm it could not read, built from the id asked for.
+     *
+     * The recorded 404s name the realm the recording created, so the message is composed rather
+     * than served. Checked rather than decoded blindly: Node's base64url decoder does not reject a
+     * string that is not base64url, it discards what it cannot use, so an id like `@@@` would
+     * otherwise be reported back as the mojibake it decodes to.
+     */
+    function noSuchRealm (realmId) {
+        const realmPath = REALM_ID.test(realmId)
+            ? Buffer.from(realmId, "base64url").toString("utf8")
+            : realmId;
+        return notFound(`Realm cannot be read: ${realmPath}`);
+    }
+
     return {
         realms,
         globalServices,
@@ -394,20 +521,193 @@ function createState ({
 
         /** `GET /json/global-config/realms/{realmId}` */
         realmById (realmId) {
-            for (const realm of realms.values()) {
-                if (realm.document._id === realmId) {
-                    return { status: 200, body: realm.document };
+            const entry = entryById(realmId);
+            return entry
+                ? { status: 200, body: entry[1].document }
+                : { status: 404, body: noSuchRealm(realmId) };
+        },
+
+        /**
+         * `POST /json/global-config/realms?_action=create` — task 2.10, and the write the whole
+         * store exists to make expressible: the realm this adds is in the next listing.
+         *
+         * **The document is assembled from the recording, not hand-authored.** The recorded
+         * template supplies `active` and `parentPath` for a body that omits them, which is not a
+         * courtesy — it is the same document the console's new-realm form took its own defaults
+         * from, so the server and the form cannot disagree about what a new realm is. Only the four
+         * properties the recorded schema declares are kept, and `_id` is derived rather than
+         * accepted: the id is base64url of the path, so a client that sent one could otherwise put
+         * a realm in the store under an id that does not address it.
+         *
+         * `name` is the one field with no default and no way to invent one, so a body without it is
+         * the single request this refuses. Everything else a malformed body could get wrong is
+         * either defaulted or dropped.
+         *
+         * Trimming it is invented too, and it is the one place the store key and the id can come
+         * apart: a name with an edge space is filed under the trimmed path while a client that
+         * encoded the untrimmed one addresses a realm that is not there. Unreachable — the console's
+         * `checkPattern` refuses a space outright and `uniqueRealmName` never makes one — and the
+         * same holds for the other way these two encodings can disagree, `btoa` being latin1 where
+         * `Buffer` is utf8, which needs a non-ASCII name no spec produces.
+         *
+         * **Not modelled, deliberately, because no request in REQUESTS.md makes them:** creating a
+         * realm whose parent does not exist, and creating one that already exists. AM answers the
+         * first 400 and the second 409; this answers 201 to both, and the second overwrites. See
+         * D15 — these are the invented-rule class the re-record diff cannot catch, and inventing a
+         * status for a request the specs never send would be modelling AM rather than reproducing
+         * a recording.
+         */
+        createRealm (document) {
+            const name = typeof document?.name === "string" ? document.name.trim() : "";
+            if (name === "") {
+                return { status: 400, body: badRequest("Realm name is required") };
+            }
+
+            const values = { ...realmPrototype.document, ...document, name };
+            const realmPath = realmPathOf(name, values.parentPath);
+            const stored = {
+                _id: realmIdFor(realmPath),
+                active: values.active,
+                // The one field the recorded template does not carry a default for. The recorded
+                // create body sends `[]`, which is also what the console's aliases editor produces
+                // when nothing was entered, so an absent one is an empty one.
+                aliases: Array.isArray(values.aliases) ? values.aliases : [],
+                name,
+                parentPath: values.parentPath,
+            };
+
+            realms.set(realmPath, {
+                document: stored,
+                // Its own copy: two realms created in one run must not share the document that a
+                // PUT on either of them mutates.
+                authentication: structuredClone(realmPrototype.authentication),
+                // Empty, as a realm-services listing for a realm this server created. The capture's
+                // order-28 listing is a real AM's answer for a realm that had just been created,
+                // and seeding from it is task 2.11's to decide along with the rest of service
+                // administration -- 2.10 has no read that would notice either answer.
+                services: new Map(),
+            });
+            return { status: 201, body: stored };
+        },
+
+        /**
+         * `PUT /json/global-config/realms/{realmId}` — the realm's own fields, as the edit form
+         * sends them back.
+         *
+         * The URL decides which realm this is and the body decides what it holds, and where the two
+         * disagree the URL wins: `_id`, `name` and `parentPath` are taken from the realm that is
+         * already there rather than from the body. That is not a validation rule but the store's
+         * own arithmetic — the three of them *are* the path this realm is filed under, so a body
+         * that changed one would leave the realm addressable at an id that no longer decodes to its
+         * key. The console makes `name` and `parentPath` readonly on this form for its own reasons,
+         * so nothing under test sends a different one; AM refuses such a request rather than
+         * ignoring the fields, and that difference is invisible to every request in REQUESTS.md.
+         */
+        updateRealm (realmId, document) {
+            const entry = entryById(realmId);
+            if (!entry) {
+                return { status: 404, body: noSuchRealm(realmId) };
+            }
+            const [realmPath, realm] = entry;
+            const stored = {
+                ...realm.document,
+                ...document,
+                _id: realm.document._id,
+                name: realm.document.name,
+                parentPath: realm.document.parentPath,
+            };
+            realms.set(realmPath, { ...realm, document: stored });
+            return { status: 200, body: stored };
+        },
+
+        /**
+         * `DELETE /json/global-config/realms/{realmId}` — 200 with the realm as it last was, which
+         * is what the recording answers, and 404 for one that is already gone.
+         *
+         * Both statuses are load-bearing to the spec rather than to the console: `removeRealm` in
+         * common/realms-commons.mjs treats 404 as the successful case, because teardown sweeps
+         * every realm a test caused to exist including the ones the test deleted through the UI.
+         *
+         * Deletes the one realm and nothing below it. No spec creates a child realm, so a realm
+         * with children is unreachable; AM refuses to delete one (409, which EditRealmView has a
+         * branch for) and this would orphan them.
+         */
+        deleteRealm (realmId) {
+            const entry = entryById(realmId);
+            if (!entry) {
+                return { status: 404, body: noSuchRealm(realmId) };
+            }
+            const [realmPath, realm] = entry;
+            realms.delete(realmPath);
+            return { status: 200, body: realm.document };
+        },
+
+        /**
+         * `PUT /json/realms/root[/realms/{realm}]/realm-config/authentication`.
+         *
+         * Realm administration reaches this because creating *or* editing a realm in the console is
+         * two writes, not one: EditRealmView saves the realm, then PUTs the authentication
+         * service's stateless-sessions values, and treats a failure of the second as a failed
+         * create. So this is task 2.10's even though the resource is an authentication one — the
+         * chains and modules under it stay out of scope (REQUESTS.md).
+         *
+         * The submitted fields are merged over the stored document rather than replacing it, and
+         * that is an invented rule: AM validates a write here against the service's SMS schema and
+         * writes what it is given, while the console sends only the subview's own values. Replacing
+         * would leave the document missing everything the console did not send, and every later read
+         * of it — the edit form's own — would render from a document with no `general` block. The
+         * merge is the choice that keeps a partial write from destroying the recorded shape.
+         *
+         * *Where* a submitted field lands is not invented, though — the recording says. The console
+         * sends its values flat (`JSONEditorView.getData` picks the schema's `defaultProperties`,
+         * so the realm form's second subview PUTs `{ statelessSessionsEnabled }` and nothing else),
+         * while the document holds them in the sections `POST.action=schema` declares, which is
+         * where the edit form's next render reads them back from. So a key goes to the section that
+         * already holds it, and a top-level merge would file the console's write where no read of
+         * it will ever look.
+         */
+        updateRealmAuthentication (realmPath, document) {
+            const realm = realms.get(realmPath);
+            if (!realm?.authentication) {
+                return { status: 404, body: notFound(`Realm cannot be read: ${realmPath}`) };
+            }
+
+            // Which section owns a key is read off the stored document rather than off the schema:
+            // the two agree, and the document is the thing being written to.
+            const merged = structuredClone(realm.authentication);
+            for (const [key, value] of Object.entries(document)) {
+                const section = Object.keys(merged).find((name) => isSection(name, merged[name])
+                    && Object.hasOwn(merged[name], key));
+                if (section) {
+                    merged[section][key] = value;
+                } else {
+                    merged[key] = value;
                 }
             }
-            // AM names the realm it could not read, so the message is built from the id rather
-            // than taken from the recorded 404, which names the realm that recording created.
-            // Checked rather than decoded blindly: Node's base64url decoder does not reject a
-            // string that is not base64url, it discards what it cannot use, so an id like `@@@`
-            // would otherwise be reported back as the mojibake it decodes to.
-            const realmPath = REALM_ID.test(realmId)
-                ? Buffer.from(realmId, "base64url").toString("utf8")
-                : realmId;
-            return { status: 404, body: notFound(`Realm cannot be read: ${realmPath}`) };
+
+            realm.authentication = merged;
+            return { status: 200, body: merged };
+        },
+
+        /**
+         * `GET /json/realms/root/users/{id}` — a profile, and the last step of a browser login.
+         *
+         * Task 2.12 owns this resource; what is here is the one document task 2.10 cannot be
+         * verified without (see BASELINE.adminProfile). A user this server holds no profile for
+         * answers `undefined`, which the HTTP layer turns into the labelled 501 rather than a 404 —
+         * `demo` is not missing from a directory, it is a read this server has not implemented yet,
+         * and `RESTLoginHelper` reads a 404 here specifically as "the session names a user who does
+         * not exist" and clears the cookie for it.
+         *
+         * The root realm only, because that is the only path the recording covers. The realm-scoped
+         * shape is left to 2.12 along with the rest.
+         */
+        user (realmPath, userId) {
+            if (realmPath !== TOP_LEVEL_REALM) {
+                return undefined;
+            }
+            const document = users.get(userId.toLowerCase());
+            return document === undefined ? undefined : { status: 200, body: document };
         },
 
         /** `GET /json/global-config/services/{id}` */

@@ -234,26 +234,65 @@ describe("accepting a submission", () => {
     });
 });
 
-describe("what authenticate does not implement", () => {
-    it("keeps saying 501 to the fixtures' one-call header authentication", async () => {
-        // common/openam-commons.mjs's getAuthToken posts the credentials as headers and reads
-        // `tokenId` off the answer. Answering it with a callbacks document would hand it an
-        // `undefined` token that surfaces several calls later as an unexplained 401 -- which is
-        // what tasks 2.10-2.12 would then have to debug. It is not implemented, and it says so.
-        const response = await fetch(`${origin}/openam/json/authenticate`, {
-            method: "POST",
-            headers: {
-                "Accept-API-Version": "resource=2.0, protocol=1.0",
-                "X-OpenAM-Username": USERNAME,
-                "X-OpenAM-Password": PASSWORD,
-            },
-        });
-
-        assert.equal(response.status, 501);
-        assert.equal((await response.json()).reason, "Not Implemented");
-        assert.deepEqual(response.headers.getSetCookie(), []);
+/**
+ * The fixtures' one-call header authentication (task 2.10).
+ *
+ * `getAuthToken` in common/openam-commons.mjs posts the credentials as headers and reads `tokenId`
+ * straight out of the answer, and every `@local-server` spec that provisions anything goes through
+ * it. Task 2.7 left it out, and the failure mode it warned about is what these pin: a callbacks
+ * document answered here hands the caller an `undefined` token that surfaces several calls later as
+ * an unexplained 401.
+ */
+describe("the one-call header authentication", () => {
+    /** Post credentials as headers, the way `getAuthToken` does. */
+    const headerLogin = (user, pass) => fetch(`${origin}/openam/json/authenticate`, {
+        method: "POST",
+        headers: {
+            "Accept-API-Version": "resource=2.0, protocol=1.0",
+            "X-OpenAM-Username": user,
+            "X-OpenAM-Password": pass,
+        },
     });
 
+    it("answers a token directly, with no callbacks to submit", async () => {
+        const response = await headerLogin(USERNAME, PASSWORD);
+        const body = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.deepEqual(Object.keys(body).sort(), ["realm", "successUrl", "tokenId"]);
+        assert.ok(body.tokenId, "the token is what getAuthToken reads");
+        assert.equal(body.realm, "/");
+    });
+
+    it("establishes a session the rest of the server resolves", async () => {
+        // The point of routing both doors through one `establish`: a fixture's token has to work
+        // everywhere a browser's does, or a spec can provision and then not read back what it made.
+        const { tokenId } = await (await headerLogin(USERNAME, PASSWORD)).json();
+        const resolved = await fetch(`${origin}/openam/json/users?_action=idFromSession`, {
+            method: "POST",
+            headers: { "iPlanetDirectoryPro": tokenId },
+        });
+
+        assert.equal(resolved.status, 200);
+        assert.equal((await resolved.json()).id, USERNAME);
+    });
+
+    it("sets the session cookie as the callback exchange does", async () => {
+        const response = await headerLogin(USERNAME, PASSWORD);
+
+        assert.deepEqual(response.headers.getSetCookie().map((c) => c.split("=")[0]),
+            ["iPlanetDirectoryPro"]);
+    });
+
+    it("rejects a wrong password without establishing anything", async () => {
+        const response = await headerLogin(USERNAME, "not-the-password");
+
+        assert.equal(response.status, 401);
+        assert.deepEqual(response.headers.getSetCookie(), []);
+    });
+});
+
+describe("what authenticate does not implement", () => {
     it("refuses a named chain or module rather than answering with the default one", async () => {
         // Every spec that drives one is @deployed-am; this server has only the recorded DataStore1
         // chain, and handing that back would be answering a question nobody asked.

@@ -22,8 +22,12 @@
  * schema and template documents served verbatim. Task 2.7 adds the authentication exchange
  * (auth.mjs), 2.8 the rest of a session's life: `users?_action=idFromSession` whole, and the
  * `sessions` collection's `getSessionInfo` and `logout`. Task 2.9 adds the two `serverinfo`
- * documents, which is what lets the XUI finish its bootstrap at all. Everything else is still a
- * labelled 501: every write (2.10-2.12) and reset (2.13).
+ * documents, which is what lets the XUI finish its bootstrap at all. Task 2.10 adds the first
+ * writes — realm create, update and delete, and the `realm-config/authentication` PUT the console
+ * pairs every one of them with — plus the fixtures' one-call header authentication and the
+ * administrator's profile read, without which no browser reaches an admin screen to drive.
+ * Everything else is still a labelled 501: service administration (2.11), the rest of the profile
+ * (2.12) and reset (2.13).
  *
  * **501 rather than something the XUI can proceed past, deliberately.** The shortcut task 2.6
  * refused was to answer the two bootstrap calls with something plausible and get the login form to
@@ -139,6 +143,12 @@ export function parseRoute (apiPath, query) {
         const routeSegments = ["json", "realms", "root"];
         let realmPath = "/";
 
+        // One realm level, because that is every shape REQUESTS.md records. A realm nested deeper
+        // would list and read by id -- `createRealm` files it under its full path quite happily --
+        // and then 501 at every realm-scoped route, including the authentication PUT that
+        // EditRealmView treats as part of the create. Nothing reaches that today: the new-realm
+        // form's `parentPath` is an enum of the realms that exist, and no spec makes a second
+        // level. Task 2.11 inherits it along with the rest of the realm-scoped surface.
         if (after[0] === "realms" && after.length > 1) {
             realmPath = `/${after[1]}`;
             routeSegments.push("realms", "{realm}");
@@ -211,10 +221,17 @@ function realmScopedRoute (segments, realmPath, query) {
             ? { kind: "authenticate", realmPath }
             : { kind: "other", realmPath };
     }
-    // `?_action=idFromSession`. The member path below it -- `users/<name>`, the profile read that
-    // decides where the XUI routes a logged-in user -- is task 2.12's and stays a 501 here.
-    if (segments[0] === "users" && segments.length === 1) {
-        return { kind: "users-collection", realmPath };
+    // `?_action=idFromSession`, and the member path below it -- `users/<name>`, the profile read
+    // that decides where the XUI routes a logged-in user. The resource is task 2.12's; task 2.10
+    // routes it because the administrator's own profile is what lets a browser reach the console at
+    // all, and answers only the profiles the store holds. See `state.user`.
+    if (segments[0] === "users") {
+        if (segments.length === 1) {
+            return { kind: "users-collection", realmPath };
+        }
+        if (segments.length === 2) {
+            return { kind: "users-member", realmPath, userId: segments[1] };
+        }
     }
     if (segments[0] !== "realm-config") {
         return { kind: "other", realmPath };
@@ -261,10 +278,46 @@ function read (route, query, state) {
             : state.realmServicesListing(route.realmPath);
     case "realm-service":
         return state.realmService(route.realmPath, route.serviceId);
+    case "users-member":
+        return state.user(route.realmPath, route.userId);
     default:
         return undefined;
     }
 }
+
+/**
+ * The write for a route and method, or `undefined` when this server does not answer it.
+ *
+ * The mirror of `read` above, and kept beside it for the same reason: what a resource does with a
+ * document is the store's, and which request means which resource is this file's. `document` is the
+ * parsed request body.
+ *
+ * Realm administration is task 2.10's whole surface, and it is four writes plus one that does not
+ * look like a realm write at all: `PUT …/realm-config/authentication`. EditRealmView saves a realm
+ * and *then* writes that service, on create and on edit both, and treats its failure as the create
+ * having failed — so the console's realm CRUD is not complete without it.
+ */
+function write (route, method, query, document, state) {
+    switch (`${method} ${route.kind}`) {
+    case "POST realms-collection":
+        // The action is checked here and not in `parseRoute`, which answers what a path addresses
+        // rather than what is being asked of it. `create` is the only one REQUESTS.md records
+        // against this collection; any other reaches the labelled 501, which is what "not in scope"
+        // has meant on every other route in this file.
+        return query._action === "create" ? state.createRealm(document) : undefined;
+    case "PUT realms-member":
+        return state.updateRealm(route.realmId, document);
+    case "DELETE realms-member":
+        return state.deleteRealm(route.realmId);
+    case "PUT realm-authentication":
+        return state.updateRealmAuthentication(route.realmPath, document);
+    default:
+        return undefined;
+    }
+}
+
+/** Which requests carry a document this server has to parse before it can act on them. */
+const WRITE_METHODS_WITH_BODY = ["POST", "PUT"];
 
 /**
  * Answer one REST call.
@@ -311,6 +364,24 @@ export async function serveRest (req, res, { url, apiPath, state }) {
         }
     }
 
+    // The writes (task 2.10). A DELETE carries no document, and the two that do are parsed before
+    // the route is consulted rather than inside it, so that a malformed body is answered as a bad
+    // request wherever it was sent instead of as whatever the resource makes of `undefined`.
+    if (["POST", "PUT", "DELETE"].includes(req.method)) {
+        let document;
+        if (WRITE_METHODS_WITH_BODY.includes(req.method)) {
+            const parsed = await readDocument(req);
+            if (parsed.error) {
+                return sendJson(req, res, parsed.error.status, parsed.error.body);
+            }
+            document = parsed.document;
+        }
+        const answer = write(route, req.method, query, document, state);
+        if (answer !== undefined) {
+            return sendJson(req, res, answer.status, answer.body);
+        }
+    }
+
     return sendNotImplemented(req, res, url);
 }
 
@@ -328,45 +399,26 @@ export async function serveRest (req, res, { url, apiPath, state }) {
  */
 async function serveAuthenticate (req, res, { url, route, state }) {
     // The one-call authentication the fixtures use -- `getAuthToken` in common/openam-commons.mjs
-    // posts the credentials as headers and reads `tokenId` straight out of the answer. It is a real
-    // request on this server's list, it is not implemented (NOTES-auth.md §9.6 on why zero-page
-    // login stays out), and it must keep saying so: answering it with a callbacks document would
-    // hand `getAuthToken` an `undefined` token that surfaces several calls later as an unexplained
-    // 401. Tasks 2.10-2.12 are the ones that will need it, and a 501 naming itself is what they
-    // should find. Detected by the headers rather than by `Accept-API-Version`, because the headers
-    // are what makes it this call -- the version differs too, but a client is free to send any.
+    // posts the credentials as headers and reads `tokenId` straight out of the answer. Task 2.10 is
+    // the first that needs it: xui-realms.spec.mjs provisions every realm it drives through this
+    // door, so a 501 here fails the spec before its first test runs. Detected by the headers rather
+    // than by `Accept-API-Version`, because the headers are what makes it this call -- the version
+    // differs too, but a client is free to send any. A body, if one is sent, is not read: these
+    // headers are the credential, and AM ignores the rest.
     if (req.headers["x-openam-username"] !== undefined
         || req.headers["x-openam-password"] !== undefined) {
-        return sendNotImplemented(req, res, url);
+        const answer = state.auth.headerLogin(req.headers["x-openam-username"],
+            req.headers["x-openam-password"]);
+        return sendJson(req, res, answer.status, answer.body, answer.sessionToken === undefined
+            ? []
+            : [sessionCookie(state.auth.cookieName, answer.sessionToken)]);
     }
 
-    let raw;
-    try {
-        raw = await readBody(req);
-    } catch (error) {
-        if (!error.oversize) {
-            // A socket that died mid-body is not a bad request, and reporting it as one puts a
-            // message no caller recognises in front of whoever is reading the log. Let the router's
-            // own handler have it.
-            throw error;
-        }
-        return sendJson(req, res, 400, {
-            code: 400, message: error.message, reason: "Bad Request",
-        });
+    const parsed = await readDocument(req);
+    if (parsed.error) {
+        return sendJson(req, res, parsed.error.status, parsed.error.body);
     }
-
-    let requirements;
-    if (raw.trim() !== "") {
-        try {
-            requirements = JSON.parse(raw);
-        } catch {
-            return sendJson(req, res, 400, {
-                code: 400,
-                message: "The authenticate body must be the requirements document, as JSON.",
-                reason: "Bad Request",
-            });
-        }
-    }
+    const requirements = parsed.document;
 
     const answer = requirements?.authId === undefined
         ? state.auth.begin(route.realmPath)
@@ -503,6 +555,41 @@ function sessionCookie (name, token) {
     return `${name}=${token}; Path=/; SameSite=Lax`;
 }
 
+/**
+ * The JSON document a write carries, or the error to answer instead.
+ *
+ * Returns `{document}` — `undefined` for an empty body, which each resource reads as "nothing was
+ * sent" — or `{error}` for a body that is too large or is not JSON. Both errors use AM's own
+ * envelope, because a fixture that gets one is going to print it (`describeFailure`) and a shape it
+ * cannot parse would arrive as an unexplained blank.
+ */
+async function readDocument (req) {
+    let raw;
+    try {
+        raw = await readBody(req);
+    } catch (error) {
+        if (!error.oversize) {
+            // A socket that died mid-body is not a bad request; let the router's handler have it.
+            throw error;
+        }
+        return { error: { status: 400,
+            body: { code: 400, message: error.message, reason: "Bad Request" } } };
+    }
+
+    if (raw.trim() === "") {
+        return { document: undefined };
+    }
+    try {
+        return { document: JSON.parse(raw) };
+    } catch {
+        return { error: { status: 400, body: {
+            code: 400,
+            message: `The body of ${req.method} ${req.url} must be a JSON document.`,
+            reason: "Bad Request",
+        } } };
+    }
+}
+
 /** A request body, with a cap. Nothing the XUI posts here is within two orders of it. */
 async function readBody (req) {
     const chunks = [];
@@ -542,10 +629,11 @@ function sendNotImplemented (req, res, url) {
     const payload = Buffer.from(`${JSON.stringify({
         code: 501,
         message: `The local API server does not implement ${req.method} ${url.pathname} yet. `
-            + "The rest of its REST surface -- the writes, the profile read and reset -- arrives in "
-            + "tasks 2.10-2.13 of modernize-openam-ui-build; until then, run the suite against a "
-            + "deployed AM (e2e/local/openam-up.sh). A few requests *inside* the implemented "
-            + "surface answer this deliberately, because the capture has no recording of them; the "
+            + "The rest of its REST surface -- service administration, the rest of the profile and "
+            + "reset -- arrives in tasks 2.11-2.13 of modernize-openam-ui-build; until then, run "
+            + "the suite against a deployed AM (e2e/local/openam-up.sh). A few requests *inside* "
+            + "the implemented surface answer this deliberately, because the capture has no "
+            + "recording of them; the "
             + "route in server-lib/rest.mjs says which and why, so read that before reading this "
             + "as a routing bug.",
         reason: NOT_IMPLEMENTED_REASON,

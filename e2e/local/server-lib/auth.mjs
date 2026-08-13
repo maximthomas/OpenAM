@@ -92,13 +92,12 @@
  * server that honoured them would authenticate nobody, ever. The real principal is only ever in the
  * `NameCallback` input value.
  *
- * **Deliberately not implemented: the one-call header authentication.**
+ * **The one-call header authentication is implemented, as of task 2.10.**
  * `common/openam-commons.mjs`'s `getAuthToken` posts `X-OpenAM-Username`/`X-OpenAM-Password` to
- * `/json/authenticate` and reads `tokenId` straight out of the answer. That is how the fixtures
- * provision, and it is out of scope here (NOTES-auth.md §9.6): nothing xui-login.spec.mjs does
- * reaches it. Note the failure mode for whoever picks it up — this endpoint answers such a call
- * with a *callbacks document*, so `getAuthToken` reads `tokenId` as `undefined` rather than getting
- * an error. The fixtures that need it belong to tasks 2.10-2.12.
+ * `/json/authenticate` and reads `tokenId` straight out of the answer. Task 2.7 left it out because
+ * nothing xui-login.spec.mjs does reaches it (NOTES-auth.md §9.6) and named 2.10-2.12 as the tasks
+ * that would need it: it is how every Playwright fixture provisions, so a spec that creates a realm
+ * to drive cannot set itself up without it. See `headerLogin`.
  */
 
 import { randomBytes } from "node:crypto";
@@ -111,6 +110,14 @@ const RECORDED = {
     success: "json/realms/root/authenticate/POST.success.json",
     /** order 6 — a rejected credential. No markers; served as recorded. */
     failure: "json/realms/root/authenticate/POST.failure.json",
+    /**
+     * order 7 — the one-call header authentication, `<TOKEN>` unfilled.
+     *
+     * Three fields and no callbacks: `{realm, successUrl, tokenId}`. It is the same answer the
+     * callbacks exchange ends with, which is the point — a session is a session however it was
+     * established, so what this records is the *shape of the shortcut*, not a second kind of login.
+     */
+    headerLogin: "json/authenticate/POST.json",
     /** order 1 — the bootstrap's own 401, which is not an error state. See `anonymous` below. */
     anonymous: "json/users/POST.action=idFromSession.401.json",
     /**
@@ -219,6 +226,7 @@ export function createAuthState (capture, { credentials }) {
     const callbacksDocument = capture.body(RECORDED.callbacks);
     const successDocument = capture.body(RECORDED.success);
     const failureBody = capture.body(RECORDED.failure);
+    const headerLoginDocument = capture.body(RECORDED.headerLogin);
     const anonymousBody = capture.body(RECORDED.anonymous);
     const identityDocument = capture.body(RECORDED.identity);
     const sessionInfoDocument = capture.body(RECORDED.sessionInfo);
@@ -244,6 +252,40 @@ export function createAuthState (capture, { credentials }) {
      */
     const sessionFor = (token) =>
         (typeof token === "string" && token !== "" ? sessions.get(token) : undefined);
+
+    /**
+     * Open a session for an account that has just proved who it is, and return its token.
+     *
+     * Both ways in end here — the callback exchange and the fixtures' one-call header
+     * authentication — so a session cannot differ by the door it came through. That matters more
+     * than it sounds: `getSessionInfo` and `idFromSession` read these fields, and a header login
+     * that built a session missing one of them would answer the same specs differently depending on
+     * whether the browser or a fixture had logged in.
+     */
+    function establish (account, realmPath) {
+        const token = opaque();
+        sessions.set(token, {
+            username: account.username,
+            realmPath,
+            // Minted with the session rather than per call, because `updateSessionInfo` puts it
+            // in the store and `SessionsService` invalidates *by handle*: one that changed
+            // between two reads of the same session would name a session nothing could act on.
+            // `shandle:` is the form AM's takes (NOTES-volatility.md rule 10).
+            sessionHandle: `shandle:${opaque()}`,
+            // What `maxSessionExpirationTime` counts from. The idle expiry counts from now on
+            // every call, as AM's does; this one does not move.
+            createdAt: Date.now(),
+        });
+        return token;
+    }
+
+    /** The account a username and password name, or `undefined`. One rule, both doors. */
+    function accountFor (username, password) {
+        const account = typeof username === "string"
+            ? directory.get(username.toLowerCase())
+            : undefined;
+        return account?.password === password ? account : undefined;
+    }
 
     return {
         /**
@@ -302,33 +344,19 @@ export function createAuthState (capture, { credentials }) {
             }
 
             const { username, password } = credentialsFrom(requirements.callbacks);
-            const account = username === undefined
-                ? undefined
-                : directory.get(username.toLowerCase());
-            if (!account || account.password !== password) {
+            const account = accountFor(username, password);
+            if (!account) {
                 // The handle is left in flight on purpose: a mistyped password is the one failure
                 // a user retries, and the XUI's own recovery is to call `begin` again anyway.
                 return { status: 401, body: failureBody };
             }
 
             inFlight.delete(authId);
-            const token = opaque();
             // The realm the login *began* in, not the one this leg was posted to. AM fixes it at
             // `begin` and carries it inside the `authId`, so a submission cannot move a login to
             // another realm by changing its path; keying off the flight is how that holds here
             // without the JWT.
-            sessions.set(token, {
-                username: account.username,
-                realmPath: flight.realmPath,
-                // Minted with the session rather than per call, because `updateSessionInfo` puts it
-                // in the store and `SessionsService` invalidates *by handle*: one that changed
-                // between two reads of the same session would name a session nothing could act on.
-                // `shandle:` is the form AM's takes (NOTES-volatility.md rule 10).
-                sessionHandle: `shandle:${opaque()}`,
-                // What `maxSessionExpirationTime` counts from. The idle expiry counts from now on
-                // every call, as AM's does; this one does not move.
-                createdAt: Date.now(),
-            });
+            const token = establish(account, flight.realmPath);
 
             // `successUrl` is the recorded one, with this server's context already substituted. It
             // does not decide where the user lands -- that is the XUI's own default-route decision,
@@ -337,6 +365,52 @@ export function createAuthState (capture, { credentials }) {
             return {
                 status: 200,
                 body: { ...successDocument, tokenId: token, realm: flight.realmPath },
+                sessionToken: token,
+            };
+        },
+
+        /**
+         * `POST /json/authenticate` with the credentials in `X-OpenAM-Username` /
+         * `X-OpenAM-Password` — AM's zero-page login, and how every Playwright fixture provisions.
+         *
+         * Task 2.7 left this out and named 2.10-2.12 as the tasks that would need it; this is that
+         * task. `getAdminToken` is the first thing xui-realms.spec.mjs does, and every realm the
+         * spec creates, reads back or sweeps up in teardown is addressed with the token it returns.
+         *
+         * **One call, one session, and no `authId` anywhere.** There is no in-flight state to hold
+         * because there is no second leg: the credentials arrive with the request, so this either
+         * establishes a session or rejects. That is the whole of the difference from `submit`, which
+         * is why both go through `establish` — a fixture's session and a browser's are the same
+         * object, and `getSessionInfo`, `idFromSession` and `logout` cannot tell them apart.
+         *
+         * **The rejection is `submit`'s recorded one, and that is a divergence.** AM answers a bad
+         * zero-page credential 401 with its own body, which the capture does not hold — the
+         * recording only ever sent this endpoint credentials that worked. Nothing in the suite
+         * authenticates a fixture with a wrong password, so the body is unobservable; reusing the
+         * recorded "Authentication Failed" keeps the status right and does not invent a message.
+         *
+         * Not read: `X-NoSession`, and the realm. The browser sends the first on every authenticate
+         * call and honouring it would authenticate nobody (REQUESTS.md Fact 3); the second is absent
+         * from this shape entirely — the fixtures post to the bare `/json/authenticate`, and the
+         * recorded answer's `realm` is `/`, which is the realm the administrator lives in.
+         *
+         * **The realm is the recorded one whatever path asked, and that is invented.** The two
+         * headers are answered at every authenticate route this server parses, not only the bare one
+         * the recording holds, and the session lands in `/` even if the URL named a realm. The
+         * capture has nothing to be faithful to here — no fixture posts these headers anywhere else,
+         * and the only account this server holds lives in `/` — so the alternative was inventing a
+         * realm-scoped answer instead of an over-broad one. Task 2.12 owns the principals, and this
+         * narrows with them.
+         */
+        headerLogin (username, password) {
+            const account = accountFor(username, password);
+            if (!account) {
+                return { status: 401, body: failureBody };
+            }
+            const token = establish(account, headerLoginDocument.realm);
+            return {
+                status: 200,
+                body: { ...headerLoginDocument, tokenId: token },
                 sessionToken: token,
             };
         },

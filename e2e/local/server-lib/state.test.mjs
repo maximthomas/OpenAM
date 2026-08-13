@@ -97,6 +97,24 @@ async function syntheticCapture ({ realms, listingOrder = 1, createOrder = 9, om
         },
         "json/realms/root/realm-config/authentication/GET.json": { _id: "", core: {} },
         "json/global-config/services/rest/GET.json": { _id: "", defaultVersion: "Latest" },
+        // What a realm created through the console is made of (task 2.10): the defaults AM declares
+        // for a realm document, and the authentication configuration a realm holds the moment it
+        // exists. Loaded by buildBaselineState like the rest, so a synthetic tree without them
+        // builds nothing.
+        "json/global-config/realms/POST.action=template.json": { active: true, parentPath: "/" },
+        "json/realms/root/realms/{realm}/realm-config/authentication/GET.json": {
+            _id: "", core: {}, general: { statelessSessionsEnabled: false },
+        },
+        // The fixtures' one-call header authentication (task 2.10, auth.mjs), here for the same
+        // reason as the exchange below it: every real recording has it.
+        "json/authenticate/POST.json": {
+            realm: "/", successUrl: "/{{CONTEXT}}/console", tokenId: "<TOKEN>",
+        },
+        // The administrator's profile -- task 2.12's resource, loaded by 2.10 because its `roles`
+        // are what let a browser off the login route at all. See BASELINE.adminProfile.
+        "json/realms/root/users/amadmin/GET.json": {
+            realm: "/", roles: ["ui-global-admin", "ui-realm-admin"], username: "amadmin",
+        },
         "json/realms/root/realms/{realm}/realm-config/services/GET.queryFilter=true.json": {
             ...paging,
             result: [],
@@ -554,6 +572,142 @@ describe("reads come from state, not from replay", () => {
         // like this used to come back as the mojibake it decoded to.
         assert.match(baseline().realmById("@@@not-base64@@@").body.message,
             /Realm cannot be read: @@@not-base64@@@/);
+    });
+});
+
+/**
+ * Task 2.10. The requirement in specs/ui-local-backend/spec.md is one sentence — a realm created
+ * through the console appears in the next listing and a deleted one disappears — and the tests below
+ * are that sentence plus the rules this server had to *choose*, which are the ones D15 warns can be
+ * wrong in ways the re-record diff will never catch.
+ */
+describe("the realm writes", () => {
+    /** Create through the store, the way the console's `_action=create` arrives. */
+    const create = (state, name, extra = {}) => state.createRealm({ name, ...extra });
+
+    it("puts a created realm in the next listing and takes a deleted one out", () => {
+        const state = baseline();
+        const created = create(state, "alpha", { aliases: ["alpha.example.invalid"] });
+
+        assert.equal(created.status, 201);
+        assert.equal(created.body._id, realmIdFor("/alpha"));
+        assert.deepEqual(state.realmsListing().body.result.map((realm) => realm.name),
+            ["/", "alpha"]);
+        assert.equal(state.realmById(created.body._id).status, 200);
+
+        const deleted = state.deleteRealm(created.body._id);
+        assert.equal(deleted.status, 200);
+        // As recorded: AM answers a delete with the realm as it last was, not with an empty body.
+        assert.deepEqual(deleted.body, created.body);
+        assert.deepEqual(state.realmsListing().body.result.map((realm) => realm.name), ["/"]);
+        assert.equal(state.realmById(created.body._id).status, 404);
+    });
+
+    it("takes the defaults it does not receive from the recorded template", () => {
+        // `{active: true, parentPath: "/"}` is AM's own answer to `_action=template`, which is also
+        // where the console's new-realm form gets its defaults -- so the two cannot disagree.
+        const { body } = create(baseline(), "alpha");
+
+        assert.equal(body.active, true);
+        assert.equal(body.parentPath, "/");
+        assert.deepEqual(body.aliases, []);
+    });
+
+    it("stores a realm under the path its id decodes to", () => {
+        // The property every realm-scoped route depends on: the store key and the id in the URL are
+        // inverses, so a realm that lists can also be read, edited and deleted.
+        const state = baseline();
+        const { body } = create(state, "beta", { parentPath: "/" });
+
+        assert.ok(state.realms.has("/beta"));
+        assert.equal(realmPathFor(body), "/beta");
+    });
+
+    it("gives a created realm the authentication document a created realm has", () => {
+        // Seeded from the capture's order-25 read -- a realm that had just been created and never
+        // written to. Without it the console's second write, and every read of the edit form, 404s.
+        const state = baseline();
+        create(state, "alpha");
+
+        const authentication = state.realmAuthentication("/alpha");
+        assert.equal(authentication.status, 200);
+        assert.equal(authentication.body.general.statelessSessionsEnabled, false);
+    });
+
+    it("does not let two realms share one authentication document", () => {
+        const state = baseline();
+        create(state, "alpha");
+        create(state, "beta");
+        state.updateRealmAuthentication("/alpha", { statelessSessionsEnabled: true });
+
+        assert.equal(
+            state.realmAuthentication("/beta").body.general.statelessSessionsEnabled, false);
+    });
+
+    it("merges an authentication write over the document rather than replacing it", () => {
+        // The body is the flat one the console really PUTs: `JSONEditorView.getData` picks the
+        // schema's `defaultProperties`, so the realm form's second subview sends this single key
+        // and no section around it. Replacing would leave the document missing everything it did
+        // not send, and the next render of the edit form reads it back.
+        const state = baseline();
+        create(state, "alpha");
+        const answer = state.updateRealmAuthentication("/alpha",
+            { statelessSessionsEnabled: true });
+
+        assert.equal(answer.status, 200);
+        // In `general`, where the schema declares it and where the form's next render looks --
+        // not at the top level, which is where a flat merge would have left it.
+        assert.equal(answer.body.general.statelessSessionsEnabled, true);
+        assert.ok(!Object.hasOwn(answer.body, "statelessSessionsEnabled"));
+        assert.ok(answer.body.accountlockout, "the untouched blocks survive a partial write");
+        assert.equal(state.realmAuthentication("/alpha").body.general.statelessSessionsEnabled,
+            true);
+    });
+
+    it("keeps the identity the URL decided, whatever an update's body says", () => {
+        // `_id`, `name` and `parentPath` *are* the key this realm is filed under. A body that moved
+        // one would leave the realm addressable at an id that no longer decodes to its store key.
+        const state = baseline();
+        const realmId = create(state, "alpha").body._id;
+        const updated = state.updateRealm(realmId,
+            { _id: "Lw", active: false, name: "renamed", parentPath: "/elsewhere" });
+
+        assert.deepEqual(updated.body,
+            { _id: realmId, active: false, aliases: [], name: "alpha", parentPath: "/" });
+        assert.equal(state.realmById(realmId).body.active, false);
+        assert.ok(state.realms.has("/alpha"));
+    });
+
+    it("answers a write to a realm that is not there with AM's own message", () => {
+        const state = baseline();
+        const gone = realmIdFor("/gone");
+
+        for (const answer of [state.updateRealm(gone, {}), state.deleteRealm(gone)]) {
+            assert.equal(answer.status, 404);
+            assert.deepEqual(answer.body,
+                { code: 404, message: "Realm cannot be read: /gone", reason: "Not Found" });
+        }
+    });
+
+    it("refuses a realm with no name rather than filing one under a path it invented", () => {
+        // The one field with no default and no way to derive one. Everything else a malformed body
+        // could get wrong is defaulted from the template or dropped.
+        const state = baseline();
+
+        for (const document of [{}, { name: "  " }, { name: 42 }, undefined]) {
+            assert.equal(state.createRealm(document).status, 400);
+        }
+        assert.deepEqual([...state.realms.keys()], ["/"]);
+    });
+
+    it("keeps only the properties the recorded schema declares", () => {
+        // AM validates a create against that schema. This drops what it does not know instead,
+        // which is the weaker rule -- and the one that cannot answer a request the specs do send
+        // with a status the recording has no example of.
+        const { body } = create(baseline(), "alpha", { active: false, notARealmProperty: true });
+
+        assert.deepEqual(Object.keys(body).sort(),
+            ["_id", "active", "aliases", "name", "parentPath"]);
     });
 });
 

@@ -166,7 +166,7 @@ directory, which is removed when the server stops; nothing is cached between run
 | | |
 |---|---|
 | XUI | <http://127.0.0.1:8090/openam/XUI/> |
-| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads, authentication, sessions and the bootstrap's configuration; 501 for the rest, until tasks 2.10–2.13 |
+| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads, authentication, sessions, the bootstrap's configuration and realm administration; 501 for the rest, until tasks 2.11–2.13 |
 
 Ready in about a second, from a checkout, with no war build and no container runtime — which is the
 entire point of it, against the 3–8 minutes and the Docker daemon the instance above needs. It is
@@ -184,8 +184,13 @@ at the same time — comparing them is the point. `node local/server.mjs --help`
 The REST surface answers the administrative reads — realms, the global REST service, and a realm's
 authentication configuration and service instances, plus the SMS schema and template documents the
 console generates its forms from. They come from an in-memory baseline built at startup out of
-`local/capture/`, not from replaying it, so a write will show up in the next read once tasks
-2.10–2.12 add the writes.
+`local/capture/`, not from replaying it, which is what lets a write show up in the next read.
+
+It answers realm administration whole: create, read, update and delete, plus the
+`realm-config/authentication` PUT the console pairs every realm save with — creating a realm through
+the form is two writes, and the console treats a failure of the second as a failed create. A realm
+created through the console is in the next listing and a deleted one is gone from it. Service
+administration is still task 2.11's.
 
 It also answers the authentication exchange: the credential requirements, the submission, and the
 session cookie a completed authentication sets. The credentials are the suite's own — whatever
@@ -208,16 +213,20 @@ the self-service links, social sign-in, KBA. Every value is served as recorded e
 which is `[]` so the cookie stays host-only, matching the `Set-Cookie` above. `NOTES-siteconfig.md`
 is the enumeration of what the UI reads from it and what each value changes.
 
-Everything else answers a labelled 501, deliberately: a stub that let the XUI past something it had
-not actually done would make the real thing in tasks 2.10–2.13 unverifiable. So every write and the
-reset are still 501.
+And it answers two calls that are not realm administration but that no console spec can run without:
+the fixtures' one-call header authentication — `X-OpenAM-Username` / `X-OpenAM-Password` on
+`/json/authenticate`, which is how every Playwright fixture provisions — and `GET
+/json/realms/root/users/<admin>`, the profile read whose `roles` are what get a logged-in browser off
+`#login`. The second is a slice of task 2.12's resource, borrowed deliberately: 2.12 still owns the
+profile update, the `demo` user and the `{{USER_SUFFIX}}` placeholder its payload carries.
 
-**A browser bootstraps and logs in, and stops one request short of landing.** The login form
-renders, the credentials are accepted, and the XUI reads its own token back — it now knows the
-cookie's name. What it cannot do is finish: `GET /json/realms/root/users/<id>`, the profile read, is
-task 2.12's and answers 501, so `Configuration.loggedUser` never gets its `roles` and the default
-route keeps the browser on `#login`. `npm run test:server` is what exercises all of this today; a
-spec that needs to *be* logged in in a browser still needs the deployed instance above, until 2.12.
+Everything else answers a labelled 501, deliberately: a stub that let the XUI past something it had
+not actually done would make the real thing in tasks 2.11–2.13 unverifiable.
+
+**A browser bootstraps, logs in, lands in the admin console and drives realm administration.**
+`xui/xui-realms.spec.mjs` is the first `@local-server` spec that runs against this backend end to
+end. A spec that reaches beyond realms — service administration, the end-user profile — still needs
+the deployed instance above.
 
 **This backend is not the acceptance oracle.** A green run against it does not satisfy sign-off; that
 needs the suite green against a deployed AM.

@@ -41,27 +41,27 @@
  * AM rather than something assumed to match it. A zip is unpacked to a temp directory that this
  * file removes on the way out; see server-lib/xui-source.mjs.
  *
- * **What it answers today: the XUI tree, the administrative reads, a session's whole life, and the
- * two documents the bootstrap reads.** Task 2.6 builds an in-memory baseline from local/capture at
- * startup and answers realm and service reads out of it (server-lib/state.mjs); task 2.7 adds the
- * credential exchange and the session cookie, and 2.8 the resolution of that cookie and the logout
- * that ends it (server-lib/auth.mjs); 2.9 adds `serverinfo/*`, which is the site configuration, and
- * the footer's `serverinfo/version`. The writes and reset are tasks 2.10-2.13 and still answer a
- * labelled 501. See server-lib/rest.mjs for why this stops there rather than faking the rest.
+ * **What it answers today: the XUI tree, the administrative reads, a session's whole life, the two
+ * documents the bootstrap reads, and realm administration.** Task 2.6 builds an in-memory baseline
+ * from local/capture at startup and answers realm and service reads out of it
+ * (server-lib/state.mjs); task 2.7 adds the credential exchange and the session cookie, and 2.8 the
+ * resolution of that cookie and the logout that ends it (server-lib/auth.mjs); 2.9 adds
+ * `serverinfo/*`, which is the site configuration, and the footer's `serverinfo/version`; 2.10 adds
+ * the realm writes, the one-call header authentication the fixtures provision through, and the
+ * administrator's profile read. Service administration, the rest of the profile and reset are tasks
+ * 2.11-2.13 and still answer a labelled 501. See server-lib/rest.mjs for why this stops where it
+ * does rather than faking the rest.
  *
- * **The browser bootstraps now, and what stops it next is the profile read.** `serverinfo/*` is the
- * only request gating `EVENT_APP_INITIALIZED`, so answering it is what starts the UI at all: the
- * login form renders, the credentials are accepted, and the XUI reads its own token back under the
- * `cookieName` the site configuration gave it — which is the part it could not do before 2.9. What
- * it cannot do is finish landing. `GET /json/realms/root/users/<id>` is task 2.12's and answers 501,
- * so `Configuration.loggedUser` never gets the document that carries its `roles`, and the default
- * route keeps the browser on `#login` [observed: xui/xui-login.spec.mjs times out in `waitForURL` at
- * common/xui-commons.mjs:90, with that one 501 the only one in the run].
+ * **A browser now bootstraps, logs in and lands in the admin console.** `serverinfo/*` is the only
+ * request gating `EVENT_APP_INITIALIZED`, so answering it is what starts the UI at all; the profile
+ * read task 2.10 borrowed from 2.12 is what carries the `roles` that get the default route off
+ * `#login` [observed: xui/xui-realms.spec.mjs, 7 passed against this server]. What stops it next is
+ * whatever a spec beyond realm administration reaches for — service administration is 2.11, the
+ * `demo` profile and its update 2.12.
  *
- * `npm run test:server` is what demonstrates all of this today; xui/xui-login.spec.mjs needs 2.12
- * (local/NOTES-auth.md §5, §8; local/NOTES-siteconfig.md for the bootstrap order). When 2.12 lands,
- * re-derive this paragraph rather than editing it — the failure it describes disappears, and what
- * stops the browser after it is not knowable from here.
+ * `npm run test:server` demonstrates the surface directly; xui/xui-realms.spec.mjs is the first
+ * `@local-server` spec that drives it through a browser (local/NOTES-auth.md §5, §8;
+ * local/NOTES-siteconfig.md for the bootstrap order).
  *
  * This file is the process: settings, startup guards, the socket, the log and the shutdown. What
  * it answers with is in server-lib/, which is also where the tests are — same split as capture.mjs
@@ -235,8 +235,8 @@ Something is on it -- an earlier run of this server, or the AM container if you 
 
   XUI   ${origin}/${options.context}/XUI/
   REST  ${origin}/${options.context}/json/   (${state.realms.size} realm(s) from the capture; 501
-                                              outside the reads, authentication, sessions and
-                                              the bootstrap's configuration)
+                                              outside the reads, authentication, sessions,
+                                              the bootstrap's configuration and realm admin)
 
 Point the suite or a fixture at it with:
   OPENAM_BASE_URL=${origin}/${options.context}

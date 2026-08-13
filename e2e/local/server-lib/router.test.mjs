@@ -237,8 +237,27 @@ describe("the REST surface", () => {
         assert.deepEqual(JSON.parse(response.body).result.map((realm) => realm.name), ["/"]);
     });
 
+    it("answers the bootstrap's own two documents", async () => {
+        // The first request the XUI makes, and the one every later one is chained off. Only that
+        // the mount reaches it; what is *in* the document is state.test.mjs's, against the
+        // recording.
+        const configuration = await get("/openam/json/serverinfo/*");
+        assert.equal(configuration.status, 200);
+        assert.equal(configuration.type, "application/json;charset=UTF-8");
+        assert.equal(JSON.parse(configuration.body).cookieName, "iPlanetDirectoryPro");
+
+        const version = await get("/openam/json/serverinfo/version");
+        assert.equal(version.status, 200);
+        assert.equal(JSON.parse(version.body).version, "16.2.0-SNAPSHOT");
+    });
+
     it("answers a path it does not implement with 501, in AM's error envelope", async () => {
-        const response = await get("/openam/json/serverinfo/*");
+        // The realm-scoped site configuration, which task 2.9 deliberately did not answer: it is
+        // not in the capture (REQUESTS.md:151-152, reached only by the @deployed-am theming spec),
+        // and the alternative to this 501 is a `realm` this server invented -- which ThemeManager
+        // would resolve a theme from, and which the re-record-and-diff job cannot catch because
+        // there is nothing recorded to diff it against.
+        const response = await get("/openam/json/realms/root/realms/alpha/serverinfo/*");
         assert.equal(response.status, 501);
         assert.equal(response.type, "application/json;charset=UTF-8");
         assert.deepEqual(Object.keys(JSON.parse(response.body)).sort(),
@@ -254,11 +273,18 @@ describe("the REST surface", () => {
         assert.match(JSON.parse(response.body).message, /PUT \/openam\/json\/realms\/root/);
     });
 
-    it("does not let the XUI past a route it has not implemented", async () => {
-        // `serverinfo` is task 2.9's. Faking it is what would make the tasks after it unverifiable
-        // -- a UI proceeding on invented responses cannot tell you whether the real thing works.
-        const response = await fetch(`${origin}/openam/json/serverinfo/version`,
-            { method: "POST" });
+    it("does not let a caller past a route it does not implement", async () => {
+        // Header authentication, which `getAuthToken` in common/openam-commons.mjs uses: the
+        // credentials go up as headers and `tokenId` comes straight back. It is deliberately not
+        // implemented and is not scheduled to be (NOTES-auth.md §9.6), which is what makes it a
+        // stable guard -- unlike a not-yet route, it will not quietly turn into a 200 two tasks
+        // from now and stop asserting anything. Answering it with a callbacks document would hand
+        // the caller an `undefined` token that surfaces as an unexplained 401 several calls later.
+        // 501 rather than 404 because the resource is not missing: this server does not serve it.
+        const response = await fetch(`${origin}/openam/json/realms/root/authenticate`, {
+            method: "POST",
+            headers: { "X-OpenAM-Username": "demo", "X-OpenAM-Password": "changeit" },
+        });
 
         assert.equal(response.status, 501);
         assert.equal(response.headers.get("set-cookie"), null);
@@ -302,7 +328,10 @@ describe("everything else", () => {
     });
 
     it("gives every response a length, so nothing is chunked into a guess", async () => {
+        // One of each branch that writes a response: redirect, static hit, JSON, 501, static miss
+        // and 404. The 501 has to be a path that stays one -- `serverinfo/*` itself is a 200 now.
         for (const path of ["/", "/openam/XUI/main.js", "/openam/json/serverinfo/*",
+            "/openam/json/realms/root/realms/alpha/serverinfo/*",
             "/openam/XUI/missing.js", "/openam/nowhere"]) {
             assert.notEqual((await get(path)).length, null, path);
         }

@@ -54,12 +54,15 @@
  * That is the whole list, and it is *narrower* than the capture's own. capture/README.md puts the
  * verbatim-servable set at "every `_action=schema` (7), every `_action=template` (4),
  * `_action=getAllTypes` (1), and the three `serverinfo` responses" — so two of its entries are
- * deliberately left out here, and both are in-scope requests that answer 501 today:
+ * deliberately left out here:
  *
- *   - `serverinfo` (3 calls) belongs to task 2.9, which has to answer more than the capture holds:
- *     the site configuration and the feature flags that decide which optional UI is presented.
+ *   - `serverinfo` (3 calls) is task 2.9's, and it is *nearly* verbatim rather than verbatim: the
+ *     site configuration is served as recorded but for `domains`, which this server decides for
+ *     itself because the recorded value names another deployment's cookie domain. See
+ *     `SITE_CONFIGURATION_OVERRIDES` below. It is built here rather than added to the verbatim set
+ *     so that the one field this server does not agree with has somewhere to be argued.
  *   - `_action=getAllTypes` (1 call, REQUESTS.md's `…/services/baseurl` row) belongs to task 2.11
- *     with the rest of service administration.
+ *     with the rest of service administration, and answers 501 today.
  *
  * A third, `_action=getCreatableTypes`, is not in the capture's verbatim set either and is left to
  * 2.11 for a stronger reason: the README's "Known limits" records that whether it is
@@ -117,7 +120,45 @@ const BASELINE = {
     realmServices: "json/realms/root/realms/{realm}/realm-config/services/GET.queryFilter=true.json",
     /** order 23 — not loaded; its order is what proves `realms` above is pre-mutation. */
     realmCreate: "json/global-config/realms/POST.action=create.json",
+    /**
+     * order 2 — the site configuration, at the `resource=1.1` the XUI negotiates.
+     *
+     * The capture holds this document twice, recorded at `resource=1.1` and `resource=1.0`, and the
+     * two bodies are byte-identical; AM answered both with `content-api-version: resource=1.1`.
+     * rest.mjs's header anticipated task 2.9 as "where honouring the version starts", and the
+     * recording says there is nothing here to honour. The one variant that does differ —
+     * capture/README.md:99-100, `_id` and `_rev` returned when *no* version is negotiated — is not
+     * recorded and is never asked for: the XUI always negotiates. So one file answers both calls,
+     * and a server that discriminated on the version would be modelling a difference the recording
+     * does not contain.
+     */
+    siteConfiguration: "json/serverinfo/star/GET.resource=1.1.json",
+    /** order 8 — `version`, `revision`, `date`, for the footer of a realm administrator. */
+    serverVersion: "json/serverinfo/version/GET.json",
 };
+
+/**
+ * The fields of `serverinfo/*` this server serves differently from the recording. Exactly one.
+ *
+ * **`domains: []`, not the recorded `["{{COOKIE_DOMAIN}}"]`.** The recorded array names the cookie
+ * domain of the deployment the capture was taken against, and this server is not that deployment:
+ * a browser discards a cookie whose `Domain` does not match the origin it came from, so the XUI's
+ * own client-side write — `SessionToken.set` → `CookieHelper.setCookie`, which writes once per entry
+ * in this array — would be silently dropped. `CookieHelper.setCookie` documents the empty array as
+ * the way to ask for a host-only cookie, and that is what this server's `Set-Cookie` already is
+ * (rest.mjs `sessionCookie`, which omits `Domain` for the same reason). The two have to agree:
+ * `SessionToken.remove()` on logout deletes per domain as well, so a non-empty array here would
+ * leave logout unable to delete the host-only cookie the server set.
+ *
+ * NOTES-auth.md:268-274 argues for `[]` and NOTES-siteconfig.md files it as the one value task 2.9
+ * has to *choose* rather than derive. This is that choice, and the symptom of having chosen wrong
+ * is worth recognising: a login that appears to work, and a reload that logs you out.
+ *
+ * It is spelled as an override rather than by giving `{{COOKIE_DOMAIN}}` a value in `deploymentFor`
+ * because there is no string that resolves to an empty array — and because a marker resolved to a
+ * value nothing serves is exactly what that map's own note refuses to hold.
+ */
+const SITE_CONFIGURATION_OVERRIDES = { domains: [] };
 
 /** The actions whose responses are pure static description. See the header note. */
 const VERBATIM_ACTIONS = ["schema", "template"];
@@ -245,11 +286,22 @@ export function buildBaselineState (captureDir, { context, hostname }) {
     const statics = new Map(capture.filesForActions(VERBATIM_ACTIONS)
         .map((file) => [file, capture.body(file)]));
 
+    // The bootstrap document. Held as one built object rather than in the store, because nothing a
+    // write can do changes it: the flags describe what this deployment *is*, and the two that a
+    // spec could otherwise expect to move — `realm` and `cookieName` — are the two the rest of the
+    // server is already keyed to. If a later task needs a flag to vary per run, this is the value
+    // to make configurable, not the document to make mutable.
+    const siteConfiguration = capture.bodyWith(BASELINE.siteConfiguration,
+        SITE_CONFIGURATION_OVERRIDES);
+    const serverVersion = capture.body(BASELINE.serverVersion);
+
     // Built from the same capture handle and returned as part of the same state, so the sessions
     // and in-flight logins of task 2.7 are cleared by whatever clears the rest of the store.
     const auth = createAuthState(capture, { credentials: CREDENTIALS });
 
-    return createState({ realms, globalServices, listingEnvelopes, statics, auth });
+    return createState({
+        realms, globalServices, listingEnvelopes, statics, auth, siteConfiguration, serverVersion,
+    });
 }
 
 /**
@@ -283,12 +335,56 @@ function renderListing (envelope, result) {
  * through `buildBaselineState` rather than hold a `loadCapture` handle and re-read from it — reusing
  * one would hand the new state documents an earlier state had already mutated in place.
  */
-function createState ({ realms, globalServices, listingEnvelopes, statics, auth }) {
+function createState ({
+    realms, globalServices, listingEnvelopes, statics, auth, siteConfiguration, serverVersion,
+}) {
     return {
         realms,
         globalServices,
         /** The authentication exchange and the sessions it establishes; see auth.mjs. */
         auth,
+
+        /**
+         * `GET /json/serverinfo/*` — the site configuration, and the first request the XUI makes.
+         *
+         * Everything the bootstrap does is chained off this one answering: `SiteConfigurator` fires
+         * `EVENT_APP_INITIALIZED` on success *and* on failure, so a server that got this wrong
+         * would not produce an error screen but a plausible login page with no session behind it
+         * (NOTES-siteconfig.md, "If the whole request fails"). That is why it is served from the
+         * recording rather than assembled: the failure mode is invisible, so the fixture has to be
+         * right by construction rather than by inspection.
+         *
+         * Only the bare path. The realm-scoped shape the XUI builds from a `?realm=` URL parameter
+         * — `/json/realms/root/realms/<realm>/serverinfo/*` — is not recorded (REQUESTS.md:151-152
+         * files it out of scope; only xui-theming reaches it, and that spec is `@deployed-am`) and
+         * is deliberately left as a labelled 501 rather than answered with a realm this server made
+         * up. See rest.mjs `parseRoute`.
+         */
+        siteConfiguration () {
+            return { status: 200, body: siteConfiguration };
+        },
+
+        /**
+         * `GET /json/serverinfo/version` — the footer's version line.
+         *
+         * Not part of the bootstrap: `Footer.render` fetches it only for a user with
+         * `ui-realm-admin`, so it is reached by the administrator login and by nothing before a
+         * session exists. Served exactly as recorded, `version`/`revision`/`date` included —
+         * capture/README.md:235-238 leaves those un-normalised on purpose, so that task 2.15's
+         * re-record-and-diff goes red when the container image is rebuilt. Nothing reads them for
+         * behaviour.
+         *
+         * Answered without a session, where the recording had one: capture/index.json marks this
+         * call `"session": "admin"` and REQUESTS.md lists it session- and admin-required, against
+         * `serverinfo/*`'s "optional". Nothing under test notices, because its only caller is
+         * behind `ui-realm-admin` already — and gating it here would be this server inventing an
+         * authorisation rule rather than reproducing one, which is how a local backend starts
+         * disagreeing with AM in the direction nobody checks. It is still a divergence, so it is
+         * written down. Same treatment as serveLogout's in rest.mjs.
+         */
+        serverVersion () {
+            return { status: 200, body: serverVersion };
+        },
 
         /** `GET /json/global-config/realms?_queryFilter=true` */
         realmsListing () {

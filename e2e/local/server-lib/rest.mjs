@@ -20,9 +20,10 @@
  * Task 2.6 answers the administrative *reads* out of the baseline state in state.mjs — realms, the
  * global REST service, and a realm's authentication config and service instances — plus the SMS
  * schema and template documents served verbatim. Task 2.7 adds the authentication exchange
- * (auth.mjs), and 2.8 the rest of a session's life: `users?_action=idFromSession` whole, and the
- * `sessions` collection's `getSessionInfo` and `logout`. Everything else is still a labelled 501:
- * `serverinfo` (2.9), every write (2.10-2.12) and reset (2.13).
+ * (auth.mjs), 2.8 the rest of a session's life: `users?_action=idFromSession` whole, and the
+ * `sessions` collection's `getSessionInfo` and `logout`. Task 2.9 adds the two `serverinfo`
+ * documents, which is what lets the XUI finish its bootstrap at all. Everything else is still a
+ * labelled 501: every write (2.10-2.12) and reset (2.13).
  *
  * **501 rather than something the XUI can proceed past, deliberately.** The shortcut task 2.6
  * refused was to answer the two bootstrap calls with something plausible and get the login form to
@@ -59,9 +60,13 @@
  * version, because the headers are what makes a request the second kind while a client may send any
  * version it likes. See `serveAuthenticate`.
  *
- * The version remains a real input -- REQUESTS.md notes `GET /json/serverinfo/*` returns different
- * fields depending on it, and the capture holds both -- and task 2.9, which owns that route, is
- * where honouring it starts.
+ * Task 2.9 owned that route, and the answer turned out to be that there is nothing to honour. The
+ * capture holds `serverinfo/*` at both negotiated versions and the two bodies are byte-identical;
+ * AM answered the `resource=1.0` request with `content-api-version: resource=1.1` anyway. The one
+ * variant that does differ -- `_id` and `_rev`, returned when *no* version is negotiated
+ * (capture/README.md:99-100) -- is not recorded, and the XUI always negotiates, so nothing asks for
+ * it. One recorded document therefore answers both calls, and discriminating on the version would
+ * be modelling a difference this recording does not contain. See BASELINE.siteConfiguration.
  *
  * The envelope matches AM's own error shape — `{code, message, reason}` at
  * `application/json;charset=UTF-8`, as recorded in local/capture — so a caller that parses AM
@@ -101,6 +106,29 @@ export function parseRoute (apiPath, query) {
         }
         if (rest[1] === "services" && rest.length === 3) {
             return { kind: "global-service", serviceId: rest[2], routePath: apiPath };
+        }
+        return { kind: "other", routePath: apiPath };
+    }
+
+    // The bootstrap's own two documents (task 2.9), both at the bare path.
+    //
+    // **The realm-scoped shape is deliberately not routed here.** `ServerService.getUrl` sends this
+    // request through `fetchUrl` with the realm from the page's query string, so a load of
+    // `?realm=/alpha` asks for `/json/realms/root/realms/alpha/serverinfo/*` instead — which falls
+    // through to the `realms/root` branch below, finds no `realm-config`, and gets the labelled 501.
+    // That is the intended answer, not an oversight: the capture does not hold a realm-scoped
+    // recording (REQUESTS.md:151-152 files both realm-scoped shapes under "Out of scope", reached
+    // only by xui-theming, which is `@deployed-am`), and the alternative is to answer with a `realm`
+    // this server invented. NOTES-siteconfig.md is explicit about what that costs: the realm in this
+    // document is what ThemeManager resolves a theme from, so a made-up one produces a UI that
+    // renders and is wrong — and it is the class of divergence task 2.15's re-record-and-diff
+    // cannot catch, because there is nothing recorded to diff it against.
+    if (rest[0] === "serverinfo" && rest.length === 2) {
+        if (rest[1] === "*") {
+            return { kind: "site-configuration", routePath: apiPath };
+        }
+        if (rest[1] === "version") {
+            return { kind: "server-version", routePath: apiPath };
         }
         return { kind: "other", routePath: apiPath };
     }
@@ -215,6 +243,10 @@ function realmScopedRoute (segments, realmPath, query) {
  */
 function read (route, query, state) {
     switch (route.kind) {
+    case "site-configuration":
+        return state.siteConfiguration();
+    case "server-version":
+        return state.serverVersion();
     case "realms-collection":
         return query._queryFilter === undefined ? undefined : state.realmsListing();
     case "realms-member":
@@ -510,10 +542,12 @@ function sendNotImplemented (req, res, url) {
     const payload = Buffer.from(`${JSON.stringify({
         code: 501,
         message: `The local API server does not implement ${req.method} ${url.pathname} yet. `
-            + "Its administrative reads arrive in task 2.6 of modernize-openam-ui-build, "
-            + "authentication in 2.7, session resolution and logout in 2.8, and the rest of its "
-            + "REST surface in 2.9-2.13; until then, run the suite against a deployed AM "
-            + "(e2e/local/openam-up.sh).",
+            + "The rest of its REST surface -- the writes, the profile read and reset -- arrives in "
+            + "tasks 2.10-2.13 of modernize-openam-ui-build; until then, run the suite against a "
+            + "deployed AM (e2e/local/openam-up.sh). A few requests *inside* the implemented "
+            + "surface answer this deliberately, because the capture has no recording of them; the "
+            + "route in server-lib/rest.mjs says which and why, so read that before reading this "
+            + "as a routing bug.",
         reason: NOT_IMPLEMENTED_REASON,
     }, null, 2)}\n`, "utf8");
 

@@ -18,11 +18,11 @@
  * Two surfaces on one origin, and nothing else.
  *
  * `/{context}/XUI/` is the built UI tree and `/{context}/json/` is the AM REST API (administrative
- * reads from task 2.6, authentication from 2.7, session resolution and logout from 2.8; 501 for the
- * rest until 2.13). Everything outside them is a 404 that names the two. It would be friendlier to
- * proxy the unknown paths to a real AM, and wrong — the local backend's scope is the request list
- * in local/REQUESTS.md, and a silent fallthrough to something else is how that scope stops being
- * true without anyone noticing.
+ * reads from task 2.6, authentication from 2.7, session resolution and logout from 2.8, server and
+ * site configuration from 2.9; 501 for the rest until 2.13). Everything outside them is a 404 that
+ * names the two. It would be friendlier to proxy the unknown paths to a real AM, and wrong — the
+ * local backend's scope is the request list in local/REQUESTS.md, and a silent fallthrough to
+ * something else is how that scope stops being true without anyone noticing.
  *
  * The request target is parsed against a fixed base rather than the `Host` header. Nothing
  * downstream reads the host, and taking it from the request made a malformed `Host` — which the

@@ -144,8 +144,18 @@ async function syntheticCapture ({ realms, listingOrder = 1, createOrder = 9, om
             username: "amadmin",
         },
         "json/sessions/POST.action=logout.json": { result: "Successfully logged out" },
-        // Read for its `cookieName` field alone; serving this document is task 2.9's.
-        "json/serverinfo/star/GET.resource=1.1.json": { cookieName: "iPlanetDirectoryPro" },
+        // The site configuration (task 2.9), read for its `cookieName` field and served whole.
+        //
+        // `domains` carries the unresolvable marker deliberately. This test's deployment map has no
+        // `COOKIE_DOMAIN`, so a loader that resolved the document *before* applying the server's
+        // override would throw here -- which makes every test that builds against this synthetic
+        // capture an assertion that it does not, rather than needing one that asks directly.
+        "json/serverinfo/star/GET.resource=1.1.json": {
+            cookieName: "iPlanetDirectoryPro", domains: ["{{COOKIE_DOMAIN}}"], realm: "/",
+        },
+        "json/serverinfo/version/GET.json": {
+            date: "2026-August-04 10:48", revision: "fc8e2e67c7", version: "16.2.0-SNAPSHOT",
+        },
     };
 
     const orders = {
@@ -260,6 +270,28 @@ describe("the baseline built from the capture", () => {
             /has no "notARecordedField" in its response body/,
         );
     });
+
+    it("refuses to override a field the recording does not have", () => {
+        // An override exists to disagree with a recorded field. A field that is not there is not a
+        // disagreement but a recording that changed shape, and letting the override supply it would
+        // serve an invented document that reads as a recorded one.
+        assert.throws(
+            () => loadCapture(CAPTURE_DIR, {})
+                .bodyWith("json/serverinfo/star/GET.resource=1.1.json", { notARecordedField: [] }),
+            /which the recorded response body does not have/,
+        );
+    });
+
+    it("still refuses a marker outside the field it was told to override", () => {
+        // What keeps the override from being a hole in the fatal-marker guard. Replacing `domains`
+        // is what takes `{{COOKIE_DOMAIN}}` out of the document; replace anything else and the
+        // marker is still there, still unresolvable, and still fatal -- exactly as `body` has it.
+        assert.throws(
+            () => loadCapture(CAPTURE_DIR, {})
+                .bodyWith("json/serverinfo/star/GET.resource=1.1.json", { realm: "/" }),
+            /\{\{COOKIE_DOMAIN\}\}/,
+        );
+    });
 });
 
 describe("a recording that is not the committed one", () => {
@@ -336,6 +368,13 @@ describe("a read is structurally the same as the recorded response", () => {
         );
     });
 
+    it("the footer's version document", () => {
+        assert.deepEqual(
+            baseline().serverVersion(),
+            { status: 200, body: recorded("json/serverinfo/version/GET.json") },
+        );
+    });
+
     it("the root realm's authentication singleton", () => {
         assert.deepEqual(
             baseline().realmAuthentication("/"),
@@ -379,6 +418,71 @@ describe("a read is structurally the same as the recorded response", () => {
                 ),
             },
         );
+    });
+});
+
+/**
+ * The one document this server serves *nearly* as recorded, and the one field it does not.
+ *
+ * These are assertions about values rather than shapes, which the rest of this file avoids -- but
+ * NOTES-siteconfig.md's point is that the values here are what the UI's behaviour is made of, and
+ * that a wrong one produces a UI that renders and is wrong rather than one that fails. The two the
+ * suite reads hardest are asserted by name for that reason.
+ */
+describe("the site configuration the XUI bootstraps from", () => {
+    it("is the recorded document, but for the cookie domains", () => {
+        const { status, body } = baseline().siteConfiguration();
+        const asRecorded = JSON.parse(
+            readFileSync(join(CAPTURE_DIR, "json/serverinfo/star/GET.resource=1.1.json"), "utf8"),
+        ).response.body;
+
+        assert.equal(status, 200);
+        assert.deepEqual(Object.keys(body).sort(), Object.keys(asRecorded).sort());
+        assert.deepEqual({ ...body, domains: undefined }, { ...asRecorded, domains: undefined });
+    });
+
+    it("serves no cookie domain, so the XUI's own write is host-only", () => {
+        // The recorded value is another deployment's cookie domain and cannot be copied here; see
+        // SITE_CONFIGURATION_OVERRIDES. `[]` is CookieHelper's documented way to ask for host-only,
+        // and it has to agree with rest.mjs's Set-Cookie, which omits Domain for the same reason.
+        assert.deepEqual(baseline().siteConfiguration().body.domains, []);
+        assert.equal(
+            JSON.stringify(baseline().siteConfiguration()).includes("{{"),
+            false,
+            "no unresolved deployment marker may reach the browser",
+        );
+    });
+
+    it("reports the flags the phase-0 specs read, at the values they were recorded at", () => {
+        const { body } = baseline().siteConfiguration();
+
+        // xui-httponly.spec.mjs asserts the real cookie's httpOnly equals this, and skips a test on
+        // it; xui-profile.spec.mjs asserts the profile has exactly [basicInfo, password] tabs, which
+        // a kbaEnabled of "true" would add a third to; and its edit test saves givenName, which a
+        // protectedUserAttributes naming a details field would put behind a password dialog.
+        assert.equal(body.cookieHttpOnly, false);
+        assert.equal(body.kbaEnabled, "false");
+        assert.deepEqual(body.protectedUserAttributes, []);
+        // Not a flag but the two structural fields: absent, `realm` throws in the reducer and takes
+        // every other field with it, and `cookieName` is silently the string "undefined".
+        assert.equal(body.realm, "/");
+        assert.equal(body.cookieName, "iPlanetDirectoryPro");
+        // A string on the wire, compared `=== "true"`. Serving a JSON `false` here would pin the
+        // feature permanently off in a way nothing notices until someone turns it on.
+        assert.equal(typeof body.selfRegistration, "string");
+        // And the trap in the other direction, which is the expensive one: `secureCookie` is a real
+        // boolean, and a re-record that turned it into the string "false" would be truthy, so the
+        // XUI would write its cookie with `;secure` and the browser would drop it over plain HTTP.
+        // Every login in the suite fails, and nothing in the failure says why (NOTES-auth.md §3).
+        assert.equal(body.secureCookie, false);
+    });
+
+    it("the cookie the server sets is the cookie the XUI looks for", () => {
+        // The two ends of NOTES-auth.md §3, which are only the same string as long as both read the
+        // recording: auth.mjs takes the name from `serverinfo/*` via bodyField, and this document is
+        // that same recorded field served to the browser.
+        const state = baseline();
+        assert.equal(state.auth.cookieName, state.siteConfiguration().body.cookieName);
     });
 });
 

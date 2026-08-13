@@ -197,6 +197,40 @@ export function loadCapture (captureDir, deployment) {
             }
             return resolveDeployment(body[key], deployment, file);
         },
+        /**
+         * A recorded response body with some of its fields replaced *before* resolution.
+         *
+         * For a document this server serves whole but does not agree with in every field. The
+         * substitution order is the load-bearing part: an overridden field never reaches
+         * `resolveDeployment`, so a marker this server deliberately has no value for does not have
+         * to be given one to get the rest of the document out. `serverinfo/*` is the case it exists
+         * for — its `domains` carries `{{COOKIE_DOMAIN}}`, and this server's answer there is `[]`
+         * (see state.mjs), which is not a value any substitution of that marker could produce.
+         *
+         * Every field left alone is resolved exactly as `body` would resolve it, so a re-record
+         * that introduces a placeholder anywhere else in the document still stops the server rather
+         * than sending a marker to the browser. Overriding a field the recording does not have is
+         * refused for the same reason `bodyField` refuses to read one: it would mean this server
+         * and the recording disagree about what the document *is*, which is the disagreement the
+         * whole module exists to surface.
+         *
+         * Not cached, unlike `body`: the caller decides the overrides, so there is no one answer to
+         * cache. The one caller builds its document once, at startup.
+         */
+        bodyWith (file, overrides) {
+            const recorded = envelope(file).response.body;
+            for (const key of Object.keys(overrides)) {
+                if (recorded === null || typeof recorded !== "object" || !(key in recorded)) {
+                    throw new Error(
+                        `The local API server overrides "${key}" in ${file}, which the recorded `
+                        + "response body does not have. An override replaces a field this server "
+                        + "disagrees with; a field that is not there is not a disagreement but a "
+                        + "recording that has changed shape.",
+                    );
+                }
+            }
+            return resolveDeployment({ ...recorded, ...overrides }, deployment, file);
+        },
         /** Every recorded call whose `_action` is one of `actions`, as capture file paths. */
         filesForActions (actions) {
             return index.calls

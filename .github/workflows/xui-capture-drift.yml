@@ -1,0 +1,240 @@
+# The contents of this file are subject to the terms of the Common Development and
+# Distribution License (the License). You may not use this file except in compliance with the
+# License.
+#
+# You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+# specific language governing permission and limitations under the License.
+#
+# When distributing Covered Software, include this CDDL Header Notice in each file and include
+# the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+# Header, with the fields enclosed by brackets [] replaced by your own identifying
+# information: "Portions copyright [year] [name of copyright owner]".
+#
+# Copyright 2026 3A Systems, LLC.
+#
+# Re-records e2e/local/capture from a fresh AM and fails on any difference from the committed
+# tree. The capture is where the local API server's response shapes come from (design.md D15), so
+# a difference means the shapes it serves no longer match the AM it was recorded against. The
+# instance is stood up by e2e/local/openam-up.sh -- the same script the sibling XUI end-to-end job
+# and a contributor both use; there is deliberately no second way to bring an instance up.
+#
+# WHAT A FAILURE MEANS, AND WHAT TO DO ABOUT IT
+#
+# A red run here is not a broken build. It is something under the capture answering differently from
+# the day it was recorded, and the diff is the finding rather than the noise -- read it, decide
+# whether the new shape is right, then land a *reviewed* re-record (the patch this job uploads
+# applies with `git apply`, or run the two commands in e2e/local/capture/README.md locally).
+#
+# Two causes, and the diff usually tells them apart at a glance:
+#   - AM changed. A response shape moved with a commit to this repo. This is what the job is for.
+#   - A base image changed. e2e/local/lib.sh pulls `openidentityplatform/opendj:latest` and the
+#     distribution Dockerfile is `FROM tomcat:11-jre25` -- both floating tags, both resolved afresh
+#     on a runner. The capture records Tomcat-generated response headers (`connection`,
+#     `keep-alive`, `transfer-encoding`, `x-frame-options`) and OpenDJ-derived body content, so a
+#     patch release upstream shows up here as a diff that has nothing to do with AM. Pinning those
+#     tags is the real fix and belongs with them, not in this file.
+#
+# What the fix is NOT: suppressing the job, loosening the comparison to a structural one with a
+# tolerance, or hand-editing a file under e2e/local/capture. A hand edit is lost the next time the
+# tool runs -- it regenerates index.json and json/ wholesale -- and a tolerance would blind the job
+# to exactly the class of change it exists to catch. Byte equality is assertable here because
+# e2e/local/NOTES-volatility.md measured it: 14 normalisation rules, applied at record time, make a
+# re-record against an unchanged instance byte-identical. If a value turns out to be volatile in a
+# way those rules miss, the fix is a new rule in e2e/local/capture-lib/normalise.mjs specified in
+# that document -- never a recorded file, and never a relaxed comparison.
+name: XUI capture drift
+
+on:
+  # On a schedule as well as on demand, which is the opposite of the sibling XUI end-to-end job's
+  # deliberate "no schedule yet" -- and the reason belongs to this job rather than contradicting
+  # that one. What this job watches is drift, and drift arrives with AM's changes rather than with
+  # ours: a change to AM's REST layer moves a recorded response without touching e2e/, so no path
+  # filter fires and nobody thinks to run this by hand. On demand only, drift is found late or
+  # never. design.md, Risks / Trade-offs: "the drift job runs on a schedule and not only on
+  # demand, since drift arrives with AM's changes rather than with ours".
+  workflow_dispatch:
+  schedule:
+    # Weekly, Mondays at 04:17 UTC -- the cadence codeql.yml already uses, offset from its 03:27 so
+    # the two long jobs do not start together, and off the hour because that is when the scheduler
+    # is most contended. Weekly rather than nightly because a run is not free: a full
+    # `mvn -DskipTests install` plus a container AM bringup, roughly 40 minutes of one hosted
+    # runner (build.yml's ubuntu legs took 22-30 min running `verify` with tests on run
+    # 31577615046, observed 2026-08-14, so the skipTests build below should sit at or under that;
+    # e2e/local/README.md puts a cold bringup at 3-8 min),
+    # against a capture that takes seconds and is the only part anyone is here for. A week
+    # of AM commits is still a small enough window to bisect by hand, and the moment a REST-layer
+    # change lands, this can be started from the Actions tab without waiting for Monday.
+    - cron: '17 4 * * 1'
+
+# Nothing here writes: it checks out, builds, records and compares. codeql.yml is the precedent in
+# this repo for saying so rather than inheriting whatever the repository default happens to be --
+# and `actions/checkout` persists its token into .git/config on a runner that then resolves a few
+# hundred third-party Maven plugins.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Not cancel-in-progress, unlike the sibling job: there is no stream of pushes to supersede here,
+  # and cancelling a 40-minute run because someone pressed "Run workflow" would throw away the only
+  # signal the schedule produces.
+  cancel-in-progress: false
+
+jobs:
+  capture-drift:
+    runs-on: 'ubuntu-latest'
+    # 90 rather than the sibling job's 120: the ~40-minute budget below leaves better than 2x
+    # headroom, and this job drops the Playwright suite and the browser download that the other one
+    # needed the extra half hour for.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Java 11
+        uses: actions/setup-java@v5
+        with:
+          java-version: '11'
+          distribution: 'zulu'
+
+      # Deliberately the same key namespace as xui-e2e.yml: both jobs run `install` over the same
+      # reactor, so the cache holds the same thing and there is nothing to gain by splitting it.
+      # The second restore-key is what actually warms a scheduled run -- cache written on a PR ref
+      # is not readable from the default branch, but build.yml's is.
+      - name: Cache Maven packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-e2e-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-e2e-
+            ${{ runner.os }}-m2-repository
+
+      # Pinned, unlike every other workflow here, which takes the runner image's default Node. This
+      # job's entire output is a byte-equality assertion, and the process writing those bytes is
+      # Node -- so the version is an input to the assertion and GitHub bumps the image default
+      # without notice. capture.mjs does not close this itself: its startup check tests for
+      # `Headers.getSetCookie` (Node 18.16+), which is a capability check, not the version floor its
+      # error message names. Costs seconds and needs no `npm install`.
+      - name: Node 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      # No `npm install` and no Playwright browser cache, and that is not an omission: this job
+      # runs no specs and starts no local server. local/capture.mjs is Node standard library only,
+      # by the same decision that keeps e2e/package.json's single devDependency untouched -- that
+      # dependency is the cache key for the browser download in xui-e2e.yml and there is nothing
+      # here to install.
+      #
+      # AM will not run on a bare hostname -- it has to be able to set a cookie domain. lib.sh
+      # checks for this entry and fails with the same instruction if it is missing.
+      - name: Prepare environment
+        shell: bash
+        run: echo "127.0.0.1 openam.example.org" | sudo tee -a /etc/hosts
+
+      # openam-up.sh builds its image from the war and the two tool zips in target/, so they have
+      # to exist first. This is the `mvn -DskipTests install` that e2e/local/README.md asks for.
+      - name: Build the artifacts the instance is assembled from
+        env:
+          MAVEN_OPTS: -Dhttps.protocols=TLSv1.2 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 -Dmaven.wagon.http.retryHandler.requestSentEnabled=true -Dmaven.wagon.http.retryHandler.count=10
+        run: mvn --batch-mode --errors -DskipTests install --file pom.xml
+
+      # A container this job just created has never been touched by a spec run, which is the
+      # condition capture/README.md requires and the one NOTES-volatility.md's precondition 4 names
+      # ("a fixed request order from a freshly configured instance"). That is also why there is no
+      # openam-reset.sh call here: reset exists to return a *used* instance to this state.
+      - name: Start the OpenAM instance
+        working-directory: e2e/local
+        run: ./openam-up.sh
+
+      # No flags: the defaults are the committed capture's own recording parameters -- `local/
+      # capture` as the output, e2e/common/openam-commons.mjs for the base URL and credentials
+      # (shared with the Playwright fixtures so the two cannot drift apart), and the `e2e-capture`
+      # realm whose name and base64url id appear literally inside the recorded payloads. Passing
+      # --realm here would re-record under a different name and diff against the committed tree on
+      # every payload that quotes it.
+      - name: Re-record the capture
+        working-directory: e2e
+        run: node local/capture.mjs
+
+      # The comparison is byte equality over the whole tree, via the index: `git add` then
+      # `git diff --cached`. Not `diff -r`, because the index also reports a file the tool stopped
+      # writing and one it started writing, with content, and because the result is a patch a
+      # reviewer can apply directly. --force so that no .gitignore rule can hide a newly recorded
+      # file from the comparison. Scoped to e2e/local/capture so nothing else the build left in the
+      # tree can turn into a false positive. README.md inside that directory is not generated and
+      # not touched by the tool, so it compares equal without being excluded.
+      #
+      # One case the index catches that a file-by-file comparison would not: capture-lib/tree.mjs
+      # leaves behind a top-level directory a previous run wrote and this one no longer produces.
+      # Those files are unmodified, so `git add` sees nothing in them -- but index.json necessarily
+      # changes, and that is what turns the run red.
+      #
+      # The patch is written out, not just printed: NOTES-volatility.md asks for a re-record's diff
+      # output to be kept rather than only its exit code. It costs nothing, it is what makes a red
+      # run readable at a glance, and it is what a reviewer applies to accept the new shapes.
+      - name: Diff the re-recorded capture against the committed one
+        shell: bash
+        run: |
+          git add --all --force -- e2e/local/capture
+          if git diff --cached --quiet -- e2e/local/capture; then
+            echo "No drift: the re-recorded capture is byte-identical to the committed one."
+            exit 0
+          fi
+          # Folded into the annotation body with %0A rather than printed as following lines: the
+          # annotation is what the scheduled-failure notification and the run summary show, and
+          # anything echoed after it is visible only to someone who already opened the log.
+          CAUSE="Either AM changed, or a floating base image did (opendj:latest, tomcat:11-jre25)."
+          ACTION="Read the diff, decide whether the new shape is right, land a reviewed re-record."
+          NOT="Do not hand-edit a file under e2e/local/capture, and do not loosen this comparison."
+          WHERE="Patch: capture-drift.patch in this run's failure-xui-capture-drift artifact."
+          echo "::error::The re-recorded capture differs from the committed one.%0A${CAUSE}%0A${ACTION}%0A${NOT}%0A${WHERE}"
+          git diff --cached --stat -- e2e/local/capture
+          git diff --cached -- e2e/local/capture | tee e2e/capture-drift.patch
+          exit 1
+
+      # Both containers run with --rm and the runner is discarded, so anything not pulled out here
+      # is gone. Tomcat's stdout and AM's debug files are where a server-side failure is actually
+      # legible -- see e2e/local/README.md, Troubleshooting. Container names are lib.sh's. Every
+      # command is best-effort: a container that never started is itself the finding, and must not
+      # mask the failure that got us here.
+      - name: Collect instance diagnostics
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          docker logs openam-idp > e2e/openam-idp.log 2>&1 || true
+          docker logs opendj-idp > e2e/opendj-idp.log 2>&1 || true
+          docker exec openam-idp bash -c '
+            for f in $(find /usr/openam -maxdepth 6 -type f -path "*/debug/*" 2>/dev/null); do
+              echo "===== $f ====="
+              cat "$f"
+            done' > e2e/openam-debug.log 2>&1 || true
+
+      # e2e/local/capture is the *re-recorded* tree when the diff step is what failed -- the patch
+      # says what moved, this says what it now looks like in full.
+      #
+      # When the recording step is what failed, read the step log before assuming which tree this
+      # is. capture.mjs replaces the output only once the whole capture is in memory, so a failure
+      # *during* recording leaves the committed tree untouched -- but it also raises after writing
+      # if it could not end a session it opened, and on that path the tree is re-recorded and no
+      # patch exists, because the diff step never ran.
+      - name: Upload failure artifacts
+        uses: actions/upload-artifact@v7
+        if: ${{ failure() }}
+        with:
+          name: failure-xui-capture-drift
+          retention-days: 5
+          path: |
+            e2e/capture-drift.patch
+            e2e/local/capture/**
+            e2e/openam-idp.log
+            e2e/opendj-idp.log
+            e2e/openam-debug.log
+
+      - name: Tear the instance down
+        if: ${{ always() }}
+        working-directory: e2e/local
+        run: ./openam-down.sh

@@ -1,0 +1,366 @@
+# The contents of this file are subject to the terms of the Common Development and
+# Distribution License (the License). You may not use this file except in compliance with the
+# License.
+#
+# You can obtain a copy of the License at legal/CDDLv1.0.txt. See the License for the
+# specific language governing permission and limitations under the License.
+#
+# When distributing Covered Software, include this CDDL Header Notice in each file and include
+# the License file at legal/CDDLv1.0.txt. If applicable, add the following below the CDDL
+# Header, with the fields enclosed by brackets [] replaced by your own identifying
+# information: "Portions copyright [year] [name of copyright owner]".
+#
+# Copyright 2026 3A Systems, LLC.
+#
+# The pull-request fast lane: the `@local-server` specs, run against e2e/local/server.mjs. It also
+# runs on push to the branches pull requests are opened from, which is a cache concern rather than a
+# coverage one -- see the push trigger below.
+#
+# WHAT THIS JOB DELIBERATELY DOES NOT DO
+#
+# No container, no Docker, no war, no configurator, no /etc/hosts entry, no openam-up.sh. The
+# sibling xui-e2e.yml does all of that because it runs against a real AM; dropping it is the entire
+# point here. design.md D13 puts the two backends side by side -- "seconds to start, no Docker, no
+# war" against "minutes" -- and a pull-request job that stands up a container has quietly become the
+# slow lane with extra steps. The only build this job runs is the UI module's own, and it skips even
+# that when the zip cache hits. To be honest about where the time goes: the *server* starts in about
+# a second, and the job around it is dominated by the UI build on a cache miss -- ~38 s against a
+# warm Maven repository, 355 s against a cold one (NOTES-xui-build.md §2, §3). Against a container
+# bringup of three to eight minutes plus a full reactor install, that is still the fast lane.
+#
+# WHAT A GREEN RUN HERE DOES AND DOES NOT MEAN
+#
+# It means the `@local-server` specs pass against the local API server. It is *not* acceptance.
+# specs/ui-local-backend/spec.md, "The local backend is not the acceptance oracle": "Acceptance of a
+# UI build change SHALL require the suite to be green against a deployed AM; a green run against the
+# local backend alone SHALL NOT satisfy it." Tasks 1.13 and 10.1 stay on the deployed instance, and
+# xui-e2e.yml is the job that runs there.
+#
+# So this job says out loud what it did not run. `--grep @local-server` drops 9 of the 14 spec files
+# at collection time, and Playwright's own summary for that run -- a green "23 passed" -- is the same
+# shape as the summary for the full one (D16). The backend-tag reporter appended below prints the
+# coverage block that qualifies it, and the "What this run did not cover" step lifts that block onto
+# the run summary page, where someone reading a green tick actually sees it.
+name: XUI local-server lane
+
+on:
+  workflow_dispatch:
+  # On push as well as on pull request, and the reason is the cache rather than the coverage. A cache
+  # entry written by a pull_request run is scoped to that pull request's ref, so with no push trigger
+  # the first run of every pull request is a guaranteed miss that pays the full UI build. A run on
+  # the branch the pull request is opened from -- or on master, which every branch can read from --
+  # writes an entry those runs can restore, which is what makes the zip cache below worth having.
+  #
+  # The branch list is build.yml's, minus sustaining/15.2.x: this job's specs and local server do not
+  # exist on that branch, so a run there would only fail on a missing e2e/ tree.
+  #
+  # The two path lists are duplicated rather than shared through a YAML anchor: GitHub Actions does
+  # not support anchors or aliases in workflow files. Keep them in step.
+  push:
+    branches: [ 'master', 'features/**', 'issues/**' ]
+    paths:
+      - 'openam-ui/**'
+      - 'e2e/**'
+      # No openam-distribution/.../Dockerfile here, unlike xui-e2e.yml: that path is in its filter
+      # because openam-up.sh rewrites the Dockerfile and can break that job without touching the UI.
+      # Nothing in this job reads it.
+      - '.github/workflows/xui-local-server.yml'
+  pull_request:
+    paths:
+      - 'openam-ui/**'
+      - 'e2e/**'
+      - '.github/workflows/xui-local-server.yml'
+
+# Nothing here writes: it checks out, builds the UI module, serves it from a Node process and runs a
+# browser against it. Same reasoning as xui-capture-drift.yml -- actions/checkout persists its token
+# into .git/config on a runner that then resolves a few hundred third-party Maven plugins.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Cancel superseded runs, as xui-e2e.yml does: this is a pull-request job, so a push replaces the
+  # commit under it and the older run's verdict is about code nobody is looking at any more.
+  cancel-in-progress: true
+
+jobs:
+  local-server-lane:
+    # The name is part of the report. A checks list showing a green "XUI local-server lane" and
+    # nothing else invites exactly the reading D16 exists to prevent -- design.md: "a fast green run
+    # reads as sign-off". This one cannot be read that way without reading what it excludes.
+    #
+    # "Not the acceptance gate" leads because the checks sidebar truncates: the clause most worth
+    # keeping is the one that survives an ellipsis, not the one that reads best in full.
+    name: 'Not the acceptance gate -- @local-server specs only; the @deployed-am specs do not run here'
+    runs-on: 'ubuntu-latest'
+    # 30 rather than the sibling jobs' 120 and 90. The worst case here is a cold Maven repository
+    # (355 s measured, e2e/local/NOTES-xui-build.md §3) plus the browser download plus the lane, i.e.
+    # around ten minutes; on a warm cache it is a couple. Anything approaching 30 means something is
+    # wedged, and a pull-request job is the wrong place to wait two hours to find that out.
+    timeout-minutes: 30
+    steps:
+      # No fetch-depth: 0 and no submodules, unlike the sibling jobs. Nothing here reads git history,
+      # and the repository has no .gitmodules -- `submodules: recursive` is a no-op there.
+      - uses: actions/checkout@v6
+
+      # The built XUI, keyed on everything that changes it. A hit skips Java, the Maven cache and the
+      # build entirely -- see the `if:` on the three steps below.
+      #
+      # No restore-keys, deliberately, unlike every other cache in this repository. A prefix match
+      # here would restore *some* build of the XUI and the lane would then pass against a UI that is
+      # not the one in this pull request -- a green run asserting nothing, which is worse than the 40
+      # seconds it saves. Either the inputs hash to the same thing and the zip is exactly right, or
+      # it gets rebuilt.
+      #
+      # openam-ui/pom.xml is in the key because it pins every vendor library version: that file, not
+      # openam-ui-ria's, is what decides which jquery, backbone and react end up in the zip.
+      # openam-ui-ria/package.json is in it because npm lock files do not record `scripts`, and
+      # `build:production` -- the command that produces this zip -- lives there: without it, a change
+      # to the build script itself would leave every hashed input identical and hit the cache.
+      #
+      # What a pull request can actually restore is written by the push trigger above: its own runs
+      # scope their entries to the pull request's ref, so without those pushes the first run of every
+      # pull request would build. With them, a pull request that changes nothing under the hashed
+      # inputs -- an e2e-only change, which is most of them -- skips Maven entirely.
+      - name: Cache the built XUI
+        id: xui-zip
+        uses: actions/cache@v5
+        with:
+          path: openam-ui/openam-ui-ria/target/openam-ui-ria-*-www.zip
+          key: ${{ runner.os }}-xui-www-${{ hashFiles('openam-ui/openam-ui-ria/src/**', 'openam-ui/openam-ui-ria/package.json', 'openam-ui/openam-ui-ria/package-lock.json', 'openam-ui/openam-ui-ria/Gruntfile.js', 'openam-ui/openam-ui-ria/.eslintrc.js', 'openam-ui/openam-ui-ria/pom.xml', 'openam-ui/pom.xml') }}
+
+      - name: Java 11
+        if: ${{ steps.xui-zip.outputs.cache-hit != 'true' }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: '11'
+          distribution: 'zulu'
+
+      # Its own key namespace rather than the `m2-e2e` the other two jobs share: they run `install`
+      # over the whole reactor, so their cache holds every OpenAM module's artifacts, where this job
+      # needs three poms' worth of dependencies (105 MB measured). Once this job has written a cache
+      # of its own, restoring the reactor-sized one instead would cost more than it saves.
+      #
+      # The two fallbacks are for the case where it has not, which the ordering reflects. Nothing is
+      # under this job's own prefix until it has run once, and a cold resolve is the 355 s path
+      # (NOTES-xui-build.md §3), so a sibling's larger cache is still much the better start. The
+      # `m2-repository` one last is the only fallback written from the default branch -- build.yml
+      # runs on push to master -- so it is what actually warms a first run on a new pull request;
+      # xui-e2e.yml carries it for the same reason.
+      - name: Cache Maven packages
+        if: ${{ steps.xui-zip.outputs.cache-hit != 'true' }}
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-xui-${{ hashFiles('pom.xml', 'openam-ui/**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-xui-
+            ${{ runner.os }}-m2-e2e-
+            ${{ runner.os }}-m2-repository
+
+      # `-am` is load-bearing, not an optimisation. The 58 `commons.ui.libs` artifacts the XUI
+      # depends on -- jquery, backbone, react, requirejs, lodash, handlebars and the rest -- are
+      # published nowhere: they 404 on Maven Central. They exist in a local repository only because
+      # maven-external-dependency-plugin downloaded them from CDNs and installed them, and that
+      # plugin is declared `<inherited>false</inherited>` on openam-ui, so it does not run for
+      # openam-ui-ria alone. Measured on an empty repository (NOTES-xui-build.md §3): without `-am`,
+      # BUILD FAILURE at 110 s on ~58 unresolvable artifacts; with `-am`, BUILD SUCCESS at 355.81 s.
+      # On a warm repository the whole thing is ~38 s and `-am` costs about a second, since
+      # openam-ui-ria has no reactor dependencies and `-am` only adds two pom-packaging modules.
+      #
+      # No `clean`, and not by accident: `clean-external` is bound to the clean phase on openam-ui
+      # and deletes those same CDN-provisioned artifacts *from the local repository*, which would
+      # cold-bust the cache restored above. Nothing needs cleaning on a fresh runner anyway.
+      #
+      # `-DskipTests` is honoured by frontend-maven-plugin -- it skips the karma execution, which
+      # would otherwise want a browser. The lane below is what tests this UI.
+      #
+      # Note that this step rewrites openam-ui-ria/package-lock.json: the pom's npm-install execution
+      # runs `npm install`, not `npm ci`. Harmless on a runner that is thrown away; do not add a
+      # clean-tree assertion after it without fixing that first.
+      - name: Build the XUI
+        if: ${{ steps.xui-zip.outputs.cache-hit != 'true' }}
+        env:
+          MAVEN_OPTS: -Dhttps.protocols=TLSv1.2 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 -Dmaven.wagon.http.retryHandler.requestSentEnabled=true -Dmaven.wagon.http.retryHandler.count=10
+        run: mvn --batch-mode --errors -pl openam-ui/openam-ui-ria -am -DskipTests package --file pom.xml
+
+      # Keyed on the manifest, as in xui-e2e.yml: a Playwright version bump re-downloads the browser
+      # once and then caches it, rather than re-downloading on every run behind a stale exact hit.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/package.json') }}
+          restore-keys: ${{ runner.os }}-playwright-
+
+      # `npm install`, as xui-e2e.yml does, and `npm ci` is not an option here: e2e/.gitignore
+      # deliberately does not track package-lock.json ("two runs a month apart may resolve different
+      # 1.x versions of Playwright, and that is accepted"), and `npm ci` refuses to run without one.
+      # Reproduced on a clean `git archive HEAD e2e` checkout: `npm ci` exits 1 with EUSAGE.
+      - name: Install the suite
+        working-directory: e2e
+        run: |
+          npm install
+          npm run setup -- --with-deps
+
+      # `node local/server.mjs` rather than `npm run local-server`, which is the same command with an
+      # npm process in front of it. That wrapper is the problem: the pid recorded here has to be the
+      # one the teardown signals, and signalling npm does not reliably reach the node child -- the
+      # server would survive its own stop step with the port still held.
+      #
+      # No --xui argument: with nothing named the server serves
+      # openam-ui/openam-ui-ria/target/openam-ui-ria-<version>-www.zip, resolving the version from
+      # the reactor pom. That is the artifact the step above builds and the one xui-deploy.sh
+      # deploys to a container, so this lane and the deployed-AM lane run the same bytes.
+      #
+      # stdout goes to a file, not to the step: a background process holding the step's stdout open
+      # keeps the step from ever finishing.
+      #
+      # Readiness is polled over HTTP rather than by grepping the banner. The socket is bound after
+      # the capture-derived baseline state is built, so a port that answers means both surfaces are
+      # up -- and a request for the XUI's own index.html is the one thing every spec here starts by
+      # needing. The loop also gives up the moment the process dies, so a server that failed to start
+      # reports its own error instead of 60 seconds of silence.
+      - name: Start the local API server
+        working-directory: e2e
+        shell: bash
+        run: |
+          node local/server.mjs > "$RUNNER_TEMP/local-server.log" 2>&1 &
+          pid=$!
+          echo "$pid" > "$RUNNER_TEMP/local-server.pid"
+
+          # --max-time on every probe, not just the bound on the loop: a server that takes the port
+          # but never answers would otherwise hang a single curl indefinitely, and the 60-probe bound
+          # would stop bounding anything -- the step would run until timeout-minutes killed it.
+          ready=""
+          started=$SECONDS
+          for _ in $(seq 1 60); do
+            if curl -fs --max-time 5 -o /dev/null http://localhost:8090/openam/XUI/index.html; then
+              ready=yes
+              break
+            fi
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+
+          if [ -z "$ready" ]; then
+            echo "::error::the local API server did not become ready on http://localhost:8090/openam/"
+            cat "$RUNNER_TEMP/local-server.log"
+            exit 1
+          fi
+          echo "local API server ready after $(( SECONDS - started ))s -- http://localhost:8090/openam/"
+
+      # `--grep @local-server` is the whole selection: it is the tag task 2.14 put on every spec, and
+      # what a spec declares is what runs (D16). No -x -- a pull-request author wants every failure
+      # in one run, not the first one and a guess about the rest.
+      #
+      # The reporter list needs saying. A CLI `--reporter` REPLACES the config's list rather than
+      # adding to it (verified on Playwright 1.60), so a bare `--reporter=line` would silently drop
+      # common/backend-tag-reporter.mjs -- the one component that reports what this run did not
+      # execute, which is the requirement this job exists to satisfy. Appending it keeps `line`'s
+      # terse output and keeps the D16 coverage block. `html` is deliberately left off: nothing here
+      # reads playwright-report/, and not writing it is cheaper than writing it and ignoring it.
+      #
+      # `--trace=off` overrides the config's retain-on-failure. A trace is worth writing when someone
+      # will open it; nothing downloads test-results/ from this job, and the lane is cheap enough to
+      # re-run locally against the same server. The config's `screenshot: only-on-failure` is left
+      # alone and still writes into test-results/ on a failure -- it costs a fraction of a trace, and
+      # nothing here collects that directory either way.
+      - name: Run the '@local-server' lane
+        working-directory: e2e
+        shell: bash
+        run: |
+          # Through tee rather than redirected and tailed afterwards. The file is what the summary
+          # step below reads, and it is still written either way -- but a redirect shows nothing
+          # until the run ends, so a lane that hangs and is killed by timeout-minutes above takes its
+          # whole log with it, at the one moment the log is the only evidence there is.
+          #
+          # `status` is captured explicitly because the runner's shell is `bash -eo pipefail`: the
+          # pipeline already reports the lane's failure rather than tee's success, and this keeps
+          # that status across the `||` so the step exits on it.
+          status=0
+          OPENAM_BASE_URL=http://localhost:8090/openam npx playwright test xui/ --grep @local-server --reporter=line,./common/backend-tag-reporter.mjs --trace=off 2>&1 | tee "$RUNNER_TEMP/lane.log" || status=$?
+          exit "$status"
+
+      # The coverage block, lifted onto the run summary page. The same text is already in the step
+      # log above, and that is not enough: the thing being guarded against is someone reading a green
+      # tick and stopping, and a green tick links to the summary, not to the tail of a step.
+      #
+      # always(), because a red run has to declare its scope too -- "3 failed" is as easy to
+      # misread as "23 passed" if nothing says the other 9 spec files were never collected.
+      #
+      # Never fails the job: the reporter is additive by design and so is this. If the block is
+      # missing, that is a note in the summary, not a verdict on the pull request.
+      - name: What this run did not cover
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/lane.log"
+          {
+            echo '## XUI local-server lane'
+            echo
+            # The backticks are markdown for the summary page, not command substitution, so the
+            # single quotes are the point rather than an oversight.
+            # shellcheck disable=SC2016
+            echo 'The `@local-server` specs only. This is **not** the acceptance gate --'
+            echo 'that stays on the deployed AM (xui-e2e.yml, tasks 1.13 and 10.1).'
+            echo
+            if [ -f "$log" ] && grep -q 'Backend coverage (D16)' "$log"; then
+              echo '```'
+              # To the end of the file rather than to the block's closing rule. The reporter is last
+              # in the list above, so its block is the last thing written -- and matching that rule
+              # means matching a run of U+2500, which GNU sed only gets right in a UTF-8 locale
+              # (verified: under LC_ALL=C the range never closes). This needs no locale to be right.
+              sed -n '/Backend coverage (D16)/,$p' "$log"
+              echo '```'
+            else
+              echo 'No backend coverage block in this run -- the lane did not get as far as'
+              echo 'reporting. See the step log above.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Every REST call the server answered, with its query string, and every static hit that was not
+      # a plain 200. With no trace and no report collected, this is where a failure is legible: it
+      # says whether the UI asked for something the server answered 501, or asked for nothing at all.
+      #
+      # Guarded, because this step runs on every failure and most of the ways this job can fail
+      # happen before the server is started -- and an unguarded `tail` on a missing file exits 1,
+      # turning a second step red with noise about a server that never ran. xui-e2e.yml's diagnostic
+      # step guards every command for the same reason: what got us here must not be masked.
+      - name: The local API server's log
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/local-server.log" ]; then
+            tail -n 200 "$RUNNER_TEMP/local-server.log"
+          else
+            echo "the local API server was never started in this run"
+          fi
+
+      # The runner is discarded after this, so stopping the server buys nothing by itself. What it
+      # buys is the assertion below: the server unpacks the www zip into a temp directory and removes
+      # it on the way out, and that shutdown path only runs if the signal is delivered and handled.
+      # A port still held ten seconds after SIGTERM means it was not, which is a real defect in a
+      # process contributors run all day -- so it is reported. As a warning, not a failure: the
+      # verdict this job exists to give is about the specs, and a teardown fault must not turn a
+      # legitimately red or green lane into something else.
+      - name: Stop the local API server
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          pid="$(cat "$RUNNER_TEMP/local-server.pid" 2>/dev/null || true)"
+          if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"
+            for _ in $(seq 1 10); do
+              kill -0 "$pid" 2>/dev/null || break
+              sleep 1
+            done
+          fi
+          # -s without -S: the expected outcome here is a connection failure, and letting curl print
+          # "Failed to connect to localhost port 8090" immediately above "port 8090 is free" makes
+          # the success path read like the failure one. Only the exit status is used.
+          if curl -fs -o /dev/null --max-time 5 http://localhost:8090/openam/XUI/index.html; then
+            echo "::warning::port 8090 is still answering after the local API server was stopped; its unpacked XUI staging directory has probably leaked"
+          else
+            echo "local API server stopped; port 8090 is free"
+          fi

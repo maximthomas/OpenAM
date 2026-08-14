@@ -166,7 +166,7 @@ directory, which is removed when the server stops; nothing is cached between run
 | | |
 |---|---|
 | XUI | <http://127.0.0.1:8090/openam/XUI/> |
-| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads, authentication, sessions, the bootstrap's configuration and realm administration; 501 for the rest, until tasks 2.11–2.13 |
+| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads, authentication, sessions, the bootstrap's configuration, realm and service administration, and the user profile; 501 for the rest, until task 2.13 |
 
 Ready in about a second, from a checkout, with no war build and no container runtime — which is the
 entire point of it, against the 3–8 minutes and the Docker daemon the instance above needs. It is
@@ -226,16 +226,26 @@ And it answers two calls that are not realm administration but that no console s
 the fixtures' one-call header authentication — `X-OpenAM-Username` / `X-OpenAM-Password` on
 `/json/authenticate`, which is how every Playwright fixture provisions — and `GET
 /json/realms/root/users/<admin>`, the profile read whose `roles` are what get a logged-in browser off
-`#login`. The second is a slice of task 2.12's resource, borrowed deliberately: 2.12 still owns the
-profile update, the `demo` user and the `{{USER_SUFFIX}}` placeholder its payload carries.
+`#login`.
+
+That profile is now a resource in its own right — the administrator's and the end user's, read and
+updated, so an edit saved through the console is what the next read answers with. Two things about it
+are worth knowing before reading the code. **`roles` is virtual**: it is on the document when the
+session reading it is the account being read, and the key is absent when it is not, which is exactly
+how the capture recorded the two of them and what decides whether a browser lands in the console or
+on `#profile`. And **a save merges rather than replaces**, because the console PUTs only the five
+attributes its form owns. Password change, KBA and self-registration are not served and are not
+scheduled to be. The update does carry rules neither the request list nor the capture settled — what
+an empty array means, what an unrecognised attribute may do — and each is written down at the point
+that enforces it, in `state.mjs` and `rest.mjs`.
 
 Everything else answers a labelled 501, deliberately: a stub that let the XUI past something it had
-not actually done would make the real thing in tasks 2.12–2.13 unverifiable.
+not actually done would make the real thing in task 2.13 unverifiable.
 
 **A browser bootstraps, logs in, lands in the admin console and drives realm and service
-administration.** `xui/xui-realms.spec.mjs` and `xui/xui-services.spec.mjs` are the `@local-server`
-specs that run against this backend end to end. A spec that reaches beyond them — the end-user
-profile — still needs the deployed instance above.
+administration — and an end user logs in and edits their own profile.**
+`xui/xui-realms.spec.mjs`, `xui/xui-services.spec.mjs` and `xui/xui-profile.spec.mjs` are the
+`@local-server` specs that run against this backend end to end.
 
 **This backend is not the acceptance oracle.** A green run against it does not satisfy sign-off; that
 needs the suite green against a deployed AM.

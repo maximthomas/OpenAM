@@ -28,9 +28,12 @@
  * administrator's profile read, without which no browser reaches an admin screen to drive. Task
  * 2.11 adds service administration: the service create, update and delete, and the
  * `_action=getCreatableTypes` the create form's type selector is built from, beside the schema and
- * template documents state.mjs already served. Everything else is still a labelled 501: the rest of
- * the profile (2.12), reset (2.13), and — as a scope decision rather than a deferral — the
- * sub-schema routes below `…/services/{type}/{sub}`, which nothing in REQUESTS.md requests.
+ * template documents state.mjs already served. Task 2.12 finishes the profile: the end user's
+ * record, the save, and the session requirement that turns 2.10's borrowed administrator read into
+ * a read of the *caller's* directory rather than of anyone's. Everything else is still a labelled
+ * 501: reset (2.13), and — as scope decisions rather than deferrals — password change, KBA and
+ * self-registration on the profile, and the sub-schema routes below `…/services/{type}/{sub}`,
+ * none of which anything in REQUESTS.md requests.
  *
  * **501 rather than something the XUI can proceed past, deliberately.** The shortcut task 2.6
  * refused was to answer the two bootstrap calls with something plausible and get the login form to
@@ -225,9 +228,10 @@ function realmScopedRoute (segments, realmPath, query) {
             : { kind: "other", realmPath };
     }
     // `?_action=idFromSession`, and the member path below it -- `users/<name>`, the profile read
-    // that decides where the XUI routes a logged-in user. The resource is task 2.12's; task 2.10
-    // routes it because the administrator's own profile is what lets a browser reach the console at
-    // all, and answers only the profiles the store holds. See `state.user`.
+    // that decides where the XUI routes a logged-in user, and the PUT that saves an edit to it.
+    // Both are session-bearing, so `serveUser` answers them rather than `read`/`write`. Anything
+    // deeper, and any `_action` on the member (`changePassword` is the one the console can send),
+    // is out of scope by the same rule as everywhere else here: REQUESTS.md does not list it.
     if (segments[0] === "users") {
         if (segments.length === 1) {
             return { kind: "users-collection", realmPath };
@@ -281,8 +285,10 @@ function read (route, query, state) {
             : state.realmServicesListing(route.realmPath);
     case "realm-service":
         return state.realmService(route.realmPath, route.serviceId);
-    case "users-member":
-        return state.user(route.realmPath, route.userId);
+    // `users-member` is deliberately absent, and it was here until task 2.12. A profile read
+    // depends on which session asked -- for whether it is answered at all, and for whether the
+    // answer carries `roles` -- and this function is given neither the request nor the URL the
+    // token could be read from. `serveUser` has both, so both halves of the resource live there.
     default:
         return undefined;
     }
@@ -360,6 +366,9 @@ export async function serveRest (req, res, { url, apiPath, state }) {
     if (route.kind === "users-collection" && req.method === "POST"
         && query._action === "idFromSession") {
         return serveIdFromSession(req, res, { url, state });
+    }
+    if (route.kind === "users-member" && ["GET", "HEAD", "PUT"].includes(req.method)) {
+        return serveUser(req, res, { url, route, state });
     }
     if (route.kind === "sessions" && req.method === "POST") {
         if (query._action === "getSessionInfo") {
@@ -470,6 +479,61 @@ function serveIdFromSession (req, res, { url, state }) {
         ? state.auth.anonymous()
         : state.auth.idFromSession(session);
     return sendJson(req, res, answer.status, answer.body);
+}
+
+/**
+ * `GET` and `PUT /json/realms/root/users/{id}` — a profile read, and the save (task 2.12).
+ *
+ * **A session is required, and that is a tightening of what task 2.10 left here.** The borrowed
+ * administrator read answered whoever asked, because the only thing it had to do was let a browser
+ * that had just logged in reach the console — and every caller of it had a session anyway. This
+ * task gives the route a second account and a write, at which point "answers whoever asks" is a
+ * stand-in handing out a directory to an anonymous caller. REQUESTS.md marks both rows session-
+ * required, which is the half of it this needs — its admin column reads "admin for admin screens",
+ * a note about which token the recording happened to use rather than about who AM would refuse. The
+ * recording has no unauthenticated call at either row to take a body from, so the answer is the same
+ * `Access Denied` 401 the two other session-bearing routes give an anonymous caller. One definition
+ * of "no session here" for the whole server, which is what lets the specs prove a logout by any of
+ * them.
+ *
+ * The session is resolved before anything knows whether this server holds the profile, so an
+ * anonymous request to a realm-scoped path or an unheld account answers that 401 rather than the
+ * labelled 501. The order is deliberate and not free: the 501 is a scope label and reads better than
+ * a denial, but answering it first would tell an anonymous caller which accounts exist.
+ *
+ * Beyond that this route does **not** invent an authorisation rule. Any live session may read and
+ * write any profile the store holds, because that is what is under test in both directions:
+ * xui-profile.spec.mjs reads and restores `demo`'s record with the *administrator's* token on every
+ * test, while the browser reads and saves the same record with `demo`'s own cookie. Which session
+ * it is still matters — it decides whether the answer carries `roles` — so the resolved session is
+ * passed through rather than reduced to a yes.
+ *
+ * Only `GET`, `HEAD` and `PUT`. A `POST` with an `_action` — `changePassword` is the one the
+ * console can produce — falls through to the labelled 501, which is where password change, KBA and
+ * self-registration are meant to stay: D13's Non-Goal is a stand-in, not a second AM, and no spec
+ * in scope drives any of them.
+ */
+async function serveUser (req, res, { url, route, state }) {
+    const session = resolveSession(req, url, state);
+    if (session === undefined) {
+        const denied = state.auth.anonymous();
+        return sendJson(req, res, denied.status, denied.body);
+    }
+
+    let answer;
+    if (req.method === "PUT") {
+        const parsed = await readDocument(req);
+        if (parsed.error) {
+            return sendJson(req, res, parsed.error.status, parsed.error.body);
+        }
+        answer = state.updateUser(route.realmPath, route.userId, parsed.document, session);
+    } else {
+        answer = state.user(route.realmPath, route.userId, session);
+    }
+
+    return answer === undefined
+        ? sendNotImplemented(req, res, url)
+        : sendJson(req, res, answer.status, answer.body);
 }
 
 /**
@@ -654,8 +718,8 @@ function sendNotImplemented (req, res, url) {
     const payload = Buffer.from(`${JSON.stringify({
         code: 501,
         message: `The local API server does not implement ${req.method} ${url.pathname} yet. `
-            + "The rest of its REST surface -- the rest of the profile, and reset -- arrives in "
-            + "tasks 2.12-2.13 of modernize-openam-ui-build; until then, run the suite against a "
+            + "The rest of its REST surface -- reset -- arrives in task 2.13 of "
+            + "modernize-openam-ui-build; until then, run the suite against a "
             + "deployed AM (e2e/local/openam-up.sh). A few requests *inside* the implemented "
             + "surface answer this deliberately, because the capture has no recording of them or "
             + "because nothing in scope asks for them -- the sub-schema routes are the standing "

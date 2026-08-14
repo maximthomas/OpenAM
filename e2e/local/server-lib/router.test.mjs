@@ -39,6 +39,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
+import { ADMIN_PASS, ADMIN_USER, PASSWORD, USERNAME } from "../../common/openam-commons.mjs";
 import { createRequestHandler } from "./router.mjs";
 import { buildBaselineState } from "./state.mjs";
 
@@ -92,6 +93,22 @@ async function get (path, init = {}) {
         allow: response.headers.get("allow"),
         body: await response.text(),
     };
+}
+
+/**
+ * A live session token, taken through the door the fixtures use.
+ *
+ * The one-call header authentication `common/openam-commons.mjs` performs, rather than a reach into
+ * the store: a test that needs a session should get one the way something under test gets one, so
+ * that "this route requires a session" and "this is what a session looks like" cannot drift apart.
+ */
+async function sessionToken (username, password) {
+    const response = await get("/openam/json/authenticate", {
+        method: "POST",
+        headers: { "X-OpenAM-Username": username, "X-OpenAM-Password": password },
+    });
+    assert.equal(response.status, 200);
+    return JSON.parse(response.body).tokenId;
 }
 
 before(async () => {
@@ -428,26 +445,123 @@ describe("the REST surface", () => {
     });
 
     it("answers the profile read that ends a login, because roles are what leave #login", async () => {
-        // Task 2.12's resource, borrowed by 2.10 (state.user). It is asserted here rather than left
-        // to the browser specs because nothing else in `npm run test:server` covers it: break the
-        // keying or the route shape and every unit test stays green while every console spec fails
-        // in `waitForURL`, which is a long way from the cause. `RESTLoginHelper.getLoggedUser`
-        // fetches this last, and RealmsRoutes gates every admin route on the roles it carries.
-        const response = await get("/openam/json/realms/root/users/amadmin");
+        // Asserted here rather than left to the browser specs because nothing else in
+        // `npm run test:server` covers the route: break the keying or the route shape and every
+        // unit test stays green while every console spec fails in `waitForURL`, which is a long way
+        // from the cause. `RESTLoginHelper.getLoggedUser` fetches this last, and RealmsRoutes gates
+        // every admin route on the roles it carries -- which the administrator gets here because
+        // this is a read of their own record. See `profileFor`.
+        const response = await get("/openam/json/realms/root/users/amadmin", {
+            headers: { iPlanetDirectoryPro: await sessionToken(ADMIN_USER, ADMIN_PASS) },
+        });
         assert.equal(response.status, 200);
         assert.equal(response.type, "application/json;charset=UTF-8");
         assert.ok(JSON.parse(response.body).roles.includes("ui-realm-admin"));
     });
 
-    it("holds the borrowed profile read to the one document and realm it was borrowed for", async () => {
-        // Both halves are 2.10 scope discipline rather than AM's behaviour, and both are 2.12's to
-        // widen: `demo` is a profile this server has not implemented, not one a directory is
-        // missing, and 404 is the answer `RESTLoginHelper` clears the session cookie for.
-        const other = await get("/openam/json/realms/root/users/demo");
-        assert.equal(other.status, 501);
+    it("does not answer a profile to a request carrying no session", async () => {
+        // Task 2.12's tightening of the read 2.10 borrowed, which answered whoever asked because
+        // every caller it had was logged in already. `Access Denied` rather than a 404 or an empty
+        // document: it is the one answer this server gives an anonymous caller on every
+        // session-bearing route, and the specs prove a logout by asking one of them.
+        const read = await get(`/openam/json/realms/root/users/${USERNAME}`);
+        assert.equal(read.status, 401);
+        assert.equal(JSON.parse(read.body).message, "Access Denied");
 
-        const scoped = await get("/openam/json/realms/root/realms/alpha/users/amadmin");
+        const written = await get(`/openam/json/realms/root/users/${USERNAME}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ givenName: ["Nobody"] }),
+        });
+        assert.equal(written.status, 401);
+    });
+
+    it("carries a profile save from the wire into the state and back out of a read", async () => {
+        // Task 2.12 over HTTP, and the realm write's analogue: what the store does with a profile
+        // is state.test.mjs's, and this is that the PUT body arrives parsed and that the read after
+        // it answers with what was saved. Restored at the end, because every test in this file
+        // shares one state.
+        const token = await sessionToken(USERNAME, PASSWORD);
+        const headers = { "Content-Type": "application/json", iPlanetDirectoryPro: token };
+
+        const saved = await get(`/openam/json/realms/root/users/${USERNAME}`, {
+            method: "PUT", headers, body: JSON.stringify({ givenName: "Edited" }),
+        });
+        assert.equal(saved.status, 200);
+        // A user saving their own profile gets their own roles back, which is what Backbone feeds
+        // through `UserModel.parse` to rebuild `uiroles` from.
+        assert.deepEqual(JSON.parse(saved.body).roles, ["ui-self-service-user"]);
+
+        const read = await get(`/openam/json/realms/root/users/${USERNAME}`,
+            { headers: { iPlanetDirectoryPro: token } });
+        assert.equal(read.status, 200);
+        // A scalar, because a value is stored as it arrives and the console sends scalars. AM would
+        // answer `["Edited"]`; see `updateUser` for why that divergence is left standing.
+        assert.equal(JSON.parse(read.body).givenName, "Edited");
+
+        const restored = await get(`/openam/json/realms/root/users/${USERNAME}`, {
+            method: "PUT", headers, body: JSON.stringify({ givenName: ["Demo"] }),
+        });
+        assert.equal(restored.status, 200);
+        assert.deepEqual(JSON.parse(restored.body).givenName, ["Demo"]);
+    });
+
+    it("answers a profile HEAD as the read, with the body elided", async () => {
+        // The route takes GET, HEAD and PUT together, so a HEAD that fell through to the fallback
+        // would answer the labelled 501 -- "this resource is not implemented" about one that is.
+        // `sendJson` drops the body itself; this is that HEAD reaches the same handler.
+        const headers = { iPlanetDirectoryPro: await sessionToken(ADMIN_USER, ADMIN_PASS) };
+        const read = await get(`/openam/json/realms/root/users/${USERNAME}`, { headers });
+        const head = await get(`/openam/json/realms/root/users/${USERNAME}`,
+            { method: "HEAD", headers });
+
+        assert.equal(head.status, 200);
+        assert.equal(head.body, "");
+        assert.equal(head.length, read.length);
+    });
+
+    it("refuses a profile save whose body is not a JSON object of attributes", async () => {
+        const headers = { "Content-Type": "application/json",
+            iPlanetDirectoryPro: await sessionToken(USERNAME, PASSWORD) };
+
+        const array = await get(`/openam/json/realms/root/users/${USERNAME}`,
+            { method: "PUT", headers, body: JSON.stringify(["givenName"]) });
+        assert.equal(array.status, 400);
+
+        // A bodyless PUT is the same answer by the same rule: `readDocument` reports no body as
+        // `undefined`, which has no attributes to merge either. `updateRealm` answers that one
+        // 200-unchanged; the divergence is noted in `updateUser` rather than papered over here.
+        const empty = await get(`/openam/json/realms/root/users/${USERNAME}`,
+            { method: "PUT", headers });
+        assert.equal(empty.status, 400);
+    });
+
+    it("holds the profile routes to the shapes the request list records", async () => {
+        const token = await sessionToken(ADMIN_USER, ADMIN_PASS);
+
+        // Neither a realm-scoped profile nor an account outside this server's two-entry directory
+        // is in REQUESTS.md, and both stay the labelled 501 rather than becoming a 404 this server
+        // invented -- `RESTLoginHelper` reads a 404 here as "the session names a user who does not
+        // exist" and clears the session cookie for it. See `state.user`.
+        const scoped = await get("/openam/json/realms/root/realms/alpha/users/amadmin",
+            { headers: { iPlanetDirectoryPro: token } });
         assert.equal(scoped.status, 501);
+
+        const stranger = await get("/openam/json/realms/root/users/nobody",
+            { headers: { iPlanetDirectoryPro: token } });
+        assert.equal(stranger.status, 501);
+
+        // Password change is the console's own action on this member, and is out of scope by the
+        // rule everything else here follows: REQUESTS.md does not record it. D13's Non-Goal.
+        const password = await get(
+            `/openam/json/realms/root/users/${USERNAME}?_action=changePassword`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", iPlanetDirectoryPro: token },
+                body: JSON.stringify({
+                    username: USERNAME, currentpassword: "a", userpassword: "b",
+                }),
+            });
+        assert.equal(password.status, 501);
     });
 
     it("answers a path it does not implement with 501, in AM's error envelope", async () => {

@@ -39,9 +39,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
+import { ADMIN_USER, USERNAME } from "../../common/openam-commons.mjs";
 import { captureFileFor, loadCapture } from "./capture-store.mjs";
 import { parseRoute } from "./rest.mjs";
-import { buildBaselineState, realmIdFor, realmPathFor } from "./state.mjs";
+import { buildBaselineState, profileFor, realmIdFor, realmPathFor } from "./state.mjs";
 
 const CAPTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "capture");
 
@@ -56,6 +57,7 @@ const RESOLVED = {
     "{{HOSTNAME}}": "localhost",
     "{{HOST_ALIAS}}": "localhost",
     "{{CONFIG_SUFFIX}}": "dc=openam,dc=openidentityplatform,dc=org",
+    "{{USER_SUFFIX}}": "dc=example,dc=com",
 };
 
 /** A recorded response body, with the markers this server substitutes already substituted. */
@@ -110,10 +112,20 @@ async function syntheticCapture ({ realms, listingOrder = 1, createOrder = 9, om
         "json/authenticate/POST.json": {
             realm: "/", successUrl: "/{{CONTEXT}}/console", tokenId: "<TOKEN>",
         },
-        // The administrator's profile -- task 2.12's resource, loaded by 2.10 because its `roles`
-        // are what let a browser off the login route at all. See BASELINE.adminProfile.
+        // The two profiles (task 2.12), loaded by buildBaselineState like the rest, so a synthetic
+        // tree without them builds nothing. The administrator's was loaded early by 2.10, because
+        // its `roles` are what let a browser off the login route at all.
+        //
+        // The asymmetry between them is the recording's and is load-bearing rather than an
+        // oversight here: the administrator's was recorded through the administrator's own session
+        // and carries `roles`, the end user's was recorded through the administrator's and carries
+        // none. See BASELINE.adminProfile, BASELINE.demoProfile and `profileFor`.
         "json/realms/root/users/amadmin/GET.json": {
             realm: "/", roles: ["ui-global-admin", "ui-realm-admin"], username: "amadmin",
+        },
+        "json/realms/root/users/demo/GET.json": {
+            cn: ["Demo Demo"], dn: ["uid=demo,ou=people,{{USER_SUFFIX}}"], givenName: ["Demo"],
+            realm: "/", sn: ["Demo"], uid: ["demo"], username: "demo",
         },
         // What a realm holds the moment it exists, and what it may still be given (task 2.11). The
         // two are read as a pair: a realm created through the console is seeded from the first, and
@@ -1094,6 +1106,173 @@ describe("the service writes", () => {
         assert.equal(state.createRealmService(realmPath, "notAType", {}), undefined);
         assert.deepEqual(state.realmServicesListing(realmPath).body.result,
             [{ _id: "policyconfiguration", name: "Policy Configuration" }]);
+    });
+});
+
+/**
+ * Task 2.12, over the store. The rules being asserted are in state.mjs — `profileFor` for who a
+ * document names and which reader sees `roles`, `updateUser` for what a save does to it.
+ *
+ * These run under the default configuration, where `OPENAM_ADMIN_USER` and `OPENAM_USERNAME` are
+ * the names the recording was made against and the per-principal rebuild is therefore a no-op. That
+ * is what makes the first assertion a straight comparison against the payload on disk; the rebuild
+ * itself is exercised through `profileFor` directly, which is the only way to reach it without
+ * re-importing the suite's constants with a changed environment.
+ */
+describe("the user profile", () => {
+    const adminSession = { username: ADMIN_USER };
+    const userSession = { username: USERNAME };
+
+    it("is the recorded document, to the reader it was recorded for", () => {
+        assert.deepEqual(baseline().user("/", USERNAME, adminSession).body,
+            recorded("json/realms/root/users/demo/GET.json"));
+        assert.deepEqual(baseline().user("/", ADMIN_USER, adminSession).body,
+            recorded("json/realms/root/users/amadmin/GET.json"));
+    });
+
+    it("carries roles only to the reader who is the subject, as both recordings show", () => {
+        const state = baseline();
+
+        // Recorded through the administrator's own session: the two roles RealmsRoutes gates every
+        // admin route on.
+        assert.deepEqual(state.user("/", ADMIN_USER, adminSession).body.roles,
+            ["ui-global-admin", "ui-realm-admin"]);
+        // Recorded through the administrator reading somebody else: no `roles` key at all, which is
+        // what `UserModel.parse` branches on with `_.has`.
+        assert.ok(!Object.hasOwn(state.user("/", USERNAME, adminSession).body, "roles"));
+        // Recorded nowhere, and the role commons' UserRoutesConfig gates `profile/?` on. Without
+        // it the end user reaches no route at all; with the administrator's they reach the console.
+        assert.deepEqual(state.user("/", USERNAME, userSession).body.roles,
+            ["ui-self-service-user"]);
+        assert.ok(!Object.hasOwn(state.user("/", ADMIN_USER, userSession).body, "roles"));
+    });
+
+    it("resolves the user store's suffix, which no other payload carries", () => {
+        // A different suffix from the config store's, in the same document as one that uses it:
+        // `dn` is an entry in the user store, `universalid` is AM's reference in the config store.
+        // A rule that assumed one suffix would put the wrong one in one of these two lines.
+        const profile = baseline().user("/", USERNAME, adminSession).body;
+        assert.deepEqual(profile.dn, [`uid=${USERNAME},ou=people,dc=example,dc=com`]);
+        assert.deepEqual(profile.universalid,
+            [`id=${USERNAME},ou=user,dc=openam,dc=openidentityplatform,dc=org`]);
+    });
+
+    it("names the account that logs in, not the one the recording was made against", () => {
+        const renamed = profileFor(recorded("json/realms/root/users/demo/GET.json"), "operator");
+
+        assert.equal(renamed.document.username, "operator");
+        // Load-bearing rather than cosmetic: `UserModel.parse` takes the model's id from `uid`, so
+        // a stale one addresses the save to the recorded user's URL.
+        assert.deepEqual(renamed.document.uid, ["operator"]);
+        assert.deepEqual(renamed.document.dn, ["uid=operator,ou=people,dc=example,dc=com"]);
+        assert.deepEqual(renamed.document.universalid,
+            ["id=operator,ou=user,dc=openam,dc=openidentityplatform,dc=org"]);
+        // A display name that never followed the login name, and profile data that a rename says
+        // nothing about, are left as recorded.
+        assert.deepEqual(renamed.document.cn, ["Demo Demo"]);
+        assert.deepEqual(renamed.document.givenName, ["Demo"]);
+        assert.deepEqual(renamed.selfRoles, ["ui-self-service-user"]);
+    });
+
+    it("rewrites a cn that is the account's own name, which the administrator's is", () => {
+        const renamed = profileFor(recorded("json/realms/root/users/amadmin/GET.json"), "operator");
+
+        assert.deepEqual(renamed.document.cn, ["operator"]);
+        assert.deepEqual(renamed.document.dn,
+            ["uid=operator,ou=people,dc=openam,dc=openidentityplatform,dc=org"]);
+        // The roles a recorded self-read carries stay the self-read's, whatever it is called.
+        assert.deepEqual(renamed.selfRoles, ["ui-global-admin", "ui-realm-admin"]);
+    });
+
+    it("merges an update over the record rather than replacing it", () => {
+        // The recording's own evidence: the PUT at order 46 sent four attributes and AM answered
+        // with the whole document. The spec's teardown depends on it, and so does `demo` still
+        // being able to log in afterwards -- a replace would take the record's `objectClass` with
+        // it.
+        const state = baseline();
+        const saved = state.updateUser("/", USERNAME, { givenName: ["Edited"] }, userSession);
+
+        assert.equal(saved.status, 200);
+        assert.deepEqual(saved.body.givenName, ["Edited"]);
+        assert.deepEqual(saved.body.cn, ["Demo Demo"]);
+        assert.deepEqual(saved.body.uid, [USERNAME]);
+        assert.ok(saved.body.objectClass.length > 0);
+        // And the next read is the saved one: D15's "not a replayer", for this resource.
+        assert.deepEqual(state.user("/", USERNAME, adminSession).body.givenName, ["Edited"]);
+    });
+
+    it("removes an attribute an update sends as an empty array, as the console asks it to", () => {
+        // `UserModel.sync` PUTs `val || []` over the five attributes the model holds, so a cleared
+        // field arrives as `[]` -- and so does `telephoneNumber`, which this user has never had and
+        // the openam-ui-ria template renders as an empty input regardless, on every single save.
+        const state = baseline();
+        const saved = state.updateUser("/", USERNAME, { mail: [], telephoneNumber: [] }, userSession);
+
+        assert.ok(!Object.hasOwn(saved.body, "mail"));
+        assert.ok(!Object.hasOwn(saved.body, "telephoneNumber"));
+        assert.ok(!Object.hasOwn(state.user("/", USERNAME, adminSession).body, "mail"));
+    });
+
+    it("answers a save as a read by whoever made it", () => {
+        // Backbone feeds this response straight back through `UserModel.parse`, which rebuilds
+        // `uiroles` from it -- so a save answered without the caller's own roles would quietly
+        // demote them mid-session.
+        const state = baseline();
+
+        assert.deepEqual(
+            state.updateUser("/", USERNAME, { givenName: ["Edited"] }, userSession).body.roles,
+            ["ui-self-service-user"]);
+        assert.ok(!Object.hasOwn(
+            state.updateUser("/", USERNAME, { givenName: ["Again"] }, adminSession).body, "roles"));
+    });
+
+    it("has no profile for a realm or an account the recording gave it no document for", () => {
+        // `undefined` is the labelled 501, deliberately not a 404: the store holds exactly the
+        // accounts that can authenticate, so a session can never name a user with no profile, and
+        // AM's 404 for a missing one is not recorded. See `state.user`.
+        const state = baseline();
+
+        assert.equal(state.user("/alpha", USERNAME, adminSession), undefined);
+        assert.equal(state.user("/", "nobody", adminSession), undefined);
+        assert.equal(state.updateUser("/", "nobody", { givenName: ["x"] }, adminSession), undefined);
+    });
+
+    it("refuses an update that is not a document of attributes", () => {
+        const answer = baseline().updateUser("/", USERNAME, ["givenName"], adminSession);
+
+        assert.equal(answer.status, 400);
+        assert.equal(answer.body.reason, "Bad Request");
+    });
+
+    it("does not let two states share one profile document", () => {
+        // The property the realm and service writes are checked for, and the one task 2.13's reset
+        // turns on: `buildBaselineState` opens the capture afresh, so a new state cannot be handed
+        // a document an earlier one wrote to in place.
+        baseline().updateUser("/", USERNAME, { givenName: ["Edited"] }, adminSession);
+
+        assert.deepEqual(baseline().user("/", USERNAME, adminSession).body.givenName, ["Demo"]);
+    });
+
+    it("does not hold the recorded body the capture store handed it", () => {
+        // The invariant behind the test above, asserted where it is established rather than only
+        // where it shows: the store caches parsed bodies, so a record that aliased one would let a
+        // future in-place write change what the *recording* reads as. Nothing writes in place today
+        // -- `updateUser` replaces -- which is exactly why this is worth pinning now.
+        const document = recorded("json/realms/root/users/demo/GET.json");
+        const held = profileFor(document, USERNAME).document;
+
+        assert.notEqual(held, document);
+        assert.notEqual(held.cn, document.cn);
+        assert.deepEqual(held, document);
+    });
+
+    it("refuses to rebuild a recorded document that names nobody", () => {
+        // Task 2.15 re-records. Every other capture-shape guard in this server names what it
+        // expected and did not find; an unguarded `recordedName.toLowerCase()` would report a bare
+        // TypeError from three frames down instead.
+        const nameless = { ...recorded("json/realms/root/users/demo/GET.json"), username: undefined };
+
+        assert.throws(() => profileFor(nameless, USERNAME), /username/);
     });
 });
 

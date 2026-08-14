@@ -213,18 +213,33 @@ const BASELINE = {
      * order 11 — the administrator's profile, and the read that decides whether a browser ever
      * lands anywhere.
      *
-     * **This is a slice of task 2.12's resource, served here because 2.10 cannot be verified
-     * without it.** `RESTLoginHelper.getLoggedUser` fetches it as the last step of a login and puts
-     * it on `Configuration.loggedUser`; the `roles` it carries — `ui-global-admin`,
-     * `ui-realm-admin` — are what every admin route in `RealmsRoutes.js` is gated on, so without it
-     * a completed authentication leaves the browser on `#login` and no console spec can run at all.
+     * Loaded early by task 2.10, which cannot be verified without it:
+     * `RESTLoginHelper.getLoggedUser` fetches it as the last step of a login and puts it on
+     * `Configuration.loggedUser`; the `roles` it carries — `ui-global-admin`, `ui-realm-admin` —
+     * are what every admin route in `RealmsRoutes.js` is gated on, so without it a completed
+     * authentication leaves the browser on `#login` and no console spec can run at all.
      *
-     * Only this one document. The `demo` profile is left to 2.12 with the update and the
-     * `{{USER_SUFFIX}}` decision its payload carries — see the note on `deploymentFor`, which is
-     * explicit that the placeholder is chosen by the task that has a read which would notice a
-     * wrong choice. Nothing here needs it: the specs that read `demo` are 2.12's.
+     * **Recorded through the administrator's own session, which is why it carries `roles` at all.**
+     * That is the half of this document that is not a plain read of a directory entry, and
+     * `profileFor` below is where the two halves are separated.
      */
     adminProfile: "json/realms/root/users/amadmin/GET.json",
+    /**
+     * order 47 — the end user's profile, and the record xui-profile.spec.mjs reads, edits and
+     * restores.
+     *
+     * Recorded through the *administrator's* session, not the end user's, which is the whole reason
+     * it carries no `roles` key where the document above carries two: `roles` is virtual on this
+     * resource and depends on who is asking. See `profileFor`.
+     *
+     * Recorded at 47 rather than at the GET that precedes the PUT because there is no such GET —
+     * capture/index.json is explicit that the read is taken *after* the write, since the PUT adds a
+     * `modifyTimestamp` key that never goes away and reading first would record one shape on a fresh
+     * instance and another on every later run. So this is a document that has been written to once,
+     * with the recording's own values put back; the four attributes that PUT sent are the four it
+     * had already.
+     */
+    demoProfile: "json/realms/root/users/demo/GET.json",
 };
 
 /**
@@ -337,14 +352,153 @@ function isSection (name, value) {
 }
 
 /**
+ * The roles a self-read reports for an account whose recorded document carries none.
+ *
+ * **The one value in this file that neither REQUESTS.md nor the capture supplies.** Both recorded
+ * reads of `demo` were made through the administrator's session, so the recording holds no example
+ * of what AM answers a user reading their own profile and there is nothing here to derive it from.
+ * It is taken instead from what consumes it: commons' `UserRoutesConfig` declares
+ * `role: "ui-self-service-user"` on the `profile/?` route, and `Router` refuses a route whose role
+ * is not in `uiroles`, so this is the string that has to be here for an end user to reach their own
+ * profile at all.
+ *
+ * `ui-user` is deliberately not listed — `UserModel.parse` appends it to `uiroles` itself, and a
+ * server that also sent it would be answering a question the client already answers.
+ *
+ * A divergence worth knowing about rather than hiding: a real AM computes this set per user, and
+ * this server states it. D15 says these rules are ours and can be wrong; this is one of them.
+ */
+const SELF_SERVICE_ROLES = ["ui-self-service-user"];
+
+/** A recorded value that *is* the recorded account's name, as a directory compares the two. */
+function isName (value, recordedName) {
+    return typeof value === "string" && value.toLowerCase() === recordedName.toLowerCase();
+}
+
+/**
+ * A recorded distinguished name with the value of its first component replaced.
+ *
+ * The same rule as `principalIn` in auth.mjs, which rebuilds the two DNs a *session* reports, and
+ * for the same reason: only the first component names the principal, so rewriting it keeps the
+ * directory layout around it — `ou=people`, `ou=user`, and the two different LDAP suffixes — from
+ * the recording rather than restating values that are plausible to invent and wrong. It is
+ * restated here rather than shared because auth.mjs belongs to tasks 2.7 and 2.8, and this task
+ * does not edit an approved one. The attribute type is carried through the replacement because a
+ * profile's `dn` begins `uid=` where a session's `universalId` begins `id=`.
+ *
+ * The replacement is a function rather than a string for auth.mjs's reason: `String.replace` reads
+ * `$&`, `` $` `` and `$1` out of a string one, and the name arrives from `OPENAM_USERNAME`.
+ */
+function principalDn (recordedDn, username) {
+    return recordedDn.replace(/^([A-Za-z]+)=[^,]*/,
+        (_whole, attribute) => `${attribute}=${username}`);
+}
+
+/**
+ * A profile as this server holds it: `{username, document, selfRoles}`.
+ *
+ * **`roles` is split off the document because it is virtual on this resource and depends on who is
+ * asking**, and the capture proves that in both directions at once. `amadmin`'s document was
+ * recorded through `amadmin`'s own session and carries `ui-global-admin` and `ui-realm-admin`;
+ * `demo`'s was recorded through the administrator's and carries no `roles` key at all. One rule
+ * reproduces both recordings: a read carries `roles` when the reader is the subject, and omits the
+ * key entirely when it is not. See `readAs`.
+ *
+ * That rule is also what xui-profile.spec.mjs cannot run without. `UserModel.parse` turns `roles`
+ * into `uiroles`, `AMConfig`'s default-route handler sends anyone holding `ui-realm-admin` to the
+ * console, and commons' `Router` gates `profile/?` on `ui-self-service-user` — so a server that
+ * answered every reader the recorded administrator document would land the end user in the console,
+ * and one that answered every reader the recorded `demo` document would leave them nowhere at all.
+ *
+ * The rest of the work here is the **per-principal rebuild**, and it is a no-op under the default
+ * configuration — with `OPENAM_ADMIN_USER` and `OPENAM_USERNAME` unset these are the recorded
+ * documents unchanged, which is the property to keep. It stops being one when a run points the
+ * suite at differently-named accounts, and then the profile has to follow: auth.mjs authenticates
+ * whatever those variables name, and a directory whose credentials and whose records name different
+ * people is one that logs a user in and then serves them somebody else's profile.
+ *
+ * Four fields carry the name, and each is rewritten by what it *is* rather than by substring:
+ *
+ *   - `username` — the login name, and a plain string where the rest of the document is arrays.
+ *   - `uid` — load-bearing rather than cosmetic. `UserModel.parse` sets the model's id to
+ *     `user.uid || user.username`, so a stale `uid` would address the profile save to the recorded
+ *     user's URL instead of this one's. Absent from the administrator's document, present in the
+ *     end user's.
+ *   - `dn` and `universalid` — first component only; see `principalDn`.
+ *   - `cn` — rewritten only where the recorded value *is* the recorded name. That is the
+ *     administrator's case (`cn: ["amAdmin"]`) and not the end user's (`cn: ["Demo Demo"]`, a
+ *     display name that never followed the login name), so the test is on the value rather than on
+ *     which account it belongs to.
+ *
+ * `givenName`, `sn` and `mail` stay as recorded even for the administrator, whose recorded given
+ * name and surname are also literally `amAdmin`. Renaming an account does not tell us what its
+ * owner is called, and inventing a given name for a renamed principal would be modelling a
+ * directory rather than reproducing one. Nothing reads the administrator's; the end user's are what
+ * xui-profile.spec.mjs asserts the form against, and those come from the recording either way.
+ */
+export function profileFor (recorded, username) {
+    const recordedName = recorded.username;
+    if (typeof recordedName !== "string") {
+        throw new Error("A recorded user document carries no `username`, so there is no name to "
+            + "rebuild it around. A re-record that dropped or renamed the attribute is the thing to "
+            + "look at; this server cannot guess whose record it holds.");
+    }
+
+    // Cloned out of the capture store, which caches the parsed body it hands back. The cache is per
+    // store, so this is not about two states sharing one -- it is that the record built here is the
+    // only long-lived alias of a recorded body anywhere in this file, and an in-place write to it
+    // would change what the *recording* reads as for the life of the process. `updateUser` replaces
+    // rather than mutates, so nothing needs this today. It is here because `seededServices` and
+    // `createRealm` clone at exactly this boundary for exactly this reason, and because the next
+    // thing to touch these records is task 2.13's reset.
+    const document = structuredClone(recorded);
+
+    // The administrator's roles are recorded because that document is a self-read; the end user's
+    // are not, because that one is not. A re-record taken through the end user's own session would
+    // carry them and this fallback would go unused, which is the right way round.
+    const selfRoles = document.roles ?? SELF_SERVICE_ROLES;
+
+    // The same account, and therefore the recorded document as recorded. AM resolves a principal
+    // case-insensitively -- auth.mjs keys its directory lowercased for that reason, and
+    // xui-login.spec.mjs compares the resolved id the same way -- so a run that spells the login
+    // name differently is naming the same person, not a different one.
+    //
+    // It has to be tested case-insensitively rather than by equality, because the administrator's
+    // recorded document spells its own name three ways: `username` is `amadmin`, `universalid` is
+    // `id=amadmin`, and `cn` and `dn` are `amAdmin`. `ADMIN_USER` defaults to the first, so an
+    // exact test would rewrite the other two under the *default* configuration and this would stop
+    // being the no-op it is meant to be there. A directory's own spelling of a name it holds is
+    // the directory's, and it comes from the recording.
+    if (isName(username, recordedName)) {
+        return { username, document, selfRoles };
+    }
+
+    document.username = username;
+
+    if (Array.isArray(document.uid)) {
+        document.uid = [username];
+    }
+    if (Array.isArray(document.cn)) {
+        document.cn = document.cn.map((value) => (isName(value, recordedName) ? username : value));
+    }
+    for (const field of ["dn", "universalid"]) {
+        if (Array.isArray(document[field])) {
+            document[field] = document[field].map((value) => principalDn(value, username));
+        }
+    }
+
+    return { username, document, selfRoles };
+}
+
+/**
  * The placeholder values this server substitutes into recorded payloads.
  *
- * Deliberately only the four the payloads served here actually contain. A value invented for a
- * placeholder in a payload no route serves is a decision taken where nothing can test it —
- * `{{USER_SUFFIX}}` is the live example: it appears only in `demo`'s user document, whose route is
- * task 2.12's, so 2.12 chooses it when it has a read that would notice a wrong choice.
- * capture-store.mjs throws on any placeholder missing from this map, which is what stops that
- * deferral turning into a marker served to the browser.
+ * Deliberately only the five the payloads served here actually contain. A value invented for a
+ * placeholder in a payload no route serves is a decision taken where nothing can test it, and
+ * capture-store.mjs throws on any placeholder missing from this map, which is what stops such a
+ * deferral turning into a marker served to the browser. `{{USER_SUFFIX}}` was the live example
+ * until task 2.12: it appears only in `demo`'s user document, which nothing served until this task
+ * put that document on a route.
  */
 function deploymentFor ({ context, hostname }) {
     return {
@@ -358,6 +512,16 @@ function deploymentFor ({ context, hostname }) {
         // user store's suffix is a *different* one, which is why this resolves only the one it can
         // account for.
         CONFIG_SUFFIX: "dc=openam,dc=openidentityplatform,dc=org",
+        // The user store's LDAP suffix, which task 2.12 needs because it is the tail of `demo`'s
+        // `dn`, the one place in the capture it appears. A *different* suffix from the config
+        // store's, which is the pair capture/README.md's placeholder table warns about by name --
+        // and not a choice either, for the same reason CONFIG_SUFFIX is not: both ends of the
+        // stripping are committed here. openam-up.sh sets `USERSTORE_SUFFIX` to this string when it
+        // brings the container up, and capture-lib/normalise.mjs's LDAP_SUFFIXES maps that exact
+        // string to this placeholder. Nothing under test asserts a `dn`, so what would catch a wrong
+        // value is task 2.15's re-record-and-diff, plus the fact that the two ends can be read
+        // against each other by eye.
+        USER_SUFFIX: "dc=example,dc=com",
         // The bare first label, as the recording's rule took it from the AM host's FQDN -- but
         // only where the host *has* labels. This server's default bind address is 127.0.0.1, and
         // splitting an address on its dots yields "127", which would go into the root realm's
@@ -452,9 +616,14 @@ export function buildBaselineState (captureDir, { context, hostname }) {
     const serviceDeleteResponse = capture.body(BASELINE.serviceDelete);
 
     // The profiles this server can answer a read for, keyed by the name the account logs in under.
-    // One entry: the administrator, under whatever `OPENAM_ADMIN_USER` resolved to, so that the
-    // directory this serves and the directory `auth` authenticates against name the same person.
-    const users = new Map([[ADMIN_USER.toLowerCase(), capture.body(BASELINE.adminProfile)]]);
+    // Exactly the two accounts `CREDENTIALS` lets in, under exactly those names, so the directory
+    // this serves and the directory `auth` authenticates against name the same two people -- and so
+    // a session can never name a user with no profile. See `profileFor` for what the rebuild does
+    // when those names are not the recorded ones.
+    const users = new Map([
+        [ADMIN_USER.toLowerCase(), profileFor(capture.body(BASELINE.adminProfile), ADMIN_USER)],
+        [USERNAME.toLowerCase(), profileFor(capture.body(BASELINE.demoProfile), USERNAME)],
+    ]);
 
     // Shape only. `result` is always rendered from state; these supply the paging fields, which
     // differ between the two collections.
@@ -568,6 +737,37 @@ function createState ({
             ? Buffer.from(realmId, "base64url").toString("utf8")
             : realmId;
         return notFound(`Realm cannot be read: ${realmPath}`);
+    }
+
+    /**
+     * The profile record an id addresses, or `undefined` for one this server does not hold.
+     *
+     * Lowercased on the way in because AM resolves a principal case-insensitively, and the store is
+     * keyed the way `auth`'s directory is for the same reason: `#profile` reaches this route with
+     * whatever spelling `idFromSession` reported, and a fixture with whatever spelling a human
+     * typed. See `user` on why a miss is not a 404.
+     */
+    function profileRecord (realmPath, userId) {
+        return realmPath === TOP_LEVEL_REALM ? users.get(userId.toLowerCase()) : undefined;
+    }
+
+    /**
+     * A profile as one session sees it: with `roles`, when the reader is the subject, and without
+     * the key at all when it is not.
+     *
+     * The key is deleted rather than left empty because that is what the recording shows — the
+     * administrator's read of `demo` has no `roles` key, not an empty one, and `UserModel.parse`
+     * branches on `_.has(user, "roles")`. Assigning over the spread rather than appending keeps the
+     * administrator's self-read in the recorded key order, since that document carries `roles`
+     * already.
+     */
+    function readAs (record, reader) {
+        if (isName(reader?.username, record.username)) {
+            return { ...record.document, roles: record.selfRoles };
+        }
+        const seenByAnother = { ...record.document };
+        delete seenByAnother.roles;
+        return seenByAnother;
     }
 
     return {
@@ -797,22 +997,114 @@ function createState ({
         /**
          * `GET /json/realms/root/users/{id}` — a profile, and the last step of a browser login.
          *
-         * Task 2.12 owns this resource; what is here is the one document task 2.10 cannot be
-         * verified without (see BASELINE.adminProfile). A user this server holds no profile for
-         * answers `undefined`, which the HTTP layer turns into the labelled 501 rather than a 404 —
-         * `demo` is not missing from a directory, it is a read this server has not implemented yet,
-         * and `RESTLoginHelper` reads a 404 here specifically as "the session names a user who does
-         * not exist" and clears the cookie for it.
+         * **`reader` is the session that asked**, already resolved by rest.mjs, which answers a
+         * request carrying no live session before this is reached (see `serveUser`). It is a
+         * session rather than a boolean because `roles` depends on *which* session and not merely
+         * on there being one — see `profileFor`, and `readAs` below for the rule.
+         *
+         * A user this server holds no profile for answers `undefined`, which the HTTP layer turns
+         * into the labelled 501 rather than a 404. The store holds exactly the accounts that can
+         * authenticate, so "the session names a user with no profile" is unreachable by
+         * construction; a request for some third name is asking this stand-in for a directory entry
+         * it was never given, which is what the 501 says. AM's 404 for a missing user is not
+         * recorded, and `RESTLoginHelper` reads a 404 here specifically as "the session names a user
+         * who does not exist" and clears the cookie for it — so inventing one would be inventing the
+         * shape of a login failure on a path nothing under test can reach.
          *
          * The root realm only, because that is the only path the recording covers. The realm-scoped
-         * shape is left to 2.12 along with the rest.
+         * shape below a created realm is not in REQUESTS.md and answers the same 501.
          */
-        user (realmPath, userId) {
-            if (realmPath !== TOP_LEVEL_REALM) {
+        user (realmPath, userId, reader) {
+            const record = profileRecord(realmPath, userId);
+            return record === undefined
+                ? undefined
+                : { status: 200, body: readAs(record, reader) };
+        },
+
+        /**
+         * `PUT /json/realms/root/users/{id}` — the profile save, and the write this resource exists
+         * for: an edit made through the console is what the next read answers with.
+         *
+         * **A merge, not a replace**, and that is the recording's own evidence rather than a choice:
+         * the PUT at order 46 sent four attributes and AM answered with the whole document — `dn`,
+         * `objectClass`, `uid`, `createTimestamp` and the rest intact. xui-profile.spec.mjs leans on
+         * it twice: its teardown PUTs five attributes after every test, and `demo` has to still
+         * authenticate afterwards, which it would not if a save replaced the record.
+         *
+         * **An empty array removes the attribute, and that one is a choice rather than a reading.**
+         * The console does send `[]`: `UserModel.sync` PUTs `val || []` over whichever of its five
+         * attributes the model holds, so a field the user cleared arrives empty — and so does
+         * `telephoneNumber`, which `demo` has never had and which the openam-ui-ria template renders
+         * as an empty input regardless, on *every* save. What the recording does not say is what AM
+         * then stores, and it is mild evidence the other way: the administrator's own document is
+         * recorded with `mail`, `telephoneNumber` and `employeeNumber` as present-but-empty keys, so
+         * AM plainly serves that shape too. Removing is chosen because it keeps a saved record
+         * shaped like the one the capture holds for `demo`, which carries no such keys. Nothing
+         * under test can tell the two apart: `readFormAttributes` normalises a missing attribute to
+         * `[]` before it compares.
+         *
+         * **A value is stored as it arrives, scalar or array, and AM would not do that.** The
+         * console sends scalars — `UserModel.sync` picks its five attributes off the *flattened*
+         * model, so `givenName` goes out as `"Edited"` where every recorded read of that attribute
+         * answers `["Demo"]` — and AM normalises a single value back to a one-element array. This
+         * server leaves it as sent, so an attribute saved through the console stays a scalar until
+         * the next reset. Nothing under test can see it: `UserModel.parse` flattens both shapes and
+         * the spec's own reader normalises before it asserts. The rule that would close it is itself
+         * an invention — "array in the recorded document means array on write" would have to exempt
+         * `username` and `realm`, which are scalars in the recording, by name.
+         *
+         * `If-Match` is not read. The console sends `*` — `AbstractModel.getMVCCRev` falls back to
+         * it when the record carries no `_rev`, and no recorded user document carries one — and so
+         * does the spec's own fixture, so there is no revision here for the two ends to disagree
+         * about.
+         *
+         * Which attributes may be written is deliberately not restricted. The recording shows a PUT
+         * of four keys merging and says nothing about a fifth being refused, so any rule about what
+         * AM would have rejected is one this server would be inventing — and D13's Non-Goal is that
+         * this is a stand-in, not a second AM. The consequence to know: a caller may write `dn` or
+         * `username` here and this server will store it. Nothing under test sends either.
+         */
+        updateUser (realmPath, userId, document, writer) {
+            const record = profileRecord(realmPath, userId);
+            if (record === undefined) {
                 return undefined;
             }
-            const document = users.get(userId.toLowerCase());
-            return document === undefined ? undefined : { status: 200, body: document };
+            // Not recorded, because nothing the console or the fixtures send is malformed: a body
+            // that parsed as JSON but is not an object has no attributes to merge, and answering
+            // the 400 shape is closer than letting `Object.entries` decide what a string's
+            // attributes are. A bodyless PUT lands here too, since `readDocument` reports no
+            // document as `undefined`. `updateRealm` answers that one 200-unchanged instead, by
+            // spreading the `undefined`; the two disagree, and this is the better of them, but
+            // updateRealm belongs to an approved task and nothing sends either shape.
+            if (document === null || typeof document !== "object" || Array.isArray(document)) {
+                return { status: 400,
+                    body: badRequest("A profile update must be a JSON object of attributes.") };
+            }
+
+            const merged = { ...record.document };
+            for (const [attribute, value] of Object.entries(document)) {
+                // `JSON.parse` makes `__proto__` an own key, where an object literal would not, so
+                // it arrives here like any other attribute -- and assigning it would hand it to
+                // `Object.prototype`'s setter instead of storing it, silently re-parenting the
+                // record. Dropped rather than stored: nothing sends it, and a document off the wire
+                // does not get to decide what this one inherits.
+                if (attribute === "__proto__") {
+                    continue;
+                }
+                if (Array.isArray(value) && value.length === 0) {
+                    delete merged[attribute];
+                } else {
+                    merged[attribute] = value;
+                }
+            }
+            record.document = merged;
+
+            // Answered as a read by the same caller, which is what the recording shows: the PUT
+            // response and the GET that followed it are the same document, and that document was
+            // the administrator reading somebody else -- so no `roles`. A user saving their own
+            // profile gets theirs back, which matters because Backbone feeds this response straight
+            // through `UserModel.parse` and `uiroles` is rebuilt from it.
+            return { status: 200, body: readAs(record, writer) };
         },
 
         /** `GET /json/global-config/services/{id}` */

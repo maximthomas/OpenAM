@@ -6,6 +6,8 @@
     "<AUTHID>": "the JWT carrying authentication-chain state between callback exchanges",
     "<AUTH-COOKIE>": "the in-progress authentication cookie",
     "<SESSION-HANDLE>": "the session handle returned by getSessionInfo",
+    "<BUILD-DATE>": "the wall-clock minute the war under test was assembled",
+    "<REVISION>": "the commit the war under test was built from",
     "<PASSWORD>": "a password this run authenticated with; never recorded",
     "{{BASE_URL}}": "the AM origin and deployment URI the capture was recorded against",
     "{{HOSTNAME}}": "the fully-qualified name of the AM host",

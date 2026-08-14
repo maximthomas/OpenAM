@@ -141,7 +141,7 @@ Three documents govern it, and they are worth reading before changing anything:
 | | |
 |---|---|
 | [REQUESTS.md](REQUESTS.md) | The scope. A request absent from it is out of scope by construction, and the tool refuses to run unless every in-scope row is covered and no extra one is. |
-| [NOTES-volatility.md](NOTES-volatility.md) | Why the output is byte-identical across runs. Fourteen measured rules, each one something AM was observed to vary. |
+| [NOTES-volatility.md](NOTES-volatility.md) | Why the output is byte-identical across runs and across rebuilds. Sixteen rules, each one something AM was measured to vary. |
 | [capture-lib/manifest.mjs](capture-lib/manifest.mjs) | The capture order, the request bodies, and the reason for each. The order is load-bearing — several calls only answer what they answer because of what ran before them. |
 
 The run creates a realm named `e2e-capture`, uses it, and deletes it. It removes one an earlier

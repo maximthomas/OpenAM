@@ -30,8 +30,11 @@ Flags: `--out DIR` (default `local/capture`), `--base-url URL` (default `$OPENAM
 `http://openam.example.org:8080/openam`), `--realm NAME` (default `e2e-capture`).
 
 Two consecutive recordings against an unchanged instance are byte-identical, which is what task
-2.15's drift job asserts. The run is re-runnable rather than one-shot: it removes a realm an earlier
-failed run left behind, and ends every session it opened even when it throws.
+2.15's drift job asserts. It asserts it across a *rebuild* as well, since it builds the war it
+records against — that is what rules 15 and 16 are for, and it is the case the volatility survey
+could not see, because every comparison it ran held the war fixed. The run is re-runnable rather than
+one-shot: it removes a realm an earlier failed run left behind, and ends every session it opened even
+when it throws.
 
 The tool deletes only what it generates — `index.json` and `json/` — so this README survives a
 re-record. Do not add other files here expecting the same; the rule is derived from the recorded call
@@ -165,11 +168,13 @@ time — **fix a rule, never a recorded file**, because task 2.15 re-records and
 
 ### 1. Volatility — what moves between two identical calls
 
-Fourteen rules, specified by [`../NOTES-volatility.md`](../NOTES-volatility.md), measured across two
+Sixteen rules, specified by [`../NOTES-volatility.md`](../NOTES-volatility.md), measured across two
 passes on one instance and a third on a rebuilt one. Without these a re-record never diffs clean.
 
 | Placeholder | Replaces | Why |
 |---|---|---|
+| `<BUILD-DATE>` | `date` in `serverinfo/version` | the minute the war was assembled; the drift job builds the war it records against, so this moves on every run |
+| `<REVISION>` | `revision` in `serverinfo/version` | the commit the war was built from; moves whenever `master` does |
 | `<TS>` | `latestAccessTime`, `maxIdleExpirationTime`, `maxSessionExpirationTime`, and the `createTimestamp` / `modifyTimestamp` arrays | regenerated per call; `createTimestamp` moves only when the configurator runs, which a two-run diff cannot surface |
 | `<TOKEN>` | `tokenId`, and the `iPlanetDirectoryPro=` cookie value | per-session |
 | `<AUTHID>` | `authId` | the JWT carrying authentication-chain state |
@@ -231,11 +236,18 @@ the two apart is deliberate — the alternative is a real suffix committed silen
 
 ### Deliberately **not** normalised
 
-- **The AM version, build revision and build date** in `json/serverinfo/version/GET.json`. They are
-  host-bound in the same sense as everything in category 3, and pinning them is how task 2.15 notices
-  the instance under test changed. The review measured the revision moving between two image builds,
-  so the drift job goes red on a rebuild — a true positive worth a human look, one line in one file,
-  and nothing downstream reads them for behaviour.
+- **The AM version** — `version` in `json/serverinfo/version/GET.json`, and only `version`. It is
+  host-bound in the same sense as everything in category 3, and pinning it is how the drift job
+  notices the instance under test is a different AM. It moves only on a version bump, which is
+  exactly the true positive worth a human look. Nothing downstream reads it for behaviour.
+
+  Its two neighbours, `revision` and `date`, were pinned alongside it until task 2.15 and are now
+  rules 16 and 15. The reasoning that pinned them — "the revision moves between image builds, so the
+  drift job goes red on a rebuild, a true positive worth a human look, one line in one file" — held
+  only while a rebuild was an occasional event. The drift job builds the war it records against on
+  every run, so `date` (wall-clock, to the minute) made the job red **every** time, and no re-record
+  could fix it: re-recording stamps the recording machine's build minute and the next run stamps a
+  new one. Pinning a value the job itself regenerates is not a drift signal.
 - **`AMAuthCookie=LOGOUT; Expires=Thu, 01 Jan 1970 00:00:10 GMT`** — a fixed sentinel AM emits to
   clear the cookie, not a timestamp. Replacing it would hide the difference between a login that
   cleared the auth cookie and one that did not. Its `Domain=` attribute *is* normalised.

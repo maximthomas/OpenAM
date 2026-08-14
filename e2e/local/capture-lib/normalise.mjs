@@ -21,7 +21,7 @@
  * Three categories live here, and they are kept apart on purpose because they answer three different
  * questions:
  *
- *   1. **Volatility** (rules 1–14) — *what moves between two identical calls?* local/NOTES-volatility.md
+ *   1. **Volatility** (rules 1–16) — *what moves between two identical calls?* local/NOTES-volatility.md
  *      is the specification, and the rule numbers below are that document's numbering. It surveyed two
  *      full passes against one instance and a third against a rebuilt one; every rule is something
  *      that was measured to move, not something that looked like it might.
@@ -41,6 +41,8 @@ export const TOKEN = "<TOKEN>";
 export const AUTHID = "<AUTHID>";
 export const AUTH_COOKIE = "<AUTH-COOKIE>";
 export const SESSION_HANDLE = "<SESSION-HANDLE>";
+export const BUILD_DATE = "<BUILD-DATE>";
+export const REVISION = "<REVISION>";
 
 /**
  * Portability placeholders.
@@ -69,7 +71,28 @@ export const SERVER_ID = "{{SERVER_ID}}";
  */
 const DROPPED_HEADERS = new Set(["date", "etag", "content-length"]);
 
-/** Rules 2, 3, 4, 7, 10 and 11 — scalar fields replaced wherever they appear, at any depth. */
+/**
+ * Rules 2, 3, 4, 7, 10, 11, 15 and 16 — scalar fields replaced wherever they appear, at any depth.
+ *
+ * Rules 15 and 16 are the war build stamp, in `json/serverinfo/version/GET.json` and nowhere else.
+ * They are rule 6's kind of rule rather than rule 2's: neither moves between two calls to one
+ * instance, so a two-run diff cannot justify either, and a re-record cannot survive either. `date` is
+ * an Ant `<tstamp>` evaluated when the war is assembled (openam-server/openam-server-prepare-war.xml,
+ * `yyyy-MMMM-dd HH:mm`), so it moves on every `mvn install`, to the minute; `revision` is
+ * buildnumber-maven-plugin's `git.short.sha1`, so it moves on every commit. The drift job builds the
+ * war it records against, which makes both of them certainties on every run rather than the
+ * occasional true positive task 2.3 took them for. `version` is deliberately left alone below.
+ *
+ * Narrow by measurement, not by construction: `date` is a generic key, and these rules fire on any
+ * string-valued `date` or `revision` at any depth. Today the capture has exactly one of each. The
+ * `typeof raw === "string"` guard in `normaliseJson` already spares an SMS schema property *named*
+ * `date`, whose value is an object — but if a later REQUESTS.md row brings in a string-valued `date`
+ * that means something else, this rule will mask it, and the placeholder standing in the committed
+ * tree is the thing to notice in review.
+ *
+ * Not to be confused with rule 1, which drops the `date` response *header*. Different map, different
+ * reason: that one is the clock on the wall, this one is the clock at build time.
+ */
 const SCALAR_RULES = new Map([
     ["latestAccessTime", TS],               // 2
     ["maxIdleExpirationTime", TS],          // 3
@@ -77,6 +100,8 @@ const SCALAR_RULES = new Map([
     ["tokenId", TOKEN],                     // 7
     ["sessionHandle", SESSION_HANDLE],      // 10
     ["authId", AUTHID],                     // 11
+    ["date", BUILD_DATE],                   // 15
+    ["revision", REVISION],                 // 16
 ]);
 
 /**
@@ -221,7 +246,7 @@ export function normaliseHeaders (headers, setCookies) {
 }
 
 /* ================================================================================================
- * Portability — not among the fourteen, and deliberately kept separate from them.
+ * Portability — not among the volatility rules, and deliberately kept separate from them.
  *
  * NOTES-volatility.md measured every value below as STABLE across a full destroy-and-reconfigure, so
  * none of this can affect the two-run determinism check either way. It is here because task 2.3
@@ -229,11 +254,17 @@ export function normaliseHeaders (headers, setCookies) {
  * serves these shapes back under its own origin, its own context path and its own cookie domain —
  * where `openam.example.org:8080`, `/openam` and `domain=example.org` would all be wrong.
  *
- * **What is deliberately NOT normalised: the AM version, build revision and build date.** They are
- * host-bound in the same sense as the rest, and pinning them is how task 2.15 notices that the
- * instance under test changed. The review in task 2.3 measured the revision moving between two image
- * builds, so the drift job will go red on a rebuild — that is a true positive worth a human look, and
- * it is one line in one file. Nothing downstream reads them for behaviour.
+ * **What is deliberately NOT normalised: the AM version.** `version` is host-bound in the same sense
+ * as the rest, and pinning it is how task 2.15 notices that the instance under test changed. It moves
+ * only on a version bump, which is exactly the "true positive worth a human look" event. Nothing
+ * downstream reads it for behaviour.
+ *
+ * Its two neighbours in that triple used to be pinned with it, and are not any more — see rules 15
+ * and 16. Task 2.3 pinned all three on the measurement that the revision moves between image builds,
+ * expecting a rebuild to be an occasional event. Task 2.15's job rebuilds the war on every run, so
+ * `date` (to the minute) and `revision` moved from "occasionally red, look at it" to "red on every
+ * run, and no re-record can ever make it green". Pinning a value the job itself regenerates is not a
+ * drift signal, it is a broken job.
  * ============================================================================================== */
 
 /** Escape a literal for use inside a `RegExp`, since the context path arrives from `--base-url`. */
@@ -448,7 +479,7 @@ export function auditPortability (text, targets) {
 export const SECRET = "<PASSWORD>";
 
 /**
- * Not one of the fourteen either, and for a third reason: this is about what may be committed, not
+ * Not a volatility rule either, and for a third reason: this is about what may be committed, not
  * about what varies or where it points.
  *
  * The exposure is entirely in the *request*. AM never echoes a credential back, but the login the
@@ -495,8 +526,8 @@ export function maskCredentials (value, credentials) {
  * Descriptions, not the values they replaced. Recording `openam.example.org` here would put the host
  * name straight back into the committed tree and make a re-record on another machine diff dirty,
  * which is the whole thing the portability rules exist to prevent. What the capture *was* taken
- * against is recorded where it belongs: the AM version triple in `json/serverinfo/version/GET.json`,
- * left unpinned on purpose.
+ * against is recorded where it belongs: `version` in `json/serverinfo/version/GET.json`, left pinned
+ * on purpose. Its `date` and `revision` neighbours are not — rules 15 and 16.
  */
 export const PLACEHOLDERS = {
     [TS]: "a timestamp AM regenerates on every call",
@@ -504,6 +535,8 @@ export const PLACEHOLDERS = {
     [AUTHID]: "the JWT carrying authentication-chain state between callback exchanges",
     [AUTH_COOKIE]: "the in-progress authentication cookie",
     [SESSION_HANDLE]: "the session handle returned by getSessionInfo",
+    [BUILD_DATE]: "the wall-clock minute the war under test was assembled",
+    [REVISION]: "the commit the war under test was built from",
     [SECRET]: "a password this run authenticated with; never recorded",
     [BASE_URL]: "the AM origin and deployment URI the capture was recorded against",
     [HOSTNAME]: "the fully-qualified name of the AM host",

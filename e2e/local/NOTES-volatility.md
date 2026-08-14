@@ -4,9 +4,13 @@ Survey for task 2.15's re-record CI job. Answers one question: **what changes be
 calls to an unchanged instance**, and can a capture tool normalise it away well enough to make a
 re-record byte-identical.
 
-**Verdict: byte-for-byte determinism is achievable** with the 14 normalisation rules below, plus
+**Verdict: byte-for-byte determinism is achievable** with the 16 normalisation rules below, plus
 one capture-order constraint that is not a normalisation rule. Measured across two bringups rather
 than inferred. See [Determinism](#determinism-verdict).
+
+Rules 1–14 are this survey's. **Rules 15 and 16 were added later, by task 2.15**, when building the
+CI job showed that a value this document had classified correctly had been acted on wrongly — see
+[Build stamp](#build-stamp-2--added-by-task-215-not-by-this-survey).
 
 ## What was probed, and how
 
@@ -50,7 +54,7 @@ configurator.**
   The controls are the point: a subset that only samples known-volatile endpoints cannot detect a
   rule that has started over-normalising.
 
-## Volatile catalogue — 14 distinct fields
+## Volatile catalogue — 16 distinct fields
 
 Grouped as the brief asks. "Rule" is the proposed normalisation, and is the tool's specification.
 
@@ -124,6 +128,35 @@ as a real baseline candidate rather than a volatile field.
 `Content-Length` differed only on `POST /json/authenticate` (696 → 702), tracking the `authId`
 length. It is stable elsewhere, but must be dropped generally because normalisation changes body
 length anyway.
+
+### Build stamp (2) — added by task 2.15, not by this survey
+
+| # | JSON path | Where | Rule |
+|---|---|---|---|
+| 15 | `$.date` | `GET /json/serverinfo/version` | Replace with `<BUILD-DATE>`. |
+| 16 | `$.revision` | `GET /json/serverinfo/version` | Replace with `<REVISION>`. |
+
+**These two are corrections to this document, and the correction is worth reading before trusting
+the partition below.** The survey measured both values and put them in [STABLE](#stable-44--normalise-for-portability-not-for-re-record)
+as "build-bound, not bringup-bound", which is accurate and was the wrong conclusion to draw from.
+Task 2.3 pinned them on it deliberately, expecting a rebuild to be an occasional event that deserved
+a human look.
+
+Task 2.15's drift job builds the war it then records against, on every run. So:
+
+| Field | Source | Moves when |
+|---|---|---|
+| `date` | Ant `<tstamp>`, `yyyy-MMMM-dd HH:mm` — `openam-server/openam-server-prepare-war.xml:36`, filtered in as `@DATESTAMP@` | **every `mvn install`**, to the minute |
+| `revision` | `buildnumber-maven-plugin`'s `git.short.sha1` — `pom.xml:1812`, filtered in as `@REVISION@` | every commit |
+| `version` | the POM version | a version bump |
+
+`date` alone makes a byte diff against a committed capture fail on **100 % of runs**, and it fails in
+a way no re-record can fix: re-recording stamps the recording machine's own build minute, and the
+next scheduled run stamps a new one. A value the job itself regenerates is not a drift signal.
+
+So 15 and 16 are rule 6's kind of rule — measured to move only across bringups, invisible to a
+two-run diff on one instance, and fatal to a re-record. `version` stays pinned: it is the field that
+actually says the AM under test is a different AM, and it moves only when someone bumps it.
 
 ### JSON key ordering (1) — the largest finding
 
@@ -201,7 +234,7 @@ hash (`-546398656`) bit-for-bit across a full rebuild.
 | Hostname / port / deployment URI | `openam.example.org` / `8080` / `/openam` | container hostname is also `openam.example.org` |
 | **Server id** | `01` | **survived the rebuild in all three places** — `servers[0]._id`, the `amlbcookie` value, and the `SI` segment inside every session token. So session tokens carry no per-bringup fragment; only the `SK` segment is per-session random |
 | **Site id** | *none configured* | `global-config/sites` was empty on both bringups. If a later bringup configures one, it becomes a new target |
-| AM version / revision / build date | `16.2.0-SNAPSHOT` / `8628aba262` / `2026-August-08 09:56` | build-bound, not bringup-bound |
+| AM version / revision / build date | `16.2.0-SNAPSHOT` / `8628aba262` / `2026-August-08 09:56` | build-bound, not bringup-bound. **Stable only for a fixed war.** `revision` and `date` are now rules 16 and 15 — the drift job rebuilds, so "stable across bringups" was never the question to ask of them. `version` alone stays pinned |
 | **Realm DNS aliases** | `["openam","openam.example.org"]` | root realm `aliases`; same values, same order both times |
 | Cookie domain | `example.org` | `serverinfo/*` `$.domains[0]`, and the `domain=` attribute of every `Set-Cookie` |
 | `serverinfo/*` `_rev` / `ETag` | `-546398656` | identical across the rebuild — the strongest single evidence that the configurator is deterministic |
@@ -306,8 +339,14 @@ must record the header it sent alongside the response.
 
 ## Determinism verdict
 
-**Byte-for-byte determinism is achievable.** The 14 rules above are sufficient, and task 2.15's CI
+**Byte-for-byte determinism is achievable.** The 16 rules above are sufficient, and task 2.15's CI
 job can assert byte equality rather than structural equality with a tolerance.
+
+That verdict survives rules 15 and 16 unchanged — the survey's own measurements were right, and what
+those two rules correct is a decision taken on top of them rather than a finding. But note what it
+took to expose: the gap was not visible to any comparison this survey ran, because every one of them
+held the war fixed. **A precondition of byte equality is that something in the comparison varies the
+way CI varies it.** Preconditions 1–5 below are the same statement in the small.
 
 The rules were tested, not assumed, at three levels:
 
@@ -335,8 +374,9 @@ from a known starting state, and no rule should paper over it.
 Byte equality is achievable **given the rules plus these preconditions** — they are part of the
 specification, not caveats bolted on:
 
-1. Apply all 14 rules, including rule 6 (`createTimestamp`). Rule 6 is the one that a
-   within-bringup test cannot justify and a re-record cannot survive without.
+1. Apply all 16 rules, including rule 6 (`createTimestamp`) and rules 15–16 (the build stamp).
+   Those three are the ones a within-bringup test cannot justify and a re-record cannot survive
+   without: 6 needs a second bringup to show itself, 15 and 16 need a second *build*.
 2. **Sort object keys recursively; do not sort arrays.** The asymmetry is load-bearing.
 3. **Never derive or validate `ETag` from the body** — it moves between calls on byte-identical
    bodies. Drop it.
@@ -354,6 +394,18 @@ config, so the exposure is a field that is both outside the baseline and outside
 that the configurator reproduced even the `serverinfo/*` `_rev` hash exactly, that exposure is
 small — but it is not zero, and the cheap way to close it is to keep the first CI re-record's diff
 output on failure rather than only its exit code.
+
+**Closed by measurement, 2026-08-14, while building task 2.15's job.** The full-tree cross-bringup
+diff this paragraph called for has now been run, and the exposure it describes is not there:
+
+| Comparison | Result |
+|---|---|
+| Full 48-call tree, re-recorded after `openam-reset.sh` (destroys both containers, re-runs the configurator), against the committed capture | **47 of 48 payloads byte-identical.** The 49th file, `serverinfo/version`, differed only in the two fields rules 15 and 16 now normalise |
+| Two consecutive re-records, same instance, no reset between | **49 of 49 byte-identical** |
+
+So no field outside the 48-value baseline and the 9-request subset moved across a reconfigure. The
+recommendation to keep the diff output rather than only the exit code stands anyway — it costs
+nothing and it is what makes a red run readable — but it is no longer covering an open risk.
 
 `am.encryption.pwd` remains unobservable over REST. No in-scope response exposes an encrypted
 value, so it does not affect this verdict; it would if the surface ever grew to include one.

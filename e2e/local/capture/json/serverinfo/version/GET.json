@@ -19,8 +19,8 @@
       "x-frame-options": "SAMEORIGIN"
     },
     "body": {
-      "date": "2026-August-04 10:48",
-      "revision": "fc8e2e67c7",
+      "date": "<BUILD-DATE>",
+      "revision": "<REVISION>",
       "version": "16.2.0-SNAPSHOT"
     }
   }

@@ -72,7 +72,18 @@ test.beforeAll(() => {
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
-test.describe("OpenAM XUI - Login flow", () => {
+/**
+ * Deployed AM only, and deliberately not tagged @local-server, for two independent reasons.
+ *
+ * What it asserts is SAML federation — an SP-initiated SSO round trip between two entities, the
+ * assertion AM issues and the session the SP builds from it. That is server behaviour no UI build
+ * change can affect, which puts it on the deployed-AM side of D16's split.
+ *
+ * It also needs a second AM at sp.mycompany.org:8081, stood up by the bootstrap script above.
+ * `local/openam-up.sh` never starts that container, so there is no local configuration in which
+ * this spec could run at all (design.md D16).
+ */
+test.describe("OpenAM XUI - Login flow", { tag: ["@deployed-am"] }, () => {
   test("should log in as demo and reach the authenticated page", async ({ page }) => {
     // ── 1. Open the login page ──────────────────────────────────────────────
     console.log(`Navigating to: ${LOGIN_URL}`);

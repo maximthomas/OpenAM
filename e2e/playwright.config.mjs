@@ -40,5 +40,13 @@ export default defineConfig({
         screenshot: "only-on-failure",
         trace: "retain-on-failure",
     },
-    reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
+    // The backend-tag reporter is listed last so its coverage block lands after the summary it
+    // qualifies. Without it a `--grep @local-server` run and a full one both end in a green line
+    // of the same shape, and nothing says the filtered run left 9 of the 14 spec files unexecuted
+    // (design.md D16). It never changes the exit status.
+    reporter: [
+        ["list"],
+        ["html", { open: "never", outputFolder: "playwright-report" }],
+        ["./common/backend-tag-reporter.mjs"],
+    ],
 });

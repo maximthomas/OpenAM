@@ -46,7 +46,17 @@ test.beforeAll(async ({ request }) => {
 
 let accessToken;
 
-test.describe("OAuth Service test", () => {
+/**
+ * Deployed AM only, and deliberately not tagged @local-server.
+ *
+ * Everything asserted below is AM's OAuth2 server behaviour — authorization-code issuance, PKCE
+ * verification, token exchange — reached through `/oauth2/*` rather than through the XUI. No UI
+ * build change can affect it, so it sits on the deployed-AM side of D16's split. The local API
+ * server's scope is the requests the phase-0 specs cause the XUI to issue (task 2.1), which puts
+ * these endpoints out of scope by construction; serving them there would mean reimplementing the
+ * behaviour under test (design.md D16).
+ */
+test.describe("OAuth Service test", { tag: ["@deployed-am"] }, () => {
   test("Should receive an auth code and exchange it to access token", async ({ request }) => {
 
       const demoToken = await getAuthToken(request, USERNAME, PASSWORD);
@@ -136,8 +146,12 @@ test.describe("OAuth Service test", () => {
 /**
  * A non-browser client posts its consent decision directly, without ever rendering the consent page, and
  * submits its own session id as the csrf value. This is the flow documented for headless clients.
+ *
+ * Deployed AM only, for the reason given on the describe above: this asserts how AM's consent
+ * endpoint treats a decision posted without a browser session — server behaviour the migration
+ * cannot affect (design.md D16).
  */
-test.describe("OAuth2 consent posted directly by a non-browser client", () => {
+test.describe("OAuth2 consent posted directly by a non-browser client", { tag: ["@deployed-am"] }, () => {
 
   /**
    * The authorization request parameters, shared by the GET that renders the consent page and the POST that

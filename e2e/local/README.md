@@ -26,6 +26,35 @@ The XUI migration (`modernize-openam-ui-build`) uses this instance as its regres
 Playwright suite has to produce the same result against a Grunt-built and a Vite-built `/XUI`, so
 the instance and the UI build are deliberately swappable independently of one another.
 
+## Two backends, and which to reach for
+
+This directory stands up two backends, and they are good at opposite things (design.md D13). Both
+serve the same XUI build, and the suite picks between them at the point of a test run rather than
+in the UI — see [Running the suite](#running-the-suite-against-either-backend).
+
+| | Deployed AM | Local API server |
+|---|---|---|
+| Start | `./openam-up.sh`, from here | `npm run local-server`, from `e2e/` |
+| Ready in | 3–8 minutes cold, ~2 minutes warm | a second or two |
+| Needs | Docker, ~3 GB, the war build, an `/etc/hosts` entry | Node ≥18.2, and a built XUI to point at |
+| Base URL | <http://openam.example.org:8080/openam> | <http://127.0.0.1:8090/openam> |
+| Runs | all 57 XUI tests, in 12 spec files | the 23 tagged `@local-server`, in 5 of those 12 |
+| Reset | `./openam-reset.sh`, ~2 minutes | `POST /local-api-server/reset`, milliseconds |
+| Detail | [Bring it up](#bring-it-up) | [The local API server](#the-local-api-server) |
+
+**The container is trustworthy and slow; the local server is fast and only as true as we keep it.**
+The container runs a real AM, so a green run against it means something — and the failure modes this
+suite exists to catch (a broken runtime template fetch, a mis-aliased module ID, a theme that stops
+applying) are only observable end to end. The local server answers a recorded subset of AM's REST
+surface out of an in-memory state machine whose rules are *ours*, and they can be wrong in ways no
+capture diff will catch.
+
+So: **develop against the local server, sign off against the instance.** Making the fast one
+authoritative would hollow out the regression suite within a release; making the slow one the only
+option means the suite gets run rarely, which hollows it out just as effectively. The acceptance
+gate does not move — the migration's task 10.1 requires the phase-0 suite green against a Vite-built
+XUI *deployed to this instance*, and no `@local-server` run satisfies it.
+
 ## Prerequisites
 
 - Docker running, and roughly 3 GB free for the AM container.
@@ -107,6 +136,43 @@ The local API server has its own reset, and that one *is* fast enough to run bet
 tests — see "Reset between tests" below. It resets that server and nothing here; the two backends
 share no state.
 
+## Getting a built XUI
+
+Both backends serve the same artifact — `xui-deploy.sh` copies it into the container, the local
+server unpacks it — and producing it needs neither a container nor the war. The
+`mvn -DskipTests install` in [Prerequisites](#prerequisites) is the war build, which the container
+needs and this does not; the UI module on its own is enough:
+
+```
+cd ../../openam-ui/openam-ui-ria
+mvn -o -DskipTests package
+```
+
+**35–40 seconds** against a warm `~/.m2`, producing `target/openam-ui-ria-<version>-www.zip` — the
+path both `xui-deploy.sh` and `npm run local-server` default to when given no argument, so the two
+backends serve the same bytes without being told to.
+
+Three things about it were measured rather than assumed, and each one bites:
+
+- **`npm run build:production` alone cannot produce it.** Grunt composes `target/XUI` out of two
+  directories Maven writes at `process-resources`, and `grunt-contrib-copy` ignores a missing source
+  silently — the build fails later, in `requirejs:compile`, having quietly dropped the entire
+  `org/forgerock/commons` tree and all 47 vendor libraries. The zip itself is `maven-assembly-plugin`
+  at `package`, which Grunt never reaches.
+- **On a cold `~/.m2` you need `-am`**, from the repo root — `mvn -pl openam-ui/openam-ui-ria -am
+  -DskipTests package`. The ~58 `commons.ui.libs` artifacts are published nowhere and exist locally
+  only because `maven-external-dependency-plugin` fetched them from CDNs, and that plugin does not
+  run for `openam-ui-ria` alone. Without `-am`, a build failure at 110 s; with it, 355 s and a build.
+- **Never run `clean` on `openam-ui` or with `-am`** — `clean-external` deletes those same
+  CDN-provisioned artifacts *from `~/.m2`*. `rm -rf openam-ui/openam-ui-ria/target` instead.
+
+[NOTES-xui-build.md](NOTES-xui-build.md) has the measurements, the CI caching, and one shortcut:
+the `-www.zip` is **published**, and `curl`-ing the current snapshot takes **2.78 s** against the
+35–40 s above — §4(a) has the URL and how to resolve the current timestamped name. Use it when you
+just need a servable XUI. It is built from upstream `master`, not from your working tree, so it is
+the wrong answer the moment you have local XUI changes — and it cannot be used for the
+Grunt-versus-Vite comparison this migration exists to make.
+
 ## Swapping the deployed XUI
 
 ```
@@ -129,17 +195,21 @@ the *deployed* tree work — a theme template override, or an operator-supplied 
 ## Recording the capture for the local backend
 
 ```
+./openam-reset.sh                         # first — record from a reset instance, never a used one
 node capture.mjs                          # writes ./capture
 node capture.mjs --out /tmp/capture-b     # somewhere else, e.g. to diff two runs
 ```
 
 Drives this instance through every request in [REQUESTS.md](REQUESTS.md) and records what it
 answers, so the local backend serves shapes a real AM produced rather than shapes somebody guessed.
+A realm or service a spec run left behind becomes a permanent phantom in the baseline the local
+server is built from, which is what the reset is for.
 
-Three documents govern it, and they are worth reading before changing anything:
+Four documents govern it, and they are worth reading before changing anything:
 
 | | |
 |---|---|
+| [capture/README.md](capture/README.md) | The recorded tree itself: the re-record procedure and its flags, the layout, and what each of the 48 calls is for. Read it *instead of* the capture — that is 160 KB of JSON, and three SMS schema documents are over half of it. |
 | [REQUESTS.md](REQUESTS.md) | The scope. A request absent from it is out of scope by construction, and the tool refuses to run unless every in-scope row is covered and no extra one is. |
 | [NOTES-volatility.md](NOTES-volatility.md) | Why the output is byte-identical across runs and across rebuilds. Sixteen rules, each one something AM was measured to vary. |
 | [capture-lib/manifest.mjs](capture-lib/manifest.mjs) | The capture order, the request bodies, and the reason for each. The order is load-bearing — several calls only answer what they answer because of what ran before them. |
@@ -164,8 +234,12 @@ npm run local-server -- path/to/outDir   # serves a directory, e.g. a Vite build
 ```
 
 Those are `xui-deploy.sh`'s three inputs, deliberately — the artifact you point at this server is
-the artifact you deploy to AM, not something assumed to match it. A zip is unpacked to a temp
-directory, which is removed when the server stops; nothing is cached between runs.
+the artifact you deploy to AM, not something assumed to match it, and with no argument both resolve
+the same default zip. [Getting a built XUI](#getting-a-built-xui) is where that comes from. A zip is
+unpacked to a temp directory, which is removed when the server stops; nothing is cached between runs.
+
+**Port 8090, context `openam`** — so both surfaces sit under `/openam/`, the path they occupy on the
+instance above:
 
 | | |
 |---|---|
@@ -182,9 +256,9 @@ is `""` and the context is derived from `location.pathname`, so it asks whatever
 under the path it was served from. That is what lets one build run against either backend unmodified.
 
 `--port`, `--context`, `--host` and the zip or tree each override their default, as do `OPENAM_LOCAL_PORT`,
-`OPENAM_LOCAL_CONTEXT`, `OPENAM_LOCAL_HOST` and `OPENAM_LOCAL_XUI`. Any context but `local-api-server`,
-which is the control prefix in the table above and is refused at startup rather than left to shadow
-both AM mounts. Port 8090 avoids both 8080 (the
+`OPENAM_LOCAL_CONTEXT`, `OPENAM_LOCAL_HOST` and `OPENAM_LOCAL_XUI`. Any context is accepted but
+`local-api-server`, which is the control prefix in the table above and is refused at startup rather
+than left to shadow both AM mounts. Port 8090 avoids both 8080 (the
 AM container) and 8081 (`sp.mycompany.org` in the SAML specs), so this and the instance above can run
 at the same time — comparing them is the point. `node local/server.mjs --help` lists the rest.
 
@@ -250,9 +324,39 @@ Everything else answers a labelled 501, deliberately: a stub that let the XUI pa
 not actually done would make the real thing, whenever it is built, unverifiable.
 
 **A browser bootstraps, logs in, lands in the admin console and drives realm and service
-administration — and an end user logs in and edits their own profile.**
-`xui/xui-realms.spec.mjs`, `xui/xui-services.spec.mjs` and `xui/xui-profile.spec.mjs` are the
-`@local-server` specs that run against this backend end to end.
+administration — and an end user logs in and edits their own profile.** Five spec files carry
+`@local-server` and run against this backend end to end: `xui-cache-busting` (2 tests),
+`xui-login` (4), `xui-profile` (3), `xui-realms` (7) and `xui-services` (7) — 23 of the XUI suite's
+57 tests. [PARITY.md](PARITY.md) is the record of that lane run against both backends on the same
+build, and of the one test in it that is flaky on either.
+
+### What this backend does not cover
+
+The other seven XUI spec files are `@deployed-am` only, and a `--grep @local-server` run does not
+run them. Each is on that list because reproducing what it asserts here would mean reimplementing
+the thing under test, or because it reaches a surface this server does not have at all:
+
+| Spec | Tests | Why it is deployed-AM only |
+|---|---:|---|
+| `xui/xui-httponly.spec.mjs` | 3 | The worked example (D16): it asserts the session cookie's `HttpOnly` attribute and AM's server-side session-upgrade fallback. Reproducing that would mean reimplementing the behaviour under test, so a green run would prove only that both sides were written to agree. |
+| `xui/xui-auth-chains.spec.mjs` | 9 | Drives `/realm-config/authentication/*`, which is outside this server's scope by construction — its request list is what the phase-0 specs cause, and these endpoints are reached only from `@deployed-am` specs. |
+| `xui/xui-auth-modules.spec.mjs` | 7 | The same endpoints, the same reason. |
+| `xui/xui-authorize.spec.mjs` | 5 | The consent screen is delivered by AM's `/oauth2/…/authorize`, not from the XUI tree; rendering it means running AM's own OAuth2 request validation, consent decision and token issuance. |
+| `xui/xui-device.spec.mjs` | 3 | The device pages come from AM's `/oauth2/device/user`; reaching them means AM issuing a user code, storing it, resolving the owner's session and authorizing the device. |
+| `xui/xui-theming.spec.mjs` | 5 | Writes a theme and a template override into the *deployed* webapp with `docker exec` and asserts they are served from disk (`common/deployed-xui-commons.mjs`) — the question is what an operator can do to a deployed instance, which interception would answer by assuming it. |
+| `xui/xui-operator-module.spec.mjs` | 2 | The same mechanism: it drops an operator-supplied module into the deployed `/XUI` and asserts the loader reaches it by ID. |
+
+That is 34 of the 57 XUI tests. `oauth2/` and `saml/` are `@deployed-am` too, for the reason the two
+OAuth2 specs above are.
+
+Two further gaps are not spec-shaped, and matter more than the list:
+
+- **The capture pins response *shapes*, not AM's *semantics*** (D15). The state machine's rules are
+  ours, and they can be wrong in ways the drift job cannot see — a validation AM enforces and this
+  server does not, an ordering AM guarantees and this one invents. Both re-record identically.
+- **Everything outside the surface above answers a labelled 501**, deliberately. The named absences
+  are the SMS sub-schema routes ([NOTES-sms.md](NOTES-sms.md)), password change, KBA and
+  self-registration; none is scheduled.
 
 ### Reset between tests
 
@@ -261,7 +365,10 @@ curl -X POST http://127.0.0.1:8090/local-api-server/reset
 ```
 
 Milliseconds, against the two minutes `./openam-reset.sh` costs on the container — which is what
-makes this one usable *between individual tests* rather than only between runs. It answers
+makes this one usable *between individual tests* rather than only between runs. **They are not
+alternatives.** `openam-reset.sh` destroys and rebuilds two containers and resets nothing in this
+process; this rebuilds this process's in-memory state and resets nothing in those containers. Run
+the one belonging to the backend you are pointed at. It answers
 `{"reset": true, "realms": 1, "milliseconds": …}`, and the process keeps running: the port, the URL
 and the unpacked XUI are all untouched, so nothing that was pointed at this server has to be pointed
 at it again.
@@ -286,11 +393,65 @@ somehow failed to serve — and every call to it is logged, since a reset change
 line after it.
 
 **This backend is not the acceptance oracle.** A green run against it does not satisfy sign-off; that
-needs the suite green against a deployed AM.
+needs the suite green against a deployed AM — see
+[Running the suite](#running-the-suite-against-either-backend).
 
 ```
 npm run test:server      # the server's own unit tests, from e2e/
 ```
+
+## Running the suite against either backend
+
+The backend is chosen outside the UI, at the point a run is pointed at one — `Constants.host` is
+`""` and the context comes from `location.pathname`, so one build runs against either unmodified.
+From `e2e/`:
+
+```
+npm run test:xui                                    # the deployed instance: 57 tests, 12 files
+
+OPENAM_BASE_URL=http://127.0.0.1:8090/openam \
+  npx playwright test xui/ --grep @local-server     # the local server: 23 tests, 5 files
+```
+
+`OPENAM_BASE_URL` defaults to `http://openam.example.org:8080/openam` — the instance above — in
+`common/openam-commons.mjs`. `--grep @local-server` is the whole selection: what a spec declares is
+what runs (D16), and the tag is on its `test.describe`. Those two forms are what
+`.github/workflows/xui-e2e.yml` and `.github/workflows/xui-local-server.yml` run.
+
+**What a filtered run's summary means.** The second form's `23 passed` is the same shape as a full
+run's green line, and nothing in Playwright's own output says the other nine spec files were never
+collected. What says so is the block `common/backend-tag-reporter.mjs` prints after the summary,
+headed `Backend coverage (D16)`: `filter`, the tag filter this run applied; `ran`, *5 of 14 spec
+files, 23 tests*; and `NOT RUN`, naming the other nine with a reason each — here all nine are
+*excluded by the tag filter*, being the seven above plus `oauth2/` and `saml/`, none of which
+carries `@local-server`. The first form's block instead reports those last two as *not selected by
+this run's paths*, since it applies no tag filter and asks only for `xui/`. It also names any spec
+file declaring no backend tag at all, since no tag-filtered run will ever execute one. It never
+changes the exit status: an undeclared spec is loud, not blocking.
+
+**A CLI `--reporter` replaces the config's reporter list rather than adding to it** (verified on
+Playwright 1.60), so a bare `--reporter=line` silently drops that reporter — and with it the only
+output that says what did not run. Append it instead:
+
+```
+--reporter=line,./common/backend-tag-reporter.mjs
+```
+
+This has been got wrong twice, once in a CI job and once in a set of parity runs. Both times the
+run was green and said nothing about its own scope.
+
+**One red result is known and open, on both backends.** `xui/xui-login.spec.mjs:123` — *logout ends
+the session and protected routes return to the login form* — fails intermittently and has never been
+root-caused: 3 of 6 gated runs against the deployed instance ([xui/BASELINE.md](../xui/BASELINE.md)),
+5 of 10 against the local server, and 1 of 2 in the parity runs ([PARITY.md](PARITY.md)). It tracks
+run duration rather than backend, so it being red is not evidence that you broke something — check
+whether it is the only failure, and run it again. It is deliberately neither retagged nor skipped: a
+flaky spec quietly moved off a lane is the shrinking suite D16 exists to prevent.
+
+**A green run against the local server is not sign-off.** It means the `@local-server` specs pass
+against the local server. The migration's task 10.1 requires the phase-0 suite green against a
+Vite-built XUI deployed to the instance above, and this is the sentence that stops a fast green run
+being read as acceptance.
 
 ## Tear down
 

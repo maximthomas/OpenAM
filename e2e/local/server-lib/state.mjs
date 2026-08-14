@@ -449,8 +449,9 @@ export function profileFor (recorded, username) {
     // only long-lived alias of a recorded body anywhere in this file, and an in-place write to it
     // would change what the *recording* reads as for the life of the process. `updateUser` replaces
     // rather than mutates, so nothing needs this today. It is here because `seededServices` and
-    // `createRealm` clone at exactly this boundary for exactly this reason, and because the next
-    // thing to touch these records is task 2.13's reset.
+    // `createRealm` clone at exactly this boundary for exactly this reason -- and because task
+    // 2.13's reset discards this whole state rather than repairing any part of it, so a record that
+    // had written through to the recording would be residue no reset could reach.
     const document = structuredClone(recorded);
 
     // The administrator's roles are recorded because that document is a self-read; the end user's
@@ -694,13 +695,15 @@ function renderListing (envelope, result) {
  * Every accessor returns `{status, body}` so the HTTP layer stays free of resource knowledge: what
  * is missing, and what AM says when it is, is a property of the resource and belongs here.
  *
- * The store is exposed as `realms` / `globalServices` because tasks 2.10-2.13 mutate it. It is
- * mutable on purpose: that mutability is the whole difference between this and a replayer.
+ * The store is exposed as `realms` / `globalServices` because tasks 2.10-2.12 write to it. It is
+ * mutable on purpose: that mutability is the whole difference between this and a replayer. Task
+ * 2.13's reset is the exception that proves it — the one operation that does not write to the
+ * store, because it replaces the object the whole store hangs off.
  *
  * **A document in the store is the object the loader cached, not a copy of it.** That is safe only
  * because `buildBaselineState` opens the capture afresh each time it is called, so a state that has
- * been written to shares nothing with the next one. Task 2.13's reset therefore has to go back
- * through `buildBaselineState` rather than hold a `loadCapture` handle and re-read from it — reusing
+ * been written to shares nothing with the next one. Task 2.13's reset therefore goes back through
+ * `buildBaselineState` rather than holding a `loadCapture` handle and re-reading from it — reusing
  * one would hand the new state documents an earlier state had already mutated in place.
  */
 function createState ({

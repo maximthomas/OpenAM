@@ -51,10 +51,14 @@
  * and the administrator's profile read; 2.11 adds the service writes and the
  * `_action=getCreatableTypes` the create form's type selector is built from, beside the schema and
  * template documents 2.6 already served; 2.12 finishes the profile — the end user's record, the
- * save, and the session every read of one now requires. Reset is task 2.13 and still answers a
- * labelled 501, as do password change, KBA, self-registration and the sub-schema routes, which are
- * out of scope by decision rather than by deferral. See server-lib/rest.mjs for why this stops
- * where it does rather than faking the rest.
+ * save, and the session every read of one now requires. Password change, KBA, self-registration and
+ * the sub-schema routes answer a labelled 501, and are out of scope by decision rather than by
+ * deferral. See server-lib/rest.mjs for why this stops where it does rather than faking the rest.
+ *
+ * **Reset is task 2.13, and it is not on the AM surface at all**: `POST /local-api-server/reset`
+ * throws the whole in-memory state away and rebuilds it from the capture, which is what makes this
+ * server usable *between* tests rather than only between runs. It is outside `/{context}/json/`
+ * because it is an operation on this process and no AM answers it; see server-lib/router.mjs.
  *
  * **A browser now bootstraps, logs in, lands in the admin console and administers realms and their
  * services — or, as an end user, lands on their own profile and edits it.** `serverinfo/*` is the
@@ -83,7 +87,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs, USAGE } from "./server-lib/options.mjs";
-import { createRequestHandler } from "./server-lib/router.mjs";
+import { CONTROL_MOUNT, createRequestHandler, RESET_PATH } from "./server-lib/router.mjs";
 import { buildBaselineState } from "./server-lib/state.mjs";
 import { resolveXuiSource } from "./server-lib/xui-source.mjs";
 
@@ -107,9 +111,14 @@ const log = (message) => process.stdout.write(`${message}\n`);
  * the request, it *is* the request. A static hit is logged only when it is not a plain 200 — a
  * single XUI page load fetches well over a hundred modules, and burying the one 404 among them in
  * the name of completeness would make the log worth reading exactly once.
+ *
+ * A control call is always logged, successful or not. A reset is the one request that changes the
+ * meaning of every line after it — reading a log in which realm `alpha` is created, then read, then
+ * absent makes no sense without it — so it is the last thing that should be inferred from a gap.
  */
 function logRequest (req, res, jsonMount) {
-    if (req.url.split("?")[0].startsWith(jsonMount) || res.statusCode !== 200) {
+    const path = req.url.split("?")[0];
+    if (path.startsWith(jsonMount) || path.startsWith(CONTROL_MOUNT) || res.statusCode !== 200) {
         log(`${res.statusCode} ${req.method} ${req.url}`);
     }
 }
@@ -187,12 +196,22 @@ async function serve (options, { root, source, staging }, stopping) {
     // Before the socket, so a capture that cannot be loaded stops the server without first taking
     // the port -- the failure an operator then has to diagnose is the one that happened, not an
     // EADDRINUSE from the corpse of this start.
-    const state = buildBaselineState(CAPTURE_DIR, {
+    //
+    // Named rather than inlined because task 2.13's reset calls exactly this again: the baseline a
+    // reset returns to is the baseline the server started from, by being built the same way from
+    // the same inputs rather than by two definitions agreeing.
+    const buildState = () => buildBaselineState(CAPTURE_DIR, {
         context: options.context,
         hostname: displayHost,
     });
+    const state = buildState();
 
-    const handle = createRequestHandler({ root, context: options.context, state });
+    const handle = createRequestHandler({
+        root,
+        context: options.context,
+        state,
+        rebuildState: buildState,
+    });
     const jsonMount = `/${options.context}/json`;
 
     const server = createServer((req, res) => {
@@ -246,6 +265,9 @@ Something is on it -- an earlier run of this server, or the AM container if you 
 
 Point the suite or a fixture at it with:
   OPENAM_BASE_URL=${origin}/${options.context}
+
+Back to the baseline, without stopping this server (ends every session it has open):
+  curl -X POST ${origin}${RESET_PATH}
 
 Ctrl-C to stop.`);
 

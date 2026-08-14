@@ -245,10 +245,11 @@ export function createAuthState (capture, { credentials }) {
      *
      * Logout could delete straight out of the map and be right today, because there is nothing to
      * this beyond a lookup. It goes through here anyway so that there is no second place holding an
-     * opinion: the moment a later task puts a condition in — an idle timer, a realm scope, 2.13's
-     * reset — a logout that had its own copy would start answering 200 for a session the two read
-     * routes were already answering 401 for, and that divergence is invisible until something
-     * happens to test both.
+     * opinion: the moment a later task puts a condition in — an idle timer, a realm scope — a logout
+     * that had its own copy would start answering 200 for a session the two read routes were already
+     * answering 401 for, and that divergence is invisible until something happens to test both.
+     * Task 2.13's reset turned out not to need a condition here at all: it replaces the state this
+     * map hangs off, so every session goes at once and no lookup has to know that it happened.
      */
     const sessionFor = (token) =>
         (typeof token === "string" && token !== "" ? sessions.get(token) : undefined);

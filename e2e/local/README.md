@@ -103,6 +103,10 @@ There is intentionally no faster partial reset. A snapshot-and-restore of `$OPEN
 would shave a minute off, at the cost of a reset that is only as complete as the snapshot — and
 the one thing this instance exists to provide is a baseline you can trust.
 
+The local API server has its own reset, and that one *is* fast enough to run between individual
+tests — see "Reset between tests" below. It resets that server and nothing here; the two backends
+share no state.
+
 ## Swapping the deployed XUI
 
 ```
@@ -166,7 +170,8 @@ directory, which is removed when the server stops; nothing is cached between run
 | | |
 |---|---|
 | XUI | <http://127.0.0.1:8090/openam/XUI/> |
-| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads, authentication, sessions, the bootstrap's configuration, realm and service administration, and the user profile; 501 for the rest, until task 2.13 |
+| REST | `http://127.0.0.1:8090/openam/json/` — the administrative reads, authentication, sessions, the bootstrap's configuration, realm and service administration, and the user profile; 501 for the rest |
+| RESET | `POST http://127.0.0.1:8090/local-api-server/reset` — back to the baseline. Not an AM path, deliberately; see below |
 
 Ready in about a second, from a checkout, with no war build and no container runtime — which is the
 entire point of it, against the 3–8 minutes and the Docker daemon the instance above needs. It is
@@ -177,7 +182,9 @@ is `""` and the context is derived from `location.pathname`, so it asks whatever
 under the path it was served from. That is what lets one build run against either backend unmodified.
 
 `--port`, `--context`, `--host` and the zip or tree each override their default, as do `OPENAM_LOCAL_PORT`,
-`OPENAM_LOCAL_CONTEXT`, `OPENAM_LOCAL_HOST` and `OPENAM_LOCAL_XUI`. Port 8090 avoids both 8080 (the
+`OPENAM_LOCAL_CONTEXT`, `OPENAM_LOCAL_HOST` and `OPENAM_LOCAL_XUI`. Any context but `local-api-server`,
+which is the control prefix in the table above and is refused at startup rather than left to shadow
+both AM mounts. Port 8090 avoids both 8080 (the
 AM container) and 8081 (`sp.mycompany.org` in the SAML specs), so this and the instance above can run
 at the same time — comparing them is the point. `node local/server.mjs --help` lists the rest.
 
@@ -240,12 +247,43 @@ an empty array means, what an unrecognised attribute may do — and each is writ
 that enforces it, in `state.mjs` and `rest.mjs`.
 
 Everything else answers a labelled 501, deliberately: a stub that let the XUI past something it had
-not actually done would make the real thing in task 2.13 unverifiable.
+not actually done would make the real thing, whenever it is built, unverifiable.
 
 **A browser bootstraps, logs in, lands in the admin console and drives realm and service
 administration — and an end user logs in and edits their own profile.**
 `xui/xui-realms.spec.mjs`, `xui/xui-services.spec.mjs` and `xui/xui-profile.spec.mjs` are the
 `@local-server` specs that run against this backend end to end.
+
+### Reset between tests
+
+```
+curl -X POST http://127.0.0.1:8090/local-api-server/reset
+```
+
+Milliseconds, against the two minutes `./openam-reset.sh` costs on the container — which is what
+makes this one usable *between individual tests* rather than only between runs. It answers
+`{"reset": true, "realms": 1, "milliseconds": …}`, and the process keeps running: the port, the URL
+and the unpacked XUI are all untouched, so nothing that was pointed at this server has to be pointed
+at it again.
+
+**What it does is throw the whole in-memory state away and build a new baseline from `capture/`,
+exactly as startup does.** Nothing is enumerated and nothing is cleared in place, which is why
+"leaves no residue" is a property of the mechanism rather than a list to keep current: realms,
+services, profiles, sessions and half-finished writes all go together because they are all reachable
+only from the object being replaced, and the rebuild re-reads the capture from disk rather than
+reusing a parse the discarded state may have written into. A write that a test began and never
+finished is gone for the same reason a completed one is, which is the case a teardown cannot cover —
+a test that fails partway does not run its own cleanup.
+
+Sessions go too. A browser left holding a session cookie is then in the position it would be in
+after any other reset of a backend: the session it names no longer exists and the XUI returns it to
+the login page. Log in again after a reset, as a test would.
+
+**It is not an AM route, and its name says so.** No deployed AM answers `/local-api-server/reset` and
+no spec that is also valid against a deployed instance may call it. It sits outside `/openam/json/`
+so that it cannot be read, in a request log or in a spec, as an AM call that a real instance had
+somehow failed to serve — and every call to it is logged, since a reset changes the meaning of every
+line after it.
 
 **This backend is not the acceptance oracle.** A green run against it does not satisfy sign-off; that
 needs the suite green against a deployed AM.

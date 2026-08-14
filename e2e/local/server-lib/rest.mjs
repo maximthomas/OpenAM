@@ -30,10 +30,15 @@
  * `_action=getCreatableTypes` the create form's type selector is built from, beside the schema and
  * template documents state.mjs already served. Task 2.12 finishes the profile: the end user's
  * record, the save, and the session requirement that turns 2.10's borrowed administrator read into
- * a read of the *caller's* directory rather than of anyone's. Everything else is still a labelled
- * 501: reset (2.13), and — as scope decisions rather than deferrals — password change, KBA and
- * self-registration on the profile, and the sub-schema routes below `…/services/{type}/{sub}`,
- * none of which anything in REQUESTS.md requests.
+ * a read of the *caller's* directory rather than of anyone's. Everything else is a labelled 501,
+ * as scope decisions rather than deferrals: password change, KBA and self-registration on the
+ * profile, and the sub-schema routes below `…/services/{type}/{sub}`, none of which anything in
+ * REQUESTS.md requests.
+ *
+ * Task 2.13 adds no route here. Reset is an operation on the process, not a resource AM has, so it
+ * lives on this server's own control surface (`POST /local-api-server/reset`, router.mjs) where it
+ * cannot be mistaken in a request log for an AM call — and what it discards is the state this
+ * module writes to, which reaches every route as the `state` it is handed per request.
  *
  * **501 rather than something the XUI can proceed past, deliberately.** The shortcut task 2.6
  * refused was to answer the two bootstrap calls with something plausible and get the login form to
@@ -717,14 +722,15 @@ function sendJson (req, res, status, body, cookies = []) {
 function sendNotImplemented (req, res, url) {
     const payload = Buffer.from(`${JSON.stringify({
         code: 501,
-        message: `The local API server does not implement ${req.method} ${url.pathname} yet. `
-            + "The rest of its REST surface -- reset -- arrives in task 2.13 of "
-            + "modernize-openam-ui-build; until then, run the suite against a "
-            + "deployed AM (e2e/local/openam-up.sh). A few requests *inside* the implemented "
-            + "surface answer this deliberately, because the capture has no recording of them or "
-            + "because nothing in scope asks for them -- the sub-schema routes are the standing "
-            + "example; the route in server-lib/rest.mjs says which and why, so read that before "
-            + "reading this as a routing bug.",
+        message: `The local API server does not implement ${req.method} ${url.pathname}. `
+            + "Its REST surface is the request list in e2e/local/REQUESTS.md and nothing else, so "
+            + "a request outside that list is answered here rather than guessed at -- run the "
+            + "suite against a deployed AM (e2e/local/openam-up.sh) for what this server does not "
+            + "serve. A few requests *inside* the implemented surface answer this deliberately, "
+            + "because the capture has no recording of them or because nothing in scope asks for "
+            + "them -- the sub-schema routes are the standing example; the route in "
+            + "server-lib/rest.mjs says which and why, so read that before reading this as a "
+            + "routing bug.",
         reason: NOT_IMPLEMENTED_REASON,
     }, null, 2)}\n`, "utf8");
 

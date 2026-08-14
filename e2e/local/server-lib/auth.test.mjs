@@ -87,8 +87,15 @@ function submit (requirements, user, pass, path = PATHS[0]) {
 }
 
 before(async () => {
-    state = buildBaselineState(CAPTURE_DIR, { context: "openam", hostname: "localhost" });
-    const handle = createRequestHandler({ root: CAPTURE_DIR, context: "openam", state });
+    // The same call twice, as server.mjs makes it: the state to start from, and how the reset
+    // endpoint would get another. Nothing in this file resets, but a handler built without
+    // `rebuildState` is refused -- see router.mjs.
+    const buildState = () =>
+        buildBaselineState(CAPTURE_DIR, { context: "openam", hostname: "localhost" });
+    state = buildState();
+    const handle = createRequestHandler({
+        root: CAPTURE_DIR, context: "openam", state, rebuildState: buildState,
+    });
     server = createServer((req, res) => {
         handle(req, res).catch((error) => {
             res.writeHead(500);

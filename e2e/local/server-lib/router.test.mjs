@@ -27,8 +27,10 @@
  *
  * Every case here is a request the XUI makes or an attack on the one that serves it. None of them
  * need the AM: the administrative reads come out of the committed capture, authentication out of
- * task 2.7 (auth.test.mjs), and everything else is 501 until tasks 2.8-2.13. The last block below
- * is what says so.
+ * task 2.7 (auth.test.mjs), and what is left is 501. The "what is not served" block says so.
+ *
+ * The last block is the control surface — reset, task 2.13 — which is the one thing here that is
+ * not an AM request at all.
  */
 
 import assert from "node:assert/strict";
@@ -113,10 +115,15 @@ async function sessionToken (username, password) {
 
 before(async () => {
     const root = await buildTree();
+    // The same call twice, as server.mjs makes it: the state to start from, and how the reset
+    // endpoint gets another. See the control-surface block at the end of this file.
+    const buildState = () =>
+        buildBaselineState(CAPTURE_DIR, { context: "openam", hostname: "localhost" });
     const handle = createRequestHandler({
         root,
         context: "openam",
-        state: buildBaselineState(CAPTURE_DIR, { context: "openam", hostname: "localhost" }),
+        state: buildState(),
+        rebuildState: buildState,
     });
     server = createServer((req, res) => {
         handle(req, res).catch((error) => {
@@ -661,5 +668,235 @@ describe("everything else", () => {
         // Parsing the target against the Host header made this a 400 that blamed the URL.
         const response = await get("/openam/XUI/main.js", { headers: { Host: "a b" } });
         assert.equal(response.status, 200);
+    });
+});
+
+/**
+ * Task 2.13. Deliberately the last block in the file, because these are the only tests here that
+ * leave the shared server in a different state than they found it — and the only ones that do not
+ * clean up after themselves, which is the point: every write above is followed by its own DELETE
+ * because until now that was the only way back, and these prove it is no longer.
+ */
+describe("the control surface", () => {
+    /** The realm names the store answers with, which is the cheapest observation of "baseline". */
+    async function realmNames () {
+        const listed = await get("/openam/json/global-config/realms?_queryFilter=true");
+        assert.equal(listed.status, 200);
+        return JSON.parse(listed.body).result.map((realm) => realm.name);
+    }
+
+    async function reset () {
+        const response = await get("/local-api-server/reset", { method: "POST" });
+        assert.equal(response.status, 200, response.body);
+        return JSON.parse(response.body);
+    }
+
+    it("discards a write that a test left behind, and says what it went back to", async () => {
+        const created = await get("/openam/json/global-config/realms?_action=create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "residue", parentPath: "/", active: true, aliases: [] }),
+        });
+        assert.equal(created.status, 201);
+        const realmId = JSON.parse(created.body)._id;
+        assert.deepEqual(await realmNames(), ["/", "residue"]);
+
+        const report = await reset();
+
+        assert.equal(report.reset, true);
+        // The count is the one the startup banner prints, so a caller can see the baseline it got
+        // without a second request -- and it is asserted against the listing, so the two cannot
+        // disagree about what "back to baseline" meant.
+        assert.equal(report.realms, 1);
+        assert.equal(typeof report.milliseconds, "number");
+        assert.deepEqual(await realmNames(), ["/"]);
+        // Not merely absent from the listing: the realm's own id no longer addresses anything, which
+        // is the difference between a listing rebuilt and a store emptied.
+        assert.equal((await get(`/openam/json/global-config/realms/${realmId}`)).status, 404);
+    });
+
+    it("takes back a half-finished write, including one made to a baseline document", async () => {
+        // The failure the requirement names. The console's create is two writes -- POST the realm,
+        // then PUT its `realm-config/authentication` -- so a test that dies between them leaves a
+        // realm no teardown knows about. The second write here is the harder half: it lands on
+        // *root*, a realm that came out of the capture rather than out of a create, so nothing can
+        // put it right by being deleted. Only rebuilding the baseline does.
+        const created = await get("/openam/json/global-config/realms?_action=create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "halfway", parentPath: "/", active: true, aliases: [] }),
+        });
+        assert.equal(created.status, 201);
+        // ...and the authentication PUT that would have followed never happens.
+
+        const authentication = "/openam/json/realms/root/realm-config/authentication";
+        const recorded = JSON.parse((await get(authentication)).body).core.adminAuthModule;
+        const edited = await get(authentication, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ adminAuthModule: "[dirty]" }),
+        });
+        assert.equal(edited.status, 200);
+        assert.equal(JSON.parse(edited.body).core.adminAuthModule, "[dirty]");
+
+        await reset();
+
+        assert.deepEqual(await realmNames(), ["/"]);
+        assert.equal(JSON.parse((await get(authentication)).body).core.adminAuthModule, recorded);
+    });
+
+    it("ends the sessions the run opened", async () => {
+        // Sessions are in the state like everything else, so the swap takes them with it -- which is
+        // what a reset has to mean for a suite whose next test logs in again. A browser holding the
+        // old cookie is in the position it would be in after any other reset of the backend: the
+        // session it names is gone, and `RESTLoginHelper` sends it to the login page.
+        const token = await sessionToken(ADMIN_USER, ADMIN_PASS);
+        const headers = { iPlanetDirectoryPro: token };
+        assert.equal((await get("/openam/json/sessions?_action=getSessionInfo",
+            { method: "POST", headers })).status, 200);
+
+        await reset();
+
+        assert.equal((await get("/openam/json/sessions?_action=getSessionInfo",
+            { method: "POST", headers })).status, 401);
+    });
+
+    it("discards a profile edit, and a login that had begun but not finished", async () => {
+        // The two stores the swap takes that a realm listing cannot see. The profile is the one
+        // worth its own test: `profileFor` clones on read *because* of this reset, so that a save
+        // cannot write through to the document the capture loader cached -- and that clone is only
+        // sufficient because the rebuild reads the capture again rather than reusing a handle.
+        // `inFlight` is the other half of `auth`, and auth.mjs accepts that it only ever shrinks on
+        // a *completed* login: an abandoned one is left there until a reset takes it.
+        const token = await sessionToken(USERNAME, PASSWORD);
+        const profile = `/openam/json/realms/root/users/${USERNAME}`;
+        const recorded = JSON.parse((await get(profile,
+            { headers: { iPlanetDirectoryPro: token } })).body).givenName;
+
+        const saved = await get(profile, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", iPlanetDirectoryPro: token },
+            body: JSON.stringify({ givenName: "[dirty]" }),
+        });
+        assert.equal(saved.status, 200);
+
+        // A login taken through its first leg and abandoned there, as a killed test leaves one.
+        const begun = await get("/openam/json/authenticate", { method: "POST" });
+        assert.equal(begun.status, 200);
+        const requirements = JSON.parse(begun.body);
+
+        await reset();
+
+        // Read through a new login, because the old token went with the sessions -- which is what
+        // the next test in a suite does anyway.
+        const read = await get(profile,
+            { headers: { iPlanetDirectoryPro: await sessionToken(USERNAME, PASSWORD) } });
+        assert.equal(read.status, 200);
+        assert.deepEqual(JSON.parse(read.body).givenName, recorded);
+
+        // And the abandoned handle no longer names anything, so finishing that login now fails the
+        // way an unknown authId does rather than completing against a state that is gone.
+        requirements.callbacks[0].input[0].value = USERNAME;
+        requirements.callbacks[1].input[0].value = PASSWORD;
+        const finished = await get("/openam/json/authenticate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requirements),
+        });
+        assert.equal(finished.status, 401);
+    });
+
+    it("is not on the AM surface, and is not something a stray GET can trigger", async () => {
+        // The naming rule, asserted rather than left to the comment: nothing under the AM namespace
+        // resets anything, so a request log can be read without wondering.
+        assert.equal((await get("/openam/json/reset", { method: "POST" })).status, 501);
+
+        const got = await get("/local-api-server/reset");
+        assert.equal(got.status, 405);
+        assert.equal(got.allow, "POST");
+        assert.match(got.body, /POST/);
+
+        // A neighbour on the control prefix is a 404 that says what the prefix is for, not a
+        // fallthrough to the 404 that lists the AM surfaces.
+        const neighbour = await get("/local-api-server/restart", { method: "POST" });
+        assert.equal(neighbour.status, 404);
+        assert.match(neighbour.body, /\/local-api-server\/reset/);
+    });
+
+    it("says the reset did not happen, and keeps serving, when the baseline will not build",
+        async () => {
+            // Task 2.15 re-records the capture, and a re-record underneath a running server is the
+            // realistic way a rebuild comes to throw. Assignment only on success is a one-line
+            // property that a refactor could lose silently, so it is asserted rather than argued:
+            // the state the server had is still the state it serves, and the 500 says so, because
+            // "did that reset half-apply?" is not a question a stack trace answers.
+            //
+            // On its own server: the shared one must not be left holding a handler that cannot
+            // reset, since every test above it depends on one that can.
+            let broken = false;
+            const build = () => {
+                if (broken) {
+                    throw new Error("capture/ is being re-recorded");
+                }
+                return buildBaselineState(CAPTURE_DIR, {
+                    context: "openam", hostname: "localhost",
+                });
+            };
+            const handle = createRequestHandler({
+                root: CAPTURE_DIR, context: "openam", state: build(), rebuildState: build,
+            });
+            const own = createServer((req, res) => {
+                handle(req, res).catch((error) => {
+                    res.writeHead(500);
+                    res.end(error.message);
+                });
+            });
+            await new Promise((ready) => own.listen(0, "127.0.0.1", ready));
+            const at = `http://127.0.0.1:${own.address().port}`;
+
+            try {
+                const created = await fetch(`${at}/openam/json/global-config/realms?_action=create`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            name: "kept", parentPath: "/", active: true, aliases: [],
+                        }),
+                    });
+                assert.equal(created.status, 201);
+
+                broken = true;
+                const refused = await fetch(`${at}/local-api-server/reset`, { method: "POST" });
+                assert.equal(refused.status, 500);
+                const report = await refused.json();
+                assert.equal(report.reset, false);
+                assert.match(report.message, /being re-recorded/);
+
+                // Still serving, and serving what it had rather than something half-built.
+                const listed = await fetch(
+                    `${at}/openam/json/global-config/realms?_queryFilter=true`);
+                assert.equal(listed.status, 200);
+                assert.deepEqual((await listed.json()).result.map((realm) => realm.name),
+                    ["/", "kept"]);
+            } finally {
+                own.closeAllConnections();
+                own.close();
+            }
+        });
+
+    it("refuses at construction the two ways a handler could turn out unable to reset", () => {
+        const state = buildBaselineState(CAPTURE_DIR, { context: "openam", hostname: "localhost" });
+
+        // The context that collides with the control prefix. The check that keeps the reset path
+        // off the AM surface would swallow both of that context's mounts, so it is refused where
+        // server.mjs still has somewhere to put the message -- before the port.
+        assert.throws(() => createRequestHandler({
+            root: CAPTURE_DIR, context: "local-api-server", state, rebuildState: () => state,
+        }), /control prefix/);
+
+        // And the handler with no way to build a baseline, which would otherwise take the port and
+        // fail on the first reset a suite asked for.
+        assert.throws(() => createRequestHandler({ root: CAPTURE_DIR, context: "openam", state }),
+            /rebuildState/);
     });
 });

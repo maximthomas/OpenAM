@@ -42,22 +42,24 @@
  * file removes on the way out; see server-lib/xui-source.mjs.
  *
  * **What it answers today: the XUI tree, the administrative reads, a session's whole life, the two
- * documents the bootstrap reads, and realm administration.** Task 2.6 builds an in-memory baseline
- * from local/capture at startup and answers realm and service reads out of it
+ * documents the bootstrap reads, and realm and service administration.** Task 2.6 builds an
+ * in-memory baseline from local/capture at startup and answers realm and service reads out of it
  * (server-lib/state.mjs); task 2.7 adds the credential exchange and the session cookie, and 2.8 the
  * resolution of that cookie and the logout that ends it (server-lib/auth.mjs); 2.9 adds
  * `serverinfo/*`, which is the site configuration, and the footer's `serverinfo/version`; 2.10 adds
  * the realm writes, the one-call header authentication the fixtures provision through, and the
- * administrator's profile read. Service administration, the rest of the profile and reset are tasks
- * 2.11-2.13 and still answer a labelled 501. See server-lib/rest.mjs for why this stops where it
- * does rather than faking the rest.
+ * administrator's profile read; 2.11 adds the service writes and the `_action=getCreatableTypes`
+ * the create form's type selector is built from, beside the schema and template documents 2.6
+ * already served. The rest of the profile and reset are tasks 2.12-2.13 and still answer a labelled
+ * 501, as do the sub-schema routes, which are out of scope by decision rather than by deferral. See
+ * server-lib/rest.mjs for why this stops where it does rather than faking the rest.
  *
- * **A browser now bootstraps, logs in and lands in the admin console.** `serverinfo/*` is the only
- * request gating `EVENT_APP_INITIALIZED`, so answering it is what starts the UI at all; the profile
- * read task 2.10 borrowed from 2.12 is what carries the `roles` that get the default route off
- * `#login` [observed: xui/xui-realms.spec.mjs, 7 passed against this server]. What stops it next is
- * whatever a spec beyond realm administration reaches for — service administration is 2.11, the
- * `demo` profile and its update 2.12.
+ * **A browser now bootstraps, logs in, lands in the admin console and administers realms and their
+ * services.** `serverinfo/*` is the only request gating `EVENT_APP_INITIALIZED`, so answering it is
+ * what starts the UI at all; the profile read task 2.10 borrowed from 2.12 is what carries the
+ * `roles` that get the default route off `#login` [observed: xui/xui-realms.spec.mjs and
+ * xui/xui-services.spec.mjs, 7 passed each against this server]. What stops it next is whatever a
+ * spec beyond those reaches for — the `demo` profile and its update are 2.12.
  *
  * `npm run test:server` demonstrates the surface directly; xui/xui-realms.spec.mjs is the first
  * `@local-server` spec that drives it through a browser (local/NOTES-auth.md §5, §8;
@@ -236,7 +238,8 @@ Something is on it -- an earlier run of this server, or the AM container if you 
   XUI   ${origin}/${options.context}/XUI/
   REST  ${origin}/${options.context}/json/   (${state.realms.size} realm(s) from the capture; 501
                                               outside the reads, authentication, sessions,
-                                              the bootstrap's configuration and realm admin)
+                                              the bootstrap's configuration and realm and
+                                              service admin)
 
 Point the suite or a fixture at it with:
   OPENAM_BASE_URL=${origin}/${options.context}

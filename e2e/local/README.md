@@ -189,8 +189,17 @@ console generates its forms from. They come from an in-memory baseline built at 
 It answers realm administration whole: create, read, update and delete, plus the
 `realm-config/authentication` PUT the console pairs every realm save with — creating a realm through
 the form is two writes, and the console treats a failure of the second as a failed create. A realm
-created through the console is in the next listing and a deleted one is gone from it. Service
-administration is still task 2.11's.
+created through the console is in the next listing and a deleted one is gone from it.
+
+And it answers service administration on the same terms: create, read, update and delete over a
+realm's service instances, beside the schema and template documents above. Two things about it are
+worth knowing before reading the code. A realm the console creates is **seeded with
+`policyconfiguration`**, because that is what the capture recorded a freshly created realm holding.
+And `_action=getCreatableTypes` — the list the create form's type selector is built from — is
+**recomputed on every call** from what the realm currently holds, never cached and never served from
+the recording: AM drops a type from it once the realm has an instance, and a server that returned a
+fixed list would let a service left behind by one test change what the next one is offered. Its
+sub-schema routes are not served, and are not scheduled to be; see `NOTES-sms.md`.
 
 It also answers the authentication exchange: the credential requirements, the submission, and the
 session cookie a completed authentication sets. The credentials are the suite's own — whatever
@@ -221,12 +230,12 @@ the fixtures' one-call header authentication — `X-OpenAM-Username` / `X-OpenAM
 profile update, the `demo` user and the `{{USER_SUFFIX}}` placeholder its payload carries.
 
 Everything else answers a labelled 501, deliberately: a stub that let the XUI past something it had
-not actually done would make the real thing in tasks 2.11–2.13 unverifiable.
+not actually done would make the real thing in tasks 2.12–2.13 unverifiable.
 
-**A browser bootstraps, logs in, lands in the admin console and drives realm administration.**
-`xui/xui-realms.spec.mjs` is the first `@local-server` spec that runs against this backend end to
-end. A spec that reaches beyond realms — service administration, the end-user profile — still needs
-the deployed instance above.
+**A browser bootstraps, logs in, lands in the admin console and drives realm and service
+administration.** `xui/xui-realms.spec.mjs` and `xui/xui-services.spec.mjs` are the `@local-server`
+specs that run against this backend end to end. A spec that reaches beyond them — the end-user
+profile — still needs the deployed instance above.
 
 **This backend is not the acceptance oracle.** A green run against it does not satisfy sign-off; that
 needs the suite green against a deployed AM.

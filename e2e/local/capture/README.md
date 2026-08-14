@@ -250,11 +250,16 @@ the two apart is deliberate — the alternative is a real suffix committed silen
 
 ## Known limits
 
-- **Whether `getCreatableTypes` is state-dependent is not determined.** In AM it should drop a service
-  type once an instance of it exists in the realm, which would make it stateful rather than
-  verbatim-servable. Both recordings happen *before* the `baseurl` create, and `"baseurl"` is present
-  in both, so the capture holds no evidence either way. A server that serves this payload verbatim
-  will be right for the recorded sequence and possibly wrong for any other.
+- ~~**Whether `getCreatableTypes` is state-dependent is not determined.**~~ **Resolved by task 2.11:
+  it is.** The capture still holds no evidence either way — both recordings happen *before* the
+  `baseurl` create and `"baseurl"` is present in both — but AM's source settles it:
+  `SmsRouteTree.handleAction` dispatches the action to `readTypes(context, NOT_CREATED_SINGLETONS,
+  forUI)`, whose predicate reads each singleton in the realm and includes the type only when that
+  read 404s. So this payload is **stateful, not verbatim-servable**, and the local server recomputes
+  it per call rather than serving it (`server-lib/state.mjs`, `realmCreatableTypes`). What the
+  recording *is* good for is the catalogue to subtract from: it was taken against a realm holding
+  exactly `policyconfiguration`, which is what a freshly created realm holds, so `catalogue − what
+  the realm has` reproduces it byte for byte for such a realm. See `../NOTES-sms.md`.
 - **The capture pins response shapes, not AM's semantics** (D15). The state machine's rules are ours,
   and can be wrong in ways the drift diff will not catch — a validation AM enforces and we do not, an
   ordering guarantee we invent. This is why the acceptance gate stays on the real instance (D16).

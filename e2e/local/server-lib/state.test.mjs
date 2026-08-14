@@ -115,12 +115,26 @@ async function syntheticCapture ({ realms, listingOrder = 1, createOrder = 9, om
         "json/realms/root/users/amadmin/GET.json": {
             realm: "/", roles: ["ui-global-admin", "ui-realm-admin"], username: "amadmin",
         },
+        // What a realm holds the moment it exists, and what it may still be given (task 2.11). The
+        // two are read as a pair: a realm created through the console is seeded from the first, and
+        // every `_action=getCreatableTypes` answer is the second minus whatever the realm now holds.
+        // Empty here rather than realistic -- the tests in this file that use a synthetic tree are
+        // about the loader's guards, and state.test.mjs's service tests run against the committed
+        // capture, where these are the recorded documents.
         "json/realms/root/realms/{realm}/realm-config/services/GET.queryFilter=true.json": {
             ...paging,
             result: [],
             resultCount: 0,
             totalPagedResults: 0,
             totalPagedResultsPolicy: "EXACT",
+        },
+        "json/realms/root/realms/{realm}/realm-config/services/POST.action=getCreatableTypes.json": {
+            result: [],
+        },
+        // What a service delete answers. Read rather than written out by the store, so a synthetic
+        // tree without it builds nothing -- see BASELINE.serviceDelete.
+        "json/realms/root/realms/{realm}/realm-config/services/baseurl/DELETE.json": {
+            success: true,
         },
         // The authentication exchange (task 2.7, auth.mjs), which buildBaselineState loads along
         // with the rest. Here because every real recording has it and a state built without it
@@ -712,21 +726,37 @@ describe("the realm writes", () => {
 });
 
 describe("the payloads served verbatim", () => {
-    it("is exactly the schema and template documents", () => {
+    it("is exactly the schema, template and sub-schema-type documents", () => {
         // Every payload served verbatim is one that cannot reflect a write, so the list is meant
         // to stay at the SMS documents that describe a service rather than record its state. This
         // is what would notice it growing.
         const state = baseline();
         // No bodies are read here, so the deployment map is irrelevant to the selection.
-        const served = loadCapture(CAPTURE_DIR, {}).filesForActions(["schema", "template"]);
-        assert.equal(served.length, 11);
+        const served = loadCapture(CAPTURE_DIR, {})
+            .filesForActions(["schema", "template", "getAllTypes"]);
+        assert.equal(served.length, 12);
         assert.equal(served.filter((file) => file.includes("action=schema")).length, 7);
         assert.equal(served.filter((file) => file.includes("action=template")).length, 4);
+        assert.equal(served.filter((file) => file.includes("action=getAllTypes")).length, 1);
         assert.notEqual(state.verbatim({
             method: "POST",
             path: "/json/global-config/realms",
             query: { _action: "schema" },
         }), undefined);
+    });
+
+    it("answers getAllTypes with the recorded empty list, on every edit-form render", () => {
+        // Task 2.11's one sub-schema-adjacent call. `EditSchemaComponent.render` fans it out
+        // unconditionally, so it is issued by every edit form the spec opens even though `baseurl`
+        // has no sub-schema types. Both failure modes are silent in different ways: a non-empty
+        // answer draws a tab bar the spec asserts is absent, and no answer at all leaves the outer
+        // Promise.all pending, so the edit form never renders and every test that reaches one fails
+        // somewhere with nothing to say about this call.
+        assert.deepEqual(baseline().verbatim({
+            method: "POST",
+            path: "/json/realms/root/realms/{realm}/realm-config/services/baseurl",
+            query: { _action: "getAllTypes" },
+        }), { result: [] });
     });
 
     it("answers a schema for a realm the capture never saw", () => {
@@ -754,9 +784,9 @@ describe("the payloads served verbatim", () => {
         // route form, to the file name the recorder chose.
         const index = JSON.parse(readFileSync(join(CAPTURE_DIR, "index.json"), "utf8"));
         const documents = index.calls
-            .filter((call) => ["schema", "template"].includes(call.query?._action));
+            .filter((call) => ["schema", "template", "getAllTypes"].includes(call.query?._action));
 
-        assert.equal(documents.length, 11);
+        assert.equal(documents.length, 12);
         for (const call of documents) {
             const route = parseRoute(call.path, call.query);
             assert.equal(
@@ -767,13 +797,303 @@ describe("the payloads served verbatim", () => {
     });
 
     it("does not serve an action outside the list", () => {
-        // getCreatableTypes is task 2.11's: capture/README.md's "Known limits" records that
-        // whether it is state-dependent was never determined.
+        // getCreatableTypes is the action that must *not* be in here: task 2.11 established that it
+        // is state-dependent -- the question capture/README.md's "Known limits" left open -- so the
+        // recorded body is a catalogue to recompute from rather than an answer to serve. Serving it
+        // verbatim would be right for the recorded realm and wrong for every other.
         assert.equal(baseline().verbatim({
             method: "POST",
             path: "/json/realms/root/realms/{realm}/realm-config/services",
             query: { _action: "getCreatableTypes" },
         }), undefined);
+    });
+});
+
+/**
+ * Task 2.11. The requirement in specs/ui-local-backend/spec.md is that an administrative form is
+ * generated from a schema and that a deletion is reflected in subsequent reads; what is below is
+ * that, plus the rules this server had to *choose* — which are the D15 class the re-record diff
+ * cannot catch — plus the one rule xui-services.spec.mjs will fail loudly on if it is got wrong.
+ */
+describe("the service writes", () => {
+    /** A realm as the console's realm create leaves it: holding whatever a fresh realm holds. */
+    function realmWith (state, name = "alpha") {
+        state.createRealm({ name });
+        return `/${name}`;
+    }
+
+    const idsOf = (answer) => answer.body.result.map((entry) => entry._id);
+
+    it("gives a created realm the services a recorded fresh realm has", () => {
+        // The order-28 recording, and the assertion xui-services.spec.mjs's `openServiceList` makes
+        // before it looks at anything else: a realm the console creates has `policyconfiguration`.
+        // A realm seeded with nothing fails every test in that spec at its first wait, with a
+        // message about a list that did not render.
+        const state = baseline();
+        const listing = state.realmServicesListing(realmWith(state));
+
+        assert.equal(listing.status, 200);
+        assert.deepEqual(listing.body.result,
+            [{ _id: "policyconfiguration", name: "Policy Configuration" }]);
+    });
+
+    it("offers every type the realm does not have, recomputed on each call", () => {
+        // The rule the spec's own structure rests on, and the one a fixed list passes the create
+        // test with and fails the test after it: "the create form stops offering a type the realm
+        // already has". Recomputed rather than cached, so create and delete both move it.
+        const state = baseline();
+        const realmPath = realmWith(state);
+
+        const fresh = state.realmCreatableTypes(realmPath);
+        assert.equal(fresh.status, 200);
+        // Byte-identical to the recording: the catalogue was recorded against a realm holding
+        // exactly what a fresh realm holds, so nothing is subtracted from it here.
+        assert.deepEqual(fresh.body, recorded(
+            "json/realms/root/realms/{realm}/realm-config/services/"
+            + "POST.action=getCreatableTypes.json",
+        ));
+        assert.ok(idsOf(fresh).includes("baseurl"));
+
+        state.createRealmService(realmPath, "baseurl", {});
+        const afterCreate = state.realmCreatableTypes(realmPath);
+        assert.ok(!idsOf(afterCreate).includes("baseurl"));
+        assert.equal(idsOf(afterCreate).length, idsOf(fresh).length - 1);
+        assert.ok(idsOf(afterCreate).length > 0, "the other types must still be on offer");
+
+        // And back again, which is what makes the spec idempotent across runs rather than only
+        // within one.
+        state.deleteRealmService(realmPath, "baseurl");
+        assert.deepEqual(idsOf(state.realmCreatableTypes(realmPath)), idsOf(fresh));
+    });
+
+    it("leads with a type whose schema and template it can serve", () => {
+        // An ordering constraint, and an easy one to break by "tidying" the catalogue into sorted
+        // order. The rebuild test picks its second type with
+        // `offered.find((candidate) => candidate._id !== "baseurl")` over the *raw* result, then
+        // drives the create form onto it -- so whatever is first here must have a recorded schema
+        // and template. The console sorts by name for display; the fixture does not.
+        const state = baseline();
+        const offered = state.realmCreatableTypes(realmWith(state)).body.result;
+        const second = offered.find((type) => type._id !== "baseurl");
+
+        for (const action of ["schema", "template"]) {
+            assert.notEqual(state.verbatim({
+                method: "POST",
+                path: `/json/realms/root/realms/{realm}/realm-config/services/${second._id}`,
+                query: { _action: action },
+            }), undefined, `the rebuild test would ask for ${second._id}'s ${action}`);
+        }
+    });
+
+    it("merges a create over the template, so a withheld property is still stored", () => {
+        // `showOnlyRequiredAndEmpty` means the console posts only the two properties it showed, and
+        // the spec then asserts the service reads back with `source: "REQUEST_VALUES"` -- which the
+        // console never sent and which is what makes the created service inert. The template is
+        // where it comes from.
+        const state = baseline();
+        const realmPath = realmWith(state);
+        const created = state.createRealmService(realmPath, "baseurl", {
+            extensionClassName: "",
+            fixedValue: "https://created.example.invalid",
+        });
+
+        assert.equal(created.status, 201);
+        assert.equal(created.body.fixedValue, "https://created.example.invalid");
+        assert.equal(created.body.source, "REQUEST_VALUES");
+        // Resolved, not the recorded marker: `contextPath` is `/{{CONTEXT}}` in the recording.
+        assert.equal(created.body.contextPath, `/${DEPLOYMENT.context}`);
+        // The identity the listing, the create form and the edit form's <h1> all read, and which
+        // the spec cross-checks against each other. Taken from the catalogue, not composed.
+        assert.deepEqual(created.body._type,
+            { _id: "baseurl", collection: false, name: "Base URL Source" });
+        assert.equal(created.body._id, "");
+        assert.deepEqual(state.realmService(realmPath, "baseurl"), { status: 200, body: created.body });
+    });
+
+    it("shows a created service in the next listing and a deleted one in neither", () => {
+        // specs/ui-local-backend/spec.md, "Deletion is reflected in subsequent reads" -- and its
+        // inverse, which the create test asserts by re-opening the list at its end.
+        const state = baseline();
+        const realmPath = realmWith(state);
+        state.createRealmService(realmPath, "baseurl", {});
+
+        assert.deepEqual(state.realmServicesListing(realmPath).body.result, [
+            { _id: "policyconfiguration", name: "Policy Configuration" },
+            { _id: "baseurl", name: "Base URL Source" },
+        ]);
+
+        const deleted = state.deleteRealmService(realmPath, "baseurl");
+        // Not the document, unlike a realm delete. Two conventions in one API, both recorded.
+        assert.deepEqual(deleted, { status: 200, body: { success: true } });
+        assert.deepEqual(state.realmServicesListing(realmPath).body.result,
+            [{ _id: "policyconfiguration", name: "Policy Configuration" }]);
+        assert.equal(state.realmService(realmPath, "baseurl").status, 404);
+    });
+
+    it("persists an update and keeps the identity the URL decided", () => {
+        const state = baseline();
+        const realmPath = realmWith(state);
+        state.createRealmService(realmPath, "baseurl", { fixedValue: "first" });
+
+        // The whole document, as the edit form really sends it back -- and with the identity
+        // fields tampered with, which the store must ignore: `_type.name` is the edit form's title
+        // and the listing's row text, so a body that changed it would rename the service.
+        const updated = state.updateRealmService(realmPath, "baseurl", {
+            _id: "not-this",
+            _type: { _id: "dashboard", collection: true, name: "Not This" },
+            contextPath: "/openam",
+            extensionClassName: null,
+            fixedValue: "https://edited.example.invalid",
+            source: "REQUEST_VALUES",
+        });
+
+        assert.equal(updated.status, 200);
+        assert.equal(updated.body.fixedValue, "https://edited.example.invalid");
+        assert.equal(updated.body._id, "");
+        assert.deepEqual(updated.body._type,
+            { _id: "baseurl", collection: false, name: "Base URL Source" });
+        assert.equal(state.realmService(realmPath, "baseurl").body.fixedValue,
+            "https://edited.example.invalid");
+        assert.deepEqual(state.realmServicesListing(realmPath).body.result.at(-1),
+            { _id: "baseurl", name: "Base URL Source" });
+    });
+
+    it("keeps the identity the URL decided on a create too, not only on an update", () => {
+        // The same guard as the test above, on the other write. It is asserted separately because
+        // the two build their document differently -- the update merges over what is stored, the
+        // create over the recorded template -- so one of them holding the line says nothing about
+        // the other. A create whose body renamed the type would file the instance under the type in
+        // the URL while the listing rendered it as something else, leaving a row whose edit link
+        // 404s: the same broken console the update test is guarding against, one write earlier.
+        const state = baseline();
+        const realmPath = realmWith(state);
+        const created = state.createRealmService(realmPath, "baseurl", {
+            _id: "not-this",
+            _type: { _id: "dashboard", collection: true, name: "Not This" },
+            fixedValue: "https://created.example.invalid",
+        });
+
+        assert.equal(created.status, 201);
+        assert.equal(created.body._id, "");
+        assert.deepEqual(created.body._type,
+            { _id: "baseurl", collection: false, name: "Base URL Source" });
+        // And the instance really is under the type the URL named, not the one the body asked for.
+        assert.deepEqual(state.realmServicesListing(realmPath).body.result.at(-1),
+            { _id: "baseurl", name: "Base URL Source" });
+        assert.equal(state.realmService(realmPath, "dashboard").status, 404);
+        // Where the recording puts them, which a spread would otherwise decide by insertion order.
+        assert.deepEqual(Object.keys(created.body).slice(0, 2), ["_id", "_type"]);
+    });
+
+    it("does not let two realms share a template's own mutable values", () => {
+        // `capture.body` caches, so every caller of a template gets the same object back. A shallow
+        // merge would therefore hand two realms the same array: `dashboard`'s only property is one.
+        // Nothing writes through such a reference today, which is exactly why this is pinned here --
+        // the aliasing would be invisible until something did, and then it would look like a bug in
+        // whatever wrote rather than in the create that shared.
+        const state = baseline();
+        const alpha = realmWith(state, "alpha");
+        const beta = realmWith(state, "beta");
+        const first = state.createRealmService(alpha, "dashboard", {});
+        const second = state.createRealmService(beta, "dashboard", {});
+
+        assert.equal(first.status, 201);
+        assert.deepEqual(first.body.assignedDashboard, second.body.assignedDashboard);
+        assert.notEqual(first.body.assignedDashboard, second.body.assignedDashboard);
+
+        first.body.assignedDashboard.push("written-through");
+        assert.deepEqual(state.realmService(beta, "dashboard").body.assignedDashboard, [""]);
+        // And the baseline the next create reads from is still the recorded one.
+        assert.deepEqual(
+            state.createRealmService(realmWith(state, "gamma"), "dashboard", {}).body
+                .assignedDashboard,
+            [""],
+        );
+    });
+
+    it("overwrites a service the realm already has, following createRealm's precedent", () => {
+        // Not modelled, deliberately: AM answers 409 and this answers 201. The console cannot make
+        // this request -- the create form only offers what `getCreatableTypes` returned, and that
+        // subtracts what the realm holds -- so the status is pinned here rather than invented to
+        // match AM. What matters is what it does *not* do: leave a second row, or a row whose type
+        // came from the second body.
+        const state = baseline();
+        const realmPath = realmWith(state);
+        state.createRealmService(realmPath, "baseurl", { fixedValue: "first" });
+        const again = state.createRealmService(realmPath, "baseurl", { fixedValue: "second" });
+
+        assert.equal(again.status, 201);
+        assert.equal(state.realmService(realmPath, "baseurl").body.fixedValue, "second");
+        assert.deepEqual(state.realmServicesListing(realmPath).body.result, [
+            { _id: "policyconfiguration", name: "Policy Configuration" },
+            { _id: "baseurl", name: "Base URL Source" },
+        ]);
+    });
+
+    it("does not let two realms share the services of one", () => {
+        // The seeded documents are cloned per realm, for the reason the authentication document is:
+        // every test in xui-services.spec.mjs gets a scratch realm of its own precisely so that one
+        // cannot affect another, and a shared object would defeat that inside a single run.
+        const state = baseline();
+        const alpha = realmWith(state, "alpha");
+        const beta = realmWith(state, "beta");
+
+        state.createRealmService(alpha, "baseurl", { fixedValue: "alpha's" });
+
+        assert.equal(state.realmService(beta, "baseurl").status, 404);
+        assert.ok(!idsOf(state.realmCreatableTypes(alpha)).includes("baseurl"));
+        assert.ok(idsOf(state.realmCreatableTypes(beta)).includes("baseurl"));
+
+        state.updateRealmService(alpha, "policyconfiguration", { marker: true });
+        assert.ok(!Object.hasOwn(state.realmService(beta, "policyconfiguration").body, "marker"));
+    });
+
+    it("answers a service write to a realm that is not there with AM's own message", () => {
+        const state = baseline();
+
+        for (const answer of [
+            state.realmCreatableTypes("/gone"),
+            state.createRealmService("/gone", "baseurl", {}),
+            state.updateRealmService("/gone", "baseurl", {}),
+            state.deleteRealmService("/gone", "baseurl"),
+        ]) {
+            assert.equal(answer.status, 404);
+            assert.deepEqual(answer.body,
+                { code: 404, message: "Realm cannot be read: /gone", reason: "Not Found" });
+        }
+    });
+
+    it("answers a service the realm does not have without naming it, as recorded", () => {
+        // AM does not name the service it could not find here, unlike the realm case. `readService`
+        // in common/services-commons.mjs reads this 404 as null, which is what the delete tests
+        // assert and what the create test's precondition rests on.
+        const state = baseline();
+        const realmPath = realmWith(state);
+
+        for (const answer of [
+            state.updateRealmService(realmPath, "baseurl", {}),
+            state.deleteRealmService(realmPath, "baseurl"),
+            state.realmService(realmPath, "baseurl"),
+        ]) {
+            assert.deepEqual(answer, {
+                status: 404,
+                body: recorded("json/realm-config/services/baseurl/GET.404.json"),
+            });
+        }
+    });
+
+    it("refuses to create a type it could not have generated a form for", () => {
+        // `undefined` is the labelled 501, not a 404: a type with no recorded schema is a request
+        // outside the capture's scope rather than a resource that is missing. The same answer
+        // `_action=schema` already gives for it, so a type cannot become creatable through a form
+        // this server could not have produced.
+        const state = baseline();
+        const realmPath = realmWith(state);
+
+        assert.equal(state.createRealmService(realmPath, "audit", {}), undefined);
+        assert.equal(state.createRealmService(realmPath, "notAType", {}), undefined);
+        assert.deepEqual(state.realmServicesListing(realmPath).body.result,
+            [{ _id: "policyconfiguration", name: "Policy Configuration" }]);
     });
 });
 

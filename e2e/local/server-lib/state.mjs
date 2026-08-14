@@ -45,15 +45,16 @@
  * ## What is served verbatim, and why only this
  *
  * Every payload served verbatim is one that cannot reflect a write, so the list is kept to the one
- * category where that is not a defect: **the SMS schema and template documents** — the 7
- * `_action=schema` and 4 `_action=template` responses. They describe what a service *is* — the
- * fields, types and ranges the console generates its administrative forms from — rather than
- * recording what any instance of it currently holds. Nothing a write can do changes them, so
- * deriving them from state would be modelling a document that does not vary.
+ * category where that is not a defect: **the SMS description documents** — the 7 `_action=schema`,
+ * 4 `_action=template` and 1 `_action=getAllTypes` responses. They describe what a service *is* —
+ * the fields, types and ranges the console generates its administrative forms from, and the
+ * sub-schema types it decides whether to draw a tab bar for — rather than recording what any
+ * instance of it currently holds. Nothing a write can do changes them, so deriving them from state
+ * would be modelling a document that does not vary.
  *
  * That is the whole list, and it is *narrower* than the capture's own. capture/README.md puts the
  * verbatim-servable set at "every `_action=schema` (7), every `_action=template` (4),
- * `_action=getAllTypes` (1), and the three `serverinfo` responses" — so two of its entries are
+ * `_action=getAllTypes` (1), and the three `serverinfo` responses" — so one of its entries is
  * deliberately left out here:
  *
  *   - `serverinfo` (3 calls) is task 2.9's, and it is *nearly* verbatim rather than verbatim: the
@@ -61,16 +62,29 @@
  *     itself because the recorded value names another deployment's cookie domain. See
  *     `SITE_CONFIGURATION_OVERRIDES` below. It is built here rather than added to the verbatim set
  *     so that the one field this server does not agree with has somewhere to be argued.
- *   - `_action=getAllTypes` (1 call, REQUESTS.md's `…/services/baseurl` row) belongs to task 2.11
- *     with the rest of service administration, and answers 501 today.
  *
- * A third, `_action=getCreatableTypes`, is not in the capture's verbatim set either and is left to
- * 2.11 for a stronger reason: the README's "Known limits" records that whether it is
- * state-dependent was never determined — in AM a type should drop out of it once the realm has an
- * instance, which would make serving it verbatim wrong for every realm but the recorded one.
+ * `_action=getCreatableTypes` is not in the capture's verbatim set either, and task 2.11 is where
+ * the README's "Known limits" question about it gets closed rather than inherited. It **is**
+ * state-dependent: `SmsRouteTree.handleAction` dispatches it to `readTypes(context,
+ * NOT_CREATED_SINGLETONS, forUI)`, whose predicate reads each singleton in the realm and includes
+ * the type only when that read 404s. Serving the recorded answer verbatim would therefore be wrong
+ * for every realm but the recorded one — and wrong in the direction that matters, because
+ * xui-services.spec.mjs asserts a type stops being offered once the realm has it. So the recorded
+ * body is loaded as a *catalogue* and the answer is recomputed per call; see `realmCreatableTypes`.
  *
- * The 11 are selected by predicate from `index.json` rather than listed by name, so a re-record
- * that adds a service to the request list gets its schema served without an edit here.
+ * The 12 verbatim payloads are selected by predicate from `index.json` rather than listed by name,
+ * so a re-record that adds a service to the request list gets its schema served without an edit
+ * here.
+ *
+ * ## What task 2.11 does not serve
+ *
+ * **Sub-schemas.** `baseurl` has none, xui-services.spec.mjs never opens a sub-schema screen — it
+ * asserts the absence of the tab bar that would lead to one — and NOTES-sms.md confirms the six
+ * sub-schema endpoints are never called. `parseRoute` leaves `…/services/{type}/{sub}` at the
+ * labelled 501, which is what "nothing asks for this" has meant everywhere else in this server. The
+ * one sub-schema-adjacent call that *is* made is `_action=getAllTypes`, which
+ * `EditSchemaComponent.render` fans out on every edit-form render regardless; it is in the verbatim
+ * set above, answering the recorded `{"result":[]}`.
  *
  * ## Shape from the capture, content from state
  *
@@ -134,8 +148,50 @@ const BASELINE = {
         "json/realms/root/realms/{realm}/realm-config/authentication/GET.json",
     /** order 13 — the global REST service; never mutated anywhere in the capture. */
     restService: "json/global-config/services/rest/GET.json",
-    /** order 28 — a realm's service listing, kept for its paging envelope only; see below. */
+    /**
+     * order 28 — a realm's service listing, for its paging envelope *and* for its contents.
+     *
+     * Both halves are load-bearing, and the second is task 2.11's. Recorded at 28, before the
+     * service create at 35, so this is what a realm holds the moment it exists rather than what the
+     * recording went on to put in it: exactly `policyconfiguration`. A realm created through the
+     * console is seeded from it (see `realmPrototype`), which is the half task 2.10 deferred here
+     * because no read it implemented could tell an empty realm from a seeded one.
+     *
+     * xui-services.spec.mjs can. `openServiceList` waits for the `policyconfiguration` row before
+     * asserting anything else, on the reasoning that "the row I am looking for is absent" is equally
+     * true of a list that never rendered — so against a realm seeded with nothing, every test in
+     * that spec fails at its first assertion with a message about the wrong thing.
+     */
     realmServices: "json/realms/root/realms/{realm}/realm-config/services/GET.queryFilter=true.json",
+    /**
+     * order 29 — the service types a realm may still be given, and the catalogue every answer to
+     * `_action=getCreatableTypes` is recomputed from.
+     *
+     * Also recorded before the create at 35, and against the same realm as the listing above, which
+     * is what makes the two consistent: this is the answer for a realm holding
+     * `policyconfiguration`, so `policyconfiguration` is the one type absent from its 19 entries.
+     * Serving `catalogue − what the realm holds` therefore reproduces this recording byte for byte
+     * for a freshly created realm, without this server having to decide whether the type is missing
+     * because the realm has it or because it is `hiddenFromUI` — a question NOTES-sms.md records as
+     * untraced and which no request in scope can distinguish.
+     *
+     * An entry is `{_id, collection, name}`, which is also exactly the `_type` an instance document
+     * carries. `createRealmService` takes it from here rather than composing one, so the display
+     * name the create form offered, the one the listing renders and the one the edit form puts in
+     * its `<h1>` cannot come apart — the spec cross-checks all three against this single string.
+     */
+    realmServiceTypes:
+        "json/realms/root/realms/{realm}/realm-config/services/POST.action=getCreatableTypes.json",
+    /**
+     * order 39 — what a service delete answers, read rather than written out.
+     *
+     * Sixteen bytes that could not plausibly drift, and taken from the recording anyway for the
+     * reason `capture-store.mjs` gives about the cookie name: a value this server can read is a
+     * value it does not get to decide. The type is incidental — a delete answers the same
+     * `{"success": true}` whichever instance it removed, and `baseurl` is simply the one instance
+     * the capture ever deletes.
+     */
+    serviceDelete: "json/realms/root/realms/{realm}/realm-config/services/baseurl/DELETE.json",
     /** order 23 — not loaded; its order is what proves `realms` above is pre-mutation. */
     realmCreate: "json/global-config/realms/POST.action=create.json",
     /**
@@ -195,7 +251,18 @@ const BASELINE = {
 const SITE_CONFIGURATION_OVERRIDES = { domains: [] };
 
 /** The actions whose responses are pure static description. See the header note. */
-const VERBATIM_ACTIONS = ["schema", "template"];
+const VERBATIM_ACTIONS = ["schema", "template", "getAllTypes"];
+
+/**
+ * A recorded `_action=template` that belongs to a *service type*, capturing which type.
+ *
+ * `filesForActions(["template"])` also finds the realm template at
+ * `json/global-config/realms/POST.action=template.json`, which is a different resource entirely, and
+ * would find a sub-schema's template — `…/services/{type}/{sub}/POST.action=template.json` — if one
+ * were ever recorded. Requiring the action to sit directly below a single segment under `services/`
+ * excludes both, so the map this builds holds service types and only service types.
+ */
+const SERVICE_TEMPLATE_FILE = /\/realm-config\/services\/([^/]+)\/POST\.action=template\.json$/;
 
 /**
  * An AM error envelope, as recorded. Not served from the capture even though two are recorded:
@@ -343,26 +410,46 @@ export function buildBaselineState (captureDir, { context, hostname }) {
             // this server's scope does not contain it (REQUESTS.md has only the
             // `/realms/root/realms/<realm>/realm-config/services` form).
             //
-            // A realm task 2.10 creates starts empty too, which is a *change* from what this
-            // comment used to anticipate — that 2.10 would seed one from the order-28 listing,
-            // where a fresh realm has `policyconfiguration`. Deferred to 2.11 deliberately: no read
-            // task 2.10 implements can tell the two apart, and the header's own note on
-            // `getCreatableTypes` records that whether it is state-dependent was never determined,
-            // which is the question seeding turns on. 2.11 owns both halves of it.
+            // Left empty by task 2.11 as well, and that is the deliberate half. A realm the console
+            // *creates* is seeded from the order-28 listing (see `realmPrototype`), because a
+            // recording of a freshly created realm is evidence of what one holds. There is no such
+            // recording for root, so seeding it would mean assuming root looks like a child realm —
+            // and the only read that would notice is a service listing for root, which nothing in
+            // REQUESTS.md requests. The divergence to know about: `getCreatableTypes` on root offers
+            // the catalogue's 19 where a real AM would also offer `policyconfiguration`. Unreachable
+            // for the same reason, and written down rather than guessed at.
+            //
+            // Seeding is not, however, the only thing between this and service administration on
+            // root. The capture is keyed by path, so root's schema and template resolve to
+            // `json/realms/root/realm-config/services/…`, which is not recorded — root's create and
+            // edit forms would answer 501 at the schema whatever this Map held. Both gaps have the
+            // same cause and the same fix, and neither is worth closing until a spec asks.
             services: new Map(),
         });
     }
 
     const globalServices = new Map([["rest", capture.body(BASELINE.restService)]]);
 
-    // What a realm created through the console is made of, both halves taken from the recording:
-    // the defaults AM declares for a realm document, and the authentication configuration a realm
-    // has the moment it exists. Neither is hand-authored, which is the D15 rule applied to a
-    // resource that is created rather than read.
+    // What a realm created through the console is made of, all three parts taken from the
+    // recording: the defaults AM declares for a realm document, the authentication configuration a
+    // realm has the moment it exists, and the services it already holds at that moment. None is
+    // hand-authored, which is the D15 rule applied to a resource that is created rather than read.
     const realmPrototype = {
         document: capture.body(BASELINE.realmTemplate),
         authentication: capture.body(BASELINE.createdRealmAuthentication),
+        // The listing's own entries, `{_id, name}` each. See BASELINE.realmServices.
+        services: capture.body(BASELINE.realmServices).result,
     };
+
+    // The type catalogue, and the per-type starting values a create merges over. Both are read from
+    // the recording rather than declared here, so the set of types this server knows about and the
+    // set whose schemas it can serve stay the same set.
+    const serviceTypes = capture.body(BASELINE.realmServiceTypes).result;
+    const serviceTemplates = new Map(capture.filesForActions(["template"])
+        .map((file) => [SERVICE_TEMPLATE_FILE.exec(file)?.[1], file])
+        .filter(([type]) => type !== undefined)
+        .map(([type, file]) => [type, capture.body(file)]));
+    const serviceDeleteResponse = capture.body(BASELINE.serviceDelete);
 
     // The profiles this server can answer a read for, keyed by the name the account logs in under.
     // One entry: the administrator, under whatever `OPENAM_ADMIN_USER` resolved to, so that the
@@ -394,8 +481,26 @@ export function buildBaselineState (captureDir, { context, hostname }) {
 
     return createState({
         realms, globalServices, listingEnvelopes, statics, auth, siteConfiguration, serverVersion,
-        realmPrototype, users,
+        realmPrototype, users, serviceTypes, serviceTemplates, serviceDeleteResponse,
     });
+}
+
+/**
+ * The service instances a realm holds the moment it is created, keyed by type.
+ *
+ * A listing entry is a type identity — `{_id, name}` — and an instance document is that identity
+ * under `_type` beside the settings it holds, so the two are converted rather than equated. The
+ * settings are genuinely absent here: the capture records that a fresh realm *has*
+ * `policyconfiguration`, and never reads it, so there is nothing recorded to seed them from and
+ * nothing in scope that asks. A `GET …/services/policyconfiguration` would answer this thin
+ * document; no request in REQUESTS.md makes one, and inventing settings for a service whose schema
+ * this server does not serve would be modelling AM rather than reproducing a recording.
+ *
+ * Fresh objects per realm, for the reason `createRealm` clones the authentication document: two
+ * realms created in one run must not share state that a write to either mutates.
+ */
+function seededServices (entries) {
+    return new Map(entries.map((entry) => [entry._id, { _id: "", _type: structuredClone(entry) }]));
 }
 
 /**
@@ -431,7 +536,7 @@ function renderListing (envelope, result) {
  */
 function createState ({
     realms, globalServices, listingEnvelopes, statics, auth, siteConfiguration, serverVersion,
-    realmPrototype, users,
+    realmPrototype, users, serviceTypes, serviceTemplates, serviceDeleteResponse,
 }) {
     /**
      * The realm an id addresses, as the `[path, record]` pair the store holds it under.
@@ -581,11 +686,11 @@ function createState ({
                 // Its own copy: two realms created in one run must not share the document that a
                 // PUT on either of them mutates.
                 authentication: structuredClone(realmPrototype.authentication),
-                // Empty, as a realm-services listing for a realm this server created. The capture's
-                // order-28 listing is a real AM's answer for a realm that had just been created,
-                // and seeding from it is task 2.11's to decide along with the rest of service
-                // administration -- 2.10 has no read that would notice either answer.
-                services: new Map(),
+                // What the capture's order-28 listing says a realm holds the moment it exists:
+                // `policyconfiguration`, and nothing else. Task 2.11's half of this create -- 2.10
+                // left it empty because no read it implemented could tell the two apart, and
+                // xui-services.spec.mjs's `openServiceList` is the read that can.
+                services: seededServices(realmPrototype.services),
             });
             return { status: 201, body: stored };
         },
@@ -756,9 +861,150 @@ function createState ({
         },
 
         /**
-         * A schema or template document, served verbatim. `undefined` means this request is not
-         * one of the 11 — the HTTP layer answers 501, because an unrecorded schema is a request
-         * outside the capture's scope rather than a resource that is missing.
+         * `POST …/realm-config/services?_action=getCreatableTypes&forUI=true` — the types this realm
+         * may still be given, and the one answer in this file that must never be cached.
+         *
+         * **Recomputed from live state on every call**, which is the whole of the rule: the
+         * catalogue minus every type the named realm currently holds. A fixed list would pass
+         * xui-services.spec.mjs's create test and fail the one after it — the spec says so in as
+         * many words — and would fail it the way that costs the most to diagnose, by passing on a
+         * clean instance and failing on the second run against the same one. Group 1 hit exactly
+         * that against the real AM in task 1.7.
+         *
+         * The console does no filtering of its own (`ServicesService.type.getCreatables` only
+         * sorts), so whatever is returned here is what the create form offers, and the spec asserts
+         * the rendered dropdown has exactly as many options as this answer has entries.
+         *
+         * `forUI` is accepted and ignored. It suppresses `hiddenFromUI` types in AM, and the
+         * recorded catalogue is already a `forUI=true` answer, so honouring it would mean applying
+         * a filter twice; a `forUI=false` caller would get the filtered list, which is a request
+         * nothing in scope makes (NOTES-sms.md).
+         *
+         * A realm this server does not have answers with the realm 404 rather than an empty list,
+         * so that a mistyped realm is not reported as one with nothing left to create.
+         */
+        realmCreatableTypes (realmPath) {
+            const realm = realms.get(realmPath);
+            if (!realm) {
+                return { status: 404, body: notFound(`Realm cannot be read: ${realmPath}`) };
+            }
+            return {
+                status: 200,
+                body: { result: serviceTypes.filter((type) => !realm.services.has(type._id)) },
+            };
+        },
+
+        /**
+         * `POST …/realm-config/services/{id}?_action=create` — 201 with the stored instance.
+         *
+         * **The posted values are merged over the recorded template, not stored alone**, and that is
+         * the rule the create test turns on. `showOnlyRequiredAndEmpty` means the console sends only
+         * the properties it showed — for `baseurl`, `extensionClassName` and `fixedValue` — and the
+         * spec then asserts the service reads back with `source === "REQUEST_VALUES"`, which the
+         * console never sent. The template is where it comes from, and it is the same document the
+         * create form took its own starting values from, so the server and the form cannot disagree
+         * about what an unset property is.
+         *
+         * `_type` is the catalogue's entry for the type, whose three fields are exactly `_type`'s.
+         * `_id` is the empty string every recorded singleton instance carries.
+         *
+         * `undefined` — the labelled 501 — for a type the recording covers neither a catalogue entry
+         * nor a template for. That is not a missing resource but a request outside the capture's
+         * scope, and it is the same answer `_action=schema` already gives for such a type, which
+         * keeps a type from being creatable through a form this server could not have generated.
+         *
+         * **Not modelled, deliberately, following `createRealm`'s precedent:** creating a service
+         * the realm already has. AM answers 409; this answers 201 and overwrites. No request in
+         * REQUESTS.md makes one — the console cannot, since the form only offers what
+         * `getCreatableTypes` returned — so inventing the status would be modelling AM rather than
+         * reproducing a recording. Likewise a posted property the schema does not declare is stored
+         * rather than rejected; AM validates, and nothing under test sends one.
+         */
+        createRealmService (realmPath, serviceId, values) {
+            const realm = realms.get(realmPath);
+            if (!realm) {
+                return { status: 404, body: notFound(`Realm cannot be read: ${realmPath}`) };
+            }
+            const type = serviceTypes.find((candidate) => candidate._id === serviceId);
+            const template = serviceTemplates.get(serviceId);
+            if (type === undefined || template === undefined) {
+                return undefined;
+            }
+
+            // `identity` is spread twice, and both times are load-bearing. First, because the
+            // recording puts `_id` and `_type` before the settings and a spread fixes a key's
+            // position at its first occurrence. Last, so the body cannot change them -- the same
+            // guard `updateRealmService` puts on its own merge, and for the same reason: `_type.name`
+            // is what the listing renders as the row and the edit form as its title, `_id` is what
+            // the row's link addresses, and a body that set either would file the instance under the
+            // type from the URL while the console read it back as something else.
+            //
+            // The template is cloned rather than spread, because `capture.body` caches and returns
+            // the same object for every caller: `dashboard`'s only property is an array, and a
+            // shallow spread would leave every realm that created one sharing it with the baseline.
+            // Same rule as `seededServices` -- two realms in one run share nothing a write reaches.
+            const identity = { _id: "", _type: structuredClone(type) };
+            const document = { ...identity, ...structuredClone(template), ...values, ...identity };
+            realm.services.set(serviceId, document);
+            return { status: 201, body: document };
+        },
+
+        /**
+         * `PUT …/realm-config/services/{id}` — the edit form's save, and an echo of what was stored.
+         *
+         * The console sends the whole document back rather than the edited field alone
+         * (`values.extend(getData()).raw`), so this is a merge only to keep a property the form did
+         * not carry from being dropped. Identity comes from the store rather than the body, for the
+         * reason `updateRealm` takes a realm's: `_type.name` is what the edit form renders as its
+         * title and what the listing renders as the row, so a body that changed it would rename the
+         * service in the console's own next read.
+         *
+         * AM answers this with no message; the "Changes saved" the spec waits for is the console's
+         * own. So this only has to succeed.
+         */
+        updateRealmService (realmPath, serviceId, document) {
+            const realm = realms.get(realmPath);
+            if (!realm) {
+                return { status: 404, body: notFound(`Realm cannot be read: ${realmPath}`) };
+            }
+            const stored = realm.services.get(serviceId);
+            if (!stored) {
+                return { status: 404, body: notFound("Not Found") };
+            }
+
+            const merged = { ...stored, ...document, _id: stored._id, _type: stored._type };
+            realm.services.set(serviceId, merged);
+            return { status: 200, body: merged };
+        },
+
+        /**
+         * `DELETE …/realm-config/services/{id}` — the recorded body, read from `BASELINE.serviceDelete`.
+         *
+         * Note the shape: a realm delete answers with the realm as it last was, and a service delete
+         * answers with `{"success": true}` instead. Two conventions in one API, both recorded,
+         * neither invented — which is why this reads the sixteen bytes rather than writing them out.
+         *
+         * All three of the console's delete routes arrive here — the edit form's button, the list's
+         * per-row button and the toolbar's bulk delete, which issues one of these per checked id.
+         * What the spec asserts of each is that the row is gone from the *next* listing and that
+         * `getCreatableTypes` offers the type again, so the removal has to be from state rather than
+         * merely reported.
+         */
+        deleteRealmService (realmPath, serviceId) {
+            const realm = realms.get(realmPath);
+            if (!realm) {
+                return { status: 404, body: notFound(`Realm cannot be read: ${realmPath}`) };
+            }
+            if (!realm.services.delete(serviceId)) {
+                return { status: 404, body: notFound("Not Found") };
+            }
+            return { status: 200, body: serviceDeleteResponse };
+        },
+
+        /**
+         * A schema, template or sub-schema-type document, served verbatim. `undefined` means this
+         * request is not one of the 12 — the HTTP layer answers 501, because an unrecorded schema is
+         * a request outside the capture's scope rather than a resource that is missing.
          */
         verbatim (request) {
             return statics.get(captureFileFor(request));

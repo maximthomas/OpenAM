@@ -25,9 +25,12 @@
  * documents, which is what lets the XUI finish its bootstrap at all. Task 2.10 adds the first
  * writes — realm create, update and delete, and the `realm-config/authentication` PUT the console
  * pairs every one of them with — plus the fixtures' one-call header authentication and the
- * administrator's profile read, without which no browser reaches an admin screen to drive.
- * Everything else is still a labelled 501: service administration (2.11), the rest of the profile
- * (2.12) and reset (2.13).
+ * administrator's profile read, without which no browser reaches an admin screen to drive. Task
+ * 2.11 adds service administration: the service create, update and delete, and the
+ * `_action=getCreatableTypes` the create form's type selector is built from, beside the schema and
+ * template documents state.mjs already served. Everything else is still a labelled 501: the rest of
+ * the profile (2.12), reset (2.13), and — as a scope decision rather than a deferral — the
+ * sub-schema routes below `…/services/{type}/{sub}`, which nothing in REQUESTS.md requests.
  *
  * **501 rather than something the XUI can proceed past, deliberately.** The shortcut task 2.6
  * refused was to answer the two bootstrap calls with something plausible and get the login form to
@@ -311,6 +314,28 @@ function write (route, method, query, document, state) {
         return state.deleteRealm(route.realmId);
     case "PUT realm-authentication":
         return state.updateRealmAuthentication(route.realmPath, document);
+
+    // Service administration (task 2.11). `getCreatableTypes` is a POST that reads rather than
+    // writes, and it is here rather than in `read` above because that is where a POST with an
+    // `_action` is dispatched from -- the split in this file is by method, not by effect.
+    //
+    // It reaches this point only because it is not one of the verbatim documents: `serveRest`
+    // offers every `_action` to the store's static set first, so `schema`, `template` and
+    // `getAllTypes` are answered from the recording before they get here, and this switch never
+    // sees them. That ordering is deliberate and is what keeps the state-dependent action apart
+    // from the three that describe a service rather than a realm's use of one.
+    case "POST realm-services":
+        return query._action === "getCreatableTypes"
+            ? state.realmCreatableTypes(route.realmPath)
+            : undefined;
+    case "POST realm-service":
+        return query._action === "create"
+            ? state.createRealmService(route.realmPath, route.serviceId, document)
+            : undefined;
+    case "PUT realm-service":
+        return state.updateRealmService(route.realmPath, route.serviceId, document);
+    case "DELETE realm-service":
+        return state.deleteRealmService(route.realmPath, route.serviceId);
     default:
         return undefined;
     }
@@ -629,13 +654,13 @@ function sendNotImplemented (req, res, url) {
     const payload = Buffer.from(`${JSON.stringify({
         code: 501,
         message: `The local API server does not implement ${req.method} ${url.pathname} yet. `
-            + "The rest of its REST surface -- service administration, the rest of the profile and "
-            + "reset -- arrives in tasks 2.11-2.13 of modernize-openam-ui-build; until then, run "
-            + "the suite against a deployed AM (e2e/local/openam-up.sh). A few requests *inside* "
-            + "the implemented surface answer this deliberately, because the capture has no "
-            + "recording of them; the "
-            + "route in server-lib/rest.mjs says which and why, so read that before reading this "
-            + "as a routing bug.",
+            + "The rest of its REST surface -- the rest of the profile, and reset -- arrives in "
+            + "tasks 2.12-2.13 of modernize-openam-ui-build; until then, run the suite against a "
+            + "deployed AM (e2e/local/openam-up.sh). A few requests *inside* the implemented "
+            + "surface answer this deliberately, because the capture has no recording of them or "
+            + "because nothing in scope asks for them -- the sub-schema routes are the standing "
+            + "example; the route in server-lib/rest.mjs says which and why, so read that before "
+            + "reading this as a routing bug.",
         reason: NOT_IMPLEMENTED_REASON,
     }, null, 2)}\n`, "utf8");
 

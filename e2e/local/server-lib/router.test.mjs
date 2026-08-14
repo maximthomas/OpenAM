@@ -304,6 +304,106 @@ describe("the REST surface", () => {
             { method: "DELETE" });
     });
 
+    it("carries a service write from the wire, and recomputes what is creatable after it", async () => {
+        // Task 2.11 over HTTP, and the half no unit test reaches: that `rest.mjs`'s four new cases
+        // dispatch, and that the verbatim documents are offered before them -- a `schema` that fell
+        // through to the write switch would 501, and a `getCreatableTypes` served from `statics`
+        // would answer the recording forever. Both are one string away in the same switch.
+        const created = await get("/openam/json/global-config/realms?_action=create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "wired", parentPath: "/", active: true, aliases: [] }),
+        });
+        assert.equal(created.status, 201);
+        const realm = "/openam/json/realms/root/realms/wired/realm-config/services";
+        const creatable = async () => JSON.parse((await get(`${realm}?_action=getCreatableTypes`,
+            { method: "POST" })).body).result.map((type) => type._id);
+
+        const before = await creatable();
+        assert.ok(before.includes("baseurl"));
+        // Served from the recording, not from the switch below it.
+        assert.equal((await get(`${realm}/baseurl?_action=schema`, { method: "POST" })).status, 200);
+
+        const service = await get(`${realm}/baseurl?_action=create`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ extensionClassName: "", fixedValue: "https://wire.invalid" }),
+        });
+        assert.equal(service.status, 201);
+        assert.equal(JSON.parse(service.body).fixedValue, "https://wire.invalid");
+
+        // The state-dependent half, over the wire and after a write the same process made.
+        assert.deepEqual(await creatable(), before.filter((type) => type !== "baseurl"));
+
+        const saved = await get(`${realm}/baseurl`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...JSON.parse(service.body), fixedValue: "https://edited.invalid" }),
+        });
+        assert.equal(saved.status, 200);
+        assert.equal(JSON.parse((await get(`${realm}/baseurl`)).body).fixedValue,
+            "https://edited.invalid");
+
+        const removed = await get(`${realm}/baseurl`, { method: "DELETE" });
+        assert.equal(removed.status, 200);
+        assert.deepEqual(JSON.parse(removed.body), { success: true });
+        // Offered again, which is what makes two runs of xui-services.spec.mjs against one process
+        // ask for the same thing twice.
+        assert.deepEqual(await creatable(), before);
+
+        await get(`/openam/json/global-config/realms/${JSON.parse(created.body)._id}`,
+            { method: "DELETE" });
+    });
+
+    it("reaches the same service through the legacy realm-as-query path", async () => {
+        // The console uses the realm-scoped path and the fixtures use this one, so both families
+        // have to land on one resource. state.test.mjs pins that `parseRoute` reads them the same;
+        // this is that the write routes really are reachable through the second.
+        const created = await get("/openam/json/global-config/realms?_action=create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "legacy", parentPath: "/", active: true, aliases: [] }),
+        });
+        assert.equal(created.status, 201);
+
+        const service = await get(
+            "/openam/json/realm-config/services/baseurl?_action=create&realm=%2Flegacy",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fixedValue: "https://legacy.invalid" }),
+            },
+        );
+        assert.equal(service.status, 201);
+        // Written through one path, read back through the other.
+        const read = await get(
+            "/openam/json/realms/root/realms/legacy/realm-config/services/baseurl");
+        assert.equal(read.status, 200);
+        assert.equal(JSON.parse(read.body).fixedValue, "https://legacy.invalid");
+
+        await get(`/openam/json/global-config/realms/${JSON.parse(created.body)._id}`,
+            { method: "DELETE" });
+    });
+
+    it("keeps an action the request list does not record off the service routes", async () => {
+        // The service analogue of the realms case below. `create` and `getCreatableTypes` are the
+        // only two actions REQUESTS.md records here; anything else is out of scope by construction,
+        // and 501 rather than a create is what says the switch discriminates on the action at all.
+        // The realm deliberately does not exist: the action gate is before any state lookup, so a
+        // 404 here would mean the action had been accepted and only the realm had saved us.
+        const collection = await get(
+            "/openam/json/realms/root/realms/alpha/realm-config/services?_action=somethingElse",
+            { method: "POST", body: "{}" },
+        );
+        assert.equal(collection.status, 501);
+
+        const member = await get(
+            "/openam/json/realms/root/realms/alpha/realm-config/services/baseurl?_action=update",
+            { method: "POST", body: "{}" },
+        );
+        assert.equal(member.status, 501);
+    });
+
     it("answers a body that is not JSON with 400 rather than acting on nothing", async () => {
         const response = await get("/openam/json/global-config/realms?_action=create", {
             method: "POST",
@@ -365,9 +465,15 @@ describe("the REST surface", () => {
     });
 
     it("names the request that got it, because that is the first thing asked", async () => {
-        const response = await get("/openam/json/realms/root/realm-config/services/baseurl", {
-            method: "PUT",
-        });
+        // A sub-schema instance. Out of scope by decision rather than by deferral -- no type this
+        // server serves has sub-schema types, xui-services.spec.mjs pins that by asserting the tab
+        // bar which would lead to one is absent, and there is no later task holding them -- which is
+        // what makes it a stable subject, in the sense the test below argues for. This was
+        // `PUT …/services/baseurl` until task 2.11 turned that into a real route, at which point it
+        // stopped asserting anything about the 501 and started asserting a 404.
+        const response = await get(
+            "/openam/json/realms/root/realm-config/services/audit/handler", { method: "PUT" },
+        );
         assert.equal(response.status, 501);
         assert.match(JSON.parse(response.body).message, /PUT \/openam\/json\/realms\/root/);
     });

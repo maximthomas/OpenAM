@@ -79,6 +79,24 @@
             </includes>
         </fileSet>
 
+        <fileSet>
+            <directory>${project.build.directory}/font-awesome-${font-awesome.version}</directory>
+            <outputDirectory>/css/fontawesome</outputDirectory>
+            <includes>
+                <include>css/font-awesome.min.css</include>
+                <include>fonts/*</include>
+                <include>less/variables.less</include>
+            </includes>
+        </fileSet>
+        <fileSet>
+            <directory>${project.build.directory}/Font-Awesome-${font-awesome.version}</directory>
+            <outputDirectory>/css/fontawesome</outputDirectory>
+            <includes>
+                <include>css/font-awesome.min.css</include>
+                <include>fonts/*</include>
+                <include>less/variables.less</include>
+            </includes>
+        </fileSet>
     </fileSets>
     <dependencySets>
         <dependencySet>
@@ -93,6 +111,7 @@
         <dependencySet>
             <includes>
                 <include>org.openidentityplatform.commons.ui.libs:*:css</include>
+                <include>org.openidentityplatform.commons.ui.libs:*:less</include>
             </includes>
             <outputDirectory>/css</outputDirectory>
         </dependencySet>

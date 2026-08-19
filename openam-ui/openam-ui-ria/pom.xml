@@ -31,6 +31,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <codemirror.version>4.10</codemirror.version>
         <handlebars.version>4.7.7</handlebars.version>
+        <commons.ui.version>3.2.0-SNAPSHOT</commons.ui.version>
+        <font-awesome.version>4.5.0</font-awesome.version>
     </properties>
 
     <dependencies>
@@ -260,19 +262,47 @@
                 <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
                     <execution>
-                        <id>unpack-forgerock-ui-user</id>
+                        <id>copy-commons-npm-tarballs</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/npm</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.openidentityplatform.commons.ui</groupId>
+                                    <artifactId>commons</artifactId>
+                                    <version>${commons.ui.version}</version>
+                                    <type>tgz</type>
+                                    <classifier>npm</classifier>
+                                    <destFileName>ui-commons.tgz</destFileName>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.openidentityplatform.commons.ui</groupId>
+                                    <artifactId>user</artifactId>
+                                    <version>${commons.ui.version}</version>
+                                    <type>tgz</type>
+                                    <classifier>npm</classifier>
+                                    <destFileName>ui-user.tgz</destFileName>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>unpack-font-awesome</id>
                         <phase>process-resources</phase>
                         <goals>
                             <goal>unpack</goal>
                         </goals>
                         <configuration>
-                            <outputDirectory>target/dependencies-expanded/forgerock-ui-user</outputDirectory>
+                            <outputDirectory>${project.build.directory}</outputDirectory>
                             <artifactItems>
                                 <artifactItem>
-                                    <groupId>org.openidentityplatform.commons.ui</groupId>
-                                    <artifactId>user</artifactId>
+                                    <groupId>org.openidentityplatform.commons.ui.libs</groupId>
+                                    <artifactId>font-awesome</artifactId>
+                                    <version>${font-awesome.version}</version>
                                     <type>zip</type>
-                                    <classifier>www</classifier>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>
@@ -315,6 +345,16 @@
                 <groupId>com.github.eirslett</groupId>
                 <artifactId>frontend-maven-plugin</artifactId>
                 <executions>
+                    <execution>
+                        <id>npm-install-commons</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>initialize</phase>
+                        <configuration>
+                            <arguments>install ./target/npm/ui-commons.tgz ./target/npm/ui-user.tgz --no-save</arguments>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>npm-build</id>
                         <goals>

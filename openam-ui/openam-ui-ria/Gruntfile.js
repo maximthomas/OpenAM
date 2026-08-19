@@ -43,10 +43,17 @@ module.exports = function (grunt) {
         forgeRockCommonsDirectory = process.env.FORGEROCK_UI_SRC + "/forgerock-ui-commons",
         forgeRockUiDirectory = process.env.FORGEROCK_UI_SRC + "/forgerock-ui-user",
         targetVersion = grunt.option("target-version") || "dev",
+        commonsPackageSource = function (pkg) {
+            return [
+                "node_modules/@openidentityplatform/" + pkg + "/amd",
+                "node_modules/@openidentityplatform/" + pkg + "/www"
+            ];
+        },
         buildCompositionDirs = _.flatten([
             "target/dependencies",
-            // When building, dependencies are downloaded and expanded by Maven
-            "target/dependencies-expanded/forgerock-ui-user",
+            // When building, the commons sources are installed by Maven+npm as tarball packages
+            commonsPackageSource("ui-commons"),
+            commonsPackageSource("ui-user"),
             // This must come last so that it overwrites any conflicting files!
             mavenProjectSource(".")
         ]),
@@ -127,7 +134,9 @@ module.exports = function (grunt) {
                     return {
                         expand: true,
                         cwd: dir,
-                        src: ["**"],
+                        // "!package.json" drops the CommonJS marker at the root of each npm
+                        // package's amd/ directory; it is not part of the UI.
+                        src: ["**", "!package.json"],
                         dest: compositionDirectory
                     };
                 })

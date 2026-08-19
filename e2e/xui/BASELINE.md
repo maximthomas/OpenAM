@@ -85,6 +85,22 @@ Produced by **Grunt**, driven from Maven — not built by hand for this baseline
 
 - Source: `openam-ui/openam-ui-ria/src/main/js` plus `src/main/resources`, composed with the
   `forgerock-ui-user` dependency expanded under `target/dependencies-expanded/`.
+  **This baseline was recorded before task 3.7.** Since 3.7 the commons sources arrive instead as
+  the `@openidentityplatform/ui-commons` and `ui-user` npm packages, installed from Maven `tgz:npm`
+  artifacts; `target/dependencies-expanded/forgerock-ui-user` survives carrying a single file
+  (`libs/form2js-2.0-769718a.js`). Shape is unchanged — 719 files in `target/XUI`, 50 in `libs/`,
+  854 zip entries / 652 files, all four equal to this baseline.
+
+  **Content is not identical, and should not be**: the packages are commons `3.2.0-SNAPSHOT` while
+  the old `zip:www` was `3.1.2`, so 638 of the 652 shipped files are byte-identical and **14
+  differ** — `main.js` and `main.js.map` (the r.js bundle, which necessarily changes when any
+  bundled module does), `oauthReturn.html`, `templates/common/LoginTemplate.html`, and 10 modules
+  under `org/forgerock/commons/`. Spot-checked, the differences are Babel output formatting plus
+  real 3.1.2→3.2.0-SNAPSHOT source changes (e.g. `ValidatorsUtils.js` gains a copyright line and a
+  `namePattern` regex fix, `\xF0-s]` → `\xF0\s-]`). Task 3.4 is what establishes the two builds are
+  behaviourally interchangeable; this baseline's assertions are behavioural, so it stands.
+
+  See `e2e/local/NOTES-xui-build.md` for the current composition list.
 - Build entry point: `openam-ui/openam-ui-ria/pom.xml` runs `frontend-maven-plugin` in the
   `compile` phase with `npm run build:production -- --target-version=${project.version}`, which is
   `cross-env NODE_ENV=production grunt prod --verbose`. Node `v22.21.1`, npm `11.6.2` (pinned as

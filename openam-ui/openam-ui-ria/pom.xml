@@ -31,11 +31,47 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <codemirror.version>4.10</codemirror.version>
         <handlebars.version>4.7.7</handlebars.version>
+        <!--
+            Applies ONLY to the tgz:npm artifacts copied by copy-commons-npm-tarballs below.
+            The commons.ui:user:zip:www dependency stays at the version the imported BOM chain
+            manages (3.1.2): that BOM is scope=import, so its properties interpolate inside the
+            BOM and this one cannot reach it. The build therefore composes AMD/www sources at
+            3.2.0-SNAPSHOT over vendor libraries pinned at 3.1.2, and nothing checks the two
+            agree - a vendor bump in commons 3.2 will not reach AM. Task 3.10 records the
+            coupling, 3.12 removes the pin.
+
+            PREREQUISITE: no released commons carries a tgz:npm artifact, so these resolve from
+            ~/.m2 only. Build them first, from the sibling commons checkout on branch
+            features/ui-migration:
+                mvn install -f ui/pom.xml
+            Without that this module fails at `initialize` with "Could not find artifact
+            org.openidentityplatform.commons.ui:commons:tgz:npm:3.2.0-SNAPSHOT".
+
+            AND BUILD THIS MODULE FROM ../ (openam-ui), NOT FROM HERE. The ~58 commons.ui.libs
+            artifacts are published to no repository; they exist only because
+            maven-external-dependency-plugin fetches them from CDNs, and that plugin is
+            inherited=false on the openam-ui aggregator with install-external bound to
+            process-resources. A standalone build here never runs it and dies resolving
+            selectize-non-standalone, text, sifter, ... from Central. Use:
+                mvn -DskipTests package        (from openam-ui)
+            NEVER `mvn clean` on openam-ui, and never `mvn ... -am` from the OpenAM root:
+            clean-external DELETES those artifacts from ~/.m2 and nothing can restore them but
+            a CDN round trip. Use `rm -rf target` instead.
+        -->
         <commons.ui.version>3.2.0-SNAPSHOT</commons.ui.version>
         <font-awesome.version>4.5.0</font-awesome.version>
     </properties>
 
     <dependencies>
+        <!--
+            Retained after its unpack execution was removed in task 3.7. The AMD sources now
+            arrive through the npm tarballs, but this artifact is still the SOLE carrier for the
+            33 transitive org.openidentityplatform.commons.ui.libs dependencies that dir.xml's
+            dependencySet blocks consume (25 js, 6 css, 1 less, 1 zip). The npm packages ship no
+            libs/ directory at all, so removing this empties the shipped /libs. It is also still
+            unpacked, narrowly, by unpack-forgerock-ui-user-form2js below. Retires in task 4.7
+            together with those dependencySet blocks.
+        -->
         <dependency>
             <groupId>org.openidentityplatform.commons.ui</groupId>
             <artifactId>user</artifactId>
@@ -269,6 +305,17 @@
                         </goals>
                         <configuration>
                             <outputDirectory>${project.build.directory}/npm</outputDirectory>
+                            <!--
+                                destFileName strips the version so the npm-install-commons
+                                arguments below can hardcode the path. That makes the copy
+                                destination stable across versions, so the overWrite flags have
+                                to be explicit: with dependency:copy's defaults
+                                (overWriteSnapshots=false, overWriteIfNewer=true) a re-pinned
+                                commons.ui.version whose artifact has an older mtime would
+                                silently leave the previous tarball in place.
+                            -->
+                            <overWriteReleases>true</overWriteReleases>
+                            <overWriteSnapshots>true</overWriteSnapshots>
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>org.openidentityplatform.commons.ui</groupId>
@@ -289,6 +336,47 @@
                             </artifactItems>
                         </configuration>
                     </execution>
+                    <!--
+                        Pins libs/form2js-2.0-769718a.js to the www zip's vendored copy.
+
+                        The npm packages carry no libs/, so every shipped library now arrives via
+                        dir.xml's commons.ui.libs dependencySet into target/dependencies. Both
+                        sources supply form2js, and they were observed to DISAGREE: the build of
+                        2026-08-04 had 3095c47f in target/dependencies against 897ec696 from the
+                        zip, the former carrying seven extra lines that rewrite bracketed form
+                        field names (foo[bar] -> foo.bar) during serialisation. form2js backs
+                        RESTLoginView and five commons self-service views, so which copy composed
+                        last was a behavioural difference - and one the file-count acceptance
+                        check is structurally blind to, since the counts are equal either way.
+
+                        The root cause is broader than this file: commons.ui.libs artifacts are
+                        fetched from CDNs by maven-external-dependency-plugin, are published to
+                        no repository, and the same coordinate can yield different bytes on a
+                        re-fetch. A later install-external run pulled form2js 2.0-769718a again
+                        and got 897ec696 - matching the zip - so the two sources agree TODAY and
+                        this execution is currently inert. It is kept because it makes the
+                        shipped bytes independent of that drift for the one file known to have
+                        drifted. See NOTES-npm-commons.md; the general drift risk is unresolved.
+                    -->
+                    <execution>
+                        <id>unpack-forgerock-ui-user-form2js</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependencies-expanded/forgerock-ui-user</outputDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.openidentityplatform.commons.ui</groupId>
+                                    <artifactId>user</artifactId>
+                                    <type>zip</type>
+                                    <classifier>www</classifier>
+                                    <includes>libs/form2js-*.js</includes>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>unpack-font-awesome</id>
                         <phase>process-resources</phase>
@@ -303,6 +391,13 @@
                                     <artifactId>font-awesome</artifactId>
                                     <version>${font-awesome.version}</version>
                                     <type>zip</type>
+                                    <!--
+                                        The artifact is the GitHub source archive (see
+                                        openam-ui/pom.xml's maven-external-dependency-plugin), so
+                                        it roots at Font-Awesome-${font-awesome.version}/ and is
+                                        3.6 MB. Only the 8 files dir.xml ships are needed.
+                                    -->
+                                    <includes>**/css/font-awesome.min.css,**/fonts/*,**/less/variables.less</includes>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>
@@ -345,6 +440,37 @@
                 <groupId>com.github.eirslett</groupId>
                 <artifactId>frontend-maven-plugin</artifactId>
                 <executions>
+                    <!--
+                        Installs the two commons packages out of band. They are deliberately NOT
+                        in package.json: npm pins file: tarballs by content hash, and a
+                        3.2.0-SNAPSHOT tarball is one version string over changing bytes, so the
+                        integrity would go stale on every commons rebuild - `npm ci` hard-fails
+                        and `npm install` rewrites the lockfile.
+
+                        ORDER IS LOAD-BEARING AND IS NOT WHAT THIS FILE SHOWS. This execution is
+                        declared first but must RUN LAST, after install-node-and-npm and
+                        npm-install. It does, because Maven's pluginManagement merge injects the
+                        executions inherited from openam-ui/pom.xml ahead of module-declared
+                        ones. Move npm-install into this pom, or reorder it, and the order flips:
+                        a plain `npm install` reconciles node_modules against package.json and
+                        prunes both packages ("removed 50 packages"). Grunt's copy:compose then
+                        drops the missing source directories SILENTLY and the build fails much
+                        later in requirejs:compile for an unrelated-looking reason. The guard in
+                        Gruntfile.js turns that into a named failure; do not rely on it instead
+                        of preserving the order.
+
+                        The legacy-peer-deps flag is required, not cosmetic. Both packages declare
+                        their runtime libraries as peerDependencies, and npm 7+ auto-installs
+                        those: without the flag the build resolves 50 unpinned packages (react,
+                        backbone, handlebars, jquery, ...) from the public registry on every run,
+                        recorded in neither package.json nor package-lock.json because the
+                        no-save flag suppresses exactly that record. AM already ships these
+                        libraries from the Maven commons.ui.libs artifacts, so they would be a
+                        duplicate, unaudited and network-dependent supply chain. With the flag,
+                        npm adds 2 packages and stays offline. Do NOT substitute the omit=peer
+                        flag: ui-user declares ui-commons itself as an optional peer, so omitting
+                        peers silently drops ui-commons.
+                    -->
                     <execution>
                         <id>npm-install-commons</id>
                         <goals>
@@ -352,7 +478,7 @@
                         </goals>
                         <phase>initialize</phase>
                         <configuration>
-                            <arguments>install ./target/npm/ui-commons.tgz ./target/npm/ui-user.tgz --no-save</arguments>
+                            <arguments>install ${project.build.directory}/npm/ui-commons.tgz ${project.build.directory}/npm/ui-user.tgz --no-save --legacy-peer-deps</arguments>
                         </configuration>
                     </execution>
                     <execution>

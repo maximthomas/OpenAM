@@ -79,15 +79,19 @@
             </includes>
         </fileSet>
 
-        <fileSet>
-            <directory>${project.build.directory}/font-awesome-${font-awesome.version}</directory>
-            <outputDirectory>/css/fontawesome</outputDirectory>
-            <includes>
-                <include>css/font-awesome.min.css</include>
-                <include>fonts/*</include>
-                <include>less/variables.less</include>
-            </includes>
-        </fileSet>
+        <!--
+            8 files the commons www zip used to supply under css/fontawesome/ and neither npm
+            package ships. They are build-blocking, not decorative: css/structure.less and
+            css/styles-admin.less both @import font-awesome.min.css and less/variables.less.
+
+            The directory name is capitalised because the artifact is the GitHub source archive
+            (openam-ui/pom.xml's maven-external-dependency-plugin fetches
+            github.com/FortAwesome/Font-Awesome/archive/v${version}.zip), which roots at
+            Font-Awesome-${font-awesome.version}/. Verified against the zip; it is a function of
+            the repository name, not a guess. Note this only matters on a case-sensitive
+            filesystem - on macOS a lowercase spelling resolves to the same directory and any
+            error here is invisible locally.
+        -->
         <fileSet>
             <directory>${project.build.directory}/Font-Awesome-${font-awesome.version}</directory>
             <outputDirectory>/css/fontawesome</outputDirectory>
@@ -98,6 +102,19 @@
             </includes>
         </fileSet>
     </fileSets>
+    <!--
+        These blocks are task 4.7's to retire, and their scope is now three classifiers, not two
+        (:less was added in 3.7 for backgrid.min-0.3.5.less, the one .less artifact in the whole
+        commons.ui.libs tree, which the www zip used to supply).
+
+        Note for 4.7: this descriptor is not packaging-only. It is also the descriptor for the
+        prepare-working-dir execution that PRODUCES target/dependencies, which is the first entry
+        in Gruntfile.js's buildCompositionDirs. Retiring these blocks therefore removes a Grunt
+        composition source - all 50 files in the shipped /libs arrive this way - and is a larger
+        change than "delete the dependencySet blocks" suggests. The artifacts reach them
+        transitively through commons.ui:user:zip:www, so that dependency has to retire in the
+        same change.
+    -->
     <dependencySets>
         <dependencySet>
             <includes>

@@ -48,35 +48,84 @@ Error: ENOENT: no such file or directory, open
 
 ### Why
 
-`Gruntfile.js` composes `target/XUI` from three sources:
+`Gruntfile.js` composes `target/XUI` from several sources:
 
 ```js
 buildCompositionDirs = [
-    "target/dependencies",                          // written by maven-assembly-plugin (dir.xml)
-    "target/dependencies-expanded/forgerock-ui-user",// written by maven-dependency-plugin:unpack
-    "./src/main/js", "./src/main/resources"          // in the repo
+    "target/dependencies",                           // maven-assembly-plugin (dir.xml)
+    "node_modules/@openidentityplatform/ui-commons/amd",  // npm, installed by Maven (task 3.7)
+    "node_modules/@openidentityplatform/ui-commons/www",
+    "node_modules/@openidentityplatform/ui-user/amd",
+    "node_modules/@openidentityplatform/ui-user/www",
+    "target/dependencies-expanded/forgerock-ui-user", // dependency-plugin:unpack, form2js ONLY
+    "./src/main/js", "./src/main/resources"           // in the repo
 ]
 ```
 
-The first two are produced by Maven at `process-resources`. With no Maven run they do
-not exist, and `grunt-contrib-copy` **silently ignores a missing `cwd`** — no warning,
-no failure. The log shows `copy:compose` copying `Created 174 directories, copied 485
-files`, all of them from the repo's own `src/`. A correct build has **854** files.
+> **Updated by task 3.7.** Before it, the commons sources arrived as one directory,
+> `target/dependencies-expanded/forgerock-ui-user`, unpacked from `commons.ui:user:zip:www`
+> by an execution named `unpack-forgerock-ui-user`. That execution is gone. The AMD and
+> static sources now arrive as two npm packages installed from Maven-hosted `tgz:npm`
+> artifacts; the unpack survives only to supply one file — see *form2js* below.
 
-What is missing from `target/XUI`:
+Everything but the repo's own two is produced by Maven — `target/dependencies` and the
+`dependencies-expanded` unpack at `process-resources`, the npm packages at `initialize`.
+With no Maven run they do not exist, and `grunt-contrib-copy` **silently ignores a missing
+`cwd`** — no warning, no failure. The log shows `copy:compose` copying `Created 174
+directories, copied 485 files`, all of them from the repo's own `src/`. A correct build has
+**854** files.
 
-- the entire **`org/forgerock/commons/**`** tree (`forgerock-ui-commons` +
-  `forgerock-ui-user`, from `commons.ui:user:zip:www`). `target/XUI/org/forgerock/`
+Since task 3.7 the `build` task runs `check-composition-sources` first, which fails loudly
+naming any missing directory. That guard is why this failure mode should not recur. It does
+not cover the `dev`/watch path, which composes a different list.
+
+The npm-installed sources are the fragile ones now: they are installed with the `no-save`
+flag and are absent from `package.json`, so **any bare `npm install` in this module prunes
+them** ("removed 50 packages"). Re-run the Maven build to restore them.
+
+What is missing from `target/XUI` when the composition sources are absent:
+
+- the entire **`org/forgerock/commons/**`** tree — before 3.7 from `commons.ui:user:zip:www`,
+  now from the `ui-commons` and `ui-user` npm packages. `target/XUI/org/forgerock/`
   contains only `openam/`. This is what kills the build — `main.js` requires
   `org/forgerock/commons/ui/common/util/Constants`.
-- **all 47 vendor libraries** (`commons.ui.libs`): jquery, backbone, react, react-dom,
+- **all 50 vendor libraries** (`commons.ui.libs`): jquery, backbone, react, react-dom,
   requirejs, lodash, handlebars, moment, i18next, backgrid, selectize, codemirror, …
   `target/XUI/libs/` held only the 4 JS shims that live in the repo.
+
+  *(An earlier revision of this file said 47. The built tree has held 50 since before task
+  3.7 — 46 from `target/dependencies` plus 4 shims that live in the repo
+  (`backgrid-paginator-0.3.5-custom.min.js`, `jquery.autosize.input.min.js`,
+  `jsoneditor-0.7.23-custom.js`, `popover-clickaway.js`) — so the 47 that tasks.md quotes was
+  already stale when it was written.)*
 - **all vendor CSS**: bootstrap, backgrid, selectize, font-awesome, titatoggle,
   react-select, bootstrap-dialog, … `target/XUI/css/` held only the `.less` sources.
 
 The build died before `less`, `replace`, `copy:compiled` and `copy:transpiled`, so
 `target/compiled/` was never created.
+
+### form2js, and CDN artifact drift
+
+The npm packages ship no `libs/` at all, so every shipped library now arrives through
+`dir.xml`'s `commons.ui.libs:*:js` dependencySet into `target/dependencies`. All 25 files the
+www zip used to supply are covered there — verified, `comm -23` returns empty — so dropping
+the zip's unpack loses no *file*. It nearly changed one file's *content*.
+
+`libs/form2js-2.0-769718a.js` is supplied by both sources, and on the build of 2026-08-04 they
+disagreed: `3095c47f` from `target/dependencies` against `897ec696` from the zip, the former
+carrying seven extra lines that rewrite bracketed form field names (`foo[bar]` → `foo.bar`)
+during serialisation. `form2js` backs `RESTLoginView` and five commons self-service views. The
+zip's copy composed last and is what AM ships, so removing the unpack would have swapped it —
+and **file counts are identical either way**, so nothing in the acceptance check could see it.
+
+The cause is not specific to form2js. The ~58 `commons.ui.libs` artifacts are published to no
+repository; `maven-external-dependency-plugin` fetches them from a dozen CDNs by version
+string, and **the same coordinate can yield different bytes on a re-fetch**. A later
+`install-external` run pulled form2js `2.0-769718a` again and got `897ec696`, matching the zip,
+so the two agree today and the pin is currently inert. Task 3.7 kept it
+(`unpack-forgerock-ui-user-form2js`) because it makes that one file drift-proof; **the general
+risk is unresolved** and applies to all 46 files arriving this way. Only a per-file digest
+comparison sees it — counts cannot.
 
 ### Second, independent reason npm alone can never be enough
 

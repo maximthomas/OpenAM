@@ -201,9 +201,11 @@ applyThemeToPage = function (path, icon, stylesheets) {  // line 33
 ```
 
 Template resolution lives in **`org/forgerock/commons/ui/common/util/UIUtils.js`**, which consumes the theme
-object that `ThemeManager.getTheme()` resolves. That file is **not in the OpenAM source tree** — it is
-unpacked at build time from the Maven artifact `org.openidentityplatform.commons.ui:user:zip:www`
-(`openam-ui/openam-ui-ria/pom.xml`, execution `unpack-forgerock-ui-user`). Read it at
+object that `ThemeManager.getTheme()` resolves. That file is **not in the OpenAM source tree** — since task
+3.7 it arrives at build time from the npm package `@openidentityplatform/ui-commons`, installed from the
+Maven artifact `org.openidentityplatform.commons.ui:commons:tgz:npm` and composed out of that package's
+`amd/` directory. (Before 3.7 it was unpacked from `…commons.ui:user:zip:www` by an execution named
+`unpack-forgerock-ui-user`, which no longer exists.) Read it at
 `openam-ui/openam-ui-ria/target/XUI/org/forgerock/commons/ui/common/util/UIUtils.js`, or in the container at
 `/usr/local/tomcat/webapps/openam/XUI/org/forgerock/commons/ui/common/util/UIUtils.js` — the deployed copy is
 byte-equivalent in behaviour (same `was not found. Trying` strings at lines 102 / 128 / 165).

@@ -49,11 +49,21 @@ module.exports = function (grunt) {
                 "node_modules/@openidentityplatform/" + pkg + "/www"
             ];
         },
+        // The npm-installed sources, tracked separately: only these carry a root package.json
+        // that must not reach the UI. See copy:compose below.
+        npmPackageDirs = _.flatten([
+            commonsPackageSource("ui-commons"),
+            commonsPackageSource("ui-user")
+        ]),
         buildCompositionDirs = _.flatten([
             "target/dependencies",
             // When building, the commons sources are installed by Maven+npm as tarball packages
-            commonsPackageSource("ui-commons"),
-            commonsPackageSource("ui-user"),
+            npmPackageDirs,
+            // Holds exactly one file: libs/form2js-2.0-769718a.js, unpacked from the commons www
+            // zip by unpack-forgerock-ui-user-form2js. target/dependencies supplies a DIFFERENT
+            // build of the same library from the commons.ui.libs Maven artifact, and the zip's
+            // copy is the one AM ships today, so this has to compose after it. See the pom.
+            "target/dependencies-expanded/forgerock-ui-user",
             // This must come last so that it overwrites any conflicting files!
             mavenProjectSource(".")
         ]),
@@ -135,8 +145,11 @@ module.exports = function (grunt) {
                         expand: true,
                         cwd: dir,
                         // "!package.json" drops the CommonJS marker at the root of each npm
-                        // package's amd/ directory; it is not part of the UI.
-                        src: ["**", "!package.json"],
+                        // package's amd/ directory; it is not part of the UI. Scoped to those
+                        // directories rather than applied to all of them, so that a future
+                        // composition source which legitimately ships a root package.json does
+                        // not lose it silently.
+                        src: _.includes(npmPackageDirs, dir) ? ["**", "!package.json"] : ["**"],
                         dest: compositionDirectory
                     };
                 })
@@ -380,9 +393,42 @@ module.exports = function (grunt) {
     ]);
 
     /**
+     * Fail loudly when a build composition source is missing.
+     *
+     * grunt-contrib-copy ignores a missing "cwd" SILENTLY. Without this check, a composition
+     * source that failed to arrive produces a build that looks fine until requirejs:compile
+     * fails much later for an unrelated-looking reason, or - worse - one that succeeds while
+     * quietly shipping an incomplete /XUI. The npm-installed sources are the fragile ones: they
+     * are installed with --no-save, so any bare `npm install` prunes them and nothing in
+     * package.json records that they are expected.
+     *
+     * Registered for "build" only. The "dev"/watch path composes watchCompositionDirs from
+     * FORGEROCK_UI_SRC, which is a different list with different preconditions.
+     */
+    grunt.registerTask("check-composition-sources", function () {
+        var missing = buildCompositionDirs.filter(function (dir) {
+            return !grunt.file.isDir(dir);
+        });
+        if (missing.length) {
+            grunt.fail.fatal(
+                "Missing build composition source(s):\n  " + missing.join("\n  ") +
+                "\n\nThe commons sources arrive via Maven + npm. Build them first:\n" +
+                "  mvn install -f <commons checkout>/ui/pom.xml  (produces the tgz:npm artifacts)\n" +
+                "  mvn -DskipTests package                       (from openam-ui, NOT openam-ui-ria:\n" +
+                "                                                 the commons.ui.libs artifacts are\n" +
+                "                                                 fetched by a plugin that only runs\n" +
+                "                                                 on the aggregator)\n\n" +
+                "A bare `npm install` here prunes the commons packages, which are installed with\n" +
+                "the no-save flag; re-run the Maven build to restore them."
+            );
+        }
+    });
+
+    /**
      * Rebuild the compiled directory. Maven then packs this directory into the final archive artefact.
      */
     grunt.registerTask("build", [
+        "check-composition-sources",
         "copy:compose",
         "eslint",
         "babel",

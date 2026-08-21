@@ -37,12 +37,11 @@ import ognl.OgnlOps;
 
 import org.openidentityplatform.openam.click.Control;
 import org.openidentityplatform.openam.click.Page;
-import org.apache.click.control.Button;
+import org.openidentityplatform.openam.click.control.Button;
 import org.openidentityplatform.openam.click.control.Container;
 import org.openidentityplatform.openam.click.control.Field;
-import org.apache.click.control.FieldSet;
 import org.openidentityplatform.openam.click.control.Form;
-import org.apache.click.control.Label;
+import org.openidentityplatform.openam.click.control.Label;
 import org.openidentityplatform.openam.click.service.LogService;
 import org.apache.click.util.HtmlStringBuffer;
 import org.apache.click.util.PropertyUtils;
@@ -433,7 +432,7 @@ public class ContainerUtils {
     /**
      * Return the list of Fields for the given Container, recursively including
      * any Fields contained in child containers. The list of returned fields
-     * will exclude any <code>Button</code> and <code>FieldSet</code> fields.
+     * will exclude any <code>Button</code> fields.
      *
      * @param container the container to obtain the fields from
      * @return the list of contained fields
@@ -451,7 +450,7 @@ public class ContainerUtils {
     /**
      * Return the list of hidden Fields for the given Container, recursively including
      * any Fields contained in child containers. The list of returned fields
-     * will exclude any <code>Button</code>, <code>FieldSet</code> and <code>Label</code>
+     * will exclude any <code>Button</code> and <code>Label</code>
      * fields.
      *
      * @param container the container to obtain the fields from
@@ -471,7 +470,7 @@ public class ContainerUtils {
      * Return the list of input Fields (TextField, Select, Radio, Checkbox etc).
      * for the given Container, recursively including any Fields contained in
      * child containers. The list of returned fields will exclude any
-     * <code>Button</code>, <code>FieldSet</code> and <code>Label</code> fields.
+     * <code>Button</code> and <code>Label</code> fields.
      *
      * @param container the container to obtain the fields from
      * @return the list of contained fields
@@ -1166,7 +1165,7 @@ public class ContainerUtils {
      * Add input fields (TextField, TextArea, Select, Radio, Checkbox etc.) for
      * the given Container to the specified field list, recursively including
      * any Fields contained in child containers. The list of returned fields
-     * will exclude any <code>Button</code>, <code>FieldSet</code> and <code>Label</code>
+     * will exclude any <code>Button</code> and <code>Label</code>
      * fields.
      *
      * @param container the container to obtain the fields from
@@ -1180,8 +1179,8 @@ public class ContainerUtils {
                 continue;
 
             } else if (control instanceof Container) {
-                // Include fields but skip fieldSets
-                if (control instanceof Field && !(control instanceof FieldSet)) {
+                // Include fields that are containers
+                if (control instanceof Field) {
                     fields.add((Field) control);
                 }
                 Container childContainer = (Container) control;
@@ -1196,8 +1195,8 @@ public class ContainerUtils {
     /**
      * Add hidden fields for the given Container to the specified field list,
      * recursively including any Fields contained in child containers. The list
-     * of returned fields will exclude any <code>Button</code>, <code>FieldSet</code>
-     * and <code>Label</code> fields.
+     * of returned fields will exclude any <code>Button</code> and
+     * <code>Label</code> fields.
      *
      * @param container the container to obtain the hidden fields from
      * @param fields the list of contained fields
@@ -1210,8 +1209,8 @@ public class ContainerUtils {
                 continue;
 
             } else if (control instanceof Container) {
-                // Include fields but skip fieldSets
-                if (control instanceof Field && !(control instanceof FieldSet)) {
+                // Include fields that are containers
+                if (control instanceof Field) {
                     Field field = (Field) control;
                     if (field.isHidden()) {
                         fields.add((Field) control);
@@ -1233,7 +1232,7 @@ public class ContainerUtils {
     /**
      * Add fields for the container to the specified field list, recursively
      * including any Fields contained in child containers. The list
-     * of returned fields will exclude any <code>Button</code> and <code>FieldSet</code>
+     * of returned fields will exclude any <code>Button</code>
      * fields.
      *
      * @param container the container to obtain the fields from
@@ -1247,8 +1246,8 @@ public class ContainerUtils {
                 continue;
 
             } else if (control instanceof Container) {
-                // Include fields but skip fieldSets
-                if (control instanceof Field && !(control instanceof FieldSet)) {
+                // Include fields that are containers
+                if (control instanceof Field) {
                     fields.add((Field) control);
                 }
                 Container childContainer = (Container) control;

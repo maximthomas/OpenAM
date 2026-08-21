@@ -43,8 +43,7 @@ import org.openidentityplatform.openam.click.control.Field;
 import org.apache.click.control.FieldSet;
 import org.openidentityplatform.openam.click.control.Form;
 import org.apache.click.control.Label;
-import org.apache.click.service.LogService;
-import org.apache.click.util.ClickUtils;
+import org.openidentityplatform.openam.click.service.LogService;
 import org.apache.click.util.HtmlStringBuffer;
 import org.apache.click.util.PropertyUtils;
 import org.apache.commons.lang.ClassUtils;
@@ -114,7 +113,7 @@ public class ContainerUtils {
         }
 
         if (fieldList.isEmpty()) {
-            LogService logService = org.apache.click.util.ClickUtils.getLogService();
+            LogService logService = ClickUtils.getLogService();
             if (logService.isDebugEnabled()) {
                 String containerClassName =
                         ClassUtils.getShortClassName(container.getClass());
@@ -137,7 +136,7 @@ public class ContainerUtils {
             return;
         }
 
-        LogService logService = org.apache.click.util.ClickUtils.getLogService();
+        LogService logService = ClickUtils.getLogService();
 
         Set<String> properties = getObjectPropertyNames(object);
         Map<?, ?> ognlContext = Ognl.createDefaultContext(
@@ -235,7 +234,7 @@ public class ContainerUtils {
         }
 
         if (fieldList.isEmpty()) {
-            LogService logService = org.apache.click.util.ClickUtils.getLogService();
+            LogService logService = ClickUtils.getLogService();
             if (logService.isDebugEnabled()) {
                 String containerClassName =
                         ClassUtils.getShortClassName(container.getClass());
@@ -261,7 +260,7 @@ public class ContainerUtils {
 
         Set<String> properties = getObjectPropertyNames(object);
 
-        LogService logService = org.apache.click.util.ClickUtils.getLogService();
+        LogService logService = ClickUtils.getLogService();
 
         for (Field field : fieldList) {
 
@@ -902,7 +901,7 @@ public class ContainerUtils {
                                      String path) {
 
         // Find the getter for property
-        String getterName = org.apache.click.util.ClickUtils.toGetterName(property);
+        String getterName = ClickUtils.toGetterName(property);
 
         Method method = null;
         Class<?> sourceClass = object.getClass();
@@ -913,7 +912,7 @@ public class ContainerUtils {
         }
 
         if (method == null) {
-            String isGetterName = org.apache.click.util.ClickUtils.toIsGetterName(property);
+            String isGetterName = ClickUtils.toIsGetterName(property);
             try {
                 method = sourceClass.getMethod(isGetterName, (Class[]) null);
             } catch (Exception e) {
@@ -973,7 +972,7 @@ public class ContainerUtils {
         Method method = null;
 
         // Find the setter for property
-        String setterName = org.apache.click.util.ClickUtils.toSetterName(property);
+        String setterName = ClickUtils.toSetterName(property);
 
         Class<?> sourceClass = source.getClass();
         Class<?>[] classArgs = { targetClass };
@@ -1050,7 +1049,7 @@ public class ContainerUtils {
      */
     private static void copyFieldsToMap(List<Field> fieldList, Map<String, Object> map) {
 
-        LogService logService = org.apache.click.util.ClickUtils.getLogService();
+        LogService logService = ClickUtils.getLogService();
 
         String objectClassname = map.getClass().getName();
         objectClassname =
@@ -1086,7 +1085,7 @@ public class ContainerUtils {
      */
     private static void copyMapToFields(Map<String, Object> map, List<Field> fieldList) {
 
-        LogService logService = org.apache.click.util.ClickUtils.getLogService();
+        LogService logService = ClickUtils.getLogService();
 
         String objectClassname = map.getClass().getName();
         objectClassname =

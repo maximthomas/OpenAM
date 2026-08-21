@@ -534,11 +534,11 @@ public class ClickUtils {
             }
 
         } catch (IOException ex) {
-            org.apache.click.util.ClickUtils.getLogService().error(ex.getMessage(), ex);
+            getLogService().error(ex.getMessage(), ex);
 
         } finally {
-            org.apache.click.util.ClickUtils.close(gos);
-            org.apache.click.util.ClickUtils.close(os);
+            close(gos);
+            close(os);
         }
     }
 
@@ -1151,7 +1151,7 @@ public class ClickUtils {
                 servletContext.getResourceAsStream(DEFAULT_APP_CONFIG);
 
         if (inputStream == null) {
-            inputStream = org.apache.click.util.ClickUtils.getResourceAsStream("/click.xml", org.apache.click.util.ClickUtils.class);
+            inputStream = getResourceAsStream("/click.xml", ClickUtils.class);
             if (inputStream == null) {
                 String msg =
                         "could not find click app configuration file: "
@@ -1570,7 +1570,7 @@ public class ClickUtils {
 
             if (!destinationFile.exists()) {
                 InputStream inputStream =
-                        getResourceAsStream(resource, org.apache.click.util.ClickUtils.class);
+                        getResourceAsStream(resource, ClickUtils.class);
 
                 if (inputStream != null) {
                     FileOutputStream fos = null;
@@ -1676,7 +1676,7 @@ public class ClickUtils {
         String descriptorFile = packageName + "/" + controlName + ".files";
         logService.debug("Use deployment descriptor file:" + descriptorFile);
 
-        InputStream is = getResourceAsStream(descriptorFile, org.apache.click.util.ClickUtils.class);
+        InputStream is = getResourceAsStream(descriptorFile, ClickUtils.class);
         List fileList = IOUtils.readLines(is);
         if (fileList == null || fileList.isEmpty()) {
             logService.info("there are no files to deploy for control " + controlClass.getName());

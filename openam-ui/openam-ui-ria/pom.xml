@@ -481,6 +481,24 @@
                             <arguments>install ${project.build.directory}/npm/ui-commons.tgz ${project.build.directory}/npm/ui-user.tgz --no-save --legacy-peer-deps</arguments>
                         </configuration>
                     </execution>
+                    <!--
+                        Runs the Vite build. The script name is unchanged from the Grunt pipeline
+                        on purpose: build:production is what this execution has always called, so
+                        flipping the pipeline is a package.json edit, not a pom edit.
+
+                        The version no longer travels as a CLI argument. Grunt read it with
+                        grunt.option("target-version"); Vite has no equivalent CLI option parsing,
+                        so vite.config.js reads process.env.TARGET_VERSION instead, defaulting to
+                        "dev" exactly as Gruntfile.js did.
+
+                        This execution is bound to compile, NOT initialize. That matters: the
+                        ordering constraint described above governs the initialize-phase set only
+                        (install-node-and-npm, npm-install, npm-install-commons). Adding any new
+                        npm execution at initialize would join that set and must then be declared
+                        so it still runs after npm-install-commons - otherwise the commons
+                        packages are pruned. Unlike Grunt, Vite has no check-composition-sources
+                        guard, so that failure would be silent.
+                    -->
                     <execution>
                         <id>npm-build</id>
                         <goals>
@@ -488,7 +506,10 @@
                         </goals>
                         <phase>compile</phase>
                         <configuration>
-                            <arguments>run build:production -- --target-version=${project.version}</arguments>
+                            <arguments>run build:production</arguments>
+                            <environmentVariables>
+                                <TARGET_VERSION>${project.version}</TARGET_VERSION>
+                            </environmentVariables>
                         </configuration>
                     </execution>
                     <execution>

@@ -154,7 +154,9 @@ backends serve the same bytes without being told to.
 
 Three things about it were measured rather than assumed, and each one bites:
 
-- **`npm run build:production` alone cannot produce it.** Grunt composes `target/XUI` out of two
+- **`npm run build:grunt` alone cannot produce it.** (This was `build:production` until the Vite
+  migration's task 4.1; that name now runs `vite build`, and the Grunt pipeline described here moved
+  to `build:grunt`.) Grunt composes `target/XUI` out of two
   directories Maven writes at `process-resources`, and `grunt-contrib-copy` ignores a missing source
   silently — the build fails later, in `requirejs:compile`, having quietly dropped the entire
   `org/forgerock/commons` tree and all 47 vendor libraries. The zip itself is `maven-assembly-plugin`

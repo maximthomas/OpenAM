@@ -16,6 +16,26 @@
 # script a contributor runs, so the documented setup is exercised on every run rather than only
 # when someone happens to try it. The XUI smoke steps in build.yml stay where they are: they run
 # against that job's own containers and cover the HttpOnly matrix, which this job does not.
+#
+# EXPECTED-RED WINDOW -- OPENS AT TASK 4.1 OF modernize-openam-ui-build
+#
+# This lane fails, on every run, from the commit that adds Vite until the AMD-to-ESM conversion
+# lands. That is accepted and recorded, not a regression to investigate, and the failure is real
+# rather than flaky: it will not go green by re-running.
+#
+# Why: 4.1 switches frontend-maven-plugin from Grunt to `vite build` deliberately ahead of the
+# source conversion, so that the remaining phase-1 tasks have a Vite build to extend. Vite does not
+# reject AMD -- it accepts it, exits 0, and emits a bundle that does nothing. With 203 of 213
+# sources still opening with `define(`, `mvn package` succeeds and produces a two-file
+# target/compiled and a ~4.6 kB -www.zip in place of the ~2 MB Grunt one. The build is green; the
+# UI it ships is not a UI. This job stands up AM from that war and drives it through a browser, so
+# it fails at the first navigation.
+#
+# Do NOT "fix" a failure here by reverting the Vite switch or by pinning this lane to a Grunt build.
+# The window closes on its own: 5.1 converts the modules, 6.1 adds the runtime module registry the
+# converted tree needs, 9.3 owns re-wiring the test commands into CI, and 10.1 is the release gate
+# that must be green against a deployed instance before any of this ships. If this lane is still red
+# after 6.1, that IS a regression -- investigate it then.
 name: XUI end-to-end
 
 # No schedule yet, deliberately: the suite is still thin while tasks 1.6-1.12 land, so a periodic

@@ -16,6 +16,21 @@
 # runs on push to the branches pull requests are opened from, which is a cache concern rather than a
 # coverage one -- see the push trigger below.
 #
+# EXPECTED-RED WINDOW -- OPENS AT TASK 4.1 OF modernize-openam-ui-build
+#
+# This lane fails on every run from the commit that adds Vite until the AMD-to-ESM conversion lands.
+# Accepted and recorded, not a regression to investigate; it will not go green by re-running.
+#
+# 4.1 switches frontend-maven-plugin from Grunt to `vite build` ahead of the source conversion, on
+# purpose. Vite accepts AMD rather than rejecting it: it exits 0 and emits a bundle that does
+# nothing. With 203 of 213 sources still opening with `define(`, the -www.zip this job unpacks and
+# serves is ~4.6 kB of two files instead of ~2 MB of a working UI. See the sibling xui-e2e.yml for
+# the same note at more length, and NOTES-vite-build.md section 3 in openam-ui/openam-ui-ria.
+#
+# The window closes on its own: 5.1 converts the modules, 6.1 adds the runtime module registry,
+# 9.3 re-wires the test commands into CI. Still red after 6.1 means a real regression. Do not
+# revert the Vite switch or pin this lane to a Grunt build to get it green.
+#
 # WHAT THIS JOB DELIBERATELY DOES NOT DO
 #
 # No container, no Docker, no war, no configurator, no /etc/hosts entry, no openam-up.sh. The
@@ -118,6 +133,12 @@ jobs:
       # `build:production` -- the command that produces this zip -- lives there: without it, a change
       # to the build script itself would leave every hashed input identical and hit the cache.
       #
+      # vite.config.js is in it for the same reason, and matters more: from task 4.2 onward the
+      # migration's changes land almost entirely in that one file. Leave it out and every one of
+      # those pull requests hashes identically, restores the previous zip, and goes green against a
+      # UI it did not build -- precisely the assert-nothing failure the no-restore-keys rule above
+      # exists to prevent. Gruntfile.js stays in the key until 4.8 retires it.
+      #
       # What a pull request can actually restore is written by the push trigger above: its own runs
       # scope their entries to the pull request's ref, so without those pushes the first run of every
       # pull request would build. With them, a pull request that changes nothing under the hashed
@@ -127,7 +148,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: openam-ui/openam-ui-ria/target/openam-ui-ria-*-www.zip
-          key: ${{ runner.os }}-xui-www-${{ hashFiles('openam-ui/openam-ui-ria/src/**', 'openam-ui/openam-ui-ria/package.json', 'openam-ui/openam-ui-ria/package-lock.json', 'openam-ui/openam-ui-ria/Gruntfile.js', 'openam-ui/openam-ui-ria/.eslintrc.js', 'openam-ui/openam-ui-ria/pom.xml', 'openam-ui/pom.xml') }}
+          key: ${{ runner.os }}-xui-www-${{ hashFiles('openam-ui/openam-ui-ria/src/**', 'openam-ui/openam-ui-ria/package.json', 'openam-ui/openam-ui-ria/package-lock.json', 'openam-ui/openam-ui-ria/Gruntfile.js', 'openam-ui/openam-ui-ria/vite.config.js', 'openam-ui/openam-ui-ria/.eslintrc.js', 'openam-ui/openam-ui-ria/pom.xml', 'openam-ui/pom.xml') }}
 
       - name: Java 11
         if: ${{ steps.xui-zip.outputs.cache-hit != 'true' }}

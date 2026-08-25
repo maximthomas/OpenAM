@@ -26,14 +26,21 @@
  * Vite build for the XUI. Task 4.1 lands this skeleton; the sections below name the task that
  * owns each one, so later tasks extend rather than rewrite.
  *
- *   4.2  build.rollupOptions.input   the three entry points
+ *   4.2  build.rollupOptions        the three entry points and their emitted file names
  *   4.3  resolve.alias              the 12 require.config.map bindings from main.js:19-34
  *   4.4  static assets              themes/ templates/ partials/ locales/ copied verbatim
- *   4.5  index.html + ${version}    the filtered index.html and the deployed /XUI layout
- *   4.5  output.entryFileNames     Grunt emitted an unhashed target/compiled/main.js at the tree
- *                                  root (PHASE1-TREE.md:53), which index.html's RequireJS
- *                                  data-main and the urlArgs scheme both depend on. Vite currently
- *                                  emits assets/main-<hash>.js. Reconciling that is 4.5's.
+ *   4.5  index.html + ${version}    the filtered index.html, the deployed /XUI layout, and
+ *                                  index.html as a build input. The entryFileNames half is
+ *                                  SETTLED IN 4.2: the three JS entries are emitted unhashed at
+ *                                  the tree root, which is how all three are loaded today
+ *                                  (PHASE1-TREE.md:150) and what the urlArgs scheme assumes.
+ *                                  What is left for 4.5 is the index.html interaction -- if
+ *                                  index.html is added as an HTML input, Vite derives an entry
+ *                                  chunk from it and entryFileNames applies to that too, so
+ *                                  declaring main as an explicit JS input AND index.html as an
+ *                                  HTML input that references it risks emitting the entry twice
+ *                                  under two names. NOTES-vite-entrypoints.md 4.3 gives the
+ *                                  function form of entryFileNames that fixes it if so.
  *   4.9  resolveAssetUrl            cache-busting for runtime-fetched assets (D4)
  *   4.10 server.*                   the dev server, paired with e2e/local (D14)
  *
@@ -153,13 +160,138 @@ export default defineConfig({
 
         rollupOptions: {
             /*
-             * 4.2 owns this. Three entry points ship today — main.js, main-authorize.js and
-             * main-device.js — and only main.js is wired up here so the skeleton resolves.
-             * r.js compiled `include: ["main"]` alone (Gruntfile.js:270), which is why 308 of the
-             * shipped .js files are unbundled and reached by path; see NOTES-vite-build.md §1.6.
+             * ==== 4.2 — THE THREE ENTRY POINTS, AND WHY TWO OF THEIR NAMES ARE FIXED ====
+             *
+             * Three entry points ship today. r.js compiled `include: ["main"]` alone
+             * (Gruntfile.js:270), which is why 308 of the shipped .js files are unbundled and
+             * reached by path; see NOTES-vite-build.md §1.6.
+             *
+             * main-authorize.js and main-device.js MUST be emitted at exactly those two names, at
+             * the root of the tree, unhashed. That constraint does not live in this module and
+             * nothing here would otherwise reveal it: six FreeMarker templates in the
+             * **openam-oauth2** Maven module fetch them through RequireJS `data-main`, which
+             * resolves the bare id against baseUrl and appends ".js" —
+             *
+             *   openam-oauth2/src/main/resources/templates/page/authorize.ftl:65      main-authorize
+             *   openam-oauth2/src/main/resources/templates/popup/authorize.ftl:64     main-authorize
+             *   openam-oauth2/src/main/resources/templates/touch/authorize.ftl:64     main-authorize
+             *   openam-oauth2/src/main/resources/templates/page/error.ftl:56          main-authorize
+             *   openam-oauth2/src/main/resources/templates/CodeVerificationForm.ftl:37   main-device
+             *   openam-oauth2/src/main/resources/templates/CodeThanks.ftl:37             main-device
+             *
+             * Rename or hash either one and the OAuth2 consent screen, the OAuth2 error page and
+             * the device-flow pages break — in a different Maven module, which this build does not
+             * test. Editing those templates is a server-side change, which D8 ("lets the migration
+             * land without a coordinated server-side change") and task 10.4 both say this migration
+             * does not require. src/main/resources/index.html:21-27 pins the third name, but by a
+             * DIFFERENT attribute: a global `require` object carrying `deps: ['main']`, not
+             * data-main. Same nameToUrl resolution and same classic-script injection (§2.6, where
+             * data-main is shown to be implemented AS cfg.deps plus an inferred baseUrl) — the
+             * mechanisms converge, the ownership does not, and that is the asymmetry that matters
+             * here: index.html lives in THIS module and 4.5 may rewrite it; the six .ftl live in
+             * openam-oauth2 and D8 says this migration does not touch them.
+             *
+             * Full evidence, including the deminified RequireJS 2.3.7 trace showing data-main goes
+             * through nameToUrl rather than being used as a literal path:
+             * NOTES-vite-entrypoints.md §1 (the complete loader list) and §2 (what data-main does).
+             *
+             * ---- DEFERRED HERE, AND IT MUST NOT BE REDISCOVERED IN GROUP 5 ----
+             * The names below are right; the FORMAT is not yet. RequireJS injects a CLASSIC script
+             * (§2.4: req.createNode sets type="text/javascript") for BOTH loader forms, so an ES
+             * module breaks ALL THREE entries, not just the two secondaries — index.html's
+             * `deps: ['main']` route is the same code path (§2.6). Do not read this section as
+             * "main.js is safe". This task does not introduce the problem — the source is still
+             * AMD, so nothing this build emits executes yet (see READ BEFORE EDITING above) — but
+             * it becomes real the moment group 5 converts the tree to ESM. The difference between
+             * main and the other two is not mechanism, it is editability: 4.5 can rewrite
+             * index.html in this module, so main has an escape the secondaries do not.
+             * NOTES-vite-entrypoints.md §3 costs the four options that need no server-side change:
+             * (a) three single-entry IIFE builds, (c1) an unhashed classic stub that
+             * dynamic-imports the hashed chunk, (c2) AMD output, (c3) copy the two entries
+             * verbatim. 4.2 deliberately chose none of them: configure the naming now, decide the
+             * loader story when the source can actually execute. Nothing below forecloses any.
              */
             input: {
-                main: "src/main/js/main.js"
+                /*
+                 * Relative to the project root, not resolve(__dirname, ...) as
+                 * NOTES-vite-entrypoints.md 4.3 writes it. frontend-maven-plugin runs npm with
+                 * workingDirectory defaulting to ${basedir}, so the two are equivalent here, and a
+                 * wrong cwd would fail loudly at resolve time rather than silently mis-emit.
+                 *
+                 * Note for 4.4-4.8, whose oracle is PHASE1-TREE.md's per-file digest: 4.1's
+                 * sourcemap:true plus these two extra entries emits main-authorize.js.map and
+                 * main-device.js.map, which the Grunt tree never had (PHASE1-TREE.md:53 lists 8
+                 * root files with exactly one .map). Those two are an EXPECTED delta, not drift.
+                 */
+                "main":           "src/main/js/main.js",
+                "main-authorize": "src/main/js/main-authorize.js",
+                "main-device":    "src/main/js/main-device.js"
+            },
+
+            output: {
+                /*
+                 * "es" is the only format that supports code-splitting in a multi-entry build.
+                 * Verified against the installed rollup 4.62.5, not recalled from docs:
+                 * validateOptionsForMultiChunkOutput (rollup/dist/shared/rollup.js:22453-22455)
+                 * rejects "umd" and "iife" for code-splitting builds, and its trigger at :22309 is
+                 * `chunks.length > 1` — three entries fire it with zero dynamic imports. Vite also
+                 * auto-sets inlineDynamicImports for iife/umd, in buildOutputOptions
+                 * (vite/dist/node/chunks/dep-BK3b2jBa.js:65645 in vite 5.4.21 — the chunk filename
+                 * carries a content hash and the offset moves on every bump, so search the symbol,
+                 * not the line), which rollup then rejects outright for multiple inputs (:23831).
+                 * "amd" and "system" are rejected by neither guard, which is what keeps option (c2)
+                 * open — though §7.1 records (c2) as UNVERIFIED: whether rollup's relative AMD
+                 * chunk ids resolve under RequireJS 2.3.7's nameToUrl needs a spike, not an
+                 * assumption. Treat it as open, not as a known-good escape hatch.
+                 *
+                 * "es" is also Vite's own default (:65618). Stated explicitly because the guards
+                 * above make it load-bearing, not because it changes behaviour.
+                 */
+                format: "es",
+
+                /*
+                 * [name] for an entry chunk is the KEY of the input object above, so those three
+                 * keys are what put main.js, main-authorize.js and main-device.js at the tree root
+                 * with stable, unhashed names. PHASE1-TREE.md:155-156 records that as the
+                 * requirement Vite's default assets/[name]-[hash].js violates.
+                 */
+                entryFileNames: "[name].js",
+
+                /*
+                 * entryFileNames applies ONLY to entry chunks, so hashing stays on for everything
+                 * rollup splits out. That is deliberate and load-bearing: ui-module-loading's
+                 * "On-demand loading of resolvable modules" requires a route's view to be fetched
+                 * when the route is first visited rather than shipped in the initial payload, so
+                 * this build must keep code-splitting. Disabling hashing wholesale would satisfy
+                 * the two .ftl paths and forfeit that requirement's cache story; it is not needed
+                 * and is not done. D1's import.meta.glob registry (tasks 6.1-6.3) is what will
+                 * populate these chunks — nothing here presumes its shape.
+                 *
+                 * Note for 4.3, which owns the resolve.alias bindings: a multi-entry build lets
+                 * rollup hoist shared code into a common chunk, and that is safe for everything
+                 * EXCEPT a module whose behaviour depends on a per-entry require.config.map
+                 * binding. Today that set is {ThemeManager}, via Router — main.js:29 binds Router
+                 * to the commons Router while main-authorize.js:31 and main-device.js:22 bind it
+                 * to SingleRouteRouter, and ThemeManager.js:25,168 reads Router.currentRoute.
+                 * resolve.alias is global to the build and cannot give one id two meanings.
+                 * NOTES-vite-entrypoints.md §5 has both failure modes — and §6 records that e2e
+                 * catches only ONE direction: aliasing globally to SingleRouteRouter leaves the
+                 * consent and device specs green while silently killing the admin theme. A green
+                 * suite is not evidence 4.3 got this right.
+                 *
+                 * chunkFileNames and assetFileNames are both Vite's defaults, restated so they are
+                 * explicit; neither changes behaviour against vite 5.4.21.
+                 *
+                 * 4.4 collides with assetFileNames, but NOT over themes/, templates/, partials/ or
+                 * locales/ — those are fetched at runtime, never enter the module graph, and this
+                 * option cannot see them (they need publicDir or a copy plugin). The asset kind it
+                 * DOES govern is css/: PHASE1-TREE.md:212-214 ships css/structure.css,
+                 * css/styles-admin.css and css/theme.css unhashed under css/, and the setting below
+                 * would both relocate them to assets/ and hash them the moment 4.4 pulls LESS into
+                 * the graph. That is the collision 4.4 has to resolve.
+                 */
+                chunkFileNames: "assets/[name]-[hash].js",
+                assetFileNames: "assets/[name]-[hash].[ext]"
             }
         }
     }

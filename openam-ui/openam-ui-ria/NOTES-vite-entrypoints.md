@@ -699,6 +699,40 @@ entry declares what**, and one specific way a shared chunk breaks.
 
 ### 5.2 The shared-chunk hazard is REAL, and it is `Router`
 
+> **CORRECTION (task 4.3). Both failure modes below are inverted. The hazard is real; the two
+> costings are not.** Read this before acting on the two bullets further down.
+>
+> The mechanism this section misses is that **the two secondary entries request the *aliased* name
+> `"Router"` themselves** — `main-authorize.js:66` and `main-device.js:61` list `"Router"` in their
+> own `require([...])` arrays, and `main-authorize.js:126` / `main-device.js:76` then write
+> `currentRoute = {navGroup:"user"}` onto whatever that name resolved to. So under a global alias
+> the entries and `ThemeManager` always receive the **same object** and cannot diverge. The premise
+> below — "the entries set it on `SingleRouteRouter`" — is false once the alias exists;
+> `SingleRouteRouter` is named nowhere except the two `map` declarations the alias replaces.
+>
+> Corrected, both directions:
+>
+> - **alias `Router` → commons `Router`** is **behaviourally correct on all three entries**, not a
+>   blank page. The secondaries write `currentRoute` onto that object, and commons `Router.js:32`
+>   initialises it to `{}` — never `null`. `ThemeManager.js:168` then reads
+>   `"user" === "admin"` → `false` → the non-admin theme, which is correct for the consent and
+>   device pages. Its real cost is **payload**: it pulls `backbone` and the commons router closure
+>   onto two pages that today load a 22-line zero-dependency stub.
+> - **alias `Router` → `SingleRouteRouter`** does **not** "silently stop applying the admin theme".
+>   Nothing in the `main.js` flow ever assigns `SingleRouteRouter.currentRoute`, which is `null` at
+>   module scope, so `ThemeManager.js:168` evaluates `null.navGroup` → **`TypeError`**, thrown
+>   synchronously inside `getTheme()` — which commons `AbstractView.js:104` and
+>   `UIUtils.js:107,137,179` call on **every** view render, not only admin ones.
+>
+> **§6 below is unaffected and is why this matters**: the e2e suite exercises only the two
+> secondary entries, so it stays green in exactly the direction that throws.
+>
+> Task 4.3 landed the commons `Router` binding on this basis. Full trace and the costed options:
+> `NOTES-vite-aliases.md` §3, and the `resolve.alias` block in `vite.config.js` (entry 3). This is
+> a static reading — no build can execute while the source is AMD — and it is recorded as
+> unverified at runtime in both places.
+
+
 `Router` is bound to **two different modules** depending on the entry:
 
 | Entry | `Router` resolves to | What that is |

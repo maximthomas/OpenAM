@@ -13,3 +13,6 @@ test-output
 bin/
 obj/
 *.versionsBackup
+# Phase-1 (Grunt) XUI tree preserved by task 4.6 for tasks 4.7/4.8 comparison.
+# See openam-ui/openam-ui-ria/NOTES-zip-contract.md section 10.
+.phase1-oracle/

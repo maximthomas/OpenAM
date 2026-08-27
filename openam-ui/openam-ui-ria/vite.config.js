@@ -46,18 +46,19 @@
  *                                  owns -- decided in, not assumed by, this task; see the
  *                                  LESS_ENTRIES comment. publicDir stays false and the
  *                                  assetFileNames collision 4.2 flagged is resolved below.
- *   4.5  index.html + ${version}    the filtered index.html, the deployed /XUI layout, and
- *                                  index.html as a build input. The entryFileNames half is
- *                                  SETTLED IN 4.2: the three JS entries are emitted unhashed at
- *                                  the tree root, which is how all three are loaded today
- *                                  (PHASE1-TREE.md:150) and what the urlArgs scheme assumes.
- *                                  What is left for 4.5 is the index.html interaction -- if
- *                                  index.html is added as an HTML input, Vite derives an entry
- *                                  chunk from it and entryFileNames applies to that too, so
- *                                  declaring main as an explicit JS input AND index.html as an
- *                                  HTML input that references it risks emitting the entry twice
- *                                  under two names. NOTES-vite-entrypoints.md 4.3 gives the
- *                                  function form of entryFileNames that fixes it if so.
+ *   4.5  index.html + ${version}    LANDED as stampIndexHtml below, called from the same
+ *                                  writeBundle as 4.4: read src/main/resources/index.html,
+ *                                  substitute ${version}, write it to the tree root. index.html
+ *                                  is deliberately NOT a Vite HTML input -- the reasons, and the
+ *                                  two ${version} mechanisms of which only one is live, are in
+ *                                  the block above stampIndexHtml. The entryFileNames half was
+ *                                  SETTLED IN 4.2 and stays the plain "[name].js": the three JS
+ *                                  entries emit unhashed at the tree root, which is how all
+ *                                  three are loaded today (PHASE1-TREE.md:150) and what the
+ *                                  urlArgs scheme assumes. Because no HTML input is declared,
+ *                                  Vite derives no fourth entry chunk, so the double-emit
+ *                                  hazard NOTES-vite-entrypoints.md 4.3 flagged cannot arise
+ *                                  and its function form of entryFileNames is not needed.
  *   4.9  resolveAssetUrl            cache-busting for runtime-fetched assets (D4)
  *   4.10 server.*                   the dev server, paired with e2e/local (D14)
  *
@@ -199,7 +200,11 @@ const NON_COMPILED_PREFIX = "themes/";
  * Gruntfile.js:164-167. main.js is emitted by the bundler, index.html by the version-stamping
  * step -- and index.html DOES match `**\/*.html`, so without this exclusion the unfiltered
  * src/main/resources copy would overwrite the stamped one with a literal `${version}`.
- * Task 4.5 owns index.html; until it lands, index.html is an expected absence from the output.
+ *
+ * Task 4.5 has landed and index.html is no longer an absence: stampIndexHtml below emits it.
+ * This exclusion is what keeps the two from fighting, and the ORDER in writeBundle is the other
+ * half -- composeStaticAssets runs first, stampIndexHtml second. Drop `index.html` from this set
+ * and the verbatim copy still loses the race, but only by accident of ordering; keep both.
  */
 const NOT_COPIED = new Set(["main.js", "index.html"]);
 
@@ -301,6 +306,137 @@ const composeStaticAssets = (root, outDir) => {
         }
     }
     return shipped;
+};
+
+/*
+ * ==== 4.5 -- index.html: THE VERSION STAMP, AND THE LOADER THAT IS NOT REWRITTEN ====
+ *
+ * Grunt emitted index.html from grunt-text-replace, not from copy:compiled -- which is why
+ * `index.html` sits in NOT_COPIED above and why 4.4 recorded it as an expected absence. This is
+ * that step: read the source, substitute ${version}, write it to the tree root.
+ *
+ * THERE ARE TWO ${version} MECHANISMS IN THIS MODULE AND ONLY THIS ONE IS LIVE.
+ * pom.xml:259-262 declares src/main/resources as a FILTERED resource root, so
+ * maven-resources-plugin substitutes ${version} into target/classes/index.html at
+ * process-resources. Nothing ever ships that copy: zip.xml packs `target/compiled`, not
+ * target/classes, and this module is <packaging>pom</packaging> (pom.xml:28), so no jar is built
+ * from target/classes either. The UI build does not read it -- Gruntfile.js:24-29
+ * (`mavenProjectSource`) composes from ./src/main/resources DIRECTLY, the unfiltered source, and
+ * COMPOSITION_SOURCES above does the same. So the Maven-filtered file is a dead end that happens
+ * to contain the right bytes. The live mechanism was grunt-text-replace (Gruntfile.js:246-259)
+ * driven by grunt.option("target-version"); this reproduces it, now driven by
+ * process.env.TARGET_VERSION (see `targetVersion` at the top of this file, and the npm-build
+ * execution in pom.xml which sets it from ${project.version}).
+ *
+ * The dead Maven filtering is LEFT IN PLACE, deliberately -- but NOT because D9 requires it, and
+ * the difference matters for whoever reads D9 next. D9 decides the SOURCE LAYOUT
+ * (src/main/js, src/main/resources) and cites "maven-resources-plugin still filters
+ * src/main/resources for ${version}" as supporting evidence for keeping it. That sentence is
+ * still literally true -- the filtering is bound at pom.xml:285-293 and does run -- but this task
+ * establishes it is NON-PROBATIVE: the filtered output reaches nothing that ships. D9's
+ * conclusion survives on its other leg (a rename buys nothing user-visible and would bury the
+ * real diff); its ${version} leg does not. Recorded here, and in 4.5's completion note, the way
+ * 4.2/4.3/4.4 each recorded a disproved premise.
+ *
+ * The actual reasons to leave it: removing it changes target/classes for no shipped effect, it is
+ * outside this task's scope, and src/main/resources still feeds target/classes for anything else
+ * that may want it. Preserving a mechanism nothing reads would not be preservation, which is why
+ * this comment says it is dead rather than treating it as the live one.
+ *
+ * WHY NOT A VITE HTML INPUT. Adding index.html to rollupOptions.input makes Vite parse it and
+ * pull its <script src> tags into the module graph. Both would fail to resolve: src/main/resources
+ * has NO libs/ directory at all -- libs/base64-1.0.0-min.js and libs/requirejs-2.3.7-min.js reach
+ * the tree only through the maven-dependency-plugin unpack into target/dependencies (task 4.7's)
+ * -- so the build throws at resolve time. If it somehow did resolve, Vite would bundle and hash
+ * both, moving two files PHASE1-TREE.md:244 and :279 record at fixed paths. It would also derive a
+ * fourth entry chunk from the html while `main` is already an explicit JS input, which is the
+ * double-emit hazard NOTES-vite-entrypoints.md 4.3 flagged for this task. Stamping sidesteps all
+ * three, and is why entryFileNames stays the plain "[name].js" rather than 4.3's function form.
+ *
+ * WHAT HAPPENS TO THE THREE SCRIPT TAGS: nothing. All three ship byte-identical.
+ * The RequireJS bootstrap is NOT rewritten to <script type="module">, and that is a decision
+ * rather than an omission -- the source is still AMD (NOTES-vite-build.md section 3: Vite accepts
+ * AMD, exits 0, and emits a bundle that does nothing), so an ESM loader here would faithfully
+ * load something that cannot execute. 4.2 deferred the loader story for exactly this reason and
+ * costed five options in NOTES-vite-entrypoints.md section 3 -- four of which need no
+ * server-side change, (b) being the one that does; group 5 is what makes any of them
+ * choosable. Until then the global `var require = {urlArgs, deps:["main"]}` stays, and it is
+ * load-bearing twice: it is what loads `main` at all, and its urlArgs is the ONLY cache-buster on
+ * every runtime-fetched template, partial, locale and theme asset (D4) until 4.9's
+ * resolveAssetUrl takes that over. The two literal <script src> tags stay the only urls on a
+ * login page with no cache-buster -- the pre-existing gap task 1.12 measured (38 of 41 urls carry
+ * ?v=), unchanged by this task rather than introduced by it.
+ *
+ * THE PATH CONVENTION TASK 6.3 NEEDS SURVIVES THIS. 6.3 derives a url from a module identifier
+ * "using the deployed layout's own convention": identifier `org/forgerock/.../Foo` -> `Foo.js` at
+ * that same path below the tree root, which is what RequireJS's baseUrl-relative nameToUrl does
+ * today. Two things preserve it here, and neither is the unbundled module tree. First, this file
+ * is emitted AT the tree root, unhashed, so the resolution origin stays addressable -- and TODAY
+ * that origin is RequireJS's baseUrl, inferred from the <script src="libs/requirejs-2.3.7-min.js">
+ * tag below, not from anything Vite emits. Second, PROSPECTIVELY: `base: "./"` in the build config
+ * keeps every url Vite emits relative to the directory index.html is served from, so the tree root
+ * survives as the origin under any context path once 4.9 and groups 5-6 start emitting urls at
+ * all. Note the tense -- index.html is a static stamp and never passes through Vite, so `base`
+ * does not touch the three script tags below; do not go looking for an effect that is not wired
+ * yet. 6.3's fallback is for
+ * identifiers ABSENT from the registry -- an operator's own module dropped into a deployed /XUI
+ * (e2e/xui/xui-operator-module.spec.mjs) -- so what it needs is the convention and a stable root,
+ * not the 331 bundled modules that no longer ship standalone.
+ */
+const INDEX_HTML = "index.html";
+const INDEX_HTML_SOURCE = "src/main/resources/index.html";
+const VERSION_TOKEN = "${version}";
+
+/*
+ * split/join, and it matches Grunt on OCCURRENCE COUNT -- do not read this as a first-vs-global
+ * divergence, because it is not one. grunt-text-replace does not do a raw-string replace: it
+ * passes `from` through convertPatternToRegex first (lib/grunt-text-replace.js:67, and :130-140),
+ * which escapes the pattern and returns `new RegExp(pattern, "g")`. For "${version}" that is
+ * /\$\{version\}/g -- GLOBAL. So Grunt substituted every occurrence and so does this.
+ *
+ * The ONE real divergence is `$` handling in the REPLACEMENT. Grunt reaches
+ * text.replace(regex, string) with a plain string (:68 expandStringReplacement), so JS expands
+ * $&, $1 and $` inside it: with a version of "1.0-$&", Grunt emits "1.0-${version}" while
+ * split/join emits the literal "1.0-$&". split/join is the correct side of that -- a version
+ * string is data, not a replacement pattern -- and it is also why this is not simply
+ * String.replaceAll, which has the identical $-expansion behaviour.
+ *
+ * Either way the shipped bytes match: index.html carries exactly one ${version} and no version
+ * string in play contains a $. Verified against the oracle -- md5 e3444d65a0de8574ec3f356481f16e09,
+ * 988 bytes at 16.2.0-SNAPSHOT, PHASE1-TREE.md:147 and :235.
+ *
+ * The token check is a real addition, not a port. Grunt's "No replacements were found" warning
+ * (lib/grunt-text-replace.js:87,107) fires when the `replacements` CONFIG is undefined, never
+ * when the token is missing from the file -- so if someone edited the token out of index.html,
+ * Grunt would copy it through silently and every runtime-fetched asset would lose its
+ * cache-buster with no build-time signal at all. That failure is invisible until a redeploy
+ * serves stale templates from a browser cache, so it fails the build here instead.
+ */
+/*
+ * Read from src/main/resources DIRECTLY, where Grunt read the COMPOSED tree
+ * (Gruntfile.js:253, `compositionDirectory + "/index.html"`). Equivalent today and checked, not
+ * assumed: none of the other seven composition sources carries a root index.html, so the composed
+ * copy was always this file. The new failure mode is also the better one -- a missing source
+ * throws ENOENT naming the path, where Grunt would silently have stamped whichever source won.
+ */
+const readIndexHtmlSource = (root) => {
+    const source = fs.readFileSync(path.resolve(root, INDEX_HTML_SOURCE), "utf8");
+    if (!source.includes(VERSION_TOKEN)) {
+        throw new Error(
+            `${INDEX_HTML_SOURCE} no longer contains the ${VERSION_TOKEN} token. The deployed ` +
+            "index.html would ship without a cache-buster, and every template, partial, locale " +
+            "and theme asset fetched at runtime through require.toUrl's urlArgs would be served " +
+            "from a stale browser cache after a redeploy. See design.md D4."
+        );
+    }
+    return source;
+};
+
+const stampIndexHtml = (root, outDir) => {
+    const dest = path.resolve(outDir, INDEX_HTML);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, readIndexHtmlSource(root).split(VERSION_TOKEN).join(targetVersion));
+    return INDEX_HTML;
 };
 
 /*
@@ -427,9 +563,11 @@ const xuiStaticAssets = () => {
         name: "xui-static-assets",
         /*
          * Build only. Under `npm run dev` none of this runs, so every theme, template, partial,
-         * locale and stylesheet 404s -- that is expected, not a bug: serving them in dev needs
-         * configureServer middleware over the same composed sources, and it belongs with TASK 4.10,
-         * which owns the dev server. Nothing here presumes its shape.
+         * locale and stylesheet 404s -- and so does index.html, which since 4.5 is emitted by
+         * stampIndexHtml rather than existing at the project root where Vite's dev server looks
+         * for it. That is expected, not a bug: serving them in dev needs configureServer
+         * middleware over the same composed sources, and it belongs with TASK 4.10, which owns
+         * the dev server. Nothing here presumes its shape.
          */
         apply: "build",
         configResolved (config) {
@@ -438,6 +576,38 @@ const xuiStaticAssets = () => {
         },
         buildStart () {
             assertSourcesPresent(root);
+            /*
+             * Read-and-check here, stamp in writeBundle. Both hooks read the file (983 bytes,
+             * twice, once per build) and that is the point: the token check is worthless in
+             * writeBundle, which runs AFTER rollup has emitted the bundle, after 263 files have
+             * been copied and after 3 stylesheets have been compiled. Failing in buildStart costs
+             * ~30s less and leaves no half-written tree in outDir.
+             */
+            readIndexHtmlSource(root);
+            /*
+             * The token guard above protects the case where ${version} vanishes from the SOURCE.
+             * This is the other half of the same failure and, on the evidence, the likelier one:
+             * `targetVersion` falls back to "dev" when TARGET_VERSION is unset, so if the
+             * <TARGET_VERSION>${project.version}</TARGET_VERSION> wiring in the pom's npm-build
+             * execution is ever dropped or renamed, this build keeps exiting 0 and stamps
+             * `v=dev` into a production tree. Every release then shares one cache key and the
+             * first symptom is a client serving a stale template after an upgrade -- exactly what
+             * D4 exists to prevent, arrived at from the opposite direction.
+             *
+             * A warning and not a throw, deliberately. The "dev" default is a faithful port of
+             * Gruntfile.js:45 and has to survive: 4.10's dev server needs a version when Maven is
+             * not driving the build, and a standalone `npx vite build` is a legitimate thing to
+             * run. This costs nothing when the pom is wired -- and note `apply: "build"` above,
+             * so `npm run dev` never reaches this hook and gets no spurious warning either.
+             */
+            if (!process.env.TARGET_VERSION) {
+                this.warn(
+                    `TARGET_VERSION is unset, so ${INDEX_HTML} will be stamped "v=${targetVersion}". ` +
+                    "In a released build every deploy would then share one cache key and clients " +
+                    "would serve stale templates after an upgrade (design.md D4). Maven sets this " +
+                    "from ${project.version} in the npm-build execution; see pom.xml."
+                );
+            }
         },
         async writeBundle (options) {
             /*
@@ -448,9 +618,18 @@ const xuiStaticAssets = () => {
             const outDir = options.dir || configuredOutDir;
             const shipped = composeStaticAssets(root, outDir);
             const stylesheets = await renderStylesheets(root, outDir);
+            /*
+             * After composeStaticAssets, not before. index.html is excluded from the verbatim
+             * copy by NOT_COPIED, so the two cannot collide today -- but the source tree that
+             * copy walks is the same one this reads, and an ordering where the unfiltered copy
+             * could land last would ship a literal ${version}. Keeping the stamp last means the
+             * exclusion and the ordering both have to fail before that can happen.
+             */
+            const indexHtml = stampIndexHtml(root, outDir);
             this.info(
-                `copied ${shipped.size} static files verbatim and compiled ` +
-                `${stylesheets.length} stylesheets into ${path.relative(root, outDir)}`
+                `copied ${shipped.size} static files verbatim, compiled ` +
+                `${stylesheets.length} stylesheets and stamped ${indexHtml} with version ` +
+                `${targetVersion}, into ${path.relative(root, outDir)}`
             );
         }
     };

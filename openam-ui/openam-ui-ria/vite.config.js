@@ -34,7 +34,18 @@
  *                                  resolve.alias cannot see those. resolve.extensions and
  *                                  .jsm were NOT done here; see the note after the alias
  *                                  block. Router's per-entry collision is resolved there too.
- *   4.4  static assets              themes/ templates/ partials/ locales/ copied verbatim
+ *   4.4  static assets              themes/ templates/ partials/ locales/ copied verbatim.
+ *                                  LANDED as the xuiStaticAssets plugin defined below this
+ *                                  header block, replaying Grunt's copy:compose (8 sources,
+ *                                  last wins) and copy:compiled (the nonCompiledFiles
+ *                                  filter) in writeBundle. It ships 263 files, not the four
+ *                                  directories the task text names: also images/, the five
+ *                                  Font Awesome fonts, favicon.ico, oauthReturn.html and
+ *                                  timezones.json, none of which any task lists. It ALSO
+ *                                  compiles the three LESS files, which no group-4 task
+ *                                  owns -- decided in, not assumed by, this task; see the
+ *                                  LESS_ENTRIES comment. publicDir stays false and the
+ *                                  assetFileNames collision 4.2 flagged is resolved below.
  *   4.5  index.html + ${version}    the filtered index.html, the deployed /XUI layout, and
  *                                  index.html as a build input. The entryFileNames half is
  *                                  SETTLED IN 4.2: the three JS entries are emitted unhashed at
@@ -60,6 +71,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import fs from "node:fs";
+import path from "node:path";
 
 /*
  * Maven passes the project version through this variable. The pom's npm-build execution sets it;
@@ -76,6 +90,371 @@ const targetVersion = process.env.TARGET_VERSION || "dev";
  * "type", so it is bundled).
  */
 const fromSrc = (id) => fileURLToPath(new URL(`./src/main/js/${id}`, import.meta.url));
+
+/*
+ * ==== 4.4 -- STATIC ASSETS: THE COMPOSITION STEP GRUNT USED TO DO ====
+ *
+ * READ NOTES-static-assets.md IN THIS DIRECTORY BEFORE CHANGING ANYTHING BELOW. It has the
+ * per-source provenance of all 719 composed files, the 7 path collisions and their winners, and
+ * the costing behind every option not taken here.
+ *
+ * The shipped tree is NOT produced by one directory being copied. Grunt built it in two passes:
+ *
+ *   1. copy:compose   -- eight source directories copied over each other into target/XUI,
+ *                        IN ORDER, last one wins (Gruntfile.js:57-68, 135-156).
+ *   2. copy:compiled  -- the subset of that tree matching `nonCompiledFiles` copied on into
+ *                        target/compiled (Gruntfile.js:83-95, 160-170).
+ *
+ * Vite reproduces neither on its own. themes/, templates/, partials/ and locales/ are fetched by
+ * path at runtime -- ui-customization's "Override of templates and partials by a theme" is what
+ * requires that -- so they never enter the module graph, and no rollup output option can see
+ * them. This plugin replays both passes in writeBundle.
+ *
+ * WHY A PLUGIN AND NOT publicDir. publicDir is exactly the right SEMANTICS -- verbatim,
+ * unhashed, no graph -- but it is ONE directory, and these assets fan in from four places with a
+ * defined override order (see the collisions table below). Using it would need a pre-staging step
+ * that composes them first, i.e. this code, plus a second entry point that `vite build` alone
+ * does not run. The other options and their costs are in NOTES-static-assets.md section 2.
+ *
+ * WHY writeBundle AND NOT buildStart. build.emptyOutDir is true; it wipes outDir when the bundle
+ * starts. Anything written in buildStart is erased. This is an ordering constraint, not a config
+ * choice.
+ */
+
+/*
+ * Gruntfile.js:57-68, in order. THE ORDER IS THE CONTRACT: the last source to supply a path wins,
+ * and seven paths in the tree are supplied twice. Two of the seven are non-obvious and both were
+ * verified against the composed tree rather than assumed --
+ *
+ *   libs/form2js-2.0-769718a.js   target/dependencies loses to dependencies-expanded. Same
+ *                                 library, DIFFERENT BUILD, identical file counts either way.
+ *                                 Task 3.7 found this; it is why acceptance here is per-file md5
+ *                                 against PHASE1-TREE.md and not a file count.
+ *   locales/en/translation.json   ui-user/www (12,415 B) loses to src/main/resources (67,685 B).
+ *                                 Reverse this order and translation coverage silently drops by
+ *                                 55 kB with no build error.
+ *
+ * Of the other five, FOUR are AM overriding a commons template. The fifth is
+ * libs/lodash-3.10.1-min.js: 4.3 vendored lodash into src/main/js/libs/, so it now beats the
+ * commons.ui.libs copy in target/dependencies -- worth knowing at 4.7, which retires that
+ * supplier, and at 8.3, which replaces the file. NOTES-static-assets.md section 1 lists all seven.
+ * Cross-reference with care: NOTES-npm-commons.md section 4 also says "five AM-over-commons
+ * overrides", but its five are the four templates plus locales/en/translation.json, which is
+ * accounted for separately above. The two fives are different sets.
+ *
+ * The two amd/ directories contribute ZERO non-JavaScript files -- they are 79 .js and nothing
+ * else -- so they never win anything below. They are listed anyway because they are composition
+ * sources, and because the presence check in buildStart has to cover them: a bare `npm install`
+ * prunes both packages (pom.xml:481 installs them with --no-save), and a pruned node_modules
+ * otherwise yields an exit-0 build that has silently dropped 53 files.
+ */
+const COMPOSITION_SOURCES = [
+    "target/dependencies",
+    "node_modules/@openidentityplatform/ui-commons/amd",
+    "node_modules/@openidentityplatform/ui-commons/www",
+    "node_modules/@openidentityplatform/ui-user/amd",
+    "node_modules/@openidentityplatform/ui-user/www",
+    "target/dependencies-expanded/forgerock-ui-user",
+    "src/main/js",
+    "src/main/resources"
+];
+
+/*
+ * The npm-installed sources are the only ones carrying a root package.json, the CommonJS marker,
+ * which is not part of the UI and which `**\/*.json` below would otherwise ship to the tree root.
+ * Grunt drops it at copy:compose and scopes the exclusion to these directories deliberately, so
+ * that a future source legitimately shipping a root package.json does not lose it silently.
+ * Only the two amd/ directories have one today; all four are listed to match Gruntfile.js:148-153.
+ */
+const NPM_PACKAGE_SOURCES = new Set([
+    "node_modules/@openidentityplatform/ui-commons/amd",
+    "node_modules/@openidentityplatform/ui-commons/www",
+    "node_modules/@openidentityplatform/ui-user/amd",
+    "node_modules/@openidentityplatform/ui-user/www"
+]);
+
+/*
+ * Gruntfile.js:83-95, `nonCompiledFiles`, ported verbatim. This list -- not a directory list --
+ * is what decides the shipped static set, and it does not decompose into "the four directories
+ * task 4.4 names": it also ships favicon.ico, oauthReturn.html, timezones.json, images/, five
+ * Font Awesome fonts, css/bootstrap-3.3.5-custom.css and css/common/structure/config.json.
+ * PHASE1-TREE.md:53 is the only surviving record of the eight root files; NOTES-static-assets.md
+ * section 4 says what each is for and what breaks without it.
+ *
+ * DELIBERATELY REPRODUCED, NOT FIXED: there is no `**\/*.ttf` here, so
+ * css/fontawesome/fonts/fontawesome-webfont.ttf is NOT shipped even though the compiled CSS
+ * references it and the file is present in target/dependencies. That is a pre-existing Grunt
+ * omission (harmless in practice -- woff2/woff cover every current browser). Adding it here would
+ * be a real fix, but it would also put a permanent +1 delta against PHASE1-TREE.md that tasks
+ * 4.6, 4.7 and 4.8 each have to carry forward and re-explain. Fix it as its own change, against a
+ * clean diff.
+ */
+const NON_COMPILED_EXTENSIONS = new Set([
+    ".html", ".ico", ".json", ".png", ".eot", ".svg", ".woff", ".woff2", ".otf"
+]);
+const NON_COMPILED_PATHS = new Set(["css/bootstrap-3.3.5-custom.css"]);
+const NON_COMPILED_PREFIX = "themes/";
+
+/*
+ * Gruntfile.js:164-167. main.js is emitted by the bundler, index.html by the version-stamping
+ * step -- and index.html DOES match `**\/*.html`, so without this exclusion the unfiltered
+ * src/main/resources copy would overwrite the stamped one with a literal `${version}`.
+ * Task 4.5 owns index.html; until it lands, index.html is an expected absence from the output.
+ */
+const NOT_COPIED = new Set(["main.js", "index.html"]);
+
+/*
+ * Reproduces the eleven `nonCompiledFiles` globs. Written out rather than taken through minimatch
+ * so the interpretation of each pattern is visible and reviewable: `**\/*.<ext>` is any file with
+ * that extension at any depth INCLUDING the root, and `themes/**\/*.*` is any file below themes/
+ * whose basename carries a dot. Case-sensitive, as minimatch is by default.
+ *
+ * The dotfile rule below is the one place a naive port diverges, and it was measured rather than
+ * assumed: minimatch and glob exclude dotfiles from a wildcard unless `dot: true`, so Grunt drops
+ * .eslintrc.json and themes/.DS_Store while path.extname() and a plain directory walk would ship
+ * both. No such file exists in any of the eight sources today, but themes/ is the tree operators
+ * edit in place and this module's own root already carries a .DS_Store, so the divergence is one
+ * stray file away from putting an unexplained "extra" in front of task 4.8's manifest diff.
+ *
+ * The set this produces is checked against PHASE1-TREE.md, which is the actual acceptance test.
+ */
+const shipsVerbatim = (relPath) => {
+    if (NOT_COPIED.has(relPath)) { return false; }
+    if (path.basename(relPath).startsWith(".")) { return false; }
+    if (NON_COMPILED_PATHS.has(relPath)) { return true; }
+    if (relPath.startsWith(NON_COMPILED_PREFIX) && path.basename(relPath).includes(".")) { return true; }
+    return NON_COMPILED_EXTENSIONS.has(path.extname(relPath));
+};
+
+/*
+ * Gruntfile.js:222-244, `less:compile`.
+ *
+ * NO GROUP-4 TASK NAMES THESE THREE FILES. They are here by decision of the change owner, taken
+ * on the finding in NOTES-static-assets.md section 3: nobody else in the group can take them
+ * (4.5 is index.html, 4.6 the zip, 4.7 the Maven unpacks, 4.8 CodeMirror), and the failure is
+ * silent -- omit them and `vite build` exits 0 while every page in the UI loads unstyled, because
+ * all three stylesheet lists 404 at once. ui-build-and-packaging's "Deployed directory layout"
+ * names stylesheets alongside templates and partials in the same sentence, so the stable-path
+ * requirement covers them whether or not a task text does.
+ *
+ * Who names each output -- one of the three is invisible from the theme config:
+ *   css/structure.css      ThemeConfiguration.js:23 (default) AND :67 (fr-dark-theme). The dark
+ *                          theme replaces bootstrap and theme but SHARES structure.
+ *   css/theme.css          ThemeConfiguration.js:23 (default only)
+ *   css/styles-admin.css   Constants.js:60 DEFAULT_STYLESHEETS -- the admin console. Referenced
+ *                          by NEITHER theme, and the largest of the three.
+ */
+const LESS_ENTRIES = [
+    { src: "css/structure.less", dest: "css/structure.css" },
+    { src: "css/theme.less", dest: "css/theme.css" },
+    { src: "css/styles-admin.less", dest: "css/styles-admin.css" }
+];
+
+/*
+ * Staging directory for the LESS compile. NOT target/XUI: that is the Grunt composition tree and
+ * the second acceptance oracle for tasks 4.4-4.8 (NOTES-static-assets.md section 0), so nothing
+ * here may write into it.
+ */
+const LESS_STAGE = "target/css-composed";
+
+/*
+ * Recursive file list, POSIX-separated and relative to `base`. Dirent.isFile()/isDirectory() are
+ * lstat-based, so a symlink is neither and is skipped, where glob would have followed it. None
+ * exists in any composition source today; noted because it is a silent difference, and because it
+ * is also why this cannot loop.
+ */
+const walk = (dir, base = dir) => {
+    const found = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            found.push(...walk(full, base));
+        } else if (entry.isFile()) {
+            found.push(path.relative(base, full).split(path.sep).join("/"));
+        }
+    }
+    return found;
+};
+
+const copyFile = (from, to) => {
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to);
+};
+
+/*
+ * Pass 1 and 2 fused: walk the sources in order and copy only what `nonCompiledFiles` selects,
+ * straight into outDir. Composing the whole 719-file tree first and filtering afterwards would
+ * be a closer transcription of Grunt, but 384 of those files are JavaScript the bundler owns,
+ * and staging them would put a second, stale copy of the module tree on disk next to Vite's.
+ * The last-wins property is preserved exactly, because a later source's copyFileSync overwrites
+ * an earlier one at the same path.
+ */
+const composeStaticAssets = (root, outDir) => {
+    const shipped = new Set();
+    for (const source of COMPOSITION_SOURCES) {
+        const from = path.resolve(root, source);
+        for (const rel of walk(from)) {
+            if (NPM_PACKAGE_SOURCES.has(source) && rel === "package.json") { continue; }
+            if (!shipsVerbatim(rel)) { continue; }
+            copyFile(path.join(from, rel), path.resolve(outDir, rel));
+            shipped.add(rel);
+        }
+    }
+    return shipped;
+};
+
+/*
+ * The LESS entries live in src/main/resources/css, but their @imports do not: `common/*.less`
+ * comes from ui-commons/www/css and `fontawesome/`, `bootstrap-dialog`, `selectize`, `titatoggle`,
+ * `codemirror` and `react-select` come from target/dependencies/css. They are written as if the
+ * composed tree existed, so it has to exist. Less's `paths` option would resolve them but is NOT
+ * a substitute: `relativeUrls` rebases each url() from the imported file's real directory to the
+ * entry's, so resolving an import out of target/dependencies would emit
+ * `url(../../../target/dependencies/css/fontawesome/fonts/...)`. Only a composed tree gives the
+ * `url(./fontawesome/fonts/...)` the shipped CSS actually has.
+ */
+const stageLessSources = (root) => {
+    const stage = path.resolve(root, LESS_STAGE);
+    /*
+     * LESS_STAGE is a constant, but `root` is config.root and the delete is recursive, so the
+     * resolved path is checked before anything is removed. Cheap, and it means a mistyped
+     * LESS_STAGE fails loudly instead of deleting somewhere it should not.
+     */
+    if (!stage.startsWith(root + path.sep)) {
+        throw new Error(`Refusing to clear a LESS staging directory outside the project root: ${stage}`);
+    }
+    fs.rmSync(stage, { recursive: true, force: true });
+    for (const source of COMPOSITION_SOURCES) {
+        const from = path.resolve(root, source, "css");
+        if (!fs.existsSync(from)) { continue; }
+        for (const rel of walk(from)) {
+            copyFile(path.join(from, rel), path.join(stage, "css", rel));
+        }
+    }
+    return stage;
+};
+
+/*
+ * Compiled OUTSIDE the module graph, with the `less` and `less-plugin-clean-css` devDependencies
+ * that are already installed, and with Grunt's exact three options. That is a deliberate choice
+ * over Vite's built-in LESS handling, and the reason is byte parity:
+ *
+ *   compress + clean-css + relativeUrls   ->  89,221 B  url(./fontawesome/fonts/...eot?v=4.5.0)
+ *   compress alone                        ->  89,475 B  url('../fonts/...eot?v=4.5.0')  <- 404s
+ *   no options                            -> 130,169 B  url('../fonts/...eot?v=4.5.0')  <- 404s
+ *
+ * All three outputs reproduce PHASE1-TREE.md's md5 exactly under the first row, verified three
+ * ways in NOTES-static-assets.md section 3. Vite's css pipeline cannot match it: build.cssMinify
+ * is esbuild or lightningcss and neither emits clean-css 3.4.28 bytes, so routing LESS through
+ * the graph would put three permanently unexplainable mismatches in front of task 4.8. It would
+ * also turn the five Font Awesome fonts into hashed graph assets, where Grunt leaves them as
+ * plain relative urls into a verbatim-copied css/fontawesome/fonts/ tree.
+ *
+ * relativeUrls is load-bearing, not cosmetic -- without it every Font Awesome icon in the console
+ * 404s. Vite would have got that part right on its own, by a different mechanism (its
+ * ViteLessManager runs rebaseUrls against the root file); that is worth knowing before anyone
+ * reads its absence from a naive config as the bug it is not.
+ *
+ * The option shapes match grunt-contrib-less 3.0.0 (tasks/less.js:119-121, 192): `filename` is
+ * the source path and `paths` defaults to its directory, then options go straight to
+ * less.render.
+ */
+const renderStylesheets = async (root, outDir) => {
+    const require_ = createRequire(import.meta.url);
+    const less = require_("less");
+    const CleanCSSPlugin = require_("less-plugin-clean-css");
+    const stage = stageLessSources(root);
+
+    for (const entry of LESS_ENTRIES) {
+        const filename = path.resolve(stage, entry.src);
+        const output = await less.render(fs.readFileSync(filename, "utf8"), {
+            filename,
+            paths: [path.dirname(filename)],
+            compress: true,
+            relativeUrls: true,
+            plugins: [new CleanCSSPlugin({})]
+        });
+        const dest = path.resolve(outDir, entry.dest);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.writeFileSync(dest, output.css);
+    }
+    return LESS_ENTRIES.map((entry) => entry.dest);
+};
+
+/*
+ * Grunt has a check-composition-sources task that fails and names the missing directory. Vite has
+ * no equivalent and 4.4 adds one, because the failure it guards against is silent: pom.xml:481
+ * installs both @openidentityplatform packages with --no-save, so they are absent from
+ * package.json and ANY bare `npm install` prunes them. Without this check that produces a green
+ * build missing 53 files -- 36 templates, 5 partials, 9 images, favicon.ico, oauthReturn.html and
+ * css/common/structure/config.json -- and the first symptom is a 404 at runtime.
+ *
+ * buildStart, not writeBundle: fail before the bundle is built, not after.
+ */
+const isDirectory = (target) => {
+    try {
+        return fs.statSync(target).isDirectory();
+    } catch {
+        return false;
+    }
+};
+
+/*
+ * Grunt used grunt.file.isDir (Gruntfile.js:410), not an existence check, and the distinction is
+ * worth keeping: a source path that exists as a FILE would pass fs.existsSync and then throw a
+ * bare ENOTDIR from inside walk(), losing the message below. Note what this still does NOT catch,
+ * because Grunt does not catch it either: a source directory that exists but is EMPTY silently
+ * contributes nothing.
+ */
+const assertSourcesPresent = (root) => {
+    const missing = COMPOSITION_SOURCES.filter((source) => !isDirectory(path.resolve(root, source)));
+    if (missing.length > 0) {
+        throw new Error(
+            "Composition sources are missing, so the build would silently ship an incomplete tree:\n" +
+            missing.map((source) => `  - ${source}`).join("\n") +
+            "\n\nThe two node_modules/@openidentityplatform packages are installed by Maven with " +
+            "--no-save (pom.xml:481) and are pruned by a bare `npm install`. Re-run the Maven " +
+            "build, or reinstall them from target/npm/*.tgz. The target/ sources come from the " +
+            "maven-dependency-plugin unpack executions in the same pom."
+        );
+    }
+};
+
+const xuiStaticAssets = () => {
+    let root = process.cwd();
+    let configuredOutDir = "";
+    return {
+        name: "xui-static-assets",
+        /*
+         * Build only. Under `npm run dev` none of this runs, so every theme, template, partial,
+         * locale and stylesheet 404s -- that is expected, not a bug: serving them in dev needs
+         * configureServer middleware over the same composed sources, and it belongs with TASK 4.10,
+         * which owns the dev server. Nothing here presumes its shape.
+         */
+        apply: "build",
+        configResolved (config) {
+            root = config.root;
+            configuredOutDir = path.resolve(config.root, config.build.outDir);
+        },
+        buildStart () {
+            assertSourcesPresent(root);
+        },
+        async writeBundle (options) {
+            /*
+             * options.dir is what rollup is actually writing to. configuredOutDir is the same
+             * value via build.outDir and is the fallback rather than a repeated "target/compiled"
+             * literal, so this cannot drift out of step with the build config.
+             */
+            const outDir = options.dir || configuredOutDir;
+            const shipped = composeStaticAssets(root, outDir);
+            const stylesheets = await renderStylesheets(root, outDir);
+            this.info(
+                `copied ${shipped.size} static files verbatim and compiled ` +
+                `${stylesheets.length} stylesheets into ${path.relative(root, outDir)}`
+            );
+        }
+    };
+};
 
 export default defineConfig({
     /*
@@ -95,7 +474,14 @@ export default defineConfig({
          * 15 .jsx files under src/main/js. Note for 4.3: this plugin's default include is
          * /\.[tj]sx?$/, which does NOT match .jsm — widening it is part of the .jsm work below.
          */
-        react()
+        react(),
+
+        /*
+         * 4.4. Replays Grunt's copy:compose + copy:compiled passes in writeBundle. Defined above
+         * this config object; the reasoning, the source order and the LESS decision are all in
+         * the comments there and in NOTES-static-assets.md.
+         */
+        xuiStaticAssets()
     ],
 
     /*
@@ -458,19 +844,28 @@ export default defineConfig({
      */
 
     /*
-     * 4.4 owns static assets. themes/, templates/, partials/ and locales/ ship unbundled and
-     * unhashed (D3) and are fetched by path at runtime, so they are not in the module graph and
-     * Vite will not emit them without being told to. publicDir is off because this module has no
-     * public/ directory; turning it on by accident would silently change the shipped layout.
+     * STILL false after 4.4, and now for a second reason. The first stands: this module has no
+     * public/ directory, and turning it on by accident would silently change the shipped layout.
+     * The second is that publicDir cannot do 4.4's job -- it is ONE directory and the static
+     * assets fan in from four, with an override order that decides which copy of
+     * locales/en/translation.json ships. The xuiStaticAssets plugin above does it instead.
+     * See NOTES-static-assets.md section 2, option D, for the full costing.
      */
     publicDir: false,
 
     css: {
         /*
-         * Grunt compiled three LESS files (Gruntfile.js:222-244): css/structure.less,
-         * css/theme.less and css/styles-admin.less, with clean-css minification. Reaching them
-         * through the module graph is 4.4's problem; the sources live under the composed tree,
-         * not under src/main/js.
+         * DECIDED BY 4.4: the three LESS files are NOT reached through the module graph, so
+         * nothing below is exercised today and it is left empty on purpose rather than deleted.
+         * css/structure.less, css/theme.less and css/styles-admin.less are compiled by the
+         * xuiStaticAssets plugin with the installed `less` + `less-plugin-clean-css` and Grunt's
+         * exact options, which is the only way to reproduce PHASE1-TREE.md's bytes -- Vite's
+         * cssMinify is esbuild or lightningcss and neither emits clean-css 3.4.28 output. The
+         * full comparison is in the plugin comment and in NOTES-static-assets.md section 3.
+         *
+         * If a later task DOES import a stylesheet from a module, this is where its options go,
+         * and build.rollupOptions.output.assetFileNames below already routes the result to a
+         * stable unhashed path under css/.
          */
         preprocessorOptions: {
             /*
@@ -570,6 +965,19 @@ export default defineConfig({
         outDir: "target/compiled",
         emptyOutDir: true,
         sourcemap: true,
+
+        /*
+         * 4.4. Vite's default is 4096: any graph asset under 4 kB becomes a `data:` URI and stops
+         * existing as a file. NO ASSET IS AFFECTED TODAY -- the five Font Awesome fonts are
+         * 66-365 kB and are copied verbatim rather than imported, and NOTES-static-assets.md
+         * section 4 records that no image is reached from the compiled CSS at all. It is turned
+         * off anyway because the requirement is a property of the output, not of today's file
+         * sizes: ui-build-and-packaging's "Deployed directory layout" says these files are
+         * individually addressable at stable paths, and an operator cannot override an asset that
+         * has been inlined into a stylesheet. Left at the default, the first small url() anyone
+         * adds disappears from the tree silently.
+         */
+        assetsInlineLimit: 0,
 
         rollupOptions: {
             /*
@@ -713,9 +1121,40 @@ export default defineConfig({
                  * css/styles-admin.css and css/theme.css unhashed under css/, and the setting below
                  * would both relocate them to assets/ and hash them the moment 4.4 pulls LESS into
                  * the graph. That is the collision 4.4 has to resolve.
+                 *
+                 * ---- RESOLVED BY 4.4. ----
+                 * Primarily by keeping LESS out of the graph entirely: the three stylesheets are
+                 * compiled by the xuiStaticAssets plugin straight to css/*.css, so no CSS reaches
+                 * this option today and the string form would in fact have been harmless.
+                 *
+                 * The function form is here anyway, and the reason is that "harmless today" was
+                 * exactly the state 4.2 left behind and it cost this task a decision to re-derive.
+                 * ui-build-and-packaging's "Deployed directory layout" names STYLESHEETS in the
+                 * same sentence as templates and partials — individually addressable, stable
+                 * paths, no build-generated content hash — so a stylesheet that does enter the
+                 * graph later must not land at assets/<name>-<hash>.css. It gets css/[name].[ext]
+                 * instead. A flat "[name].[ext]" is NOT sufficient: it loses the css/ prefix, and
+                 * all three references (ThemeConfiguration.js:23,67 and Constants.js:60) are
+                 * path-qualified.
+                 *
+                 * WHAT THIS DOES AND DOES NOT BUY, because the difference matters to whoever
+                 * changes it next. It guarantees the DIRECTORY and the absence of a hash. It does
+                 * NOT reproduce the three required file names: [name] here is the CHUNK name, so
+                 * `import "css/structure.less"` from main.js emits css/main.css, not
+                 * css/structure.css, and the theme stylesheet lists would still 404. Anyone moving
+                 * LESS into the graph needs a per-file branch here as well -- and NOTES-static-
+                 * assets.md section 3 has the other two reasons not to (byte parity, and
+                 * cssCodeSplit being wrong at both values).
+                 *
+                 * Everything else keeps the hashed default. That is deliberate and narrow: the
+                 * requirement is about the files operators address by path, not about every byte
+                 * rollup emits, and nothing else in the tree is addressed that way.
                  */
                 chunkFileNames: "assets/[name]-[hash].js",
-                assetFileNames: "assets/[name]-[hash].[ext]"
+                assetFileNames: (assetInfo) => {
+                    const name = assetInfo.names?.[0] || assetInfo.name || "";
+                    return name.endsWith(".css") ? "css/[name].[ext]" : "assets/[name]-[hash].[ext]";
+                }
             }
         }
     }

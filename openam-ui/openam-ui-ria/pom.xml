@@ -29,7 +29,6 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <codemirror.version>4.10</codemirror.version>
         <!--
             Applies to the tgz:npm artifacts copied by copy-commons-npm-tarballs below, which
             are now the only thing it needs to apply to.
@@ -49,50 +48,31 @@
             Without that this module fails at `initialize` with "Could not find artifact
             org.openidentityplatform.commons.ui:commons:tgz:npm:3.2.0-SNAPSHOT".
 
-            AND BUILD THIS MODULE FROM ../ (openam-ui), NOT FROM HERE. After 4.7 exactly ONE
-            commons.ui.libs artifact is left - the CodeMirror zip, task 4.8's - but that is
-            enough to keep the hazard alive in full. It is published to no repository; it exists
-            only because maven-external-dependency-plugin fetches it from a CDN, and that plugin
-            is inherited=false on the openam-ui aggregator with install-external bound to
-            process-resources. A standalone build here never runs it and dies resolving
-            CodeMirror from Central. Use:
-                mvn -DskipTests package        (from openam-ui)
-            NEVER `mvn clean` on openam-ui, and never `mvn ... -am` from the OpenAM root:
-            clean-external DELETES those artifacts from ~/.m2 and nothing can restore them but
-            a CDN round trip. Use `rm -rf target` instead.
+            TASK 4.8 ENDED THE commons.ui.libs HAZARD ALTOGETHER. The warning that stood here
+            through 4.7 - build from ../ only, and never `mvn clean` on openam-ui or `mvn ... -am`
+            from the OpenAM root, because clean-external DELETES artifacts from ~/.m2 that are
+            published nowhere - applied to the one artifact 4.7 left standing, the CodeMirror zip.
+            That artifact is gone, and with it maven-external-dependency-plugin, its
+            clean-external goal, and the reason this module could not be built on its own. Both
+            `mvn clean` and a standalone build here are safe again. The prerequisite above is not:
+            the two tgz:npm commons artifacts still resolve from ~/.m2 only.
         -->
         <commons.ui.version>3.2.0-SNAPSHOT</commons.ui.version>
     </properties>
 
-    <dependencies>
-        <!--
-            TASK 4.7 RETIRED THE commons.ui.libs CHANNEL FROM THIS MODULE. Gone from here: the
-            24 commons.ui.libs dependencies (20 runtime, 4 test) and the
-            commons.ui:user:zip:www dependency that carried 33 more of them transitively. Task
-            3.7 retained that zip for exactly this moment - the npm commons packages ship no
-            libs/ directory, so it could not go until a replacement supplier existed. It does
-            now: the runtime libraries are declared in package.json and staged from node_modules
-            into target/npm-libs by vite.config.js. The per-file table is in NOTES-libs-retire.md.
+    <!--
+        THIS MODULE HAS NO MAVEN DEPENDENCIES. Task 4.7 retired the commons.ui.libs channel - 24
+        dependencies (20 runtime, 4 test) plus the commons.ui:user:zip:www dependency that carried
+        33 more of them transitively - and task 4.8 took the one it left standing, the CodeMirror
+        zip. Every runtime library is now a declared npm dependency in package.json, pinned in
+        package-lock.json, staged from node_modules into target/npm-libs by vite.config.js and
+        visible to `npm audit`, as ui-build-and-packaging's "Runtime libraries are managed package
+        dependencies" requires. The per-file table is in NOTES-libs-retire.md; CodeMirror's four
+        JS and two CSS files are mapped in NPM_LIBRARY_FILES beside the rest.
 
-            ONE commons.ui.libs DEPENDENCY SURVIVES, immediately below: the CodeMirror zip.
-            TASK 4.8 decides whether npm codemirror@4.10.0 replaces it. Until then it feeds
-            unpack-codemirror and the six fileSets left in dir.xml, and EditScriptView.js loads
-            all four of its JS files by literal AMD path.
-
-            BECAUSE IT SURVIVES, SO DOES THE HAZARD, and the warning above still applies in
-            full: maven-external-dependency-plugin in ../pom.xml still fetches it into ~/.m2,
-            and its clean-external goal still DELETES every commons.ui.libs artifact there.
-            Nothing is published to any repository. When 4.8 lands, that plugin and this
-            dependency go together and the hazard is gone for good.
-        -->
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>CodeMirror</artifactId>
-            <version>${codemirror.version}</version>
-            <type>zip</type>
-        </dependency>
-
-    </dependencies>
+        The commons sources are not dependencies either: they arrive as the two tgz:npm artifacts
+        copy-commons-npm-tarballs copies and npm-install-commons installs.
+    -->
 
     <build>
         <resources>
@@ -179,23 +159,16 @@
                             </artifactItems>
                         </configuration>
                     </execution>
-                    <execution>
-                        <id>unpack-codemirror</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>unpack</goal>
-                        </goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}</outputDirectory>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-                                    <artifactId>CodeMirror</artifactId>
-                                    <type>zip</type>
-                                </artifactItem>
-                            </artifactItems>
-                        </configuration>
-                    </execution>
+                    <!--
+                        TASK 4.8 REMOVED unpack-codemirror, THE LAST UNPACK EXECUTION HERE. It
+                        unpacked commons.ui.libs:CodeMirror:zip:4.10 into ${project.build.directory}
+                        for dir.xml's six fileSets to cherry-pick; CodeMirror is now an npm
+                        dependency staged by vite.config.js like every other runtime library.
+                        This plugin no longer unpacks anything into target/ at all; the copy
+                        above is its only execution left. target/dependencies was never this
+                        plugin's output - it was maven-assembly-plugin's, from prepare-working-dir,
+                        which 4.8 removed as well.
+                    -->
 
                 </executions>
             </plugin>
@@ -292,20 +265,20 @@
             <plugin>
                 <artifactId>maven-assembly-plugin</artifactId>
                 <executions>
-                    <execution>
-                        <id>prepare-working-dir</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>single</goal>
-                        </goals>
-                        <configuration>
-                            <finalName>dependencies</finalName>
-                            <appendAssemblyId>false</appendAssemblyId>
-                            <descriptors>
-                                <descriptor>src/main/assembly/dir.xml</descriptor>
-                            </descriptors>
-                        </configuration>
-                    </execution>
+                    <!--
+                        TASK 4.8 REMOVED prepare-working-dir AND DELETED src/main/assembly/dir.xml
+                        WITH IT. That execution existed to run dir.xml as an assembly whose output
+                        directory, target/dependencies, was composition source #1 for the frontend
+                        build - so the descriptor was never packaging-only, it was a build input.
+                        4.7 emptied it down to CodeMirror and 4.8 moved CodeMirror to npm, leaving
+                        a descriptor with no fileSets. Deleting it is not tidying: an assembly that
+                        produces an empty composition source is the silent-drop shape this build
+                        refuses, and vite.config.js no longer lists the directory at all.
+
+                        zip.xml is untouched and unrelated. It is the packaging descriptor D8
+                        preserves, it packs target/compiled, and openam-server-only consumes what
+                        it produces.
+                    -->
                     <execution>
                         <id>build-final-zip</id>
                         <phase>package</phase>

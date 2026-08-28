@@ -12,9 +12,9 @@ module.exports = function (config) {
             { pattern: "target/test-classes/**/*.js", included: false },
             // Since task 4.7 this also carries libs/: the runtime libraries are staged from
             // npm and copied into the build output, where they used to be read out of
-            // target/dependencies/libs. That pattern is gone because that directory now holds
-            // only libs/codemirror (task 4.8's), and the harness should load the bytes the
-            // build actually ships.
+            // target/dependencies/libs. That pattern is gone, and since task 4.8 so is the
+            // directory: CodeMirror was the last thing in it and is an npm dependency now. The
+            // harness loads the bytes the build actually ships.
             { pattern: "target/compiled/**/*.js", included: false },
             { pattern: "node_modules/chai/chai.js", included: false },
             { pattern: "node_modules/sinon-chai/lib/sinon-chai.js", included: false },

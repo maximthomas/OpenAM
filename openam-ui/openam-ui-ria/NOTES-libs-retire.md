@@ -962,6 +962,15 @@ already scopes the four largest.
 All 31 runtime dependencies carry an exact resolved version and an integrity hash in
 `package-lock.json`, satisfying the requirement's *Reproducible dependency resolution* scenario.
 
+**Task 4.8 adds a 19th advisory and a 32nd dependency, on the same terms.** `codemirror@4.10.0`
+carries `GHSA-4gw3-8f77-f72c` (moderate, ReDoS, affects `<5.58.2`). It is the nineteenth instance
+of exactly the pattern above: the same bytes AM already shipped, previously unauditable because
+they arrived as `commons.ui.libs:CodeMirror:zip:4.10`. **It is deferred, not overlooked** — 4.10.0
+to 5.58.2 is a major-version jump behind a script editor that **no e2e spec covers**, so the
+upgrade is a behaviour change with no regression net and belongs with the other eighteen in their
+own change. No CI workflow gates on `npm audit`, so nothing breaks in the meantime. This paragraph
+is the durable record of that deferral; §10 of the inventory scopes the bumps.
+
 ## 18. THINGS THE NEXT TASK SHOULD KNOW
 
 - **`sifter@0.4.1` has TWO packaging bugs, and both are overridden.** It arrives whether or not it

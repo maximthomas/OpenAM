@@ -179,25 +179,31 @@ jobs:
             ${{ runner.os }}-m2-e2e-
             ${{ runner.os }}-m2-repository
 
-      # `-am` is load-bearing, not an optimisation -- but TASK 4.7 SHRANK WHAT IT CARRIES from 58
-      # artifacts to one. jquery, backbone, react, requirejs, lodash, handlebars and the rest now
-      # come from declared npm dependencies; the only `commons.ui.libs` artifact left is
-      # CodeMirror, which task 4.8 decides on. What has not changed is WHY `-am` is needed: that
-      # artifact is published nowhere and 404s on Maven Central, it exists in a local repository
-      # only because maven-external-dependency-plugin downloaded it from a CDN and installed it,
-      # and the plugin is declared `<inherited>false</inherited>` on openam-ui, so it does not run
-      # for openam-ui-ria alone. One unresolvable artifact fails the build exactly as 58 did.
+      # `-am` IS NO LONGER LOAD-BEARING. TASK 4.8 ENDED THAT. It was load-bearing right up to 4.7,
+      # because openam-ui-ria resolved ~58 `commons.ui.libs` artifacts that are published nowhere
+      # and 404 on Maven Central: they existed in a local repository only because
+      # maven-external-dependency-plugin fetched them from a CDN, and that plugin was declared
+      # `<inherited>false</inherited>` on openam-ui, so it never ran for openam-ui-ria alone. 4.7
+      # cut that to one artifact, CodeMirror; 4.8 took it to npm and DELETED THE PLUGIN. The module
+      # now declares no Maven dependencies at all -- every runtime library is a declared npm
+      # dependency -- so the only external fetch left in this step is `npm install`.
+      #
+      # `-am` is KEPT anyway, and that is a deliberately conservative choice rather than a
+      # requirement: on a warm repository it costs about a second, because openam-ui-ria has no
+      # reactor dependencies and `-am` only adds two pom-packaging modules. Dropping it is a CI
+      # behaviour change nobody has measured on a cold runner, so it is not this task's.
+      #
       # The empty-repository figures below predate 4.7 and are no longer meaningful as timings
       # (NOTES-xui-build.md §3, measured against 58 CDN fetches): without `-am`, BUILD FAILURE at
-      # 110 s; with `-am`, BUILD SUCCESS at 355.81 s. Expect far less cold-resolve cost now, and
-      # note that `npm install` has correspondingly more to do. On a warm repository the whole
-      # thing is ~38 s and `-am` costs about a second, since openam-ui-ria has no reactor
-      # dependencies and `-am` only adds two pom-packaging modules. When 4.8 retires CodeMirror,
-      # `-am` and the whole plugin go with it.
+      # 110 s; with `-am`, BUILD SUCCESS at 355.81 s. BOTH the failure and the cold-resolve cost
+      # are gone; `npm install` has correspondingly more to do. On a warm repository the whole
+      # thing is ~38 s.
       #
-      # No `clean`, and not by accident: `clean-external` is bound to the clean phase on openam-ui
-      # and deletes those same CDN-provisioned artifacts *from the local repository*, which would
-      # cold-bust the cache restored above. Nothing needs cleaning on a fresh runner anyway.
+      # No `clean`, though the reason it was once mandatory has expired: `clean-external` was bound
+      # to the clean phase on openam-ui and deleted those CDN-provisioned artifacts *from the local
+      # repository*, which would cold-bust the cache restored above. 4.8 deleted that plugin along
+      # with the last artifact it managed, so `clean` here is now merely pointless rather than
+      # destructive. Nothing needs cleaning on a fresh runner anyway.
       #
       # `-DskipTests` is honoured by frontend-maven-plugin -- it skips the karma execution, which
       # would otherwise want a browser. The lane below is what tests this UI.

@@ -63,9 +63,12 @@ module.exports = function (grunt) {
             // to have run first. Grunt stopped being the production pipeline in task 4.1 and is
             // deleted in group 5; this is deliberately not worth a second copy of the file map.
             "target/npm-libs",
-            // All that is left here after 4.7 is CodeMirror: 4 files under libs/codemirror and 2
-            // under css/codemirror, from the six fileSets dir.xml still carries. TASK 4.8 owns it.
-            "target/dependencies",
+            // target/dependencies is GONE (4.8). It held only CodeMirror after 4.7 - 4 files under
+            // libs/codemirror, 2 under css/codemirror - and 4.8 moved those to npm alongside every
+            // other runtime library, so the dir.xml descriptor, the prepare-working-dir execution
+            // that ran it and the maven-dependency-plugin unpack that fed it are all deleted.
+            // Nothing produces this directory any more; do not re-add it.
+            //
             // When building, the commons sources are installed by Maven+npm as tarball packages
             npmPackageDirs,
             // target/dependencies-expanded/forgerock-ui-user is GONE (4.7). It held exactly one
@@ -424,10 +427,10 @@ module.exports = function (grunt) {
                 "Missing build composition source(s):\n  " + missing.join("\n  ") +
                 "\n\nThe commons sources arrive via Maven + npm. Build them first:\n" +
                 "  mvn install -f <commons checkout>/ui/pom.xml  (produces the tgz:npm artifacts)\n" +
-                "  mvn -DskipTests package                       (from openam-ui, NOT openam-ui-ria:\n" +
-                "                                                 the CodeMirror zip is unpacked by\n" +
-                "                                                 a plugin that only runs on the\n" +
-                "                                                 aggregator)\n\n" +
+                "  mvn -DskipTests package                       (from openam-ui OR from here: task\n" +
+                "                                                 4.8 removed the aggregator-only\n" +
+                "                                                 plugin, and a standalone build\n" +
+                "                                                 from this directory was verified)\n\n" +
                 "A bare `npm install` here prunes the commons packages, which are installed with\n" +
                 "the no-save flag; re-run the Maven build to restore them.\n\n" +
                 "target/npm-libs is different: it is staged from node_modules by the VITE build\n" +

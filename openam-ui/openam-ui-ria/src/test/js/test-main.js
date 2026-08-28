@@ -33,7 +33,7 @@
         paths: {
             // TASK 4.7. These seven used to be read straight out of target/dependencies/libs,
             // the maven-assembly output that the retired commons.ui.libs dependencySet blocks
-            // filled. That directory now holds only libs/codemirror. The libraries are staged
+            // filled. Task 4.8 removed that directory entirely. The libraries are staged
             // from npm and shipped into target/compiled/libs, which is already baseUrl above,
             // so they are addressed relatively - and for libs/ the harness now exercises the SAME
             // bytes the build ships rather than a second copy of them.

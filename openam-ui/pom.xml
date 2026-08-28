@@ -37,81 +37,32 @@
 		<module>openam-ui-js-sdk</module>
     </modules>
     <build>
-    		<plugins>
-    			<plugin>
-				<groupId>org.openidentityplatform.commons</groupId>
-				<artifactId>maven-external-dependency-plugin</artifactId>
-				<!--
-				    TASK 4.7 CUT THIS PLUGIN FROM 60 artifactItems TO 1.
+		<!--
+		    TASK 4.8 DELETED maven-external-dependency-plugin FROM THIS POM.
 
-				    It fetches artifacts from CDNs and installs them into ~/.m2 under
-				    org.openidentityplatform.commons.ui.libs. They are published to NO
-				    repository, so a developer's ~/.m2 is the only copy, and several of the
-				    downloadUrls above pointed at unpinned `master` refs or dead vanity domains -
-				    the same coordinate could yield different bytes on a re-fetch, which is
-				    exactly the drift task 3.7 caught in form2js. All 59 runtime and test
-				    artifacts are now declared npm dependencies of openam-ui-ria, pinned in its
-				    package-lock.json and visible to `npm audit`, as
-				    ui-build-and-packaging's "Runtime libraries are managed package
-				    dependencies" requires. See openam-ui-ria/NOTES-libs-retire.md.
+		    It fetched artifacts from CDNs and installed them into ~/.m2 under
+		    org.openidentityplatform.commons.ui.libs, published to NO repository, so a
+		    developer's ~/.m2 was the only copy - and several downloadUrls pointed at
+		    unpinned `master` refs or dead vanity domains, so the same coordinate could
+		    yield different bytes on a re-fetch. Task 4.7 cut it from 60 artifactItems to
+		    1; 4.8 took the last one, the CodeMirror zip, to npm codemirror@4.10.0 - all
+		    six of its files byte-identical to what shipped. Every runtime library AM ships
+		    is now a declared npm dependency of openam-ui-ria, pinned in its
+		    package-lock.json and visible to `npm audit`, as ui-build-and-packaging's
+		    "Runtime libraries are managed package dependencies" requires. See
+		    openam-ui-ria/NOTES-libs-retire.md.
 
-				    ONE IS LEFT: the CodeMirror zip, which TASK 4.8 owns. WHEN 4.8 REPLACES IT,
-				    DELETE THIS WHOLE PLUGIN - that is what finally removes the clean-external
-				    execution below, and with it the single most expensive mistake available in
-				    this build. Until then the warning stands: `mvn clean` on this module, or
-				    `mvn ... -am` from the OpenAM root, runs clean-external and DELETES the
-				    artifact from ~/.m2 with no way back but a CDN round trip. Use
-				    `rm -rf <module>/target`.
+		    THE clean-external WARNING IS RETIRED WITH IT. `mvn clean` on this module and
+		    `mvn ... -am` from the OpenAM root no longer destroy anything unrecoverable:
+		    the goal that did went with the plugin, and no unpublished artifact is left for
+		    it to delete. Whatever commons.ui.libs artifacts a developer still has in ~/.m2
+		    are now inert - nothing in this build resolves them. OpenAM/pom.xml keeps its
+		    own inherited=false copy of this plugin, but it manages only cddl-license, jato
+		    and cc, which restore from a live URL and from extlib/ in the repo.
 
-				    Removing the other 59 entries does NOT delete anything already in ~/.m2 -
-				    clean-external only deletes what is listed here, so this change strictly
-				    shrinks that blast radius. The sibling commons/ui checkout keeps its own copy
-				    of this plugin and is unaffected.
-				-->
-				<inherited>false</inherited>
-				<configuration>
-					<stagingDirectory>
-						${project.build.directory}/dependencies/
-                    </stagingDirectory>
-					<createChecksum>false</createChecksum>
-					<skipChecksumVerification>true</skipChecksumVerification>
-									<force>false</force>
-					<artifactItems>
-				            <artifactItem>
-				              <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-				              <artifactId>CodeMirror</artifactId>
-				              <version>4.10</version>
-				              <packaging>zip</packaging>
-				              <downloadUrl>https://github.com/codemirror/{artifactId}5/archive/{version}.0.{packaging}</downloadUrl>
-				            </artifactItem>
-					</artifactItems>
-				</configuration>
-				<executions>
-					<execution>
-						<id>clean-external-dependencies</id>
-						<phase>clean</phase>
-						<goals>
-							<goal>clean-external</goal>
-						</goals>
-					</execution>
-					<execution>
-						<id>resolve-install-external-dependencies</id>
-						<phase>process-resources</phase>
-						<goals>
-							<goal>resolve-external</goal>
-							<goal>install-external</goal>
-						</goals>
-					</execution>
-<!-- 					<execution> -->
-<!-- 						<id>deploy-external-dependencies</id> -->
-<!-- 						<phase>deploy</phase> -->
-<!-- 						<goals> -->
-<!-- 							<goal>deploy-external</goal> -->
-<!-- 						</goals> -->
-<!-- 					</execution> -->
-				</executions>
-			</plugin>
-    		</plugins>
+		    The sibling commons/ui checkout keeps its own copy of this plugin and is
+		    unaffected.
+		-->
 		<pluginManagement>
 			<plugins>
 				<plugin>

@@ -31,6 +31,7 @@
     "bootstrap3-dialog": "1.35.1",
     "classnames": "2.2.5",
     "clockpicker": "0.0.7",
+    "codemirror": "4.10.0",
     "eonasdan-bootstrap-datetimepicker": "4.14.30",
     "font-awesome": "4.5.0",
     "handlebars": "4.7.7",

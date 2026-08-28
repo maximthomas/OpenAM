@@ -158,7 +158,7 @@ const fromSrc = (id) => fileURLToPath(new URL(`./src/main/js/${id}`, import.meta
  * The two amd/ directories contribute ZERO non-JavaScript files -- they are 79 .js and nothing
  * else -- so they never win anything below. They are listed anyway because they are composition
  * sources, and because the presence check in buildStart has to cover them: a bare `npm install`
- * prunes both packages (pom.xml:481 installs them with --no-save), and a pruned node_modules
+ * prunes both packages (pom.xml:219 installs them with --no-save), and a pruned node_modules
  * otherwise yields an exit-0 build that has silently dropped 53 files.
  */
 const COMPOSITION_SOURCES = [
@@ -173,12 +173,14 @@ const COMPOSITION_SOURCES = [
      */
     "target/npm-libs",
     /*
-     * All that remains here after 4.7 is CodeMirror -- 4 files under libs/codemirror and 2 under
-     * css/codemirror, placed by the six fileSets dir.xml still carries and unpacked by the
-     * unpack-codemirror execution. TASK 4.8 owns that decision and this entry goes with it. Until
-     * then this directory holds 6 files where it used to hold 66.
+     * TASK 4.8 REMOVED target/dependencies FROM THIS LIST. It was composition source #1 through
+     * the whole Grunt era and held 66 files; 4.7 cut it to 6 and 4.8 took the last of them --
+     * CodeMirror -- to npm, so the maven-dependency-plugin unpack, the dir.xml descriptor and the
+     * prepare-working-dir execution that produced the directory are all gone from pom.xml. There
+     * is no Maven-unpacked composition source left. Do not re-add the entry to "be safe": an
+     * empty or absent composition source is the silent-drop shape this build is built to refuse,
+     * and assertSourcesPresent would now fail the build on a directory nothing creates.
      */
-    "target/dependencies",
     "node_modules/@openidentityplatform/ui-commons/amd",
     "node_modules/@openidentityplatform/ui-commons/www",
     "node_modules/@openidentityplatform/ui-user/amd",
@@ -223,6 +225,7 @@ const NPM_LIBRARY_STAGE = "target/npm-libs";
 
 const NPM_LIBRARY_FILES = {
     // ---- libs/ : 28 files, all bound by main.js:38-79 -------------------------------------
+    // (the four libs/codemirror files below are a separate case -- see the block above them)
     "libs/backbone-1.1.2-min.js": "backbone/backbone-min.js",                              // MD5
     "libs/backbone.paginator.min-2.0.2-min.js":
         "backbone.paginator/lib/backbone.paginator.min.js",                                // MD5
@@ -272,7 +275,55 @@ const NPM_LIBRARY_FILES = {
     "libs/text-2.0.15.js": "requirejs-text/text.js",                                       // MD5
     "libs/xdate-0.8-min.js": "xdate/src/xdate.js",                                         // MD5
 
-    // ---- css/ : 6 stylesheets ---------------------------------------------------------------
+    /*
+     * ---- libs/codemirror/ : 4 files, and they are NOT bound by main.js ----
+     *
+     * TASK 4.8 DECIDED THIS, and it is the entry that finally empties target/dependencies. Until
+     * 4.8 these four arrived as org.openidentityplatform.commons.ui.libs:CodeMirror:zip:4.10 --
+     * the last hand-published Maven artifact in the build, fetched from a GitHub archive URL by
+     * maven-external-dependency-plugin, published to no repository, and invisible to `npm audit`.
+     * That is precisely what ui-build-and-packaging's "Runtime libraries are managed package
+     * dependencies" forbids, and with it went the CodeMirror dependency, the unpack-codemirror
+     * execution, dir.xml's six fileSets, the prepare-working-dir execution that produced
+     * target/dependencies, and the whole maven-external-dependency-plugin -- including
+     * clean-external, the goal that made `mvn clean` here unrecoverable.
+     *
+     * ZERO DIGEST DELTA, measured rather than assumed. All four are md5-identical between npm
+     * codemirror@4.10.0 and PHASE1-TREE.md:251-254, so the shipped bytes do not move:
+     *   lib/codemirror.js               1c570cd14e3ec3db7726f86bfbabf2d3
+     *   mode/groovy/groovy.js           4f97d9e79258b2a380fcda2daf85afd6
+     *   mode/javascript/javascript.js   921ad047a5a73a57f2ccf5d526faf01c
+     *   addon/display/fullscreen.js     fb86184c4fb36398188f2199fd28f167
+     * Maven `4.10` and npm `4.10.0` are the same release. LIBS-INVENTORY.md row 22 had already
+     * recorded the first of the four; 4.8 measured the other three.
+     *
+     * THE DESTINATION PATHS ARE THE CONTRACT, not a convention. EditScriptView.js:21,35,36,37 --
+     * the only consumer in the tree -- names all four by LITERAL AMD path
+     * (`libs/codemirror/lib/codemirror`, `mode/groovy/groovy`, `mode/javascript/javascript`,
+     * `addon/display/fullscreen`), so they never pass through main.js's require.config.paths and
+     * no alias or registry entry can redirect them. The keys below reproduce those paths exactly;
+     * that is why the source file needed no edit. A rename here is a 404 in the admin script
+     * editor and nothing else in the build will say so.
+     *
+     * AND NOTHING IN THE E2E SUITE WOULD CATCH IT. No spec under OpenAM/e2e touches the script
+     * editor -- the regression net covers login, authorize, device, realms, services, profile,
+     * theming, cache-busting, httponly, operator-module, auth-chains, auth-modules, oauth2 and
+     * saml, and none of them loads CodeMirror. The digests above are the whole verification.
+     *
+     * codemirror@4.10.0 carries a known moderate advisory, GHSA-4gw3-8f77-f72c (ReDoS, affects
+     * <5.58.2). The same bytes shipped before this task; what changed is that `npm audit` can now
+     * see them, which is the point of the requirement. Upgrading past it is a behaviour change to
+     * the script editor with no spec behind it, so it is not 4.8's -- it belongs with the other
+     * advisories NOTES-libs-retire.md leaves open.
+     */
+    "libs/codemirror/lib/codemirror.js": "codemirror/lib/codemirror.js",                   // MD5
+    "libs/codemirror/mode/groovy/groovy.js": "codemirror/mode/groovy/groovy.js",           // MD5
+    "libs/codemirror/mode/javascript/javascript.js":
+        "codemirror/mode/javascript/javascript.js",                                        // MD5
+    "libs/codemirror/addon/display/fullscreen.js":
+        "codemirror/addon/display/fullscreen.js",                                          // MD5
+
+    // ---- css/ : 8 stylesheets -----------------------------------------------------------------
     // The only one that ships verbatim; the rest are LESS inputs compiled into structure.css
     // and styles-admin.css. NON_COMPILED_PATHS above names this one file.
     "css/bootstrap-3.3.5-custom.css": "bootstrap/dist/css/bootstrap.css",                  // MD5
@@ -280,6 +331,25 @@ const NPM_LIBRARY_FILES = {
         "clockpicker/dist/bootstrap-clockpicker.min.css",                                  // VER
     "css/bootstrap-dialog-1.34.4-min.css":
         "bootstrap3-dialog/dist/css/bootstrap-dialog.min.css",                             // bump
+    /*
+     * TASK 4.8, the other half of the CodeMirror move, and these two are NOT dead weight even
+     * though no `css/codemirror/` directory has ever appeared in the shipped tree
+     * (PHASE1-TREE.md:205-214 lists the whole of css/ and it is not there). They are LESS INPUTS:
+     * css/styles-admin.less:31-32 `@import (less)` both of them, which is why styles-admin.css
+     * carries CodeMirror's entire layout rule set -- .CodeMirror-scroll, -gutters, -cursors,
+     * -fullscreen and the rest. The commons `structure/codemirror.less` route
+     * (ui-commons css/common/structure.less:107) is a different and much smaller thing: it
+     * supplies only the .CodeMirror border, the linenumber colour and the .cm-s-forgerock token
+     * palette, into structure.css. Drop these two and LESS errors on a missing @import, so the
+     * build fails outright rather than shipping an unstyled editor -- but the reason to keep them
+     * is that the admin console needs the rules, not that the failure is loud.
+     * Both byte-identical to the retired Maven artifact:
+     *   lib/codemirror.css              1c26f7d1f30cbcc58982178f588906d5
+     *   addon/display/fullscreen.css    1a278e72b51528270f8ce9ec991929a1
+     */
+    "css/codemirror/lib/codemirror.css": "codemirror/lib/codemirror.css",                  // MD5
+    "css/codemirror/addon/display/fullscreen.css":
+        "codemirror/addon/display/fullscreen.css",                                         // MD5
     "css/react-select-1.0.0-rc.2-min.css": "react-select/dist/react-select.min.css",       // MD5
     "css/selectize-0.12.1-bootstrap3.css": "selectize/dist/css/selectize.bootstrap3.css",  // MD5
     "css/titatoggle-1.2.6-min.css": "titatoggle/dist/titatoggle-dist-min.css",             // bump
@@ -346,7 +416,7 @@ const NPM_PACKAGE_SOURCES = new Set([
  *
  * DELIBERATELY REPRODUCED, NOT FIXED: there is no `**\/*.ttf` here, so
  * css/fontawesome/fonts/fontawesome-webfont.ttf is NOT shipped even though the compiled CSS
- * references it and the file is present in target/dependencies. That is a pre-existing Grunt
+ * references it and the file is staged into target/npm-libs. That is a pre-existing Grunt
  * omission (harmless in practice -- woff2/woff cover every current browser). Adding it here would
  * be a real fix, but it would also put a permanent +1 delta against PHASE1-TREE.md that tasks
  * 4.6, 4.7 and 4.8 each have to carry forward and re-explain. Fix it as its own change, against a
@@ -379,7 +449,7 @@ const NOT_COPIED = new Set(["main.js", "index.html"]);
  * The dotfile rule below is the one place a naive port diverges, and it was measured rather than
  * assumed: minimatch and glob exclude dotfiles from a wildcard unless `dot: true`, so Grunt drops
  * .eslintrc.json and themes/.DS_Store while path.extname() and a plain directory walk would ship
- * both. No such file exists in any of the eight sources today, but themes/ is the tree operators
+ * both. No such file exists in any of the seven sources today, but themes/ is the tree operators
  * edit in place and this module's own root already carries a .DS_Store, so the divergence is one
  * stray file away from putting an unexplained "extra" in front of task 4.8's manifest diff.
  *
@@ -461,12 +531,13 @@ const copyFile = (from, to) => {
  * lists first. Runs in buildStart, BEFORE assertSourcesPresent, so that a pruned node_modules
  * fails on the named file below rather than on a missing composition directory two frames later.
  *
- * WHY A STAGING DIRECTORY AND NOT A DIRECT COPY INTO outDir. Six of these files are not shipped
- * at all -- they are LESS inputs that stageLessSources has to see under a composed css/ tree
+ * WHY A STAGING DIRECTORY AND NOT A DIRECT COPY INTO outDir. Ten of these files are not shipped
+ * at all -- seven LESS/CSS inputs that stageLessSources has to see under a composed css/ tree
  * before renderStylesheets can resolve `@import "fontawesome/less/variables.less"` relative to
- * the entry. Copying them straight to outDir would ship six files that never shipped and still
- * leave the LESS compile with nothing to import. Staging puts them where both passes already
- * look, and costs one directory.
+ * the entry, plus fontawesome/less/variables.less itself, the deliberately-omitted .ttf, and the
+ * two CodeMirror stylesheets task 4.8 added. Copying them straight to outDir would ship ten files
+ * that never shipped and still leave the LESS compile with nothing to import. Staging puts them
+ * where both passes already look, and costs one directory.
  *
  * EVERY MISSING FILE IS FATAL, and that is the point. The failure this guards against is the one
  * the plan flags repeatedly: a source that quietly contributes nothing, an exit-0 build, and a
@@ -586,30 +657,44 @@ const composeStaticAssets = (root, outDir) => {
  * 273 files against PHASE1-TREE.md's 652, and all 50 libs/ files were among the missing.
  *
  * Same source order as composeStaticAssets, but NOT the same last-wins rule -- this walk refuses
- * a collision instead of resolving one. The three suppliers are disjoint, 28 + 12 + 4 = 44
- * distinct paths and no overlap:
- *   target/npm-libs   28 files, from the npm dependencies mapped above
- *   target/dependencies  4 files, libs/codemirror -- still Maven, TASK 4.8's to decide
+ * a collision instead of resolving one. The two suppliers are disjoint, 32 + 12 = 44 distinct
+ * paths and no overlap:
+ *   target/npm-libs   32 files, from the npm dependencies mapped above -- 28 bound by main.js
+ *                     plus the four libs/codemirror files TASK 4.8 moved off the Maven zip
  *   src/main/js       12 files, the vendored set (see NOTES-libs-retire.md section 3)
+ * target/dependencies was the third supplier until 4.8 and is gone with the unpack that made it.
  * The two commons packages carry no libs/ at all and contribute nothing here; they are walked
  * anyway rather than special-cased, so that a future commons release shipping one is not
  * silently ignored.
  *
- * WHY THROW RATHER THAN LAST-WINS. maven-assembly-plugin does not clean its own output, and after
- * 4.7 the dir.xml descriptor emits a strict SUBSET of what it used to: target/dependencies went
+ * WHY THROW RATHER THAN LAST-WINS. maven-assembly-plugin did not clean its own output, and 4.7
+ * made the dir.xml descriptor emit a strict SUBSET of what it used to: target/dependencies went
  * from 66 files to 6. So a target/ left over from a pre-4.7 build still holds the 60 retired
  * commons.ui.libs files, they sort after target/npm-libs in this list, and under last-wins they
  * would silently beat the npm channel -- shipping the retired Maven bytes, resurrecting the six
  * deliberately dropped files, exit 0, no warning. That is the plan's silent-drop hazard inverted
  * into a silent STALE-SHIP, and a file count does not see it: the count goes UP, to the number
  * the pre-4.7 tree had. It is not hypothetical; it is what the first 4.7 build did, 50 libs/
- * files instead of 44. `mvn clean` is not the escape here -- it would fire clean-external and
- * delete the CodeMirror artifact from ~/.m2 -- so the recovery is `rm -rf target/dependencies`
- * and the build has to be the thing that says so.
+ * files instead of 44.
  *
- * The cost of this strictness is zero today because the suppliers are disjoint. If 4.8 or 8.3
- * ever needs one source to override another in libs/, the override has to become explicit here
- * rather than implicit in the order of COMPOSITION_SOURCES.
+ * 4.8 RETIRED THAT FAILURE MODE ENTIRELY, and the guard changes meaning rather than going away.
+ * target/dependencies is no longer in COMPOSITION_SOURCES, so a stale one is not walked and
+ * cannot collide; and stageNpmLibraries rmSyncs target/npm-libs at the top of every build, so a
+ * stale one of those cannot exist either. A collision can therefore no longer be a leftover
+ * directory, which is what the message below used to say it almost always was. The two ways it
+ * can still fire are both real overlaps:
+ *   - a new NPM_LIBRARY_FILES key colliding with a file vendored under src/main/js/libs
+ *     (src/main/js/libs/README.md is the register of the twelve, and D20 the standing exception)
+ *   - a future commons release starting to ship a libs/ tree of its own
+ * Neither is fixed by deleting anything, which is why the message names the causes instead.
+ *
+ * The reason `mvn clean` used to be forbidden here died with the same task: clean-external went
+ * when maven-external-dependency-plugin did, so there is no longer a goal in this build that
+ * deletes an unpublished artifact from ~/.m2.
+ *
+ * The cost of this strictness is zero today because the suppliers are disjoint. If 8.3 ever needs
+ * one source to override another in libs/, the override has to become explicit here rather than
+ * implicit in the order of COMPOSITION_SOURCES.
  */
 const copyLibraries = (root, outDir) => {
     const shipped = new Set();
@@ -624,16 +709,16 @@ const copyLibraries = (root, outDir) => {
                 throw new Error(
                     `Two composition sources supply ${shippedPath}:\n` +
                     `  ${suppliers.get(shippedPath)}\n  ${source}\n\n` +
-                    "The libs/ suppliers are meant to be disjoint, so this is almost always a " +
-                    "stale target/ directory from a pre-4.7 build rather than a real override: " +
-                    "the retired commons.ui.libs files are still sitting in target/dependencies, " +
-                    "and they sort after target/npm-libs, so they would have silently replaced " +
-                    "the npm-staged library above.\n\n" +
-                    "Run `rm -rf target/dependencies target/npm-libs` and build again. Do NOT run " +
-                    "`mvn clean` here -- it fires clean-external, which deletes the CodeMirror " +
-                    "artifact from ~/.m2, and that artifact is published nowhere.\n\n" +
-                    "If the collision is deliberate, make the override explicit in copyLibraries " +
-                    "rather than relying on the order of COMPOSITION_SOURCES."
+                    "The libs/ suppliers are meant to be disjoint. Since task 4.8 this cannot be " +
+                    "a stale directory -- target/dependencies is no longer a composition source " +
+                    "and stageNpmLibraries clears target/npm-libs on every build -- so deleting " +
+                    "something will not fix it. It is a real overlap, and there are two:\n" +
+                    "  - a new NPM_LIBRARY_FILES key that collides with a file vendored under " +
+                    "src/main/js/libs (see src/main/js/libs/README.md)\n" +
+                    "  - a commons release that has started shipping a libs/ tree of its own\n\n" +
+                    "Decide which supplier owns the path. If the collision is deliberate, make " +
+                    "the override explicit in copyLibraries rather than relying on the order of " +
+                    "COMPOSITION_SOURCES."
                 );
             }
             suppliers.set(shippedPath, source);
@@ -645,6 +730,85 @@ const copyLibraries = (root, outDir) => {
 };
 
 /*
+ * TASK 4.8. THE ONE LIBRARY CONTRACT NOTHING ELSE CHECKS.
+ *
+ * Almost every runtime library is reached through a require.config.paths entry in main.js, so a
+ * broken supplier shows up as an unresolved AMD id with a name in it. CodeMirror is not: its four
+ * files are named by LITERAL AMD PATH in one view, and the shipped path IS the identifier. Rename
+ * an NPM_LIBRARY_FILES key -- or take a future codemirror version that moves mode/ or addon/ --
+ * and the build still exits 0, ships 44 libraries, matches every count, and 404s the moment an
+ * administrator opens a script. 4.8 moved that contract out of dir.xml's <outputDirectory>, where
+ * Maven at least failed on a missing fileSet directory, into a JS object literal where nothing
+ * did. This is what replaces it.
+ *
+ * NO TEST WOULD CATCH IT. There is no spec under OpenAM/e2e for the script editor -- the suite
+ * covers login, authorize, device, realms, services, profile, theming, cache-busting, httponly,
+ * operator-module, auth-chains, auth-modules, oauth2 and saml, and none of them loads CodeMirror.
+ * The digest evidence in NPM_LIBRARY_FILES is a point-in-time measurement; this is the standing
+ * check, and it is the only one.
+ *
+ * IT READS THE CONSUMER, IT DOES NOT RESTATE IT. The ids come out of the source file at build
+ * time, so the check is bidirectional: renaming a map key fails, and so does renaming the id in
+ * the view without the map following. A hardcoded copy of the four paths here would be a third
+ * place to keep in step and would agree with itself while both other places drifted.
+ *
+ * THE CONSUMER LIST IS ONE FILE BECAUSE THE TREE HAS ONE. `grep -rn "libs/" --include=*.js
+ * src/main/js` finds literal library ids in EditScriptView.js and nowhere else. If a second view
+ * ever takes one, add it here; the guard is per-file so the failure names which one.
+ *
+ * IT THROWS WHEN IT FINDS NOTHING, and that is deliberate rather than defensive. The only way a
+ * listed consumer stops naming these is task 5.1 converting it to ESM, at which point literal AMD
+ * paths stop being how it loads them at all -- and that conversion has to decide what replaces
+ * this, not discover later that the guard quietly stopped guarding.
+ */
+const LITERAL_PATH_LIBRARY_CONSUMERS = [
+    "src/main/js/org/forgerock/openam/ui/admin/views/realms/scripts/EditScriptView.js"
+];
+
+const assertLiteralPathLibraries = (root, shippedLibraries) => {
+    let checked = 0;
+    for (const consumer of LITERAL_PATH_LIBRARY_CONSUMERS) {
+        const file = path.resolve(root, consumer);
+        if (!fs.existsSync(file)) {
+            throw new Error(
+                `${consumer} is listed in LITERAL_PATH_LIBRARY_CONSUMERS but does not exist.\n\n` +
+                "It is the reason four libs/codemirror entries are in NPM_LIBRARY_FILES. If the " +
+                "view moved, repoint this list; if it is gone, those entries are dead weight and " +
+                "should go with it."
+            );
+        }
+        const ids = [...fs.readFileSync(file, "utf8").matchAll(/"(libs\/[^"]+?)(?:\.js)?"/g)]
+            .map((match) => match[1]);
+        if (ids.length === 0) {
+            throw new Error(
+                `${consumer} no longer names any libs/ path literally.\n\n` +
+                "This guard exists because the shipped path IS the identifier for those files, " +
+                "so nothing else in the build would notice them moving. If task 5.1 has " +
+                "converted this view to ESM, the four libs/codemirror entries in " +
+                "NPM_LIBRARY_FILES need a new contract -- an alias, a registry entry, or a " +
+                "bundled import -- and this consumer should be removed from " +
+                "LITERAL_PATH_LIBRARY_CONSUMERS as part of deciding that, not before."
+            );
+        }
+        const missing = ids.filter((id) => !shippedLibraries.has(`${id}.js`));
+        if (missing.length > 0) {
+            throw new Error(
+                `${consumer} loads runtime libraries by literal AMD path, and the build did not ` +
+                "ship them:\n" + missing.map((id) => `  ${id}.js`).join("\n") + "\n\n" +
+                "The path in the source and the destination key in NPM_LIBRARY_FILES are the " +
+                "same contract and have to match exactly. This is almost always a renamed map " +
+                "key, or a package version that moved its internal layout -- codemirror's " +
+                "mode/ and addon/ trees in particular. Nothing else in the build or the e2e " +
+                "suite checks this: without it the admin script editor 404s at runtime and the " +
+                "build still exits 0."
+            );
+        }
+        checked += ids.length;
+    }
+    return checked;
+};
+
+/*
  * ==== 4.5 -- index.html: THE VERSION STAMP, AND THE LOADER THAT IS NOT REWRITTEN ====
  *
  * Grunt emitted index.html from grunt-text-replace, not from copy:compiled -- which is why
@@ -652,7 +816,7 @@ const copyLibraries = (root, outDir) => {
  * that step: read the source, substitute ${version}, write it to the tree root.
  *
  * THERE ARE TWO ${version} MECHANISMS IN THIS MODULE AND ONLY THIS ONE IS LIVE.
- * pom.xml:259-262 declares src/main/resources as a FILTERED resource root, so
+ * pom.xml:82-85 declares src/main/resources as a FILTERED resource root, so
  * maven-resources-plugin substitutes ${version} into target/classes/index.html at
  * process-resources. Nothing ever ships that copy: zip.xml packs `target/compiled`, not
  * target/classes, and this module is <packaging>pom</packaging> (pom.xml:28), so no jar is built
@@ -668,7 +832,7 @@ const copyLibraries = (root, outDir) => {
  * the difference matters for whoever reads D9 next. D9 decides the SOURCE LAYOUT
  * (src/main/js, src/main/resources) and cites "maven-resources-plugin still filters
  * src/main/resources for ${version}" as supporting evidence for keeping it. That sentence is
- * still literally true -- the filtering is bound at pom.xml:285-293 and does run -- but this task
+ * still literally true -- the filtering is bound at pom.xml:98-117 and does run -- but this task
  * establishes it is NON-PROBATIVE: the filtered output reaches nothing that ships. D9's
  * conclusion survives on its other leg (a rename buys nothing user-visible and would bury the
  * real diff); its ${version} leg does not. Recorded here, and in 4.5's completion note, the way
@@ -681,8 +845,10 @@ const copyLibraries = (root, outDir) => {
  *
  * WHY NOT A VITE HTML INPUT. Adding index.html to rollupOptions.input makes Vite parse it and
  * pull its <script src> tags into the module graph. Both would fail to resolve: src/main/resources
- * has NO libs/ directory at all -- libs/base64-1.0.0-min.js and libs/requirejs-2.3.7-min.js reach
- * the tree only through the maven-dependency-plugin unpack into target/dependencies (task 4.7's)
+ * has NO libs/ directory at all -- libs/base64-1.0.0-min.js and libs/requirejs-2.3.7-min.js are
+ * vendored under src/main/js/libs (4.7; neither has an npm publication that could supply them,
+ * and both must exist as files before any module system runs) and reach the tree through
+ * copyLibraries, not through this html
  * -- so the build throws at resolve time. If it somehow did resolve, Vite would bundle and hash
  * both, moving two files PHASE1-TREE.md:244 and :279 record at fixed paths. It would also derive a
  * fourth entry chunk from the html while `main` is already an explicit JS input, which is the
@@ -778,11 +944,12 @@ const stampIndexHtml = (root, outDir) => {
 /*
  * The LESS entries live in src/main/resources/css, but their @imports do not: `common/*.less`
  * comes from ui-commons/www/css and `fontawesome/`, `bootstrap-dialog`, `selectize`, `titatoggle`,
- * `codemirror` and `react-select` come from target/dependencies/css. They are written as if the
- * composed tree existed, so it has to exist. Less's `paths` option would resolve them but is NOT
- * a substitute: `relativeUrls` rebases each url() from the imported file's real directory to the
- * entry's, so resolving an import out of target/dependencies would emit
- * `url(../../../target/dependencies/css/fontawesome/fonts/...)`. Only a composed tree gives the
+ * `codemirror` and `react-select` come from target/npm-libs/css (4.7 for all but `codemirror`,
+ * which 4.8 moved off the Maven zip). They are written as if the composed tree existed, so it has
+ * to exist. Less's `paths` option would resolve them but is NOT a substitute: `relativeUrls`
+ * rebases each url() from the imported file's real directory to the entry's, so resolving an
+ * import out of the staging directory would emit
+ * `url(../../../target/npm-libs/css/fontawesome/fonts/...)`. Only a composed tree gives the
  * `url(./fontawesome/fonts/...)` the shipped CSS actually has.
  */
 const stageLessSources = (root) => {
@@ -855,7 +1022,7 @@ const renderStylesheets = async (root, outDir) => {
 
 /*
  * Grunt has a check-composition-sources task that fails and names the missing directory. Vite has
- * no equivalent and 4.4 adds one, because the failure it guards against is silent: pom.xml:481
+ * no equivalent and 4.4 adds one, because the failure it guards against is silent: pom.xml:219
  * installs both @openidentityplatform packages with --no-save, so they are absent from
  * package.json and ANY bare `npm install` prunes them. Without this check that produces a green
  * build missing 53 files -- 36 templates, 5 partials, 9 images, favicon.ico, oauthReturn.html and
@@ -885,13 +1052,12 @@ const assertSourcesPresent = (root) => {
             "Composition sources are missing, so the build would silently ship an incomplete tree:\n" +
             missing.map((source) => `  - ${source}`).join("\n") +
             "\n\nThe two node_modules/@openidentityplatform packages are installed by Maven with " +
-            "--no-save (pom.xml:481) and are pruned by a bare `npm install`. Re-run the Maven " +
+            "--no-save (pom.xml:219) and are pruned by a bare `npm install`. Re-run the Maven " +
             "build, or reinstall them from target/npm/*.tgz.\n\n" +
-            "Of the target/ sources, target/npm-libs is staged by this config -- stageNpmLibraries " +
-            "in buildStart, from declared npm dependencies -- so it is missing here only if that " +
-            "call was removed or reordered after this check. target/dependencies is the last " +
-            "surviving maven-dependency-plugin unpack in the same pom, CodeMirror only, and task " +
-            "4.8 retires it."
+            "target/npm-libs is the only target/ source left -- task 4.8 retired " +
+            "target/dependencies with the last maven-dependency-plugin unpack -- and it is staged " +
+            "by this config, stageNpmLibraries in buildStart, from declared npm dependencies. So " +
+            "it is missing here only if that call was removed or reordered after this check."
         );
     }
 };
@@ -971,6 +1137,7 @@ const xuiStaticAssets = () => {
              * selects, and .js is deliberately not in that set. See copyLibraries.
              */
             const libraries = copyLibraries(root, outDir);
+            const literalPaths = assertLiteralPathLibraries(root, libraries);
             const stylesheets = await renderStylesheets(root, outDir);
             /*
              * After composeStaticAssets, not before. index.html is excluded from the verbatim
@@ -982,8 +1149,9 @@ const xuiStaticAssets = () => {
             const indexHtml = stampIndexHtml(root, outDir);
             this.info(
                 `copied ${shipped.size} static files verbatim and ${libraries.size} runtime ` +
-                `libraries, compiled ${stylesheets.length} stylesheets and stamped ${indexHtml} ` +
-                `with version ${targetVersion}, into ${path.relative(root, outDir)}`
+                `libraries (${literalPaths} of them named by literal AMD path), compiled ` +
+                `${stylesheets.length} stylesheets and stamped ${indexHtml} with version ` +
+                `${targetVersion}, into ${path.relative(root, outDir)}`
             );
         }
     };
@@ -1406,8 +1574,10 @@ export default defineConfig({
         preprocessorOptions: {
             /*
              * javascriptEnabled is deliberately NOT set. Less 4 defaults it off as code-execution
-             * hardening, and no .less file needs it: checked src/main/resources (21 files), the
-             * commons packages (36) and target/dependencies (2) — not one contains a backtick.
+             * hardening, and no .less file needs it: checked src/main/resources (21 files) and the
+             * commons packages (36) — not one contains a backtick. The two counted here as
+             * target/dependencies were `.css` inputs, not `.less`, and 4.8 moved them to
+             * target/npm-libs with the rest of CodeMirror.
              * If 4.4 finds one that does, turn it on here and name the file.
              */
             less: {}

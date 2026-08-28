@@ -22,9 +22,11 @@ define([
     "org/forgerock/commons/ui/common/main/EventManager",
     "org/forgerock/commons/ui/common/util/URIUtils",
     "org/forgerock/openam/ui/common/util/Constants",
+    "org/forgerock/openam/ui/common/util/resolveAssetUrl",
     "Router",
     "store/index"
-], function ($, _, ThemeConfiguration, Configuration, EventManager, URIUtils, Constants, Router, store) {
+], function ($, _, ThemeConfiguration, Configuration, EventManager, URIUtils, Constants, resolveAssetUrl,
+    Router, store) {
     /**
      * @exports org/forgerock/openam/ui/common/util/ThemeManager
      */
@@ -37,20 +39,20 @@ define([
             $("<link/>", {
                 rel: "icon",
                 type: "image/x-icon",
-                href: require.toUrl(path + icon)
+                href: resolveAssetUrl(path + icon)
             }).appendTo("head");
 
             $("<link/>", {
                 rel: "shortcut icon",
                 type: "image/x-icon",
-                href: require.toUrl(path + icon)
+                href: resolveAssetUrl(path + icon)
             }).appendTo("head");
 
             _.each(stylesheets, function (stylesheet) {
                 $("<link/>", {
                     rel: "stylesheet",
                     type: "text/css",
-                    href: require.toUrl(stylesheet)
+                    href: resolveAssetUrl(stylesheet)
                 }).appendTo("head");
             });
         },
@@ -108,10 +110,10 @@ define([
             theme = _.clone(theme, true);
             if (theme.settings) {
                 if (theme.settings.logo) {
-                    theme.settings.logo.src = require.toUrl(theme.settings.logo.src);
+                    theme.settings.logo.src = resolveAssetUrl(theme.settings.logo.src);
                 }
                 if (theme.settings.loginLogo) {
-                    theme.settings.loginLogo.src = require.toUrl(theme.settings.loginLogo.src);
+                    theme.settings.loginLogo.src = resolveAssetUrl(theme.settings.loginLogo.src);
                 }
             }
             return theme;

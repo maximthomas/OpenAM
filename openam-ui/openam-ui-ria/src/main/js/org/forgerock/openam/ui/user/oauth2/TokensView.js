@@ -30,8 +30,9 @@ define([
     "org/forgerock/commons/ui/common/util/Constants",
     "dataTable",
     "org/forgerock/commons/ui/common/main/i18nManager",
-    "require"
-], function ($, AbstractView, tokensService, eventManager, constants, dataTable, i18nManager, require) {
+    "org/forgerock/openam/ui/common/util/resolveAssetUrl"
+], function ($, AbstractView, tokensService, eventManager, constants, dataTable, i18nManager,
+    resolveAssetUrl) {
 
     var TokensView = AbstractView.extend({
         template: "templates/openam/oauth2/TokensTemplate.html",
@@ -113,7 +114,7 @@ define([
                     }
                 ],
                 "oLanguage": {
-                    "sUrl": require.toUrl(`locales/${i18nManager.language}/translation.json`)
+                    "sUrl": resolveAssetUrl(`locales/${i18nManager.language}/translation.json`)
                 },
                 "sDom": 'l<"deleteSelected">f<"clear">rt<"clear">ip<"clear">',
                 "sPaginationType": "full_numbers",

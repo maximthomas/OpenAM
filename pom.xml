@@ -911,13 +911,6 @@
         <classifier>app</classifier>
         <type>zip</type>
       </dependency>
-      <dependency>
-        <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-        <artifactId>jquery.qrcode</artifactId>
-        <version>0.11.0</version>
-        <type>js</type>
-        <classifier>min</classifier>
-      </dependency>
       <!-- CLI components -->
       <dependency>
         <groupId>org.openidentityplatform.openam</groupId>

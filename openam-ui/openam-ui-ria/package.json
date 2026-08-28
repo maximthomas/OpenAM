@@ -20,6 +20,39 @@
     "deps": "ncu -u && mvn clean install",
     "postdeps": "npm shrinkwrap --dev"
   },
+  "dependencies": {
+    "backbone": "1.1.2",
+    "backbone-relational": "0.9.0",
+    "backbone.paginator": "2.0.2",
+    "backgrid": "0.3.5",
+    "backgrid-filter": "0.3.7",
+    "backgrid-select-all": "0.3.5",
+    "bootstrap": "3.3.5",
+    "bootstrap3-dialog": "1.35.1",
+    "classnames": "2.2.5",
+    "clockpicker": "0.0.7",
+    "eonasdan-bootstrap-datetimepicker": "4.14.30",
+    "font-awesome": "4.5.0",
+    "handlebars": "4.7.7",
+    "i18next": "1.7.3",
+    "jquery": "3.7.1",
+    "jquery-sortable": "0.9.13",
+    "microplugin": "0.0.3",
+    "moment": "2.28.0",
+    "qrcode-generator": "1.4.4",
+    "react": "15.2.1",
+    "react-bootstrap": "0.30.1",
+    "react-dom": "15.2.1",
+    "react-input-autosize": "1.1.0",
+    "react-select": "1.0.0-rc.2",
+    "redux": "3.5.2",
+    "requirejs-text": "2.0.15",
+    "selectize": "0.12.1",
+    "sifter": "0.4.1",
+    "spin.js": "2.0.1",
+    "titatoggle": "1.2.14",
+    "xdate": "0.8.0"
+  },
   "devDependencies": {
     "@babel/core": "^7.29.6",
     "@babel/preset-env": "^7.28.3",
@@ -58,6 +91,7 @@
     "rimraf": "2.5.4",
     "sinon": "1.17.6",
     "sinon-chai": "2.8.0",
+    "squirejs": "0.2.0",
     "vite": "^5.4.21",
     "vitest": "^2.1.9"
   },
@@ -74,6 +108,10 @@
     },
     "grunt": {
       "js-yaml": "$js-yaml"
+    },
+    "sifter": {
+      "microtime": "3.1.1",
+      "node-csv": "0.1.2"
     }
   }
 }

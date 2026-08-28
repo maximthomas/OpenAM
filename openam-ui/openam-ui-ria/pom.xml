@@ -30,15 +30,17 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <codemirror.version>4.10</codemirror.version>
-        <handlebars.version>4.7.7</handlebars.version>
         <!--
-            Applies ONLY to the tgz:npm artifacts copied by copy-commons-npm-tarballs below.
-            The commons.ui:user:zip:www dependency stays at the version the imported BOM chain
-            manages (3.1.2): that BOM is scope=import, so its properties interpolate inside the
-            BOM and this one cannot reach it. The build therefore composes AMD/www sources at
-            3.2.0-SNAPSHOT over vendor libraries pinned at 3.1.2, and nothing checks the two
-            agree - a vendor bump in commons 3.2 will not reach AM. Task 3.10 records the
-            coupling, 3.12 removes the pin.
+            Applies to the tgz:npm artifacts copied by copy-commons-npm-tarballs below, which
+            are now the only thing it needs to apply to.
+
+            TASK 4.7 CLOSED THE SPLIT THIS COMMENT USED TO DESCRIBE. The commons.ui:user:zip:www
+            dependency is gone, so the build no longer composes AMD/www sources at
+            3.2.0-SNAPSHOT over vendor libraries pinned at 3.1.2 by a BOM this property could
+            not reach. There is only one commons version in the build now. The vendor libraries
+            come from npm, at versions pinned in package.json and package-lock.json, and they
+            are no longer coupled to any commons release at all - which is also why a vendor
+            bump in commons 3.2 no longer needs to reach AM.
 
             PREREQUISITE: no released commons carries a tgz:npm artifact, so these resolve from
             ~/.m2 only. Build them first, from the sibling commons checkout on branch
@@ -47,208 +49,49 @@
             Without that this module fails at `initialize` with "Could not find artifact
             org.openidentityplatform.commons.ui:commons:tgz:npm:3.2.0-SNAPSHOT".
 
-            AND BUILD THIS MODULE FROM ../ (openam-ui), NOT FROM HERE. The ~58 commons.ui.libs
-            artifacts are published to no repository; they exist only because
-            maven-external-dependency-plugin fetches them from CDNs, and that plugin is
-            inherited=false on the openam-ui aggregator with install-external bound to
+            AND BUILD THIS MODULE FROM ../ (openam-ui), NOT FROM HERE. After 4.7 exactly ONE
+            commons.ui.libs artifact is left - the CodeMirror zip, task 4.8's - but that is
+            enough to keep the hazard alive in full. It is published to no repository; it exists
+            only because maven-external-dependency-plugin fetches it from a CDN, and that plugin
+            is inherited=false on the openam-ui aggregator with install-external bound to
             process-resources. A standalone build here never runs it and dies resolving
-            selectize-non-standalone, text, sifter, ... from Central. Use:
+            CodeMirror from Central. Use:
                 mvn -DskipTests package        (from openam-ui)
             NEVER `mvn clean` on openam-ui, and never `mvn ... -am` from the OpenAM root:
             clean-external DELETES those artifacts from ~/.m2 and nothing can restore them but
             a CDN round trip. Use `rm -rf target` instead.
         -->
         <commons.ui.version>3.2.0-SNAPSHOT</commons.ui.version>
-        <font-awesome.version>4.5.0</font-awesome.version>
     </properties>
 
     <dependencies>
         <!--
-            Retained after its unpack execution was removed in task 3.7. The AMD sources now
-            arrive through the npm tarballs, but this artifact is still the SOLE carrier for the
-            33 transitive org.openidentityplatform.commons.ui.libs dependencies that dir.xml's
-            dependencySet blocks consume (25 js, 6 css, 1 less, 1 zip). The npm packages ship no
-            libs/ directory at all, so removing this empties the shipped /libs. It is also still
-            unpacked, narrowly, by unpack-forgerock-ui-user-form2js below. Retires in task 4.7
-            together with those dependencySet blocks.
+            TASK 4.7 RETIRED THE commons.ui.libs CHANNEL FROM THIS MODULE. Gone from here: the
+            24 commons.ui.libs dependencies (20 runtime, 4 test) and the
+            commons.ui:user:zip:www dependency that carried 33 more of them transitively. Task
+            3.7 retained that zip for exactly this moment - the npm commons packages ship no
+            libs/ directory, so it could not go until a replacement supplier existed. It does
+            now: the runtime libraries are declared in package.json and staged from node_modules
+            into target/npm-libs by vite.config.js. The per-file table is in NOTES-libs-retire.md.
+
+            ONE commons.ui.libs DEPENDENCY SURVIVES, immediately below: the CodeMirror zip.
+            TASK 4.8 decides whether npm codemirror@4.10.0 replaces it. Until then it feeds
+            unpack-codemirror and the six fileSets left in dir.xml, and EditScriptView.js loads
+            all four of its JS files by literal AMD path.
+
+            BECAUSE IT SURVIVES, SO DOES THE HAZARD, and the warning above still applies in
+            full: maven-external-dependency-plugin in ../pom.xml still fetches it into ~/.m2,
+            and its clean-external goal still DELETES every commons.ui.libs artifact there.
+            Nothing is published to any repository. When 4.8 lands, that plugin and this
+            dependency go together and the hazard is gone for good.
         -->
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui</groupId>
-            <artifactId>user</artifactId>
-            <type>zip</type>
-            <classifier>www</classifier>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>selectize-non-standalone</artifactId>
-            <version>0.12.1</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>text</artifactId>
-            <version>2.0.15</version>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>sifter</artifactId>
-            <version>0.4.1</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>microplugin</artifactId>
-            <version>0.0.3</version>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>qrcode</artifactId>
-            <version>1.4.4</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>jquery-sortable</artifactId>
-            <version>0.9.13</version>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>jsoneditor</artifactId>
-            <version>0.7.9</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>bootstrap-tabdrop</artifactId>
-            <version>1.0</version>
-            <type>js</type>
-        </dependency>
         <dependency>
             <groupId>org.openidentityplatform.commons.ui.libs</groupId>
             <artifactId>CodeMirror</artifactId>
             <version>${codemirror.version}</version>
             <type>zip</type>
         </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>bootstrap-clockpicker</artifactId>
-            <version>0.0.7</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>bootstrap-clockpicker</artifactId>
-            <version>0.0.7</version>
-            <classifier>min</classifier>
-            <type>css</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>bootstrap-datetimepicker</artifactId>
-            <version>4.14.30</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>bootstrap-datetimepicker</artifactId>
-            <version>4.14.30</version>
-            <classifier>min</classifier>
-            <type>css</type>
-        </dependency>
-        <dependency>
-            <!-- handlebars need for fix the processing dependencies in the release build -->
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>handlebars</artifactId>
-            <version>${handlebars.version}</version>
-            <type>js</type>
-            <classifier>min</classifier>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>redux</artifactId>
-            <version>3.5.2</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>react-bootstrap</artifactId>
-            <version>0.30.1</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>classnames</artifactId>
-            <version>2.2.5</version>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>react-input-autosize</artifactId>
-            <version>1.1.0</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>react-select</artifactId>
-            <version>1.0.0-rc.2</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>react-select</artifactId>
-            <version>1.0.0-rc.2</version>
-            <classifier>min</classifier>
-            <type>css</type>
-        </dependency>
 
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>sinon</artifactId>
-            <version>1.15.4</version>
-            <type>js</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>qunit</artifactId>
-            <version>1.15.0</version>
-            <type>js</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>qunit</artifactId>
-            <type>css</type>
-            <version>1.15.0</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>squire</artifactId>
-            <version>0.2.0</version>
-            <type>js</type>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-            <artifactId>base64</artifactId>
-            <version>1.0.0</version>
-            <classifier>min</classifier>
-            <type>js</type>
-        </dependency>
     </dependencies>
 
     <build>
@@ -336,72 +179,6 @@
                             </artifactItems>
                         </configuration>
                     </execution>
-                    <!--
-                        Pins libs/form2js-2.0-769718a.js to the www zip's vendored copy.
-
-                        The npm packages carry no libs/, so every shipped library now arrives via
-                        dir.xml's commons.ui.libs dependencySet into target/dependencies. Both
-                        sources supply form2js, and they were observed to DISAGREE: the build of
-                        2026-08-04 had 3095c47f in target/dependencies against 897ec696 from the
-                        zip, the former carrying seven extra lines that rewrite bracketed form
-                        field names (foo[bar] -> foo.bar) during serialisation. form2js backs
-                        RESTLoginView and five commons self-service views, so which copy composed
-                        last was a behavioural difference - and one the file-count acceptance
-                        check is structurally blind to, since the counts are equal either way.
-
-                        The root cause is broader than this file: commons.ui.libs artifacts are
-                        fetched from CDNs by maven-external-dependency-plugin, are published to
-                        no repository, and the same coordinate can yield different bytes on a
-                        re-fetch. A later install-external run pulled form2js 2.0-769718a again
-                        and got 897ec696 - matching the zip - so the two sources agree TODAY and
-                        this execution is currently inert. It is kept because it makes the
-                        shipped bytes independent of that drift for the one file known to have
-                        drifted. See NOTES-npm-commons.md; the general drift risk is unresolved.
-                    -->
-                    <execution>
-                        <id>unpack-forgerock-ui-user-form2js</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>unpack</goal>
-                        </goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/dependencies-expanded/forgerock-ui-user</outputDirectory>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>org.openidentityplatform.commons.ui</groupId>
-                                    <artifactId>user</artifactId>
-                                    <type>zip</type>
-                                    <classifier>www</classifier>
-                                    <includes>libs/form2js-*.js</includes>
-                                </artifactItem>
-                            </artifactItems>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>unpack-font-awesome</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>unpack</goal>
-                        </goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}</outputDirectory>
-                            <artifactItems>
-                                <artifactItem>
-                                    <groupId>org.openidentityplatform.commons.ui.libs</groupId>
-                                    <artifactId>font-awesome</artifactId>
-                                    <version>${font-awesome.version}</version>
-                                    <type>zip</type>
-                                    <!--
-                                        The artifact is the GitHub source archive (see
-                                        openam-ui/pom.xml's maven-external-dependency-plugin), so
-                                        it roots at Font-Awesome-${font-awesome.version}/ and is
-                                        3.6 MB. Only the 8 files dir.xml ships are needed.
-                                    -->
-                                    <includes>**/css/font-awesome.min.css,**/fonts/*,**/less/variables.less</includes>
-                                </artifactItem>
-                            </artifactItems>
-                        </configuration>
-                    </execution>
                     <execution>
                         <id>unpack-codemirror</id>
                         <phase>process-resources</phase>
@@ -420,20 +197,6 @@
                         </configuration>
                     </execution>
 
-                    <execution>
-                        <id>copy-dependencies-test</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>copy-dependencies</goal>
-                        </goals>
-                        <configuration>
-                            <outputDirectory>${project.build.directory}/test-classes/libs</outputDirectory>
-                            <includeArtifactIds>sinon,qunit,squire</includeArtifactIds>
-                            <overWriteReleases>false</overWriteReleases>
-                            <overWriteSnapshots>false</overWriteSnapshots>
-                            <overWriteIfNewer>true</overWriteIfNewer>
-                        </configuration>
-                    </execution>
                 </executions>
             </plugin>
             <plugin>
@@ -464,12 +227,14 @@
                         those: without the flag the build resolves 50 unpinned packages (react,
                         backbone, handlebars, jquery, ...) from the public registry on every run,
                         recorded in neither package.json nor package-lock.json because the
-                        no-save flag suppresses exactly that record. AM already ships these
-                        libraries from the Maven commons.ui.libs artifacts, so they would be a
-                        duplicate, unaudited and network-dependent supply chain. With the flag,
-                        npm adds 2 packages and stays offline. Do NOT substitute the omit=peer
-                        flag: ui-user declares ui-commons itself as an optional peer, so omitting
-                        peers silently drops ui-commons.
+                        no-save flag suppresses exactly that record. Since task 4.7 AM declares
+                        these libraries itself, at exact versions, in package.json - so an
+                        auto-installed peer would now be a SECOND, unpinned copy resolved over
+                        the top of the audited one, which is worse than the duplicate this
+                        comment used to describe, not better. With the flag, npm adds 2 packages
+                        and stays offline. Do NOT substitute the omit=peer flag: ui-user declares
+                        ui-commons itself as an optional peer, so omitting peers silently drops
+                        ui-commons.
                     -->
                     <execution>
                         <id>npm-install-commons</id>

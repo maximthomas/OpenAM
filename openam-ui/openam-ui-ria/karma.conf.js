@@ -10,10 +10,18 @@ module.exports = function (config) {
         files: [
             { pattern: "target/test-classes/test-main.js" },
             { pattern: "target/test-classes/**/*.js", included: false },
+            // Since task 4.7 this also carries libs/: the runtime libraries are staged from
+            // npm and copied into the build output, where they used to be read out of
+            // target/dependencies/libs. That pattern is gone because that directory now holds
+            // only libs/codemirror (task 4.8's), and the harness should load the bytes the
+            // build actually ships.
             { pattern: "target/compiled/**/*.js", included: false },
-            { pattern: "target/dependencies/libs/**/*.js", included: false },
             { pattern: "node_modules/chai/chai.js", included: false },
-            { pattern: "node_modules/sinon-chai/lib/sinon-chai.js", included: false }
+            { pattern: "node_modules/sinon-chai/lib/sinon-chai.js", included: false },
+            // Replacing the commons.ui.libs sinon and squire test artifacts, which the removed
+            // copy-dependencies-test execution used to place in target/test-classes/libs.
+            { pattern: "node_modules/sinon/pkg/sinon.js", included: false },
+            { pattern: "node_modules/squirejs/src/Squire.js", included: false }
         ],
         exclude: [],
         preprocessors: {

@@ -6,3 +6,17 @@
 *.json text
 *.css text
 *.xml text
+# TASK 4.7. Vendored third-party libraries are byte-exact copies of upstream
+# releases, and their md5s are the acceptance criterion for the shipped tree
+# (PHASE1-TREE.md). The `*.js text` rule above would normalise them: form2js and
+# js2form are CRLF upstream, so git would store LF-only blobs and a fresh clone
+# would build a tree whose form2js is 8c993db9 rather than the pinned 897ec696.
+# That silently undoes the reason those two are vendored at all -- see
+# src/main/js/libs/README.md and NOTES-libs-retire.md sections 7 and 16.
+# `-text` disables eol conversion but keeps them diffable.
+src/main/js/libs/** -text
+src/main/resources/css/bootstrap-datetimepicker-4.14.30-min.css -text
+
+# Not vendored: this project's own source and our own register. Normal rules.
+src/main/js/libs/README.md text
+src/main/js/libs/popover-clickaway.js text

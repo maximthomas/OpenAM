@@ -123,25 +123,37 @@ const fromSrc = (id) => fileURLToPath(new URL(`./src/main/js/${id}`, import.meta
  */
 
 /*
- * Gruntfile.js:57-68, in order. THE ORDER IS THE CONTRACT: the last source to supply a path wins,
- * and seven paths in the tree are supplied twice. Two of the seven are non-obvious and both were
- * verified against the composed tree rather than assumed --
+ * Gruntfile.js:57-68, in order. THE ORDER IS THE CONTRACT for everything except libs/: the last
+ * source to supply a path wins. TASK 4.7 CHANGED THIS COUNT. Before it, seven paths were supplied
+ * twice; two of those seven were libs/ collisions against the commons.ui.libs copies in
+ * target/dependencies, and retiring that channel removed both --
  *
- *   libs/form2js-2.0-769718a.js   target/dependencies loses to dependencies-expanded. Same
- *                                 library, DIFFERENT BUILD, identical file counts either way.
- *                                 Task 3.7 found this; it is why acceptance here is per-file md5
- *                                 against PHASE1-TREE.md and not a file count.
+ *   libs/form2js-2.0-769718a.js   GONE. Used to be target/dependencies losing to
+ *                                 dependencies-expanded: same library, DIFFERENT BUILD, identical
+ *                                 file counts either way. Task 3.7 found it, and it is why
+ *                                 acceptance is per-file md5 against PHASE1-TREE.md and not a
+ *                                 file count. 4.7 vendored the pinned build to
+ *                                 src/main/js/libs/ and deleted both suppliers, so the file now
+ *                                 has exactly one source and the CDN drift channel behind it is
+ *                                 closed. See NOTES-libs-retire.md section 13, decision 2.
+ *   libs/lodash-3.10.1-min.js     GONE. 4.3 vendored lodash into src/main/js/libs/, where it beat
+ *                                 the commons.ui.libs copy in target/dependencies; 4.7 retired
+ *                                 that supplier, so the vendored file now stands alone. 8.3 still
+ *                                 replaces it.
+ *
+ * FIVE remain, and libs/ is no longer among them -- copyLibraries now THROWS on a duplicate
+ * rather than resolving one, because after 4.7 a second supplier means a stale target/ far more
+ * often than it means a deliberate override. Of the five, four are AM overriding a commons
+ * template. The fifth is the one non-obvious survivor:
+ *
  *   locales/en/translation.json   ui-user/www (12,415 B) loses to src/main/resources (67,685 B).
  *                                 Reverse this order and translation coverage silently drops by
  *                                 55 kB with no build error.
  *
- * Of the other five, FOUR are AM overriding a commons template. The fifth is
- * libs/lodash-3.10.1-min.js: 4.3 vendored lodash into src/main/js/libs/, so it now beats the
- * commons.ui.libs copy in target/dependencies -- worth knowing at 4.7, which retires that
- * supplier, and at 8.3, which replaces the file. NOTES-static-assets.md section 1 lists all seven.
- * Cross-reference with care: NOTES-npm-commons.md section 4 also says "five AM-over-commons
- * overrides", but its five are the four templates plus locales/en/translation.json, which is
- * accounted for separately above. The two fives are different sets.
+ * NOTES-static-assets.md section 1 lists the original seven. Cross-reference with care:
+ * NOTES-npm-commons.md section 4 also says "five AM-over-commons overrides", but its five are the
+ * four templates plus locales/en/translation.json, which is accounted for separately above. The
+ * two fives are different sets, and neither is the five that survives 4.7.
  *
  * The two amd/ directories contribute ZERO non-JavaScript files -- they are 79 .js and nothing
  * else -- so they never win anything below. They are listed anyway because they are composition
@@ -150,15 +162,165 @@ const fromSrc = (id) => fileURLToPath(new URL(`./src/main/js/${id}`, import.meta
  * otherwise yields an exit-0 build that has silently dropped 53 files.
  */
 const COMPOSITION_SOURCES = [
+    /*
+     * TASK 4.7. Staged from node_modules by stageNpmLibraries below, NOT unpacked by Maven. This
+     * replaces the bulk of what target/dependencies used to carry: the commons.ui.libs
+     * dependencySet blocks in dir.xml are gone, so the 42 libs/ and 12 css/ files they placed now
+     * arrive from declared npm dependencies instead. It is FIRST where target/dependencies used
+     * to be, so the non-libs/ composition order is unchanged. For libs/ specifically, "first" no
+     * longer means "overridable": copyLibraries throws on a duplicate rather than letting a later
+     * source win, so nothing after this may quietly replace an npm-staged library.
+     */
+    "target/npm-libs",
+    /*
+     * All that remains here after 4.7 is CodeMirror -- 4 files under libs/codemirror and 2 under
+     * css/codemirror, placed by the six fileSets dir.xml still carries and unpacked by the
+     * unpack-codemirror execution. TASK 4.8 owns that decision and this entry goes with it. Until
+     * then this directory holds 6 files where it used to hold 66.
+     */
     "target/dependencies",
     "node_modules/@openidentityplatform/ui-commons/amd",
     "node_modules/@openidentityplatform/ui-commons/www",
     "node_modules/@openidentityplatform/ui-user/amd",
     "node_modules/@openidentityplatform/ui-user/www",
-    "target/dependencies-expanded/forgerock-ui-user",
     "src/main/js",
     "src/main/resources"
 ];
+
+/*
+ * ==== 4.7 -- THE RUNTIME LIBRARIES, FROM npm INSTEAD OF commons.ui.libs ====
+ *
+ * READ NOTES-libs-retire.md IN THIS DIRECTORY BEFORE CHANGING ANYTHING BELOW. It carries the
+ * per-file destination table, the provenance of every digest named here, and the acceptance
+ * procedure.
+ *
+ * WHAT THIS REPLACES. Until 4.7 every file in the shipped libs/ tree arrived as a hand-published
+ * Maven artifact under org.openidentityplatform.commons.ui.libs -- ~58 of them, fetched from a
+ * dozen CDNs by maven-external-dependency-plugin, published to no repository, and reachable only
+ * because a past build had already downloaded them into ~/.m2. ui-build-and-packaging's "Runtime
+ * libraries are managed package dependencies" requires the opposite: declared dependencies, from
+ * the public registry, pinned in a committed lockfile and visible to `npm audit`. The map below
+ * is that channel.
+ *
+ * WHY A COPY AND NOT AN import. Route (a) -- letting the bundler resolve these -- is NOT
+ * available yet and will not be until group 5. main.js is still AMD, its 40 vendor bindings are
+ * require.config.paths entries naming libs/<file> by literal path, and index.html plus six
+ * FreeMarker templates in openam-oauth2 load two of these files with a literal <script src>.
+ * So 4.7 changes only WHO SUPPLIES THE BYTES, never where they land. Every path below is exactly
+ * the path that shipped before.
+ *
+ * THE FILENAMES ARE NOT COSMETIC. The keys are the deployed names, version suffix and all, and
+ * they must not be "tidied": main.js:38-79 binds them, and three of them lie -- xdate-0.8-min.js
+ * is not minified, bootstrap-datetimepicker-4.14.30-min.js is vendored rather than npm-built, and
+ * handlebars-4.7.7-min.js was really 4.7.6 (it is one of the six 4.7 drops; see the notes).
+ *
+ * evidence: MD5 = the npm file is byte-identical to the retired Maven artifact, so this row
+ * reproduces PHASE1-TREE.md exactly. VER = same version, but npm publishes no byte-equivalent
+ * build, so the digest changes and the change is expected. bump = that version was never
+ * published to npm at all and the nearest published one is used.
+ */
+const NPM_LIBRARY_STAGE = "target/npm-libs";
+
+const NPM_LIBRARY_FILES = {
+    // ---- libs/ : 28 files, all bound by main.js:38-79 -------------------------------------
+    "libs/backbone-1.1.2-min.js": "backbone/backbone-min.js",                              // MD5
+    "libs/backbone.paginator.min-2.0.2-min.js":
+        "backbone.paginator/lib/backbone.paginator.min.js",                                // MD5
+    "libs/backbone-relational-0.9.0-min.js": "backbone-relational/backbone-relational.js", // VER
+    "libs/backgrid-filter.min-0.3.7-min.js": "backgrid-filter/backgrid-filter.min.js",     // MD5
+    "libs/backgrid.min-0.3.5-min.js": "backgrid/lib/backgrid.min.js",                      // VER
+    "libs/backgrid-select-all-0.3.5-min.js":
+        "backgrid-select-all/backgrid-select-all.min.js",                                  // VER
+    "libs/bootstrap-3.3.5-custom.js": "bootstrap/dist/js/bootstrap.js",                    // MD5
+    "libs/bootstrap-clockpicker-0.0.7-min.js":
+        "clockpicker/dist/bootstrap-clockpicker.min.js",                                   // VER
+    "libs/bootstrap-dialog-1.34.4-min.js":
+        "bootstrap3-dialog/dist/js/bootstrap-dialog.min.js",                               // bump
+    "libs/classnames-2.2.5.js": "classnames/index.js",                                     // MD5
+    "libs/handlebars-4.7.7.js": "handlebars/dist/handlebars.js",                           // MD5
+    "libs/i18next-1.7.3-min.js": "i18next/lib/dep/i18next.min.js",                         // MD5
+    "libs/jquery-3.7.1-min.js": "jquery/dist/jquery.min.js",                               // MD5
+    "libs/jquery-sortable-0.9.13.js": "jquery-sortable/source/js/jquery-sortable.js",      // VER
+    "libs/microplugin-0.0.3.js": "microplugin/src/microplugin.js",                         // MD5
+    "libs/moment-2.28.0-min.js": "moment/min/moment.min.js",                               // MD5
+    "libs/qrcode-1.4.4-min.js": "qrcode-generator/qrcode.js",                              // VER
+    "libs/react-15.2.1-min.js": "react/dist/react.min.js",                                 // MD5
+    "libs/react-bootstrap-0.30.1-min.js":
+        "react-bootstrap/dist/react-bootstrap.min.js",                                     // MD5
+    /*
+     * 709 bytes, and it contains no ReactDOM: it is a UMD shim returning
+     * React.__SECRET_DOM_DO_NOT_USE_OR_YOU_WILL_BE_FIRED, and the implementation lives inside
+     * react-15.2.1-min.js. That is genuinely what React 15 published. react and react-dom
+     * therefore move as a VERSION-LOCKED PAIR: take react-dom from a newer major while react
+     * stays at 15 and ReactDOM is undefined at runtime, with no build error.
+     */
+    "libs/react-dom-15.2.1-min.js": "react-dom/dist/react-dom.min.js",                     // MD5
+    "libs/react-input-autosize-1.1.0-min.js":
+        "react-input-autosize/dist/react-input-autosize.min.js",                           // MD5
+    "libs/react-select-1.0.0-rc.2-min.js": "react-select/dist/react-select.min.js",        // MD5
+    "libs/redux-3.5.2-min.js": "redux/dist/redux.min.js",                                  // MD5
+    /*
+     * selectize.min.js is the NON-standalone build and is what main.js:75 binds. The retired
+     * artifact set carried it twice, as selectize-0.12.1-min.js and
+     * selectize-non-standalone-0.12.1-min.js, byte-identical under two artifactIds; only this one
+     * was ever bound and the duplicate is one of the six 4.7 drops. npm's actual standalone build
+     * (dist/js/standalone/selectize.min.js) is a third, different file -- do not reach for it.
+     */
+    "libs/selectize-non-standalone-0.12.1-min.js": "selectize/dist/js/selectize.min.js",   // MD5
+    "libs/sifter-0.4.1-min.js": "sifter/sifter.min.js",                                    // MD5
+    "libs/spin-2.0.1-min.js": "spin.js/spin.js",                                           // VER
+    "libs/text-2.0.15.js": "requirejs-text/text.js",                                       // MD5
+    "libs/xdate-0.8-min.js": "xdate/src/xdate.js",                                         // MD5
+
+    // ---- css/ : 6 stylesheets ---------------------------------------------------------------
+    // The only one that ships verbatim; the rest are LESS inputs compiled into structure.css
+    // and styles-admin.css. NON_COMPILED_PATHS above names this one file.
+    "css/bootstrap-3.3.5-custom.css": "bootstrap/dist/css/bootstrap.css",                  // MD5
+    "css/bootstrap-clockpicker-0.0.7-min.css":
+        "clockpicker/dist/bootstrap-clockpicker.min.css",                                  // VER
+    "css/bootstrap-dialog-1.34.4-min.css":
+        "bootstrap3-dialog/dist/css/bootstrap-dialog.min.css",                             // bump
+    "css/react-select-1.0.0-rc.2-min.css": "react-select/dist/react-select.min.css",       // MD5
+    "css/selectize-0.12.1-bootstrap3.css": "selectize/dist/css/selectize.bootstrap3.css",  // MD5
+    "css/titatoggle-1.2.6-min.css": "titatoggle/dist/titatoggle-dist-min.css",             // bump
+
+    /*
+     * ---- css/fontawesome/ : 8 files, and they are BUILD-BLOCKING, not decorative ----
+     *
+     * css/structure.less:23-24 and css/styles-admin.less:25-26 both @import font-awesome.min.css
+     * AND less/variables.less. LESS errors on a missing @import, so losing either file fails
+     * renderStylesheets outright and two of the ten shipped css/ files never get written.
+     *
+     * All 8 verified byte-identical between the npm tarball and the GitHub source archive
+     * dir.xml used to unpack, so this move costs zero digest delta. That closes the one thing
+     * NOTES-libs-retire.md section 12 could not determine.
+     *
+     * THE CASE TRAP THAT DIES HERE. dir.xml's fileSet read `Font-Awesome-${font-awesome.version}`
+     * with a capital F and A, because the artifact was github.com/FortAwesome/Font-Awesome's
+     * archive and it roots at Font-Awesome-4.5.0/. On a case-sensitive filesystem a lowercase
+     * spelling silently matched nothing; on macOS it resolved anyway, so the error was invisible
+     * locally. The npm tarball roots at package/ and installs to an all-lowercase
+     * node_modules/font-awesome, so the trap is gone -- but the class of bug transfers to the
+     * literal paths below, which is why they are written out rather than globbed.
+     *
+     * fontawesome-webfont.ttf is staged but NOT shipped: there is no `**\/*.ttf` in
+     * NON_COMPILED_EXTENSIONS. That is a pre-existing Grunt omission reproduced deliberately --
+     * see the note on that constant. The compiled CSS still references it. Do not "fix" it here.
+     */
+    "css/fontawesome/css/font-awesome.min.css": "font-awesome/css/font-awesome.min.css",   // MD5
+    "css/fontawesome/less/variables.less": "font-awesome/less/variables.less",             // MD5
+    "css/fontawesome/fonts/FontAwesome.otf": "font-awesome/fonts/FontAwesome.otf",         // MD5
+    "css/fontawesome/fonts/fontawesome-webfont.eot":
+        "font-awesome/fonts/fontawesome-webfont.eot",                                      // MD5
+    "css/fontawesome/fonts/fontawesome-webfont.svg":
+        "font-awesome/fonts/fontawesome-webfont.svg",                                      // MD5
+    "css/fontawesome/fonts/fontawesome-webfont.ttf":
+        "font-awesome/fonts/fontawesome-webfont.ttf",                                      // MD5
+    "css/fontawesome/fonts/fontawesome-webfont.woff":
+        "font-awesome/fonts/fontawesome-webfont.woff",                                     // MD5
+    "css/fontawesome/fonts/fontawesome-webfont.woff2":
+        "font-awesome/fonts/fontawesome-webfont.woff2"                                     // MD5
+};
 
 /*
  * The npm-installed sources are the only ones carrying a root package.json, the CommonJS marker,
@@ -294,6 +456,113 @@ const copyFile = (from, to) => {
  * The last-wins property is preserved exactly, because a later source's copyFileSync overwrites
  * an earlier one at the same path.
  */
+/*
+ * TASK 4.7. Stage the mapped node_modules files into target/npm-libs, which COMPOSITION_SOURCES
+ * lists first. Runs in buildStart, BEFORE assertSourcesPresent, so that a pruned node_modules
+ * fails on the named file below rather than on a missing composition directory two frames later.
+ *
+ * WHY A STAGING DIRECTORY AND NOT A DIRECT COPY INTO outDir. Six of these files are not shipped
+ * at all -- they are LESS inputs that stageLessSources has to see under a composed css/ tree
+ * before renderStylesheets can resolve `@import "fontawesome/less/variables.less"` relative to
+ * the entry. Copying them straight to outDir would ship six files that never shipped and still
+ * leave the LESS compile with nothing to import. Staging puts them where both passes already
+ * look, and costs one directory.
+ *
+ * EVERY MISSING FILE IS FATAL, and that is the point. The failure this guards against is the one
+ * the plan flags repeatedly: a source that quietly contributes nothing, an exit-0 build, and a
+ * 404 in production. A package that changes its internal layout between versions -- which is
+ * exactly what happened to bootstrap-dialog and titatoggle, both of which had to move version --
+ * silently drops a runtime library otherwise.
+ */
+const stageNpmLibraries = (root) => {
+    const stage = path.resolve(root, NPM_LIBRARY_STAGE);
+    /*
+     * Same guard as stageLessSources, for the same reason: NPM_LIBRARY_STAGE is a constant but
+     * `root` is config.root, and this delete is recursive.
+     */
+    if (!stage.startsWith(root + path.sep)) {
+        throw new Error(`Refusing to clear a library staging directory outside the project root: ${stage}`);
+    }
+    fs.rmSync(stage, { recursive: true, force: true });
+
+    const missing = [];
+    for (const [dest, source] of Object.entries(NPM_LIBRARY_FILES)) {
+        const from = path.resolve(root, "node_modules", source);
+        if (!fs.existsSync(from)) {
+            missing.push(`  ${dest}  <-  node_modules/${source}`);
+            continue;
+        }
+        copyFile(from, path.join(stage, dest));
+    }
+    if (missing.length > 0) {
+        throw new Error(
+            "Runtime libraries are missing from node_modules, so the build would ship an " +
+            "incomplete libs/ tree:\n" + missing.join("\n") +
+            "\n\nThese are declared dependencies in package.json (task 4.7 moved them off the " +
+            "org.openidentityplatform.commons.ui.libs Maven artifacts). Run `npm install`. If a " +
+            "path above is wrong rather than absent, the package changed its internal layout " +
+            "between versions -- fix the map in NPM_LIBRARY_FILES, and see NOTES-libs-retire.md."
+        );
+    }
+    return Object.keys(NPM_LIBRARY_FILES).length;
+};
+
+/*
+ * TASK 4.7. THE ONE DRIFT CHANNEL VENDORING LEAVES OPEN.
+ *
+ * eonasdan-bootstrap-datetimepicker is a declared dependency that contributes ZERO bytes: the
+ * package publishes only src/, no built js and no built css, so both shipped files are vendored
+ * into source instead (NOTES-libs-retire.md section 13, decision 6). The dependency is kept
+ * anyway so the library stays in the lockfile with a resolved version and an integrity hash, and
+ * so `npm audit` can see it -- vendored bytes are invisible to both.
+ *
+ * That leaves the declared version and the vendored bytes free to drift apart with no build
+ * signal: `ncu -u`, or anything else that bumps package.json, moves one and not the other, and
+ * nothing downstream notices. Both vendored files carry an upstream `version : x.y.z` header, so
+ * the check is a string compare, and it is worth the twelve lines because the failure it catches
+ * is silent and the evidence is already in the files.
+ *
+ * This is deliberately NOT a general mechanism. It covers the one case where a vendored file has
+ * a declared npm dependency behind it; the other ten vendored files have no npm publication at
+ * all under any name, so there is nothing to compare them against. See src/main/js/libs/README.md
+ * for the provenance of all twelve.
+ */
+const VENDORED_VERSION_CHECKS = [
+    { file: "src/main/js/libs/bootstrap-datetimepicker-4.14.30-min.js", dependency: "eonasdan-bootstrap-datetimepicker" },
+    { file: "src/main/resources/css/bootstrap-datetimepicker-4.14.30-min.css", dependency: "eonasdan-bootstrap-datetimepicker" }
+];
+
+const assertVendoredVersions = (root) => {
+    const manifest = JSON.parse(fs.readFileSync(path.resolve(root, "package.json"), "utf8"));
+    for (const { file, dependency } of VENDORED_VERSION_CHECKS) {
+        const declared = (manifest.dependencies || {})[dependency];
+        if (declared === undefined) {
+            throw new Error(
+                `${file} is vendored against the npm dependency ${dependency}, which package.json ` +
+                "no longer declares. Either restore the dependency or drop this entry from " +
+                "VENDORED_VERSION_CHECKS -- and record the provenance in " +
+                "src/main/js/libs/README.md if the file is now standing alone."
+            );
+        }
+        const header = fs.readFileSync(path.resolve(root, file), "utf8").slice(0, 512);
+        const found = /version\s*:\s*([0-9][0-9A-Za-z.\-]*)/.exec(header);
+        if (found === null) {
+            throw new Error(`${file} no longer carries an upstream \`version :\` header, so it cannot be checked against ${dependency}.`);
+        }
+        if (found[1] !== declared) {
+            throw new Error(
+                `${file} carries upstream version ${found[1]}, but package.json pins ` +
+                `${dependency} at ${declared}.\n\n` +
+                "This package ships no built files, so the bytes AM serves are the vendored ones " +
+                "and the dependency exists only to keep the library visible to the lockfile and " +
+                "to `npm audit`. The two have drifted: re-vendor the built files from the pinned " +
+                "version, or move the pin back. See NOTES-libs-retire.md section 13, decision 6."
+            );
+        }
+    }
+    return VENDORED_VERSION_CHECKS.length;
+};
+
 const composeStaticAssets = (root, outDir) => {
     const shipped = new Set();
     for (const source of COMPOSITION_SOURCES) {
@@ -303,6 +572,73 @@ const composeStaticAssets = (root, outDir) => {
             if (!shipsVerbatim(rel)) { continue; }
             copyFile(path.join(from, rel), path.resolve(outDir, rel));
             shipped.add(rel);
+        }
+    }
+    return shipped;
+};
+
+/*
+ * TASK 4.7. Grunt shipped libs/ in two hops that had nothing to do with nonCompiledFiles:
+ * copy:libraries took libs/**\/*.js out of the composition tree into target/transpiled
+ * (Gruntfile.js:185-192, bypassing babel), then copy:transpiled carried target/transpiled on into
+ * target/compiled (:172-183). shipsVerbatim above does NOT select .js, so without this step the
+ * Vite tree has no libs/ at all -- which is exactly the state 4.7 inherited: target/compiled held
+ * 273 files against PHASE1-TREE.md's 652, and all 50 libs/ files were among the missing.
+ *
+ * Same source order as composeStaticAssets, but NOT the same last-wins rule -- this walk refuses
+ * a collision instead of resolving one. The three suppliers are disjoint, 28 + 12 + 4 = 44
+ * distinct paths and no overlap:
+ *   target/npm-libs   28 files, from the npm dependencies mapped above
+ *   target/dependencies  4 files, libs/codemirror -- still Maven, TASK 4.8's to decide
+ *   src/main/js       12 files, the vendored set (see NOTES-libs-retire.md section 3)
+ * The two commons packages carry no libs/ at all and contribute nothing here; they are walked
+ * anyway rather than special-cased, so that a future commons release shipping one is not
+ * silently ignored.
+ *
+ * WHY THROW RATHER THAN LAST-WINS. maven-assembly-plugin does not clean its own output, and after
+ * 4.7 the dir.xml descriptor emits a strict SUBSET of what it used to: target/dependencies went
+ * from 66 files to 6. So a target/ left over from a pre-4.7 build still holds the 60 retired
+ * commons.ui.libs files, they sort after target/npm-libs in this list, and under last-wins they
+ * would silently beat the npm channel -- shipping the retired Maven bytes, resurrecting the six
+ * deliberately dropped files, exit 0, no warning. That is the plan's silent-drop hazard inverted
+ * into a silent STALE-SHIP, and a file count does not see it: the count goes UP, to the number
+ * the pre-4.7 tree had. It is not hypothetical; it is what the first 4.7 build did, 50 libs/
+ * files instead of 44. `mvn clean` is not the escape here -- it would fire clean-external and
+ * delete the CodeMirror artifact from ~/.m2 -- so the recovery is `rm -rf target/dependencies`
+ * and the build has to be the thing that says so.
+ *
+ * The cost of this strictness is zero today because the suppliers are disjoint. If 4.8 or 8.3
+ * ever needs one source to override another in libs/, the override has to become explicit here
+ * rather than implicit in the order of COMPOSITION_SOURCES.
+ */
+const copyLibraries = (root, outDir) => {
+    const shipped = new Set();
+    const suppliers = new Map();
+    for (const source of COMPOSITION_SOURCES) {
+        const from = path.resolve(root, source, "libs");
+        if (!isDirectory(from)) { continue; }
+        for (const rel of walk(from)) {
+            if (path.extname(rel) !== ".js") { continue; }
+            const shippedPath = path.posix.join("libs", rel);
+            if (suppliers.has(shippedPath)) {
+                throw new Error(
+                    `Two composition sources supply ${shippedPath}:\n` +
+                    `  ${suppliers.get(shippedPath)}\n  ${source}\n\n` +
+                    "The libs/ suppliers are meant to be disjoint, so this is almost always a " +
+                    "stale target/ directory from a pre-4.7 build rather than a real override: " +
+                    "the retired commons.ui.libs files are still sitting in target/dependencies, " +
+                    "and they sort after target/npm-libs, so they would have silently replaced " +
+                    "the npm-staged library above.\n\n" +
+                    "Run `rm -rf target/dependencies target/npm-libs` and build again. Do NOT run " +
+                    "`mvn clean` here -- it fires clean-external, which deletes the CodeMirror " +
+                    "artifact from ~/.m2, and that artifact is published nowhere.\n\n" +
+                    "If the collision is deliberate, make the override explicit in copyLibraries " +
+                    "rather than relying on the order of COMPOSITION_SOURCES."
+                );
+            }
+            suppliers.set(shippedPath, source);
+            copyFile(path.join(from, rel), path.resolve(outDir, "libs", rel));
+            shipped.add(shippedPath);
         }
     }
     return shipped;
@@ -550,8 +886,12 @@ const assertSourcesPresent = (root) => {
             missing.map((source) => `  - ${source}`).join("\n") +
             "\n\nThe two node_modules/@openidentityplatform packages are installed by Maven with " +
             "--no-save (pom.xml:481) and are pruned by a bare `npm install`. Re-run the Maven " +
-            "build, or reinstall them from target/npm/*.tgz. The target/ sources come from the " +
-            "maven-dependency-plugin unpack executions in the same pom."
+            "build, or reinstall them from target/npm/*.tgz.\n\n" +
+            "Of the target/ sources, target/npm-libs is staged by this config -- stageNpmLibraries " +
+            "in buildStart, from declared npm dependencies -- so it is missing here only if that " +
+            "call was removed or reordered after this check. target/dependencies is the last " +
+            "surviving maven-dependency-plugin unpack in the same pom, CodeMirror only, and task " +
+            "4.8 retires it."
         );
     }
 };
@@ -575,6 +915,15 @@ const xuiStaticAssets = () => {
             configuredOutDir = path.resolve(config.root, config.build.outDir);
         },
         buildStart () {
+            /*
+             * BEFORE assertSourcesPresent, not after: target/npm-libs is a composition source and
+             * this is what creates it, so asserting first would fail on a directory this call is
+             * about to write. Staging first also means a pruned node_modules is reported as the
+             * named library file that is missing, which is the actionable message.
+             */
+            const staged = stageNpmLibraries(root);
+            this.info(`staged ${staged} runtime library files from node_modules into ${NPM_LIBRARY_STAGE}`);
+            assertVendoredVersions(root);
             assertSourcesPresent(root);
             /*
              * Read-and-check here, stamp in writeBundle. Both hooks read the file (983 bytes,
@@ -617,6 +966,11 @@ const xuiStaticAssets = () => {
              */
             const outDir = options.dir || configuredOutDir;
             const shipped = composeStaticAssets(root, outDir);
+            /*
+             * TASK 4.7. Independent of composeStaticAssets: that pass ships what nonCompiledFiles
+             * selects, and .js is deliberately not in that set. See copyLibraries.
+             */
+            const libraries = copyLibraries(root, outDir);
             const stylesheets = await renderStylesheets(root, outDir);
             /*
              * After composeStaticAssets, not before. index.html is excluded from the verbatim
@@ -627,9 +981,9 @@ const xuiStaticAssets = () => {
              */
             const indexHtml = stampIndexHtml(root, outDir);
             this.info(
-                `copied ${shipped.size} static files verbatim, compiled ` +
-                `${stylesheets.length} stylesheets and stamped ${indexHtml} with version ` +
-                `${targetVersion}, into ${path.relative(root, outDir)}`
+                `copied ${shipped.size} static files verbatim and ${libraries.size} runtime ` +
+                `libraries, compiled ${stylesheets.length} stylesheets and stamped ${indexHtml} ` +
+                `with version ${targetVersion}, into ${path.relative(root, outDir)}`
             );
         }
     };
@@ -878,8 +1232,11 @@ export default defineConfig({
              * of main.js:33 and it is WRONG here, because aliases do not chain (see the block
              * above). "lodash" would not be re-entered into this table; it would be handed to
              * normal node resolution, land on node_modules/lodash, and that is 4.18.1 and a
-             * devDependency -- package.json:54, and package.json has NO `dependencies` key at all, so
-             * there is no runtime lodash dependency of any kind. Writing it that way would silently perform
+             * devDependency. (When 4.3 wrote this, package.json had NO `dependencies` key at all;
+             * TASK 4.7 ADDED ONE, 31 runtime libraries. Re-checked there: lodash is still absent
+             * from it, no dependency of it pulls a lodash in, and no AM source imports a `lodash/`
+             * subpath -- so the prefix-capture alias below is still harmless and this reasoning
+             * still holds. 8.3 is where it stops holding.) Writing it that way would silently perform
              * group 8's lodash 3 -> 4 upgrade inside task 4.3, untested, in a commit that does not
              * say so, and without task 8.3's "phase-0a suite green either side" gate. It is not a
              * benign upgrade: it breaks _.contains x4 (ui-commons util/UIUtils.js:611,631,

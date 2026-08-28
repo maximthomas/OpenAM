@@ -56,14 +56,24 @@ module.exports = function (grunt) {
             commonsPackageSource("ui-user")
         ]),
         buildCompositionDirs = _.flatten([
+            // TASK 4.7. The runtime libraries, staged from node_modules rather than unpacked from
+            // the org.openidentityplatform.commons.ui.libs Maven artifacts, which are retired.
+            // PRODUCED BY THE VITE BUILD (vite.config.js, stageNpmLibraries) - Grunt has no step
+            // that creates it, so `npm run build:grunt` now requires a `npm run build:production`
+            // to have run first. Grunt stopped being the production pipeline in task 4.1 and is
+            // deleted in group 5; this is deliberately not worth a second copy of the file map.
+            "target/npm-libs",
+            // All that is left here after 4.7 is CodeMirror: 4 files under libs/codemirror and 2
+            // under css/codemirror, from the six fileSets dir.xml still carries. TASK 4.8 owns it.
             "target/dependencies",
             // When building, the commons sources are installed by Maven+npm as tarball packages
             npmPackageDirs,
-            // Holds exactly one file: libs/form2js-2.0-769718a.js, unpacked from the commons www
-            // zip by unpack-forgerock-ui-user-form2js. target/dependencies supplies a DIFFERENT
-            // build of the same library from the commons.ui.libs Maven artifact, and the zip's
-            // copy is the one AM ships today, so this has to compose after it. See the pom.
-            "target/dependencies-expanded/forgerock-ui-user",
+            // target/dependencies-expanded/forgerock-ui-user is GONE (4.7). It held exactly one
+            // file, libs/form2js-2.0-769718a.js, unpacked from the commons www zip to pin which
+            // of two disagreeing builds AM shipped. form2js has no npm package under any name -
+            // maxatwork/form2js @769718a was never published - so those exact bytes are now
+            // vendored in src/main/js/libs, which composes below. The pin, the unpack execution
+            // and the commons.ui:user:zip:www dependency all retire with it.
             // This must come last so that it overwrites any conflicting files!
             mavenProjectSource(".")
         ]),
@@ -415,11 +425,13 @@ module.exports = function (grunt) {
                 "\n\nThe commons sources arrive via Maven + npm. Build them first:\n" +
                 "  mvn install -f <commons checkout>/ui/pom.xml  (produces the tgz:npm artifacts)\n" +
                 "  mvn -DskipTests package                       (from openam-ui, NOT openam-ui-ria:\n" +
-                "                                                 the commons.ui.libs artifacts are\n" +
-                "                                                 fetched by a plugin that only runs\n" +
-                "                                                 on the aggregator)\n\n" +
+                "                                                 the CodeMirror zip is unpacked by\n" +
+                "                                                 a plugin that only runs on the\n" +
+                "                                                 aggregator)\n\n" +
                 "A bare `npm install` here prunes the commons packages, which are installed with\n" +
-                "the no-save flag; re-run the Maven build to restore them."
+                "the no-save flag; re-run the Maven build to restore them.\n\n" +
+                "target/npm-libs is different: it is staged from node_modules by the VITE build\n" +
+                "(task 4.7). If only that one is missing, run `npm run build:production` once."
             );
         }
     });

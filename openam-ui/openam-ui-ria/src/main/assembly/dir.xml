@@ -23,6 +23,35 @@
     <formats>
         <format>dir</format>
     </formats>
+    <!--
+        TASK 4.7 RETIRED THE commons.ui.libs CHANNEL FROM THIS DESCRIPTOR.
+
+        What was here, and where it went:
+
+          dependencySet  org.openidentityplatform.commons.ui.libs:*:js  -> /libs   (42 files)
+          dependencySet  ...:*:css and ...:*:less                       -> /css    (12 files)
+          fileSet        Font-Awesome-4.5.0                            -> /css/fontawesome (8)
+
+        All 62 now arrive from declared npm dependencies. vite.config.js stages them from
+        node_modules into target/npm-libs (see NPM_LIBRARY_FILES there), which is the first
+        composition source exactly as target/dependencies used to be. Four libraries have no npm
+        package under any name and are vendored in src/main/js/libs instead; six files that
+        shipped but nothing bound were dropped. The whole table is in NOTES-libs-retire.md.
+
+        THIS DESCRIPTOR IS NOT PACKAGING-ONLY, which is why the note matters. It is also the
+        descriptor for the prepare-working-dir execution in this module's pom, so its output IS
+        target/dependencies - the first entry in Gruntfile.js's buildCompositionDirs and in
+        vite.config.js's COMPOSITION_SOURCES. It therefore still has to produce something.
+
+        WHAT IS LEFT IS CODEMIRROR AND NOTHING ELSE: 4 files under /libs/codemirror and 2 under
+        /css/codemirror, from the six fileSets below, fed by the unpack-codemirror execution and
+        the CodeMirror:zip dependency. TASK 4.8 decides whether npm codemirror@4.10.0 replaces
+        them; until it does they must stay, because EditScriptView.js names all four JS files by
+        literal AMD path and styles-admin.less @imports both stylesheets. Delete them before 4.8
+        lands and the admin script editor breaks. When 4.8 removes them this whole descriptor,
+        the prepare-working-dir execution and composition source #1 go with it - an empty
+        composition source is the silent-drop shape, not a harmless leftover.
+    -->
     <fileSets>
         <fileSet>
             <directory>${project.build.directory}/codemirror5-${codemirror.version}.0</directory>
@@ -79,58 +108,5 @@
             </includes>
         </fileSet>
 
-        <!--
-            8 files the commons www zip used to supply under css/fontawesome/ and neither npm
-            package ships. They are build-blocking, not decorative: css/structure.less and
-            css/styles-admin.less both @import font-awesome.min.css and less/variables.less.
-
-            The directory name is capitalised because the artifact is the GitHub source archive
-            (openam-ui/pom.xml's maven-external-dependency-plugin fetches
-            github.com/FortAwesome/Font-Awesome/archive/v${version}.zip), which roots at
-            Font-Awesome-${font-awesome.version}/. Verified against the zip; it is a function of
-            the repository name, not a guess. Note this only matters on a case-sensitive
-            filesystem - on macOS a lowercase spelling resolves to the same directory and any
-            error here is invisible locally.
-        -->
-        <fileSet>
-            <directory>${project.build.directory}/Font-Awesome-${font-awesome.version}</directory>
-            <outputDirectory>/css/fontawesome</outputDirectory>
-            <includes>
-                <include>css/font-awesome.min.css</include>
-                <include>fonts/*</include>
-                <include>less/variables.less</include>
-            </includes>
-        </fileSet>
     </fileSets>
-    <!--
-        These blocks are task 4.7's to retire, and their scope is now three classifiers, not two
-        (:less was added in 3.7 for backgrid.min-0.3.5.less, the one .less artifact in the whole
-        commons.ui.libs tree, which the www zip used to supply).
-
-        Note for 4.7: this descriptor is not packaging-only. It is also the descriptor for the
-        prepare-working-dir execution that PRODUCES target/dependencies, which is the first entry
-        in Gruntfile.js's buildCompositionDirs. Retiring these blocks therefore removes a Grunt
-        composition source - all 50 files in the shipped /libs arrive this way - and is a larger
-        change than "delete the dependencySet blocks" suggests. The artifacts reach them
-        transitively through commons.ui:user:zip:www, so that dependency has to retire in the
-        same change.
-    -->
-    <dependencySets>
-        <dependencySet>
-            <includes>
-                <include>org.openidentityplatform.commons.ui.libs:*:js</include>
-            </includes>
-            <excludes>
-                <exclude>org.openidentityplatform.commons.ui.libs:CodeMirror</exclude>
-            </excludes>
-            <outputDirectory>/libs</outputDirectory>
-        </dependencySet>
-        <dependencySet>
-            <includes>
-                <include>org.openidentityplatform.commons.ui.libs:*:css</include>
-                <include>org.openidentityplatform.commons.ui.libs:*:less</include>
-            </includes>
-            <outputDirectory>/css</outputDirectory>
-        </dependencySet>
-    </dependencySets>
 </assembly>

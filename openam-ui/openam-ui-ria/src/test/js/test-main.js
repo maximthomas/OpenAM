@@ -31,17 +31,37 @@
             }
         },
         paths: {
-            "backbone": "/base/target/dependencies/libs/backbone-1.1.2-min",
+            // TASK 4.7. These seven used to be read straight out of target/dependencies/libs,
+            // the maven-assembly output that the retired commons.ui.libs dependencySet blocks
+            // filled. That directory now holds only libs/codemirror. The libraries are staged
+            // from npm and shipped into target/compiled/libs, which is already baseUrl above,
+            // so they are addressed relatively - and for libs/ the harness now exercises the SAME
+            // bytes the build ships rather than a second copy of them.
+            //
+            // SCOPE OF THAT CLAIM: libs/ only. It does NOT mean this harness runs against a Vite
+            // target/compiled - it cannot, because 4.1 stopped emitting an org/ tree there and
+            // baseUrl points at it. `npm run test:karma` is documented as running against a Grunt
+            // tree, where these relative paths resolve. The harness has been dormant since 4.1
+            // and group 9 (D12) replaces it with Vitest; 4.7 repointed it off the two retired
+            // Maven-fed directories so it stays coherent, and verified every path here exists,
+            // but no Karma run confirms it.
+            "backbone": "libs/backbone-1.1.2-min",
             "chai": "/base/node_modules/chai/chai",
-            "handlebars": "/base/target/dependencies/libs/handlebars-4.7.7",
-            "i18next": "/base/target/dependencies/libs/i18next-1.7.3-min",
-            "jquery": "/base/target/dependencies/libs/jquery-3.7.1-min",
-            "lodash": "/base/target/dependencies/libs/lodash-3.10.1-min",
-            "moment": "/base/target/dependencies/libs/moment-2.28.0-min",
-            "redux": "/base/target/dependencies/libs/redux-3.5.2-min",
+            "handlebars": "libs/handlebars-4.7.7",
+            "i18next": "libs/i18next-1.7.3-min",
+            "jquery": "libs/jquery-3.7.1-min",
+            "lodash": "libs/lodash-3.10.1-min",
+            "moment": "libs/moment-2.28.0-min",
+            "redux": "libs/redux-3.5.2-min",
             "sinon-chai": "/base/node_modules/sinon-chai/lib/sinon-chai",
-            "sinon": "/base/target/test-classes/libs/sinon-1.15.4",
-            "squire": "/base/target/test-classes/libs/squire-0.2.0"
+            // sinon and squire were the last two commons.ui.libs test artifacts, copied into
+            // target/test-classes/libs by the copy-dependencies-test execution 4.7 removes.
+            // sinon was already a devDependency, at 1.17.6 rather than the artifact's 1.15.4;
+            // squirejs@0.2.0 is the same release as the artifact. The other two artifacts,
+            // qunit js and css, are NOT replaced: nothing in this module references QUnit at
+            // all - the frameworks here are mocha and requirejs - so they were dead weight.
+            "sinon": "/base/node_modules/sinon/pkg/sinon",
+            "squire": "/base/node_modules/squirejs/src/Squire"
         },
         shim: {
             "lodash": {

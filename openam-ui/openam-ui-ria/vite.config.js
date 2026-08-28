@@ -62,6 +62,17 @@
  *   4.9  resolveAssetUrl            cache-busting for runtime-fetched assets (D4)
  *   4.10 server.*                   the dev server, paired with e2e/local (D14)
  *
+ *   5.1  resolve.extensions         the .jsm extension, inherited from the scope 4.3 declined.
+ *                                  LANDED as exactly ONE knob -- resolve.extensions, spelled
+ *                                  out in full because it REPLACES rather than extends Vite's
+ *                                  default. The React plugin's include was measured and
+ *                                  deliberately NOT widened (no .jsm contains JSX), and no
+ *                                  esbuild loader mapping was added (vite:esbuild never sees a
+ *                                  .jsm). 5.1 also PINS the engine: the guard below the imports
+ *                                  fails the build if a vite other than the declared 5.x
+ *                                  resolves. Nothing in 5.1 converts a module; it is resolution
+ *                                  mechanics only.
+ *
  * READ BEFORE EDITING: NOTES-vite-build.md in this directory. In particular section 3 — Vite does
  * not reject AMD, it accepts it, exits 0 and emits a bundle that does nothing. Until the AMD to
  * ESM conversion in group 5 lands, a green `vite build` here is NOT evidence that the output
@@ -81,6 +92,54 @@ import path from "node:path";
  * see openam-ui-ria/pom.xml. "dev" mirrors Gruntfile.js:45, `grunt.option("target-version") || "dev"`.
  */
 const targetVersion = process.env.TARGET_VERSION || "dev";
+
+/*
+ * ==== 5.1 -- WHICH VITE RUNS. PINNED, AND MADE TO FAIL LOUDLY WHEN IT IS NOT ====
+ *
+ * SETTLED IN 5.1 because it is the first task in group 5 and so the first one to build anything.
+ * This module builds against ITS OWN vite: the copy package.json declares ("vite": "^5.4.21")
+ * and the tracked package-lock.json pins. Measured at the time of the decision, not recalled:
+ *
+ *   require.resolve("vite")                 openam-ui-ria/node_modules/vite/index.cjs
+ *   require("vite/package.json").version    5.4.21  (rollup 4.62.5)
+ *   OpenAM/openam-ui/node_modules/vite      8.1.0   (rolldown ~1.1.2)  <-- ONE DIRECTORY UP
+ *
+ * The parent copy is not a second opinion, it is an accident. OpenAM/openam-ui/package.json does
+ * not exist and has never been tracked -- `git ls-files openam-ui/package.json` returns nothing,
+ * only its .gitignore is tracked -- yet that tree's node_modules/.package-lock.json names a
+ * phantom "openam-ui-workspace". Nothing in the repository regenerates it, so a fresh clone plus
+ * `npm install` in this module yields 5.4.21 and nothing else. Building against 8.1.0 would mean
+ * building against a tree neither CI nor a new checkout has.
+ *
+ * WHY THIS IS WORTH AN ASSERTION RATHER THAN A COMMENT. The two engines are not interchangeable
+ * for this file. vite 5 bundles with Rollup and needs @rollup/plugin-commonjs to make the
+ * vendored UMD lodash usable; vite 8 bundles with rolldown, which has native CJS/UMD interop and
+ * IGNORES commonjsOptions entirely -- measured in the build.commonjsOptions comment below, where
+ * one and the same alias fails under one engine and works under the other. Group 6 is built on
+ * import.meta.glob, which is the next place the two will diverge. An engine that can change
+ * underfoot without saying so is the worst shape this defect can have, so the check below turns
+ * it into a startup failure instead.
+ *
+ * THE OTHER CONSUMER OF THIS CONFIG WAS CHECKED, so the guard does not ambush it: vitest 2.1.9
+ * (`npm run test:unit`) resolves the same openam-ui-ria/node_modules/vite 5.4.21, and so passes
+ * the check rather than tripping over it. The throw is deliberately hard rather than a warning
+ * -- this module is built by frontend-maven-plugin, where a warning in the log is invisible, and
+ * the failure it guards against is a build that goes GREEN while emitting something subtly
+ * different, which is the exact shape NOTES-vite-build.md section 3 exists to warn about.
+ *
+ * To move the pin deliberately, change package.json and EXPECTED_VITE_MAJOR together. Do not
+ * delete the check.
+ */
+const EXPECTED_VITE_MAJOR = 5;
+const resolvedViteVersion = createRequire(import.meta.url)("vite/package.json").version;
+if (parseInt(resolvedViteVersion, 10) !== EXPECTED_VITE_MAJOR) {
+    throw new Error(
+        `vite ${resolvedViteVersion} resolved, but this config is pinned to vite ` +
+        `${EXPECTED_VITE_MAJOR}.x (Rollup). Vite 8 bundles with rolldown, which ignores the ` +
+        `commonjsOptions this file depends on. Run npm install inside openam-ui-ria rather than ` +
+        `building against OpenAM/openam-ui/node_modules/vite, or move the pin deliberately by ` +
+        `changing package.json and EXPECTED_VITE_MAJOR together.`);
+}
 
 /*
  * Absolute paths for resolve.alias replacements (task 4.3). Every replacement in the alias table
@@ -1172,10 +1231,77 @@ export default defineConfig({
 
     plugins: [
         /*
-         * 15 .jsx files under src/main/js. Note for 4.3: this plugin's default include is
-         * /\.[tj]sx?$/, which does NOT match .jsm — widening it is part of the .jsm work below.
+         * 15 .jsx files under src/main/js. The note 4.3 left here read: this plugin's default
+         * include is /\.[tj]sx?$/, which does NOT match .jsm, and widening it is part of the
+         * .jsm work below.
+         *
+         * 5.1 DELIBERATELY DID NOT WIDEN IT, and that is a measurement rather than an omission.
+         * All 31 .jsm files were handed to esbuild with loader: "js". Every one of them parsed.
+         * A .jsx file put through the identical probe was rejected -- "The JSX syntax extension
+         * is not currently enabled" -- so the probe does detect JSX; it simply is not there.
+         * NO .jsm FILE CONTAINS JSX. Widening `include` would add a permanent knob that
+         * transforms nothing, and an unnecessary knob is a puzzle for whoever reads this next.
+         * If a .jsm ever gains JSX, this is the line that has to change -- rerun that probe
+         * before believing it already does.
+         *
+         * The same measurement is why no esbuild loader mapping was added for .jsm either --
+         * BUT READ THE NEXT PARAGRAPH BEFORE REUSING THAT SENTENCE. Vite 5's vite:esbuild
+         * TRANSFORM has default include /\.(m?ts|[jt]sx)$/ (node_modules/vite/dist/node/chunks/
+         * dep-BK3b2jBa.js:19267), so a .jsm is never routed to THAT PLUGIN, and Rollup parses
+         * plain ESM whatever the extension. For `vite build` that is the whole story and no
+         * loader mapping is needed.
+         *
+         * IT DOES NOT GENERALISE TO THE DEV SERVER, AND 4.10 IS WHO THAT COSTS. vite:esbuild is
+         * not Vite's only esbuild pass. The dependency scanner is a second one, and it excludes
+         * .jsm independently and for a different reason: isScannable (dep-BK3b2jBa.js:49918)
+         * tests JS_TYPES_RE, which is /\.(?:j|t)sx?$|\.mjs$/ (constants.js:41) -- .mjs yes,
+         * .jsm no. A module that is not scannable comes back as externalUnlessEntry, so
+         * pre-bundling STOPS CRAWLING at every .jsm boundary and never sees the imports beyond
+         * it. Vite ships a purpose-built knob for exactly this and nothing here sets it:
+         * optimizeDeps.extensions: [".jsm"]. This config declares no optimizeDeps at all.
+         *
+         * Why 5.1 leaves it alone rather than setting it blind: initDepsOptimizer is reached
+         * from createServer (dep-BK3b2jBa.js:63401) and from nowhere in the build path, so this
+         * is dev-server-only, and 4.10 owns server.*. SERVING a .jsm already works, which is
+         * worth recording because it is not obvious and the trace is a nuisance to rediscover:
+         * .jsm fails knownJsSrcRE (:16837), so isExplicitImportRequired returns true (:64157),
+         * so import analysis appends ?import (:64333), and the transform middleware then picks
+         * it up via isImportRequest (:62092). So the dev-server exposure is degraded
+         * pre-bundling, not a failure to serve.
+         *
+         * resolve.extensions below is the only RESOLUTION knob 5.1 sets, and the 5.1 spike is
+         * what says so. jsxRuntime, immediately below, is the one TRANSFORM knob it sets, and
+         * the same spike is what forced it.
+         *
+         * ==== 5.1 -- jsxRuntime: "classic". FORCED, NOT CHOSEN ====
+         *
+         * The spike surfaced this the moment .jsm resolution started working and it could reach
+         * a .jsx at all:
+         *
+         *   [vite]: Rollup failed to resolve import "react/jsx-runtime" from
+         *   .../admin/views/realms/sessions/SessionsTable.jsx
+         *
+         * @vitejs/plugin-react 4.7.0 defaults to jsxRuntime: "automatic", which rewrites JSX to
+         * an import of react/jsx-runtime. This module's react is 15.2.1, which predates that
+         * entry point entirely -- its package directory is react.js, lib/ and dist/, with no
+         * jsx-runtime -- so "automatic" cannot work here at all. "classic" emits
+         * React.createElement instead, and all 15 .jsx files already `import React` at the top
+         * (checked, all 15), so nothing else has to change. There is no judgement in this
+         * setting: with react 15 it is the only value that transforms.
+         *
+         * AND IT IS LOAD-BEARING IN A SECOND, LESS OBVIOUS WAY. Node disagrees with Vite about
+         * this specifier. `require.resolve("react/jsx-runtime")` from this directory SUCCEEDS --
+         * it walks up and lands on OpenAM/openam-ui/node_modules/react, which is 19.2.7. Vite's
+         * resolver stops at the first react package it finds and fails instead. Vite is right:
+         * had it walked up, the build would have gone green while linking React 19's jsx-runtime
+         * against React 15's react, which is a runtime break that no build step would have
+         * reported. Same shadowing hazard as the engine pin at the top of this file, same
+         * parent node_modules, and a second reason not to trust that tree.
+         *
+         * Whoever moves this module off react 15 -- 5.3 is the nearest task, it owns react-select
+         * and the window globals it needs -- should revisit this line and not merely inherit it.
          */
-        react(),
+        react({ jsxRuntime: "classic" }),
 
         /*
          * 4.4. Replays Grunt's copy:compose + copy:compiled passes in writeBundle. Defined above
@@ -1446,7 +1572,70 @@ export default defineConfig({
              * version. This entry is a pin, not a decision about either.
              */
             "lodash": fromSrc("libs/lodash-3.10.1-min.js")
-        }
+        },
+
+        /*
+         * ==== 5.1 -- resolve.extensions AND THE .jsm EXTENSION ====
+         *
+         * TAKEN BY 5.1, from the paragraph below the alias table that said this had no owner.
+         *
+         * 31 .jsm and 15 .jsx files live under src/main/js -- 46, not the 44 tasks.md:82 states;
+         * counted, not recalled. Every one of the 46 is already ESM (import/export) and NOT ONE
+         * calls define(), so the split is perfectly clean along the extension and this task is
+         * resolution mechanics only. Nothing in 5.1 converts a module. 5.4 still owns the 203
+         * that do call define().
+         *
+         * DECIDED, NOT ASSUMED: the extension stays and the config adapts, rather than the 31
+         * .jsm files being renamed to .js. The rename looks free -- no import specifier anywhere
+         * in src/main/js or src/test/js names an extension, so it needs zero import edits, and
+         * Grunt already renames these files to .js on the way into the shipped tree -- but it is
+         * not. Grunt is still live and task 7.1, not this one, owns Gruntfile.js. A renamed file
+         * falls out of babel:transpileJSM (Gruntfile.js:137, the .jsm/.jsx glob) and into
+         * babel:transpileJS (Gruntfile.js:129, the plain-.js glob). Both inherit the shared
+         * babel options block at Gruntfile.js:113-124, whose @babel/preset-env sets no `modules`
+         * option and therefore defaults to "auto"; what separates the two targets is only that
+         * transpileJSM adds @babel/plugin-transform-modules-amd on top. Probed with the
+         * Gruntfile's exact options against
+         * `import x from "./y"; export default x;`:
+         *
+         *   transpileJSM (today)           define(["exports", "./y"], function (_exports, _y) {
+         *   transpileJS  (after a rename)  "use strict"; exports.default = void 0;
+         *
+         * CommonJS, not AMD, for all 31 modules, out of a build that still exits 0. Renaming is
+         * the right end state and should follow 7.1; doing it here would break the Grunt tree
+         * silently in the interval.
+         *
+         * WHY THE LIST IS SPELLED OUT IN FULL. resolve.extensions REPLACES Vite's default, it
+         * does not extend it. Vite 5's default is
+         * [".mjs", ".js", ".mts", ".ts", ".jsx", ".tsx", ".json"], and dropping any member here
+         * -- .json above all -- would break imports that have nothing to do with this task. So
+         * the default is reproduced verbatim and ".jsm" inserted beside ".jsx", its sibling.
+         *
+         * ORDER IS NOT LOAD-BEARING TODAY, checked rather than assumed -- but check it the way
+         * it is meant, because the loose reading gives the opposite answer. What matters is the
+         * PATH STEM, directory plus name: across src/main/js and src/test/js no <dir>/<name>
+         * exists under two of .js/.jsm/.jsx, so no lookup this list drives is ambiguous. BARE
+         * BASENAMES do collide -- index, main, DashboardView, AuthenticationService,
+         * ScriptsService, ServicesService, URLHelper -- so a `-printf '%f'` version of this
+         * check returns seven hits and looks like a contradiction. It is not; they are in
+         * different directories.
+         *
+         * WHICH WAY THE ORDER CUTS, AND 5.4 IS WHO IT COSTS. ".js" precedes ".jsm" in this
+         * list. If 5.4 ever lands a converted foo.js beside a still-present foo.jsm, the .js
+         * silently wins -- and mid-conversion the .js is the AMD file, so the build would
+         * quietly prefer exactly the module the conversion was replacing. Delete the .jsm in
+         * the same commit that creates the .js, or reverse these two entries.
+         *
+         * WHAT IT FIXES, MEASURED. Without it the 5.1 spike died at
+         *   [vite:load-fallback] Could not load .../src/main/js/store/index
+         * which corrects the claim in the paragraph below the alias table that nothing fails
+         * loudly. It is only half right, and the wrong half is worth knowing: an id that reaches
+         * a .jsm THROUGH AN ALIAS fails loudly, because alias resolution hands Rollup a concrete
+         * path and load-fallback then cannot open it. It is the UNALIASED bare id that degrades
+         * to the silent "unresolved dependency, treated as external" warning. Both cases need
+         * this list; only one of them would ever have told you so.
+         */
+        extensions: [".mjs", ".js", ".mts", ".ts", ".jsx", ".jsm", ".tsx", ".json"]
     },
 
     /*
@@ -1538,13 +1727,15 @@ export default defineConfig({
      *                            sufficient on its own. Whoever owns them will need the
      *                            commonjsOptions treatment in build below, or a shim.
      *
-     * NOT DONE BY 4.3, AND IT STILL NEEDS AN OWNER: resolve.extensions and the .jsm extension,
-     * which this file's own 4.1 header assigns to 4.3. tasks.md:69 scopes 4.3 to the 12 map
-     * bindings and names nothing else, so it was left out here deliberately rather than done
-     * silently. Nothing fails loudly for it: Vite's default resolve.extensions has no .jsm and
-     * esbuild has no loader for it, and the react plugin's default include does not match .jsm
-     * either, so the .jsm files get neither resolution nor a JSX transform. The closest fitting
-     * owner is task 5.2, "stop transpiling the .jsm/.jsx files to AMD".
+     * NOT DONE BY 4.3, AND NOW OWNED: resolve.extensions and the .jsm extension, which this
+     * file's own 4.1 header assigned to 4.3. tasks.md:69 scopes 4.3 to the 12 map bindings and
+     * names nothing else, so it was left out there deliberately rather than done silently.
+     * TASK 5.1 TOOK IT -- not 5.2, which is what this paragraph used to guess -- and it is
+     * settled in the resolve.extensions block inside resolve above. Of the three failures
+     * predicted here, only one needed fixing and the framing of a second was wrong: no .jsm
+     * contains JSX so the react plugin's include was left alone, vite:esbuild never sees a .jsm
+     * so no loader was needed, and the "nothing fails loudly" claim holds only for UNALIASED
+     * ids. The measurements behind each are in that block and in the react() comment above.
      */
 
     /*

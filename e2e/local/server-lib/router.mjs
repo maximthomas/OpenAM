@@ -44,6 +44,7 @@
  * HTTP parser allows through — look like a malformed URL.
  */
 
+import { proxyRequest } from "./dev-proxy.mjs";
 import { serveRest } from "./rest.mjs";
 import { serveStatic } from "./static-tree.mjs";
 
@@ -54,11 +55,50 @@ export const CONTROL_MOUNT = "/local-api-server";
 export const RESET_PATH = `${CONTROL_MOUNT}/reset`;
 
 /**
+ * Where the XUI is mounted for a given context, and the test for being under a mount.
+ *
+ * Exported because the WebSocket upgrade never reaches the handler below — `node:http` emits
+ * `'upgrade'` on the server instead — so server.mjs has to make the same decision on its own, and
+ * two copies of "is this the XUI?" that could disagree about `/openam/XUIsomething` is precisely
+ * the bug worth spending an export to make impossible.
+ *
+ * Exact match or match followed by a slash: `/{context}/XUI` and `/{context}/json` are siblings,
+ * not nested, so the XUI mount can never capture a REST path, and `/openam/XUIsomething` is under
+ * neither.
+ */
+export const xuiMountFor = (context) => `/${context}/XUI`;
+export const isUnderMount = (pathname, mount) =>
+    pathname === mount || pathname.startsWith(`${mount}/`);
+
+/**
+ * The path of a request target, or `null` if it is not one.
+ *
+ * The same parse as the handler below — the fixed base, for the reason in this file's header — so
+ * that the upgrade path and the request path cannot disagree about what a target means. Splitting
+ * on `"?"` instead is close enough to look right and differs on an absolute-form target
+ * (`GET http://host/openam/XUI/…`, which a proxy is allowed to send) and on a `#`.
+ */
+export function requestPath (target) {
+    try {
+        return new URL(target, PARSE_BASE).pathname;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * `state` is what the server starts from — already built, so a capture this server cannot read
  * stops it before it takes the port. `rebuildState` is how the reset endpoint gets another one:
  * a zero-argument call answering with a *fresh* baseline, built the same way the first one was.
+ *
+ * `root` and `devServer` are the two ways to serve the XUI and exactly one of them is set;
+ * `inflight` is the process's set of outbound requests, which only dev-server mode has and which
+ * only server.mjs's shutdown reads. All three are null in the mode that does not use them, so this
+ * signature says which mode a handler is in without a flag to keep in step with them.
  */
-export function createRequestHandler ({ root, context, state, rebuildState }) {
+export function createRequestHandler ({
+    root, devServer = null, inflight = null, context, state, rebuildState,
+}) {
     // Both refusals are at construction rather than at the request that trips over them, because
     // server.mjs builds the handler before it binds the socket: the operator gets the same
     // one-line startup error a bad --port gives them, instead of a listening server that answers
@@ -72,8 +112,16 @@ export function createRequestHandler ({ root, context, state, rebuildState }) {
         throw new Error(`createRequestHandler needs rebuildState: it is how ${RESET_PATH} builds `
             + "the baseline it returns to.");
     }
+    // The flag's exclusivity, restated where it is consumed (task 4.10). Exactly one thing serves
+    // the XUI: a tree on disk, or a Vite dev server. Both would be a silent precedence; neither is
+    // a server that answers every module request with a stack trace about `undefined`.
+    if ((root === null || root === undefined) === (devServer === null)) {
+        throw new Error("createRequestHandler serves the XUI from exactly one of root (a built "
+            + "tree) or devServer (a proxy to a running Vite dev server), and was given "
+            + `${devServer === null ? "neither" : "both"}.`);
+    }
 
-    const xuiMount = `/${context}/XUI`;
+    const xuiMount = xuiMountFor(context);
     const jsonMount = `/${context}/json`;
 
     /**
@@ -178,13 +226,19 @@ export function createRequestHandler ({ root, context, state, rebuildState }) {
             return sendText(req, res, 400, "unparseable request target\n");
         }
 
-        const isUnder = (mount) => url.pathname === mount || url.pathname.startsWith(`${mount}/`);
+
+        const isUnder = (mount) => isUnderMount(url.pathname, mount);
 
         if (isUnder(CONTROL_MOUNT)) {
             return serveControl(req, res, url);
         }
         if (isUnder(xuiMount)) {
-            return serveStatic(req, res, { root, mount: xuiMount, url });
+            // The one branch dev-server mode changes, and the reason the REST surface, the control
+            // mount, the /{context}/ redirect and the 404 below are untouched by construction
+            // rather than by a filter inside the proxy that could drift from this dispatch order.
+            return devServer
+                ? proxyRequest(req, res, { devServer, mount: xuiMount, inflight })
+                : serveStatic(req, res, { root, mount: xuiMount, url });
         }
         if (isUnder(jsonMount)) {
             // The path below the context, which is the path the capture records and the only one

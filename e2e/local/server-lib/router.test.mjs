@@ -899,4 +899,27 @@ describe("the control surface", () => {
         assert.throws(() => createRequestHandler({ root: CAPTURE_DIR, context: "openam", state }),
             /rebuildState/);
     });
+
+    it("refuses a handler that would serve the XUI from both places, or from neither", () => {
+        // The flag's exclusivity restated where it is consumed (task 4.10). Both would be a silent
+        // precedence; neither is a server that answers every module request with a stack trace.
+        const state = buildBaselineState(CAPTURE_DIR, { context: "openam", hostname: "localhost" });
+        const devServer = { origin: "http://127.0.0.1:5173", hostname: "127.0.0.1", port: 5173 };
+
+        assert.throws(() => createRequestHandler({
+            root: CAPTURE_DIR, devServer, context: "openam", state, rebuildState: () => state,
+        }), /exactly one of root .* or devServer .* and was given both/);
+
+        assert.throws(() => createRequestHandler({
+            root: null, context: "openam", state, rebuildState: () => state,
+        }), /and was given neither/);
+
+        // And accepts each on its own.
+        assert.doesNotThrow(() => createRequestHandler({
+            root: CAPTURE_DIR, context: "openam", state, rebuildState: () => state,
+        }));
+        assert.doesNotThrow(() => createRequestHandler({
+            root: null, devServer, context: "openam", state, rebuildState: () => state,
+        }));
+    });
 });

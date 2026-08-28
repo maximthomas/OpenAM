@@ -22,6 +22,7 @@
  *     npm run local-server -- path/to/www.zip    # serve some other zip
  *     npm run local-server -- path/to/outDir     # serve a directory, e.g. a Vite outDir
  *     node local/server.mjs --port 9000 --context am
+ *     node local/server.mjs --dev-server http://127.0.0.1:5173   # live reload; see below
  *
  * The second backend from D13. `openam-up.sh` gives you a real AM in three to eight minutes and a
  * container runtime; this gives you the same URLs in about a second and neither. It is what the
@@ -40,6 +41,13 @@
  * inputs `xui-deploy.sh` takes, so the build proved against this server is the build deployed to
  * AM rather than something assumed to match it. A zip is unpacked to a temp directory that this
  * file removes on the way out; see server-lib/xui-source.mjs.
+ *
+ * **`--dev-server` is the third input, and it is not a third backend** (task 4.10). It proxies the
+ * XUI half — and only that half — to a Vite dev server the contributor started, so a source edit is
+ * visible without a build while the REST half stays byte-identical. It is a shorter inner loop laid
+ * on the fast backend, so it is one step *further* from the acceptance oracle than this server
+ * already is: what it serves is unbundled dev modules, which no deployment ever receives. The suite
+ * is not run against it. See server-lib/dev-proxy.mjs, and local/README.md for the two terminals.
  *
  * **What it answers today: the XUI tree, the administrative reads, a session's whole life, the two
  * documents the bootstrap reads, realm and service administration, and the end user's profile.**
@@ -86,8 +94,11 @@ import { rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { closeProxyConnections, proxyUpgrade } from "./server-lib/dev-proxy.mjs";
 import { parseArgs, USAGE } from "./server-lib/options.mjs";
-import { CONTROL_MOUNT, createRequestHandler, RESET_PATH } from "./server-lib/router.mjs";
+import {
+    CONTROL_MOUNT, createRequestHandler, isUnderMount, requestPath, RESET_PATH, xuiMountFor,
+} from "./server-lib/router.mjs";
 import { buildBaselineState } from "./server-lib/state.mjs";
 import { resolveXuiSource } from "./server-lib/xui-source.mjs";
 
@@ -164,13 +175,19 @@ async function main () {
     process.on("SIGINT", () => onSignal("SIGINT"));
     process.on("SIGTERM", () => onSignal("SIGTERM"));
 
-    const xui = await resolveXuiSource(options.xui, {
-        repoRoot: REPO_ROOT,
-        signal: stopping.signal,
-        // Not `xui.staging` after the fact: the handler above may need this while the unpack it
-        // belongs to is still running, which is before there is an `xui` to read it from.
-        onStaging: (dir) => { staging = dir; },
-    });
+    // In dev-server mode there is nothing to resolve and nothing to unpack, and skipping it is
+    // not an optimisation: resolving would name the built zip nobody asked for and unpack ~650
+    // files that can never be served, paying the whole startup cost this mode exists to avoid.
+    // `staging` stays null, so the rmSync above and the cleanup below stay correct as no-ops.
+    const xui = options.devServer
+        ? { root: null, source: null, staging: null, cleanup: async () => {} }
+        : await resolveXuiSource(options.xui, {
+            repoRoot: REPO_ROOT,
+            signal: stopping.signal,
+            // Not `xui.staging` after the fact: the handler above may need this while the unpack it
+            // belongs to is still running, which is before there is an `xui` to read it from.
+            onStaging: (dir) => { staging = dir; },
+        });
     try {
         await serve(options, xui, stopping.signal);
     } finally {
@@ -206,13 +223,24 @@ async function serve (options, { root, source, staging }, stopping) {
     });
     const state = buildState();
 
+    // What dev-server mode holds open that the built-tree mode does not, and the reason it has to
+    // be held at all: `server.closeAllConnections()` does not close a socket that has been detached
+    // by an upgrade, so one browser tab with HMR connected keeps this process alive after
+    // `server.close()` and Ctrl-C appears to hang with nothing on screen saying why. Measured, not
+    // assumed -- server-lib/dev-proxy.test.mjs asserts both halves of that.
+    const upgrades = new Set();
+    const inflight = new Set();
+
     const handle = createRequestHandler({
         root,
+        devServer: options.devServer,
+        inflight,
         context: options.context,
         state,
         rebuildState: buildState,
     });
     const jsonMount = `/${options.context}/json`;
+    const xuiMount = xuiMountFor(options.context);
 
     const server = createServer((req, res) => {
         res.on("finish", () => logRequest(req, res, jsonMount));
@@ -225,6 +253,33 @@ async function serve (options, { root, source, staging }, stopping) {
             }
             // Too late to say anything the client will parse as a response.
             res.destroy();
+        });
+    });
+
+    // **The second half of dev-server mode, and the half that is silently missing when HMR does
+    // not reload.** `node:http` does not route `Connection: Upgrade` through the handler above --
+    // it emits this instead, and destroys the socket if nothing is listening. So none of the
+    // router, the logger or the 500 path above can ever see the HMR WebSocket, and its absence
+    // produces no log line at all, because that line is written from `res.on("finish")` and there
+    // is no `res`.
+    //
+    // The same mount predicate the router uses, imported rather than rewritten: two copies that
+    // could disagree about `/{context}/XUIsomething` is the bug this export exists to prevent.
+    // Anything else gets a status line by hand -- a bare destroy is a connection reset with no
+    // reason, which reads to a client exactly like this server not existing.
+    server.on("upgrade", (req, socket, head) => {
+        const path = requestPath(req.url);
+        if (!options.devServer || path === null || !isUnderMount(path, xuiMount)) {
+            log(`404 ${req.method} ${req.url}`);
+            socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+            return socket.destroy();
+        }
+        // The log line is proxyUpgrade's to write, once the outcome is known: a `101` here would
+        // be printed before the dev server had answered, and would then still be printed when it
+        // answered 502 -- which is the opposite of what the troubleshooting note in
+        // local/README.md tells a contributor to read it for.
+        proxyUpgrade(req, socket, head, {
+            devServer: options.devServer, mount: xuiMount, upgrades, inflight, log,
         });
     });
 
@@ -253,9 +308,15 @@ Something is on it -- an earlier run of this server, or the AM container if you 
 
     // The source, not the root: after a zip, `root` is a temp path that names nothing anyone
     // pointed at. The staging line is there so an unpacked tree is never a mystery directory.
-    log(`local API server -- serving ${source}${staging
-        ? `\n  unpacked to ${staging}  (removed on stop)`
-        : ""}
+    //
+    // In dev-server mode there is no source and no staging -- what it serves is a running process
+    // somebody else started, so the banner names that and says who has to start it, because "every
+    // XUI request 502s" is otherwise diagnosed from the request log.
+    log(`local API server -- ${options.devServer
+        ? `proxying the XUI to ${options.devServer.origin}
+  that dev server is yours to start, with --base=/${options.context}/XUI/
+  the REST surface below is unaffected either way`
+        : `serving ${source}${staging ? `\n  unpacked to ${staging}  (removed on stop)` : ""}`}
 
   XUI   ${origin}/${options.context}/XUI/
   REST  ${origin}/${options.context}/json/   (${state.realms.size} realm(s) from the capture; 501
@@ -273,6 +334,9 @@ Ctrl-C to stop.`);
 
     await new Promise((resolveClosed) => {
         const close = () => {
+            // Before closeAllConnections, not instead of it: that call reaches the connections the
+            // server still owns, and an upgraded socket is precisely one it has handed away.
+            closeProxyConnections({ upgrades, inflight });
             // Without this, an idle keep-alive connection from the browser holds the port for its
             // full timeout after close() is called, and the next start fails with EADDRINUSE for
             // reasons that look nothing like the cause. Node 18.2 and later.

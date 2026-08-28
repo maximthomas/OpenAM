@@ -55,6 +55,13 @@ option means the suite gets run rarely, which hollows it out just as effectively
 gate does not move — the migration's task 10.1 requires the phase-0 suite green against a Vite-built
 XUI *deployed to this instance*, and no `@local-server` run satisfies it.
 
+**There are two backends, not three.** The local server can also proxy its XUI half to a Vite dev
+server for live reload, which is a shorter inner loop *on* that backend rather than another thing to
+be green against — see [Live reload against a Vite dev
+server](#live-reload-against-a-vite-dev-server). It serves unbundled dev modules that no deployment
+ever receives, so it sits one step further from the oracle than the row above already does, and the
+suite is not run against it at all.
+
 ## Prerequisites
 
 - Docker running, and roughly 3 GB free for the AM container.
@@ -137,6 +144,11 @@ tests — see "Reset between tests" below. It resets that server and nothing her
 share no state.
 
 ## Getting a built XUI
+
+(For the inner loop there is a third option that needs no artifact at all: `--dev-server` proxies the
+XUI to a running Vite dev server, so there is no zip to build and nothing to unpack. It is for
+editing source, not for judging a build — see [Live reload against a Vite dev
+server](#live-reload-against-a-vite-dev-server).)
 
 Both backends serve the same artifact — `xui-deploy.sh` copies it into the container, the local
 server unpacks it — and producing it needs neither a container nor the war. The
@@ -233,6 +245,8 @@ The second backend: the XUI and the AM REST surface on one origin, and no AM at 
 npm run local-server                     # serves the built openam-ui-ria-<version>-www.zip
 npm run local-server -- path/to/www.zip  # serves some other zip
 npm run local-server -- path/to/outDir   # serves a directory, e.g. a Vite build
+
+npm run local-server -- --dev-server http://127.0.0.1:5173   # live reload; see below
 ```
 
 Those are `xui-deploy.sh`'s three inputs, deliberately — the artifact you point at this server is
@@ -258,7 +272,11 @@ is `""` and the context is derived from `location.pathname`, so it asks whatever
 under the path it was served from. That is what lets one build run against either backend unmodified.
 
 `--port`, `--context`, `--host` and the zip or tree each override their default, as do `OPENAM_LOCAL_PORT`,
-`OPENAM_LOCAL_CONTEXT`, `OPENAM_LOCAL_HOST` and `OPENAM_LOCAL_XUI`. Any context is accepted but
+`OPENAM_LOCAL_CONTEXT`, `OPENAM_LOCAL_HOST` and `OPENAM_LOCAL_XUI`. `--dev-server`
+(`OPENAM_LOCAL_DEV_SERVER`) is the one that is *not* independent of the others: it replaces the zip
+or tree rather than joining it, so it cannot be given with `--xui` or with a positional path, and
+both spellings on one command line are refused at startup rather than resolved by a precedence
+nobody would guess. Any context is accepted but
 `local-api-server`, which is the control prefix in the table above and is refused at startup rather
 than left to shadow both AM mounts. Port 8090 avoids both 8080 (the
 AM container) and 8081 (`sp.mycompany.org` in the SAML specs), so this and the instance above can run
@@ -360,6 +378,85 @@ Two further gaps are not spec-shaped, and matter more than the list:
   are the SMS sub-schema routes ([NOTES-sms.md](NOTES-sms.md)), password change, KBA and
   self-registration; none is scheduled.
 
+### Live reload against a Vite dev server
+
+> **The transport is in place; the UI cannot boot under it yet.** The application source is still
+> AMD until the migration's groups 5 and 6 land, so a Vite dev server cannot serve a running XUI
+> today and the recipe below will not give you a working page. What is finished, and tested, is the
+> proxying — read *What is proved today* at the end of this section before you spend time on it.
+
+The XUI half of this backend, served by a Vite dev server instead of from a built tree, so a source
+edit shows up in the browser without a package-and-deploy cycle. The REST half is unchanged and
+still comes from `capture/`.
+
+**Two terminals, and the order matters.** This server does not start Vite — see below for why.
+
+```
+# terminal 1, from openam-ui/openam-ui-ria
+npx vite --base=/openam/XUI/ --port 5173
+
+# terminal 2, from e2e/
+npm run local-server -- --dev-server http://127.0.0.1:5173
+```
+
+**`base` must be `/{context}/XUI/`, with the trailing slash, and it must agree with `--context`.**
+That is not cosmetic and it is not negotiable (design.md D14). `Constants.host` is `""` and
+`Constants.context` is derived from `location.pathname`, so the XUI asks whatever origin served it,
+under the path it was served from — it has no configurable backend URL to point elsewhere. `base` is
+what every asset URL Vite generates is prefixed with, so a dev server on `/` emits `/@vite/client`
+and `/src/…`, which are under neither mount here and get the 404 that names all three surfaces: the
+document loads and not one module does. If you run this server with `--context am`, the `base` has
+to be `/am/XUI/` to match.
+
+Note that `vite.config.js`'s own `base` is `./` for the *build*, deliberately, so that one built tree
+works under whatever context path serves it. The two differ and must; pass `--base` on the dev
+server's command line rather than editing the config, or the build breaks.
+
+**The path is forwarded whole, in both directions, query included** — no rewriting, because `base`
+already is the mount. **`Host` is forwarded unchanged**, which matters more than it looks: Vite's HMR
+client builds the socket URL it connects back to out of the host it was served under, so rewriting it
+would send the browser's HMR socket straight to 5173 and around this server — a second origin, which
+is the thing D14 exists to prevent.
+
+**HMR is a WebSocket, and this server forwards the upgrade** (`node:http`'s `'upgrade'` event, not
+the ordinary request path). Nothing about it appears in the request log beyond a single `101` line,
+because a log line is written when a *response* finishes and an upgrade has none.
+
+**If `--host` is not a loopback address**, note first that this then relays anything on the network
+to the dev server under that one path prefix — the target is fixed at startup from your own flag, so
+it is not an open proxy, but it is a door. Vite also applies its own `server.allowedHosts` check to the
+host this server forwards, and its default admits IPv4 literals and `localhost` and little else. So
+reaching this server by a name — `openam.example.org`, the alias the deployed instance uses — gets a
+`Blocked request. This host is not allowed` from Vite, whose message names a Vite option and says
+nothing about the proxy. Add the name to `server.allowedHosts` in the dev config.
+
+**Why this server does not start Vite.** It would be one command instead of two, and it would make
+the `base`/`--context` disagreement above impossible. It would also make `npm run local-server`
+depend on `openam-ui/openam-ui-ria/node_modules` being installed, which it does not today; it would
+put Vite's compile errors either interleaved with this server's request log or swallowed entirely;
+and it would make an orphaned Vite holding a port after a crash this server's problem. The trade was
+taken deliberately in favour of two processes that fail independently and say so.
+
+**Not for judging a build, and not a third backend.** What Vite serves in dev is unbundled source
+modules with an HMR client injected — not the artifact any deployment receives, and not the artifact
+task 10.1 signs off. There is no `@dev-server` spec tag, no npm script that runs Playwright against
+it, and no row of its own in [the table above](#two-backends-and-which-to-reach-for), on purpose:
+each of those would let a green run against it read as evidence about a build. Point the suite at a
+built tree — [Running the suite](#running-the-suite-against-either-backend).
+
+**What is proved today, and what is not.** The proxy is exercised by
+`local/server-lib/dev-proxy.test.mjs` (in `npm run test:server`) against a stand-in origin: the path
+and query cross unrewritten, `Host` is forwarded, `/{context}/json/` and the control mount are still
+answered locally, the WebSocket upgrade reaches the upstream with its subprotocol and query intact,
+and both buffered head buffers survive the hop. **None of that is a running XUI.** The application
+source is still AMD until the migration's groups 5 and 6 land, so a Vite dev server cannot boot this
+UI yet, and neither scenario of the *Development server with live reload* requirement is exercised:
+*Source change visible without redeploying* has its transport but nothing to transport, and
+*Templates served in development* — a template fetched by path, with a theme override — is not
+addressed here at all. The 229 runtime templates and the locale JSON are not in the module graph, so
+serving them is a `publicDir`-or-plugin question in `vite.config.js` rather than a proxy question,
+and it is still open.
+
 ### Reset between tests
 
 ```
@@ -414,6 +511,11 @@ npm run test:xui                                    # the deployed instance: 57 
 OPENAM_BASE_URL=http://127.0.0.1:8090/openam \
   npx playwright test xui/ --grep @local-server     # the local server: 23 tests, 5 files
 ```
+
+**The suite is not run against `--dev-server`.** There is no tag for it and no script that does it.
+Dev-mode assets are unbundled source modules with an HMR client in them, so a green run there would
+be further from acceptance than a `@local-server` run, not closer — it would be a claim about a
+thing no deployment contains. Point a run at a built tree, in either of the two forms above.
 
 `OPENAM_BASE_URL` defaults to `http://openam.example.org:8080/openam` — the instance above — in
 `common/openam-commons.mjs`. `--grep @local-server` is the whole selection: what a spec declares is
@@ -479,3 +581,18 @@ docker exec openam-idp cat /usr/openam/config/openam/debug/CoreSystem
 
 If `openam-up.sh` reports the container never became healthy, that is Tomcat failing to start;
 `docker logs openam-idp` is the place to look.
+
+**Every XUI request 502s, under `--dev-server`.** Nothing is answering at the origin you named. Vite
+is not up yet — start it first — or it is on a different port than you told this server: a busy 5173
+makes Vite increment silently, so read the port off its own banner rather than assuming. The 502 body
+names the origin it tried and the error code.
+
+**The page loads under `--dev-server` but nothing reloads.** The HMR WebSocket is not connecting.
+Check that Vite's `base` is `/{context}/XUI/` with the trailing slash and agrees with `--context`;
+check for a `101` line in this server's log when the page loads, whose absence means the upgrade
+never arrived; and if `--host` is not a loopback address, check Vite's `server.allowedHosts` — its
+refusal names a Vite option and not this proxy.
+
+**Assets 404 under `--dev-server` while the document loads.** Vite's `base` and this server's
+`--context` disagree, so every generated URL is prefixed with a path this server does not serve. It
+looks like a broken build and is a mismatched flag.

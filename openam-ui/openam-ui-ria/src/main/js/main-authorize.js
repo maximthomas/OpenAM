@@ -33,6 +33,16 @@ require.config({
             "underscore"   : "lodash"
         }
     },
+    /*
+     * TASK 5.2. Superseded by vite.config.js's resolve.alias, and deliberately still here -- see
+     * the longer note in main.js. This block binds six ids; all six have alias entries.
+     *
+     * Two things measured here that main.js's block does not show. `redux` is inert in this
+     * entry: nothing it loads imports redux (only store/index.jsm and store/reducers/index.jsm
+     * do, and they are reached from main.js alone). And `text` has no successor at all --
+     * requirejs-text is an AMD loader plugin that cannot be imported under ESM; TASK 5.5 owns
+     * the `text!` call sites, including the runtime-built one in this file.
+     */
     paths: {
         "handlebars": "libs/handlebars-4.7.7",
         "i18next": "libs/i18next-1.7.3-min",
@@ -41,6 +51,20 @@ require.config({
         "redux": "libs/redux-3.5.2-min",
         "text": "libs/text-2.0.15"
     },
+    /*
+     * TASK 5.2. All three entries here are superseded, and two of the three were already dead.
+     *
+     * `handlebars` has a shim in THIS file and in main-device.js but NOT in main.js -- a
+     * divergence between the three entry points, and a harmless one: handlebars/dist/handlebars.js
+     * calls define(), so RequireJS ignores the exports field anyway, and the global it sets is
+     * `Handlebars`, not `handlebars`, so if it ever became live it would resolve to undefined.
+     * `lodash` is dead for the same reason. Only i18next -> i18n was load-bearing, and its
+     * "handlebars" dep is fiction: i18next.min.js contains zero occurrences of Handlebars.
+     *
+     * i18next is now vite.config.js's alias to src/main/js/shims/i18next.js, which fixes both the
+     * specifier (the bare name resolves to a Node build that requires fs) and the ordering (it
+     * reads jQuery from a global at evaluation and falls back SILENTLY if it is missing).
+     */
     shim: {
         "handlebars": {
             exports: "handlebars"

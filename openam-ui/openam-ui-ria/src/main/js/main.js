@@ -33,6 +33,27 @@ require.config({
             "underscore"        : "lodash"
         }
     },
+    /*
+     * TASK 5.2 -- SUPERSEDED BY vite.config.js, AND DELIBERATELY STILL HERE.
+     *
+     * Every id below now has a `resolve.alias` entry in vite.config.js (the block headed
+     * "5.2 -- THE RUNTIME LIBRARY BINDINGS"), so the ES module build resolves it without this
+     * config. This block is NOT deleted because the tree is still AMD: RequireJS is what loads
+     * `main` today, and removing these paths breaks the running UI for no gain. TASK 5.4 deletes
+     * the whole require.config call when it converts the 203 define() modules and settles how the
+     * three entry points are loaded.
+     *
+     * Reading the two together: the ids here map to files under libs/; the alias entries map the
+     * SAME ids to npm packages, to shim modules in src/main/js/shims/, or to the vendored files
+     * under src/main/js/libs/. NOTES-shims.md has the per-library table.
+     *
+     * Nine ids are not npm package names and stay bound by alias rather than being renamed at
+     * their call sites, because the commons packages' published esm/ trees import them by these
+     * same AMD ids and AM cannot edit those files.
+     *
+     * "text" is the one id with no alias and no successor: requirejs-text is an AMD loader plugin
+     * that cannot be imported at all under ESM. TASK 5.5 owns its 8 `text!` call sites.
+     */
     paths: {
         "autosizeInput": "libs/jquery.autosize.input.min",
 
@@ -77,6 +98,36 @@ require.config({
         "text"             : "libs/text-2.0.15",
         "xdate"            : "libs/xdate-0.8-min"
     },
+    /*
+     * TASK 5.2 -- WHAT REPLACED THIS, ENTRY BY ENTRY.
+     *
+     * `deps` was load order. Most of it is now carried by the import graph for free, because each
+     * library's own CommonJS branch require()s what the shim declared -- backbone.paginator,
+     * backbone-relational, backgrid, backgrid-filter, backgrid-selectall, selectize and
+     * bootstrap-datetimepicker are all in that class. What the graph CANNOT carry is a dependency
+     * passed through a GLOBAL, because jQuery's CommonJS branch never assigns window.jQuery.
+     * Those live in src/main/js/shims/, one file per id, aliased in front of it in
+     * vite.config.js: jquery, backbone, bootstrap, i18next, autosizeInput, doTimeout,
+     * bootstrap-tabdrop, popoverclickaway, sortable, clockPicker, jsonEditor, backgrid.paginator.
+     *
+     * `exports` mostly replaced nothing, because it was already dead. Measured from the bytes:
+     * nine of the fourteen exports fields have no effect TODAY (RequireJS ignores `exports` when
+     * the file calls define(), which backbone, backgrid, form2js, js2form, lodash, moment, qrcode,
+     * spin and xdate all do), and three more resolve to undefined because the named global is
+     * never set (clockPicker sets $.fn.clockpicker, doTimeout sets $.doTimeout, autosizeInput
+     * sets $.fn.autosizeInput). Only two were load-bearing -- i18next -> i18n and
+     * jsonEditor -> JSONEditor -- and both are handled by their shim.
+     *
+     * Two `deps` entries here are fiction and were not reproduced: selectize's
+     * ["jquery","sifter","microplugin"] duplicates its own UMD's requires, and the "handlebars"
+     * half of i18next's deps is wrong outright -- i18next.min.js contains zero occurrences of
+     * Handlebars.
+     *
+     * The `react-input-autosize` and `react-select` entries are NOT superseded yet. They are
+     * TASK 5.3's, together with the reactAutosizeInputDep / reactSelectDep modules below.
+     *
+     * Deleted by 5.4 with the rest of require.config, not here.
+     */
     shim: {
         "autosizeInput": {
             deps: ["jquery"],

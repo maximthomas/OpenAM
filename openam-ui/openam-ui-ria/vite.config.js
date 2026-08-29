@@ -73,6 +73,17 @@
  *                                  resolves. Nothing in 5.1 converts a module; it is resolution
  *                                  mechanics only.
  *
+ *   5.2  resolve.alias (again)     the 26 require.config.shim entries in main.js:80-172 and the
+ *                                  paths ids they name. LANDED as 24 further alias entries, 13
+ *                                  shim modules under src/main/js/shims/, requireReturnsDefault
+ *                                  on build.commonjsOptions, and the sloppyModeLibraries plugin.
+ *                                  It is the RESOLUTION half only -- no AMD module is converted
+ *                                  here, that is 5.4 -- so NOTHING 5.2 landed is exercised yet and
+ *                                  a green build says nothing about it, per the note just below.
+ *                                  The alias block carries the reasoning; the ordering invariant
+ *                                  it depends on is enforced by assertAliasOrdering rather than
+ *                                  left to a comment. The two react rows are 5.3's and untouched.
+ *
  * READ BEFORE EDITING: NOTES-vite-build.md in this directory. In particular section 3 — Vite does
  * not reject AMD, it accepts it, exits 0 and emits a bundle that does nothing. Until the AMD to
  * ESM conversion in group 5 lands, a green `vite build` here is NOT evidence that the output
@@ -150,6 +161,19 @@ if (parseInt(resolvedViteVersion, 10) !== EXPECTED_VITE_MAJOR) {
  * "type", so it is bundled).
  */
 const fromSrc = (id) => fileURLToPath(new URL(`./src/main/js/${id}`, import.meta.url));
+
+/*
+ * TASK 5.2. The same thing for a file inside an npm package. Used only where a shim in
+ * src/main/js/shims/ has to reach the REAL library whose AMD id is aliased to that shim -- see
+ * the PREFIX CAPTURE paragraph in the 5.2 alias block for why those four cannot simply be
+ * written as bare subpath strings inside the shim.
+ *
+ * It resolves eagerly, at config load, so a package that is declared but not installed fails
+ * with a clear MODULE_NOT_FOUND naming the specifier, rather than as a Rollup "unresolved
+ * import" warning that only becomes a 404 at runtime.
+ */
+const requireFromConfig = createRequire(import.meta.url);
+const fromPkg = (specifier) => requireFromConfig.resolve(specifier);
 
 /*
  * ==== 4.4 -- STATIC ASSETS: THE COMPOSITION STEP GRUNT USED TO DO ====
@@ -1121,6 +1145,214 @@ const assertSourcesPresent = (root) => {
     }
 };
 
+/*
+ * ==== 5.2 -- TWO LIBRARIES THAT ONLY RUN IN SLOPPY MODE ====================================
+ *
+ * These two work today for one reason: RequireJS injects them as classic <script> elements, and
+ * a classic script is SLOPPY MODE. Everything inside an ES module is strict, and strictness is
+ * lexical, so once either file is bundled it is strict no matter what wraps it -- there is no
+ * Rollup or Vite option that re-sloppies a module. `moduleContext` does not help either: both
+ * constructs sit inside a nested IIFE, not at a module's top level.
+ *
+ * MEASURED, by building each id and evaluating the bundle under jsdom:
+ *   i18next     -> TypeError: Cannot read properties of undefined (reading 'jQuery')
+ *   jsonEditor  -> TypeError: 'caller', 'callee', and 'arguments' properties may not be
+ *                  accessed on strict mode functions
+ *
+ * The change owner chose a build-time rewrite over patching the bytes on disk. That keeps
+ * src/main/js/libs/jsoneditor-0.7.23-custom.js byte-exact against the md5 pinned in
+ * src/main/js/libs/README.md, and keeps i18next an ordinary npm dependency rather than making it
+ * a NEW vendored file under D20 -- which would have been the first addition to that register
+ * since 4.7, and a new hole in `npm audit`, to fix two tokens.
+ *
+ * EVERY REPLACEMENT ASSERTS ITS MATCH COUNT. Each token below occurs exactly once in its file
+ * today (verified). A version bump that moves or reformats one FAILS THE BUILD here, naming the
+ * file and the token, instead of silently shipping a library that throws on first use. That is
+ * the whole reason this is a plugin with assertions rather than two `.replace()` calls.
+ */
+const SLOPPY_MODE_PATCHES = [
+    {
+        /*
+         * i18next 1.7.3's browser build opens with `var z,A=this,B=A.jQuery||A.Zepto` inside
+         * `!function(){...}()`. Called with no receiver, `this` is the global object in sloppy
+         * mode and `undefined` in strict. The unminified sibling (lib/dep/i18next.js, `var root =
+         * this`) has the identical problem, so switching builds is not an escape.
+         *
+         * globalThis is exactly what `this` evaluated to in the browser here, so the rewrite is
+         * behaviour-preserving rather than merely throw-suppressing: shims/i18next.js has already
+         * set window.jQuery by the time this runs, so B binds to jQuery and $.t / $.fn.i18n are
+         * registered -- which is the SILENT failure this library has when jQuery is missing.
+         */
+        match: /i18next[\\/]lib[\\/]dep[\\/]i18next\.min\.js$/,
+        from: "A=this,B=A.jQuery",
+        to: "A=globalThis,B=A.jQuery"
+    },
+    {
+        /*
+         * The vendored JSON Editor fork carries John Resig's "simple JavaScript inheritance", in
+         * which the extend function reassigns itself onto each subclass:
+         *
+         *     a.extend=function(a){ ... return d.prototype=f, d.prototype.constructor=d,
+         *                                  d.extend=arguments.callee, d }
+         *
+         * `arguments.callee` is a hard SyntaxError-class access in strict mode. It cannot be
+         * replaced with `a.extend`, because the function's own parameter is also named `a` and
+         * shadows the outer binding -- naming the function expression is the only local fix.
+         *
+         * TWO tokens, both asserted: the name has to be introduced before it can be referenced.
+         */
+        match: /libs[\\/]jsoneditor-0\.7\.23-custom\.js$/,
+        from: "a.extend=function(a){",
+        to: "a.extend=function __jsonEditorExtend(a){"
+    },
+    {
+        match: /libs[\\/]jsoneditor-0\.7\.23-custom\.js$/,
+        from: "d.extend=arguments.callee",
+        to: "d.extend=__jsonEditorExtend"
+    }
+];
+
+/*
+ * ---- TASK 5.2: enforce the alias ordering invariant instead of asking for it ------------------
+ *
+ * @rollup/plugin-alias takes the FIRST entry whose pattern matches -- `importee === pattern ||
+ * importee.startsWith(pattern + "/")` -- so a bare key listed BEFORE a longer key beginning with
+ * it makes the longer key unreachable. "jquery" above "jquery/dist/jquery.js" sends that import to
+ * shims/jquery.js/dist/jquery.js and fails with ENOTDIR, which is how it was found.
+ *
+ * The alias block explains the rule and asks the next editor to check new entries by hand. That is
+ * the one kind of check this file otherwise always turns into a throw -- the vite pin,
+ * assertSourcesPresent, the patch-count assertion in xui-sloppy-mode-libraries -- and a comment
+ * cannot protect against an entry added by 5.3, 6.1 or 8.3 by someone who never read it.
+ *
+ * configResolved runs after Vite has normalised the alias object into an ordered array and after
+ * every other plugin has contributed to it, so this checks the list that actually runs rather than
+ * the literal written below.
+ */
+const assertAliasOrdering = () => ({
+    name: "xui-assert-alias-ordering",
+
+    configResolved(config) {
+        const patterns = (config.resolve?.alias ?? [])
+            .map((entry) => entry.find)
+            .filter((find) => typeof find === "string");
+
+        const shadowed = patterns.flatMap((later, index) => {
+            const captor = patterns
+                .slice(0, index)
+                .find((earlier) => later.startsWith(`${earlier}/`));
+            return captor
+                ? [`    "${later}" can never match: "${captor}" is listed before it`]
+                : [];
+        });
+
+        if (shadowed.length > 0) {
+            throw new Error(
+                "[xui-assert-alias-ordering] resolve.alias contains entries that can never " +
+                "match, because @rollup/plugin-alias takes the first matching pattern:\n" +
+                `${shadowed.join("\n")}\n` +
+                "Move each specific key ABOVE the shorter key that captures it."
+            );
+        }
+    }
+});
+
+const sloppyModeLibraries = () => {
+    /*
+     * Indices of SLOPPY_MODE_PATCHES that actually fired. Checked in buildEnd, because the
+     * failure mode this plugin exists to prevent is silent: if a patch never runs -- the file
+     * stopped being reachable, an id shape changed, the regex stopped matching -- the build
+     * still succeeds and the library still throws on first use in a browser. A patch that
+     * matches nothing is as much a defect as one that matches twice.
+     *
+     * DEV SERVER -- task 4.10's to fix, recorded here because this is where it will bite. In
+     * practice these patches apply to `vite build` only. The plugin declares no `apply`, so it is
+     * nominally active in serve as well, but i18next is a node_modules dependency and goes through
+     * esbuild dependency pre-bundling, which does not run Vite transform hooks: the
+     * A=this -> A=globalThis rewrite never happens there, and esbuild's own CommonJS wrapper
+     * leaves `this` undefined exactly as Rollup would. jsoneditor lives under src/ and WOULD be
+     * patched. So under the dev server the two libraries diverge and i18next silently loses $.t,
+     * which is the precise failure this plugin exists to prevent. Whoever lands 4.10 must either
+     * set apply: "build" and accept that the dev server cannot run i18next, or add the matching
+     * rewrite as an optimizeDeps.esbuildOptions.plugins entry.
+     */
+    const applied = new Set();
+
+    return {
+        name: "xui-sloppy-mode-libraries",
+        enforce: "pre",
+        buildStart() {
+            applied.clear();
+        },
+        transform(code, id) {
+            /*
+             * @rollup/plugin-commonjs synthesises proxy modules for every CommonJS file it
+             * converts -- "<path>?commonjs-module", "?commonjs-proxy", "?commonjs-es-import".
+             * They carry the ORIGINAL PATH but a few lines of generated wrapper code, so a
+             * path-only match sees them and the token assertion below fails against a file that
+             * was never the real one. i18next hits this and jsoneditor does not, purely because
+             * the latter has no module.exports and is left alone by that plugin.
+             */
+            if (id.includes("?commonjs")) {
+                return null;
+            }
+            const cleanId = id.split("?")[0];
+            let out = code;
+            let touched = false;
+            for (const [index, patch] of SLOPPY_MODE_PATCHES.entries()) {
+                if (!patch.match.test(cleanId)) {
+                    continue;
+                }
+                const seen = out.split(patch.from).length - 1;
+                if (seen !== 1) {
+                throw new Error(
+                        `[xui-sloppy-mode-libraries] expected exactly one occurrence of\n` +
+                        `    ${patch.from}\n` +
+                        `in ${cleanId}, found ${seen}. The library changed under this patch. Re-read ` +
+                        `the file, confirm whether it still needs a sloppy-mode fix at all, and ` +
+                        `update SLOPPY_MODE_PATCHES in vite.config.js -- do NOT delete the entry to ` +
+                        `make the build pass, because the failure it prevents is a runtime ` +
+                        `TypeError on first use.`
+                    );
+                }
+                out = out.replace(patch.from, patch.to);
+                applied.add(index);
+                touched = true;
+            }
+            return touched ? { code: out, map: null } : null;
+        },
+        buildEnd(error) {
+            if (error) {
+                return;
+            }
+            const missed = SLOPPY_MODE_PATCHES
+                .map((patch, index) => ({ patch, index }))
+                .filter(({ index }) => !applied.has(index));
+            if (missed.length > 0) {
+                /*
+                 * A WARNING, NOT AN ERROR, AND ONLY UNTIL 5.4. While the tree is still AMD the
+                 * three entry points import nothing -- `vite build` reports "3 modules
+                 * transformed" -- so neither of these libraries is in the graph and neither patch
+                 * can fire. Throwing here would fail every build for a condition that is correct
+                 * today.
+                 *
+                 * ONCE 5.4 HAS CONVERTED THE TREE THIS SHOULD BECOME A THROW: at that point both
+                 * files ARE reachable, and a patch that did not fire means the library was
+                 * bundled unpatched and will throw at evaluation in a browser, with nothing in
+                 * the build saying so.
+                 */
+                this.warn(
+                    "[xui-sloppy-mode-libraries] these patches never fired:\n" +
+                    missed.map(({ patch }) => `    ${patch.match}  ${patch.from}`).join("\n") +
+                    "\n\nExpected while the tree is still AMD and the entries import nothing. " +
+                    "Once 5.4 lands, this means the library is being bundled unpatched -- make " +
+                    "this a throw then."
+                );
+            }
+        }
+    };
+};
+
 const xuiStaticAssets = () => {
     let root = process.cwd();
     let configuredOutDir = "";
@@ -1302,6 +1534,14 @@ export default defineConfig({
          * and the window globals it needs -- should revisit this line and not merely inherit it.
          */
         react({ jsxRuntime: "classic" }),
+
+        /*
+         * 5.2. Must run BEFORE @rollup/plugin-commonjs converts these two files, hence
+         * enforce: "pre" on the plugin itself. See SLOPPY_MODE_PATCHES above for what it rewrites
+         * and why patching at build time was chosen over patching the bytes on disk.
+         */
+        sloppyModeLibraries(),
+        assertAliasOrdering(),
 
         /*
          * 4.4. Replays Grunt's copy:compose + copy:compiled passes in writeBundle. Defined above
@@ -1571,7 +1811,280 @@ export default defineConfig({
              * 4.7 still owns the paths block and where this file comes from; 8.3 still owns the
              * version. This entry is a pin, not a decision about either.
              */
-            "lodash": fromSrc("libs/lodash-3.10.1-min.js")
+            "lodash": fromSrc("libs/lodash-3.10.1-min.js"),
+
+            /*
+             * ================================================================================
+             * ==== 5.2 -- THE RUNTIME LIBRARY BINDINGS: main.js's paths AND shim BLOCKS    ====
+             * ================================================================================
+             *
+             * READ NOTES-shims.md IN THIS DIRECTORY BEFORE CHANGING ANYTHING BELOW. It has the
+             * 45-row per-library table (id, where its bytes come from today, installed version,
+             * module formats, specifier, disposition, importer count), the six ordering
+             * constraints, and the evidence for each. Everything here is measured from the
+             * installed bytes; nothing is taken from the shim's `exports` field, which is dead
+             * or wrong for 14 of the 26 entries.
+             *
+             * WHAT THIS BLOCK REPLACES. RequireJS's `require.config` in main.js:36-172 (and the
+             * smaller copies in main-authorize.js and main-device.js) did two jobs: `paths`
+             * mapped an id to a file, and `shim` declared load order and a global to pick up.
+             * `paths` becomes the alias entries below. `shim` mostly evaporates -- the libraries'
+             * own CommonJS `require()` calls re-declare it, so the import graph reproduces it for
+             * free -- except for six constraints that a global carried and no import edge does.
+             * Those live in src/main/js/shims/, one small file per id, aliased in front of it.
+             * See that directory's README.md.
+             *
+             * THE main.js BLOCKS ARE DELIBERATELY LEFT IN PLACE. The tree is still AMD until 5.4
+             * converts it, and deleting the loader config now would break it for no gain. Each
+             * block carries a comment naming the entries here that will take over.
+             *
+             * THE TWO REACT ROWS ARE NOT HERE. `react-input-autosize` and `react-select`, and the
+             * `reactAutosizeInputDep` / `reactSelectDep` synthetic modules at main.js:175 and
+             * :180, belong to TASK 5.3. NOTES-shims.md section 3.2 has the measurement 5.3 needs:
+             * the installed react-select 1.0.0-rc.2 dist reads window.React, window.ReactDOM,
+             * window.classNames and window.AutosizeInput SYNCHRONOUSLY at file evaluation, while
+             * the package's own `main` (lib/Select.js) requires all four BY NAME and needs no
+             * globals at all.
+             *
+             * ---- WHY THE AMD ID SPACE IS KEPT, AND WHY IT IS NOT A STYLE CHOICE --------------
+             *
+             * Nine of these ids are not npm package names. It would be possible to let 5.4 rewrite
+             * each call site to the npm name and skip the alias -- but only for AM's own source.
+             * THE COMMONS PACKAGES DECIDE THIS, NOT AM. Their published esm/ trees import
+             * third-party libraries by the SAME AMD ids (measured across both packages: jquery 45,
+             * underscore 28, lodash 20, backbone 8, handlebars 5, form2js 5, react 4, js2form 3,
+             * moment 2, i18next 2, react-dom 2, and one each of xdate, spin, dragula, placeholder,
+             * bootstrap, bootstrap-dialog, backgrid, backgrid-filter, backgrid-selectall,
+             * backgrid.paginator, backbone.paginator). AM cannot edit those files, so `spin`,
+             * `backgrid-selectall`, `bootstrap-dialog`, `i18next` and `bootstrap` MUST resolve as
+             * written no matter what AM's own source does. Given that, the change owner chose to
+             * alias the whole id space rather than leave a split one where `spin` is aliased and
+             * `qrcode` is not: it makes 5.4 a mechanical define()->import rewrite with no
+             * specifier renaming, and it keeps one answer to "what does this name mean".
+             *
+             * ---- ONE "NOTHING NEEDED" ID IS NOT QUITE NOTHING: backgrid-filter -------------
+             *
+             * backgrid-filter needs no alias and no shim, but it does not resolve to what the AMD
+             * build loaded. Its CommonJS branch (node_modules/backgrid-filter/backgrid-filter.js
+             * :15-19) wraps require("lunr") in a try/catch; @rollup/plugin-commonjs hoists that
+             * into a static import, and lunr IS installed as backgrid-filter's own dependency.
+             * Under RequireJS the AMD branch at :12 passes three arguments, so lunr is undefined
+             * today and Backgrid.Extension.LunrFilter is inert. After 5.4 it resolves and ~56 KB
+             * of lunr joins the bundle. Nothing in AM or in either commons package references
+             * LunrFilter, so this is dead payload rather than a behaviour change -- but it is
+             * payload the Grunt tree never carried, so group 8 should not be surprised by it.
+             *
+             * ---- PREFIX CAPTURE: WHY FOUR IDS APPEAR TWICE ----------------------------------
+             *
+             * Vite hands this object to @rollup/plugin-alias, whose matcher is
+             *
+             *     if (importee === pattern) return true;
+             *     return importee.startsWith(pattern + "/");
+             *
+             * so the key "jquery" also captures "jquery/dist/jquery.js". That matters because the
+             * shims have to import the real library, and the obvious spelling is exactly that
+             * subpath. Measured: with only the bare key present, the build fails with
+             *
+             *     Could not load .../src/main/js/shims/jquery.js/dist/jquery.js
+             *     (imported by src/main/js/shims/jquery.js): ENOTDIR
+             *
+             * @rollup/plugin-alias takes the FIRST matching entry (`entries.find(...)`) and
+             * JavaScript objects preserve insertion order, so the fix is to list the specific
+             * file key BEFORE the bare id. That is why jquery, backbone, bootstrap and i18next
+             * each have two entries, specific first, and why they are resolved through fromPkg
+             * rather than written as strings -- an absolute path cannot be prefix-captured by
+             * anything, so the pair cannot be silently reordered by a later edit.
+             *
+             * IF YOU ADD AN ENTRY HERE, check it against every existing key for that startsWith
+             * relationship. The ones that look dangerous and are NOT: "spin" does not capture
+             * "spin.js", "qrcode" does not capture "qrcode-generator", "bootstrap" does not
+             * capture "bootstrap-dialog"/"bootstrap-tabdrop"/"bootstrap-datetimepicker", and
+             * "backbone" does not capture "backbone.paginator" -- all of them because the
+             * matcher requires a "/" after the pattern, and none of these has one.
+             */
+
+            // -- the four specific-file keys, which MUST precede their bare ids (see above) ----
+            "jquery/dist/jquery.js": fromPkg("jquery/dist/jquery.js"),
+            "backbone/backbone.js": fromPkg("backbone/backbone.js"),
+            "bootstrap/dist/js/bootstrap.js": fromPkg("bootstrap/dist/js/bootstrap.js"),
+            "i18next/lib/dep/i18next.min.js": fromPkg("i18next/lib/dep/i18next.min.js"),
+
+            /*
+             * ---- (4) A GLOBAL MUST BE ASSIGNED BEFORE THE LIBRARY EVALUATES -----------------
+             *
+             * jQuery's CommonJS branch is `module.exports = e.document ? t(e,!0) : ...` -- it
+             * passes noGlobal = true, so `ie.jQuery = ie.$ = ce` never runs and window.jQuery is
+             * undefined. An ES module build always takes that branch. Nine ids read the global at
+             * EVALUATION time; `bootstrap` throws loudly and `i18next` fails silently, which is
+             * the worse of the two. shims/jquery.js restores the assignment, and every id below
+             * that needs it imports that shim rather than trusting some earlier module to have
+             * done it. 170 declarers.
+             */
+            "jquery": fromSrc("shims/jquery.js"),
+
+            /*
+             * Backbone's CommonJS branch passes THREE arguments where the AMD branch passes four,
+             * and the fourth is jquery -- so `Backbone.$` is undefined and every View loses
+             * `this.$el`. Setting window.jQuery does not help; that branch never reads a global.
+             * It needs an assignment after the import, which is the one thing an import graph
+             * cannot express. 51 declarers, and the whole backgrid/backbone family inherits it.
+             */
+            "backbone": fromSrc("shims/backbone.js"),
+
+            /*
+             * Bootstrap: 12 plugin IIFEs reading the free `jQuery` global, behind an explicit
+             * `throw new Error("Bootstrap's JavaScript requires jQuery")`. The shim also pins the
+             * concatenated dist/js/bootstrap.js that AM ships -- bare "bootstrap" resolves to
+             * dist/js/npm.js, a different file that requires the 12 plugins separately.
+             */
+            "bootstrap": fromSrc("shims/bootstrap.js"),
+
+            /*
+             * i18next has BOTH problems. Bare "i18next" resolves to the NODE build
+             * (lib/i18next.js, which requires fs/cookies) -- measured, that builds successfully
+             * and produces a 636 kB bundle pulling in express, keygrip, router and serve-static,
+             * exit code 0, useless in a browser. The browser build is lib/dep/i18next.min.js,
+             * 32 kB, which is what NPM_LIBRARY_FILES already stages. And it reads
+             * `A.jQuery||A.Zepto` at evaluation, falling back silently to its own extend/each/ajax
+             * and never registering $.t or $.fn.i18n. 15 declarers.
+             */
+            "i18next": fromSrc("shims/i18next.js"),
+
+            /*
+             * The remaining jQuery-plugin rows. Each ends by reading the free global at
+             * evaluation -- `}(jQuery)`, `}(window.jQuery)` -- and registers itself onto `$.fn`.
+             * Their shims import shims/jquery.js first and hand back `$`, which is how every
+             * consumer actually reaches them; the `exports` fields the AMD shim declared for
+             * autosizeInput, clockPicker and doTimeout all resolved to undefined already, because
+             * the files set $.fn.* and never a window property.
+             *
+             * bootstrap-tabdrop and popoverclickaway go through shims/bootstrap.js instead,
+             * because they need $.fn.popover / the Bootstrap tab plugin, not just jQuery.
+             * popoverclickaway is the one ordering constraint NO SHIM EVER ENCODED -- it is a bare
+             * `paths` row at main.js:65 that reads `$.fn.popover.defaults` at evaluation and
+             * worked only because its three consumers happened to load after AbstractView.
+             */
+            "autosizeInput": fromSrc("shims/autosize-input.js"),
+            "doTimeout": fromSrc("shims/do-timeout.js"),
+            "bootstrap-tabdrop": fromSrc("shims/bootstrap-tabdrop.js"),
+            "popoverclickaway": fromSrc("shims/popover-clickaway.js"),
+            "sortable": fromSrc("shims/sortable.js"),
+            "clockPicker": fromSrc("shims/clockpicker.js"),
+
+            /*
+             * jsonEditor is a plain IIFE ending `window.JSONEditor = g`: no CommonJS branch, no
+             * AMD branch, no ES export of any kind. `exports: "JSONEditor"` was one of only TWO
+             * genuinely load-bearing exports fields in the entire shim block (the other is
+             * i18next -> i18n); the shim re-exports the global so consumers get a value.
+             */
+            "jsonEditor": fromSrc("shims/json-editor.js"),
+
+            /*
+             * The vendored backgrid.paginator fork's UMD prologue uses a COMMA where a stock UMD
+             * uses `else if`, so under CommonJS it runs module.exports AND THEN calls the factory
+             * a second time with `a._, a.Backbone, a.Backgrid`. Measured, by building it through
+             * this config and evaluating the bundle: without those globals it throws
+             * "TypeError: Cannot read properties of undefined (reading 'Extension')" at import.
+             * Latent today because the AMD branch is taken. The shim sets the three globals in a
+             * separate module, because import declarations are hoisted and only a module boundary
+             * orders them.
+             */
+            "backgrid.paginator": fromSrc("shims/backgrid-paginator.js"),
+
+            /*
+             * ---- (2) VENDORED FILES THAT NEED NO ORDERING, ONLY A PATH ----------------------
+             *
+             * All three are UMD with the CommonJS branch first, so @rollup/plugin-commonjs
+             * converts them and nothing has to be assigned beforehand. They are covered by the
+             * build.commonjsOptions.include regex below, which is why that regex is load-bearing
+             * for five ids and not just for lodash. D20 records why each is vendored rather than
+             * installed: form2js and js2form have no usable npm publication, and
+             * eonasdan-bootstrap-datetimepicker publishes src/ only and ships no built file.
+             */
+            "form2js": fromSrc("libs/form2js-2.0-769718a.js"),
+            "js2form": fromSrc("libs/js2form-2.0-769718a.js"),
+            "bootstrap-datetimepicker": fromSrc("libs/bootstrap-datetimepicker-4.14.30-min.js"),
+
+            /*
+             * ---- (1) NOTHING NEEDED BUT THE NAME --------------------------------------------
+             *
+             * The npm package name differs from the AMD id, or the package publishes no entry
+             * point so the bare name does not resolve at all. Verified individually rather than
+             * assumed: bootstrap3-dialog and clockpicker BOTH have an empty package.json main /
+             * module / exports, so `require.resolve` on the bare name is MODULE_NOT_FOUND.
+             *
+             * bootstrap-dialog needs no shim even though its factory reads `t.fn.modal.Constructor`
+             * at evaluation: its own CommonJS branch is
+             * `module.exports = e(require("jquery"), require("bootstrap"))`, and both of those
+             * resolve through the entries above, so the ordering arrives through its own imports.
+             */
+            "backgrid-selectall": "backgrid-select-all",
+            "qrcode": "qrcode-generator",
+            "spin": "spin.js",
+            "bootstrap-dialog": "bootstrap3-dialog/dist/js/bootstrap-dialog.min.js",
+
+            /*
+             * ---- dragula AND placeholder: NOT IN ANY paths BLOCK, AND STILL REQUIRED ---------
+             *
+             * Neither is bound by main.js, so neither appears in NOTES-shims.md's table -- but
+             * both commons packages import them by these ids from esm/ modules that AM reaches:
+             * BackgridUtils.js:24 imports dragula and CALLS it at :28, and 14 AM modules import
+             * BackgridUtils. placeholder has exactly ONE importer: ui-commons'
+             * common/LoginView.js:18. (ui-user's AbstractUserProfileTab.js:67 and
+             * UserProfileKBATab.js:89 only call .attr("placeholder", ...) on a DOM node; they do
+             * not import the polyfill. An earlier draft of this comment counted them as importers
+             * -- the decision below rests on the one real importer, which is enough on its own.)
+             *
+             * Task 4.7 dropped both files from the shipped tree as part of its deliberate -6
+             * manifest delta, reasoning that "both holder modules are superseded in AM". That is
+             * not true of BackgridUtils. Under AMD the ids simply 404 at runtime; under ESM they
+             * are unresolved imports, so this is where it has to be settled.
+             *
+             * Restored as managed dependencies rather than as vendored files or as the Maven
+             * artifacts 4.7 removed. dragula@3.6.7's dist/dragula.min.js is md5-identical
+             * (8ef652fe9e78af44f287ac3c92d4a07f) to the file AM shipped, PHASE1-TREE.md:255 --
+             * zero digest delta, so this is the right release and the bare name needs no alias.
+             * NOTE what that check does and does not cover: the bundler never loads that dist
+             * file. Bare `dragula` resolves to dragula/dragula.js, the CommonJS source that
+             * requires contra and crossvent. Same release, so the digest is sound evidence about
+             * the VERSION -- it is not evidence about the bytes Rollup will actually see.
+             *
+             * placeholder is the one row where npm cannot supply the exact bytes: AM ships 2.0.8
+             * (PHASE1-TREE.md:264) and npm has 2.0.7, 2.1.0, 2.1.1 and 2.3.1. Diffed in full, the
+             * 2.0.7 -> 2.0.8 delta is an Opera Mini detection branch plus one catch-variable
+             * rename; isOperaMini is false on every browser AM supports, so isInputSupported
+             * computes identically. The change owner chose 2.0.7 from npm over vendoring 2.0.8,
+             * because D20's bar asks whether npm can deliver an equivalent and here it can --
+             * keeping it in the lockfile and visible to `npm audit` is worth more than byte
+             * parity with a polyfill.
+             *
+             * Rollup will warn THIS_IS_UNDEFINED on this file, and the warning is noise:
+             * jquery.placeholder.js:183 ends `}(this, document, jQuery));` and the file carries no
+             * CommonJS markers at all, so plugin-commonjs leaves it alone and Rollup rewrites the
+             * top-level `this` to undefined. Checked the body -- the matching `window` parameter
+             * is never referenced -- so nothing reads the value that goes undefined.
+             *
+             * A KNOWN AND ACCEPTED CONSEQUENCE, so that nobody "fixes" it without the context:
+             * ui-commons declares `jquery-placeholder: "^2.1.1"` in its peerDependencies, which
+             * 2.0.7 does not satisfy, so `npm ls` reports
+             *
+             *     jquery-placeholder@2.0.7 invalid: "^2.1.1" from .../ui-commons
+             *
+             * from now on, AND EXITS NON-ZERO with ELSPROBLEMS. That exit code is not new here
+             * -- the two extraneous @openidentityplatform packages installed with --no-save
+             * already cause it -- but if that arrangement is ever tidied up, `npm ls` will still
+             * fail, for this reason. A clean `npm ls` is not a goal for this module.
+             * The alternative was 2.1.1, and that is not a patch: 381 changed lines,
+             * the file restructured into a UMD with an AMD branch and a new customClass option,
+             * on the polyfill behind the login form, with no e2e spec covering it. The change
+             * owner chose the closer bytes over the cleaner `npm ls`. Bumping to 2.1.1 later is a
+             * real decision with a real behaviour delta, not a lockfile tidy-up.
+             *
+             * NEITHER FILE IS ADDED TO NPM_LIBRARY_FILES: they are bundled dependencies now, not
+             * shipped libs/ files, so the deployed tree is unchanged at 317 files and 4.7's
+             * deliberate -6 manifest delta still stands as recorded.
+             */
+            "placeholder": fromSrc("shims/placeholder.js")
         },
 
         /*
@@ -1817,8 +2330,11 @@ export default defineConfig({
          * and it is why the setting is written rather than left to be discovered.
          *
          * NOTES-vite-aliases.md section 7.3 records "which vite the build actually uses" as
-         * unresolved. It is still unresolved; this setting is correct under both engines (vite 8
-         * ignores it) so it does not depend on the answer, but the underlying question needs one.
+         * unresolved. SETTLED, and this paragraph is kept because 5.2's own comments cite it:
+         * vite 5.4.21 IS installed in this module's node_modules and is what resolves, 5.1 added
+         * the EXPECTED_VITE_MAJOR guard below the imports that fails the build if that changes,
+         * and 5.2 re-confirmed it. So Rollup and @rollup/plugin-commonjs are what actually run,
+         * and this setting is load-bearing rather than a hedge against an unknown engine.
          *
          * SCOPE: no task owns build.commonjsOptions. 4.3 sets it because 4.3 created the file that
          * needs it. Task 4.7 owns where libs/ files finally live and MUST update this regex when
@@ -1828,10 +2344,57 @@ export default defineConfig({
          * The regex is scoped to src/main/js/libs/ rather than to the one file on purpose: the
          * other four vendored files there are AMD/UMD in exactly the same way, and 4.7 will be
          * reasoning about them as a group.
+        *
+         * TASK 5.2 DEPENDS ON THIS REGEX AND ADDED NOTHING TO IT, which is worth stating so that
+         * "no diff here" is not read as "no stake here". Five aliased ids now resolve to files
+         * under src/main/js/libs/ that are UMD or CommonJS and would have no ES exports without
+         * this include: form2js, js2form, bootstrap-datetimepicker, backgrid.paginator (through
+         * shims/backgrid-paginator.js) and jsonEditor (through shims/json-editor.js), on top of
+         * lodash and underscore. Narrowing this regex to the one lodash file, or deleting it when
+         * task 8.3 removes lodash, breaks all five silently -- the ids still RESOLVE, and the
+         * imported value is simply undefined. Everything else 5.2 binds lives under node_modules
+         * and is covered by the first pattern.
+         *
+         * The shims themselves are ordinary ES modules and need no transform.
          */
         commonjsOptions: {
             include: [/node_modules/, /src[\\/]main[\\/]js[\\/]libs[\\/]/],
-            extensions: [".js", ".cjs"]
+            extensions: [".js", ".cjs"],
+
+            /*
+             * ==== 5.2 -- WHAT `require("jquery")` RETURNS INSIDE A CommonJS LIBRARY ==========
+             *
+             * The alias table points `jquery`, `backbone`, `bootstrap` and `i18next` at ES module
+             * shims. That is fine for ES importers, and it silently breaks every CommonJS library
+             * that require()s the same ids -- which is most of them, because their UMD CommonJS
+             * branches are exactly where those requires live:
+             *
+             *     backgrid:                 factory(require("underscore"), require("backbone"))
+             *     bootstrap3-dialog:        e(require("jquery"), require("bootstrap"))
+             *     selectize:                factory(require("jquery"), require("sifter"), ...)
+             *     eonasdan-...-datetimepicker: a(require("jquery"), require("moment"))
+             *
+             * By default @rollup/plugin-commonjs gives such a require() the ES MODULE NAMESPACE
+             * OBJECT, so the library receives { default: jQuery } where it expects jQuery, and
+             * dies on the first property access. MEASURED, by building each id and evaluating the
+             * bundle under jsdom -- nine ids built cleanly and threw at evaluation:
+             *
+             *     backgrid, backgrid-filter, backgrid-selectall, backgrid.paginator,
+             *     backbone.paginator, backbone-relational  ->  reading 'extend'/'prototype' of undefined
+             *     bootstrap-datetimepicker                 ->  setting 'datetimepicker' of undefined
+             *     bootstrap-dialog                         ->  reading 'modal' of undefined
+             *     selectize                                ->  $2.extend is not a function
+             *
+             * `requireReturnsDefault: "auto"` makes require() hand back the default export when
+             * the module has one, which is what every one of those libraries expects and what
+             * RequireJS gave them. All nine then build AND evaluate; verified again under
+             * "preferred", which also works, so "auto" is chosen as the narrower of the two.
+             *
+             * THIS SETTING IS LOAD-BEARING FOR THE ALIAS TABLE, not a general preference. If the
+             * four shim aliases above are ever removed, this can go with them; while they exist,
+             * removing it turns nine libraries into runtime TypeErrors that no build step reports.
+             */
+            requireReturnsDefault: "auto"
         },
 
         /*

@@ -1257,6 +1257,115 @@ const assertAliasOrdering = () => ({
     }
 });
 
+/*
+ * ==== 5.3 -- react-select AND react-input-autosize NEED NO GLOBALS ==========================
+ *
+ * WHAT main.js DOES TODAY. Its require.config binds both ids to the browserify `dist/` bundles
+ * (main.js:91-92) and hangs a synthetic AMD module off each shim (shim entries at main.js:223-228,
+ * the two `define()`s at :253-263). Those modules exist for exactly one reason: the installed
+ * react-select 1.0.0-rc.2 dist bundle reads window.React, window.ReactDOM, window.classNames and
+ * window.AutosizeInput SYNCHRONOUSLY at file evaluation. browserify-shim replaced the four externals with global reads when the bundle was
+ * published, and the prelude runs the entry module eagerly -- the file ends `},{},[5])(5)});`.
+ * NOTES-shims.md section 3.2 B quotes all four initialisers from the installed bytes and counts
+ * them: window.React x8, window.classNames x4, window.ReactDOM x1, window.AutosizeInput x1.
+ * RequireJS satisfied that ordering because a shim's `deps` are loaded before the shimmed file's
+ * <script> is even inserted -- not because anything in the source says so.
+ *
+ * WHAT 5.3 DECIDED, AND WHY THERE IS NO SHIM MODULE FOR EITHER ID. Both packages' own `main` is
+ * plain CommonJS that requires everything BY NAME: react-select's lib/Select.js takes react,
+ * react-dom, react-input-autosize and classnames; react-input-autosize's lib/AutosizeInput.js
+ * takes react. classnames and react-input-autosize are react-select's own declared dependencies,
+ * and its peerDependencies admit react ^15.0 -- which is the version this module pins. So the
+ * bare specifier already resolves to code that needs no globals at all, and the ordering that
+ * RequireJS's `deps` used to enforce becomes an ordinary import edge that Rollup orders for us.
+ *
+ * That is why NEITHER ID APPEARS IN resolve.alias BELOW, and why src/main/js/shims/ has no file
+ * for either: here the fix is the ABSENCE of a redirect, not a redirect to something better. The
+ * four globals are not relocated into an ESM shim, they stop existing. The version is untouched
+ * -- same package, same 1.0.0-rc.2 that design.md's Non-Goals pin -- so this is not a library
+ * substitution, which those Non-Goals also forbid.
+ *
+ * WHY THIS IS A BUILD-TIME CHECK AND NOT A COMMENT. An absence cannot be read. Nothing in
+ * SessionsView.jsx -- the single consumer in the tree, at :21 -- says that adding one innocuous
+ * alias entry would swap a by-name import graph for four undeclared globals, and the failure
+ * would be silent in the worst way: the build stays green, react-select still resolves, the
+ * globals are simply never assigned, and the Select renders against a null React at runtime.
+ * This throws at config time instead. It is the same reasoning as assertVendoredVersions above --
+ * pin the thing the decision actually rests on, not the comment describing it.
+ */
+const GLOBAL_FREE_REACT_PACKAGES = {
+    "react-select": "lib/Select.js",
+    "react-input-autosize": "lib/AutosizeInput.js"
+};
+
+const assertReactSelectNeedsNoGlobals = () => ({
+    name: "xui-assert-react-select-globals",
+
+    configResolved(config) {
+        const aliasPatterns = (config.resolve?.alias ?? []).map((entry) => entry.find);
+
+        const failures = Object.entries(GLOBAL_FREE_REACT_PACKAGES).flatMap(([id, expectedMain]) => {
+            const problems = [];
+
+            /*
+             * 1. Nothing may redirect the id. A string `find` matches exactly or as a path
+             * prefix, so both shapes are checked -- a `find` of "react" does NOT capture
+             * "react-select", only "react" and "react/...", which is why the prefix test appends
+             * the separator rather than using a bare startsWith.
+             *
+             * RegExp finds are checked too, and are not a hypothetical shape: resolve.alias
+             * accepts them, and a guard whose entire job is to prove that NO redirect exists
+             * would be worthless if the one alias form it cannot see were the form someone
+             * reached for. The regex is rebuilt without /g because `test` on a global regex is
+             * stateful through lastIndex and would report differently on a second call.
+             */
+            const redirect = aliasPatterns.find((find) => (
+                find instanceof RegExp
+                    ? new RegExp(find.source, find.flags.replace("g", "")).test(id)
+                    : typeof find === "string" && (find === id || id.startsWith(`${find}/`))
+            ));
+            if (redirect !== undefined) {
+                problems.push(
+                    `    resolve.alias "${redirect}" redirects "${id}" away from its package main`
+                );
+            }
+
+            /*
+             * 2. The package main must still be the by-name CommonJS entry. A version bump that
+             * moved `main` onto a dist bundle would reintroduce all four globals without touching
+             * one line of this config, and no alias check would see it.
+             */
+            const manifest = path.resolve(config.root, "node_modules", id, "package.json");
+            if (!fs.existsSync(manifest)) {
+                problems.push(`    ${id} is not installed under ${config.root}/node_modules`);
+                return problems;
+            }
+            const declaredMain = JSON.parse(fs.readFileSync(manifest, "utf8")).main;
+            if (declaredMain !== expectedMain) {
+                problems.push(
+                    `    ${id} package main is "${declaredMain}", expected "${expectedMain}" ` +
+                    "-- a dist/ main reads window.React and three more globals at evaluation"
+                );
+            }
+
+            return problems;
+        });
+
+        if (failures.length > 0) {
+            throw new Error(
+                "[xui-assert-react-select-globals] react-select and react-input-autosize must " +
+                "reach this build through their own package main, which requires react, " +
+                "react-dom, react-input-autosize and classnames BY NAME:\n" +
+                `${failures.join("\n")}\n\n` +
+                "Task 5.3 removed the window.React / window.ReactDOM / window.classNames / " +
+                "window.AutosizeInput globals by relying on exactly that. Restoring a dist/ " +
+                "binding brings all four back, and neither this build nor the e2e suite would " +
+                "report it -- see NOTES-shims.md section 3.2 B for the measured reads."
+            );
+        }
+    }
+});
+
 const sloppyModeLibraries = () => {
     /*
      * Indices of SLOPPY_MODE_PATCHES that actually fired. Checked in buildEnd, because the
@@ -1530,8 +1639,10 @@ export default defineConfig({
          * reported. Same shadowing hazard as the engine pin at the top of this file, same
          * parent node_modules, and a second reason not to trust that tree.
          *
-         * Whoever moves this module off react 15 -- 5.3 is the nearest task, it owns react-select
-         * and the window globals it needs -- should revisit this line and not merely inherit it.
+         * Whoever moves this module off react 15 should revisit this line and not merely inherit
+         * it. That is NOT 5.3: 5.3 kept react-select at 1.0.0-rc.2 per design.md's Non-Goals and
+         * removed the window globals by resolving it to its by-name package main, which changes
+         * no version. The nearest owner is whoever takes the React upgrade itself.
          */
         react({ jsxRuntime: "classic" }),
 
@@ -1542,6 +1653,13 @@ export default defineConfig({
          */
         sloppyModeLibraries(),
         assertAliasOrdering(),
+
+        /*
+         * 5.3. Config-time only. Guards the ABSENCE of a react-select / react-input-autosize
+         * alias, which is what lets both resolve to a by-name package main and makes the four
+         * window globals unnecessary. Defined above; the measurement is NOTES-shims.md 3.2 B.
+         */
+        assertReactSelectNeedsNoGlobals(),
 
         /*
          * 4.4. Replays Grunt's copy:compose + copy:compiled passes in writeBundle. Defined above
@@ -1838,13 +1956,18 @@ export default defineConfig({
              * converts it, and deleting the loader config now would break it for no gain. Each
              * block carries a comment naming the entries here that will take over.
              *
-             * THE TWO REACT ROWS ARE NOT HERE. `react-input-autosize` and `react-select`, and the
-             * `reactAutosizeInputDep` / `reactSelectDep` synthetic modules at main.js:175 and
-             * :180, belong to TASK 5.3. NOTES-shims.md section 3.2 has the measurement 5.3 needs:
-             * the installed react-select 1.0.0-rc.2 dist reads window.React, window.ReactDOM,
-             * window.classNames and window.AutosizeInput SYNCHRONOUSLY at file evaluation, while
-             * the package's own `main` (lib/Select.js) requires all four BY NAME and needs no
-             * globals at all.
+             * THE TWO REACT ROWS ARE STILL NOT HERE, AND 5.3 SETTLED THAT THEY NEVER WILL BE.
+             * 5.2 left `react-input-autosize` and `react-select` to TASK 5.3, with the
+             * measurement in NOTES-shims.md section 3.2 B: the installed react-select 1.0.0-rc.2
+             * dist reads window.React, window.ReactDOM, window.classNames and window.AutosizeInput
+             * SYNCHRONOUSLY at file evaluation, while the package's own `main` (lib/Select.js)
+             * requires all four BY NAME and needs no globals at all. 5.3 took the second: both
+             * ids resolve as bare npm specifiers to their package main, so an ALIAS HERE WOULD BE
+             * THE BUG rather than the fix. assertReactSelectNeedsNoGlobals, registered in
+             * `plugins` above, fails the build if one is ever added. The synthetic
+             * `reactAutosizeInputDep` / `reactSelectDep` modules in main.js stay until 5.4 deletes
+             * require.config with the rest -- the tree is still AMD, so they are still load-bearing
+             * there; the comment above them records that.
              *
              * ---- WHY THE AMD ID SPACE IS KEPT, AND WHY IT IS NOT A STYLE CHOICE --------------
              *

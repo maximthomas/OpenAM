@@ -51,7 +51,7 @@ so nothing needed restoring.**
 already bind, and bind none of the six to a different file. Plus:
 
 - `underscore` — a `map: {"*": …}` entry in all three, pointing at `lodash`.
-- `reactAutosizeInputDep`, `reactSelectDep` — synthetic `define()`s at `main.js:175` and `:180`.
+- `reactAutosizeInputDep`, `reactSelectDep` — synthetic `define()`s at `main.js:253` and `:258`.
 - four literal `libs/codemirror/**` AMD paths, bound **outside** `require.config` by
   `EditScriptView.js:21,35,36,37` — surveyed as an appendix because they are runtime library
   bindings with a deployed-path contract.
@@ -136,8 +136,8 @@ visibly load-bearing for five ids and not just for lodash.
 | `text` | M A D | N `requirejs-text/text.js` | `requirejs-text@2.0.15` | **AMD loader plugin only** — `define(['module'], …)`, no CJS, no ESM | **none — the id and the package leave the tree** (§4) | — | 0 bare | **no** |
 | `xdate` | M | N `xdate/src/xdate.js` | `xdate@0.8.0` | CJS + AMD | `xdate` | **1** | 1 | no |
 | `underscore` (map) | M A D | V `lodash-3.10.1-min.js` | — | UMD | `underscore` — **keep the existing alias** (`vite.config.js:1557`) | **2** | 28 (all commons) | no |
-| `reactAutosizeInputDep` | M | synthetic `define` at `main.js:175` | — | — | **deleted** — see §3 | — | 0 | — |
-| `reactSelectDep` | M | synthetic `define` at `main.js:180` | — | — | **deleted** — see §3 | — | 0 | — |
+| `reactAutosizeInputDep` | M | synthetic `define` at `main.js:253` | — | — | **deleted** — see §3 | — | 0 | — |
+| `reactSelectDep` | M | synthetic `define` at `main.js:258` | — | — | **deleted** — see §3 | — | 0 | — |
 
 Appendix rows — bound by literal AMD path, never through `require.config.paths`:
 
@@ -293,6 +293,46 @@ documents disagree about whether 5.3 may substitute, and only the change owner c
 Worth putting on the table when they do: **mechanism (i) satisfies the "establish the globals"
 branch by making the globals unnecessary, without touching a version**, so the conflict may not
 need to be settled at all — but that is an argument for the owner, not a decision here.
+
+### 3.2 B — RESOLVED BY 5.3
+
+The change owner settled both halves. **The version stays at 1.0.0-rc.2** — `design.md`'s
+Non-Goals win over `tasks.md` 5.3's "or find a supported alternative" branch, and that branch has
+been struck from `tasks.md` so the two documents no longer disagree. **The mechanism is (i), the
+bare package names**, so the four globals were removed rather than relocated: no side-effect
+module, no wrapper, no banner, and no `resolve.alias` entry for either id.
+
+What that means for the two rows in the table above: their "shim needed" answer is **no**, and
+their disposition is **(1) use the bare package name**, same as the other npm-resolvable ids.
+
+Measured on the emitted chunk, not inferred — a scratch entry importing all four specifiers
+through the real `vite.config.js` (347 modules transformed, exit 0), then the sourcemap's
+`sources` and its decoded mappings read back:
+
+- Resolution: `react-select/lib/*` (10 modules) and `react-input-autosize/lib/AutosizeInput.js`.
+  **No `dist/` bundle is in the module graph at all.** `react` resolves to 15.2.1 inside this
+  module, not the 19.2.7 in the parent `node_modules` — the shadowing hazard recorded at the
+  `react({ jsxRuntime: "classic" })` comment in `vite.config.js` does not bite here.
+- Globals: `window.React` 0, `window.ReactDOM` 0, `window.AutosizeInput` 0. `window.classNames`
+  appears once and is **not a read** — it is the dead `else` of `classnames`' own UMD tail,
+  `e.exports?e.exports=n:window.classNames=n`, and `e.exports` is truthy under
+  `@rollup/plugin-commonjs`.
+- Evaluation order, by first-emitted rank in the chunk: `react` 1–151, `react-dom` 152,
+  `react-input-autosize` 153, `classnames` 154, `react-select/lib/utils/*` 155–163,
+  **`react-select/lib/Select.js` 164**, entry 165. All four dependencies are fully evaluated
+  before `Select.js`'s body — the ordering RequireJS bought with shim `deps` is now an ordinary
+  import edge.
+
+**The absence is guarded, because an absence cannot be read.** `assertReactSelectNeedsNoGlobals`
+in `vite.config.js` throws at config time if any alias redirects either id, or if either package's
+`main` stops being the by-name CommonJS entry (a version bump moving `main` onto a `dist` bundle
+would otherwise reintroduce all four globals without changing a line of config). Verified by a
+negative build with a `react-select` → `dist` alias added: exit 1, correct message.
+
+**Not verified, and nothing here claims otherwise:** no React component was rendered. Nothing in
+this tree renders until task 6.1 supplies the registry, and `SessionsView.jsx` — the single
+consumer, at `:21` — is covered behaviourally only by task 10.1.
+
 
 ---
 

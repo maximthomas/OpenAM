@@ -123,8 +123,14 @@ require.config({
      * half of i18next's deps is wrong outright -- i18next.min.js contains zero occurrences of
      * Handlebars.
      *
-     * The `react-input-autosize` and `react-select` entries are NOT superseded yet. They are
-     * TASK 5.3's, together with the reactAutosizeInputDep / reactSelectDep modules below.
+     * The `react-input-autosize` and `react-select` entries ARE superseded, but by nothing --
+     * TASK 5.3 settled them and the successor is an absence. Both are real npm package names, so
+     * the ES module build resolves each bare specifier to its own package `main` (lib/Select.js,
+     * lib/AutosizeInput.js), which requires react, react-dom, react-input-autosize and classnames
+     * BY NAME and reads no globals. Adding an alias for either would be the bug, not the fix, so
+     * vite.config.js has none and assertReactSelectNeedsNoGlobals fails the build if one appears.
+     * The two `shim` entries below and the reactAutosizeInputDep / reactSelectDep modules are the
+     * AMD half of the same binding and are still load-bearing today; they go with this block.
      *
      * Deleted by 5.4 with the rest of require.config, not here.
      */
@@ -223,6 +229,27 @@ require.config({
     }
 });
 
+/*
+ * TASK 5.3 -- SUPERSEDED BY NOTHING, AND DELIBERATELY STILL HERE.
+ *
+ * These two synthetic modules exist because the browserify `dist/` bundles that the `paths`
+ * entries above point at read four globals SYNCHRONOUSLY when the file is evaluated --
+ * window.React x8, window.ReactDOM x1, window.classNames x4, window.AutosizeInput x1, measured
+ * and quoted in NOTES-shims.md section 3.2 B. RequireJS makes that work because a shim's `deps`
+ * load before the shimmed file's <script> is inserted, which is the only thing sequencing the
+ * assignments below ahead of the reads. Nothing in the source states that ordering.
+ *
+ * TASK 5.3 removed the need for all four rather than reproducing them in ESM: react-select's own
+ * package `main` is plain CommonJS that requires react, react-dom, react-input-autosize and
+ * classnames by name, so under Vite the ordering is an ordinary import edge and there is no
+ * global to set. Same package, same 1.0.0-rc.2 -- the version design.md's Non-Goals pin is
+ * untouched, and no library was substituted.
+ *
+ * So there is no ESM successor to point at and nothing here to rewrite. These two `define()`s
+ * are NOT deleted because the tree is still AMD and RequireJS still loads `main` today; deleting
+ * them now would break the running UI for no gain. TASK 5.4 deletes them with the require.config
+ * call above, and needs to add nothing in their place.
+ */
 define("reactAutosizeInputDep", ["react"], (React) => {
     window.React = React;
     return {};

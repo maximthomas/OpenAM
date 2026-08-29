@@ -17,10 +17,10 @@
  /**
   * @module org/forgerock/openam/ui/common/util/Promise
   */
-define([
-    "jquery",
-    "lodash"
-], ($, _) => ({
+import $ from "jquery";
+import _ from "lodash";
+
+export default {
     /**
      * Returns a promise that resolves when all of the promises in the iterable argument have resolved, or rejects
      * with the reason of the first passed promise that rejects.
@@ -47,4 +47,4 @@ define([
             return $.Deferred().reject(new TypeError("Expected an array of promises")).promise();
         }
     }
-}));
+};

@@ -14,36 +14,31 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-/*global define*/
+import "jquery";
+import Handlebars from "handlebars";
+import _ from "lodash";
+import ExternalLinks from "org/forgerock/openam/ui/common/util/ExternalLinks";
 
-define([
-    "jquery",
-    "handlebars",
-    "lodash",
-    "org/forgerock/openam/ui/common/util/ExternalLinks"
-], function ($, Handlebars, _, ExternalLinks) {
+Handlebars.registerHelper("externalLink", function (key) {
+    return _.get(ExternalLinks, key, "");
+});
 
-    Handlebars.registerHelper("externalLink", function (key) {
-        return _.get(ExternalLinks, key, "");
-    });
+Handlebars.registerHelper("policyEditorResourceHelper", function () {
+    var result = this.options.newPattern.replace("-*-", "̂");
+    result = result.replace(/\*/g,
+        '<input class="form-control" required type="text" value="*" placeholder="*" />');
+    result = result.replace("̂",
+        '<input class="form-control" required type="text" value="-*-" placeholder="-*-" pattern="[^/]+" />');
 
-    Handlebars.registerHelper("policyEditorResourceHelper", function () {
-        var result = this.options.newPattern.replace("-*-", "̂");
-        result = result.replace(/\*/g,
-            '<input class="form-control" required type="text" value="*" placeholder="*" />');
-        result = result.replace("̂",
-            '<input class="form-control" required type="text" value="-*-" placeholder="-*-" pattern="[^/]+" />');
+    return new Handlebars.SafeString(result);
+});
 
-        return new Handlebars.SafeString(result);
-    });
+// TODO: Commons Candidate
+Handlebars.registerHelper("debug", function () {
+    console.warn("[handlebars] debug. Value of `this`");
+    console.warn(this);
+});
 
-    // TODO: Commons Candidate
-    Handlebars.registerHelper("debug", function () {
-        console.warn("[handlebars] debug. Value of `this`");
-        console.warn(this);
-    });
-
-    Handlebars.registerHelper("ternary", (testExpression, yes, no) => {
-        return testExpression ? yes : no;
-    });
+Handlebars.registerHelper("ternary", (testExpression, yes, no) => {
+    return testExpression ? yes : no;
 });

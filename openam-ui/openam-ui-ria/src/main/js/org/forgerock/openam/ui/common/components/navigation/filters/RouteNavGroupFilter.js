@@ -19,14 +19,12 @@
  *
  * @module org/forgerock/openam/ui/common/components/navigation/filters/RouteNavGroupFilter
  */
-define([
-    "org/forgerock/commons/ui/common/main/Router"
-], function (Router) {
-    return {
-        filter (links) {
-            if (Router.currentRoute.navGroup) {
-                return links[Router.currentRoute.navGroup];
-            }
+import Router from "org/forgerock/commons/ui/common/main/Router";
+
+export default {
+    filter (links) {
+        if (Router.currentRoute.navGroup) {
+            return links[Router.currentRoute.navGroup];
         }
-    };
-});
+    }
+};

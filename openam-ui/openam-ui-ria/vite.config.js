@@ -176,6 +176,46 @@ const requireFromConfig = createRequire(import.meta.url);
 const fromPkg = (specifier) => requireFromConfig.resolve(specifier);
 
 /*
+ * TASK 5.4 (batch B0). A PATH inside an installed package -- a directory OR a file -- as an
+ * absolute path, for D19's two package prefix aliases and the seven commons config/** leaves.
+ *
+ * The DIRECTORY case cannot go through fromPkg. require.resolve() honours the package's "exports"
+ * map, and both commons packages expose only "./esm/*", "./www/*" and "./package.json": no subpath
+ * pattern there resolves to a directory, and require.resolve() of one fails MODULE_NOT_FOUND.
+ *
+ * The FILE case could go through fromPkg -- "./esm/*" does cover esm/config/**.js, and fromPkg
+ * would additionally survive a hoisted install, which this helper cannot. It deliberately does
+ * not, so that all nine entries fail the same way, naming the reinstall below. Under a hoist the
+ * two directory entries throw regardless, so routing seven of the nine around this helper would
+ * buy no real resilience and would cost a second spelling for B2-B11 to choose between.
+ * NOTES-amd-to-esm.md 3c
+ * built both replacement forms -- package specifier and absolute filesystem path -- and got the
+ * identical 560-module graph from each, then preferred this one, because the package-specifier
+ * form only works by way of Vite retrying the failed lookup with resolve.extensions to supply the
+ * ".js" that an exports subpath pattern never appends. That retry is not part of the exports
+ * contract; this form does not need it.
+ *
+ * It asserts rather than returning a bad path, because the failure it prevents is unreadable: a
+ * hoisted or absent install leaves the prefix pointing at a directory that is not there, and every
+ * bare id underneath it goes unresolved at once. @vitejs/plugin-react rethrows UNRESOLVED_IMPORT
+ * (NOTES-amd-to-esm.md 3c), so that arrives as a build failure rather than a warning -- but as
+ * dozens of them, naming modules rather than naming this line.
+ */
+const fromPkgPath = (id) => {
+    const resolved = fileURLToPath(new URL(`./node_modules/${id}`, import.meta.url));
+    if (!fs.existsSync(resolved)) {
+        throw new Error(
+            `[vite.config] resolve.alias needs the path ${resolved}, which does not exist.\n` +
+            "@openidentityplatform/ui-commons and ui-user are installed OUT OF BAND from the Maven " +
+            "tarballs (task 3.7) and appear in NEITHER dependency block of package.json, so a plain " +
+            "`npm ci` does not create them, and neither does `npm install`. Restore them with:\n" +
+            "  npm install target/npm/ui-commons.tgz target/npm/ui-user.tgz --no-save --legacy-peer-deps"
+        );
+    }
+    return resolved;
+};
+
+/*
  * ==== 4.4 -- STATIC ASSETS: THE COMPOSITION STEP GRUNT USED TO DO ====
  *
  * READ NOTES-static-assets.md IN THIS DIRECTORY BEFORE CHANGING ANYTHING BELOW. It has the
@@ -1225,9 +1265,20 @@ const SLOPPY_MODE_PATCHES = [
  * assertSourcesPresent, the patch-count assertion in xui-sloppy-mode-libraries -- and a comment
  * cannot protect against an entry added by 5.3, 6.1 or 8.3 by someone who never read it.
  *
- * configResolved runs after Vite has normalised the alias object into an ordered array and after
- * every other plugin has contributed to it, so this checks the list that actually runs rather than
- * the literal written below.
+ * configResolved runs after Vite has normalised the alias into an ordered array and after every
+ * other plugin has contributed to it, so this checks the list that actually runs rather than the
+ * literal written below.
+ *
+ * TASK 5.4 (batch B0), AND THE REASON resolve.alias IS WRITTEN AS AN ARRAY RATHER THAN AN OBJECT:
+ * this guard cannot see a DUPLICATE key in an object literal, because JavaScript collapses one at
+ * parse time -- last wins, silently, before Vite or this plugin ever runs. The table crossed 45
+ * entries in B0 and batches B2-B11 add roughly thirty more to the same literal, so a re-added
+ * "store" or a second "org/forgerock/openam" was exactly the kind of thing that would land
+ * unnoticed and resolve to the wrong file with a green build. In array form the duplicate survives
+ * normalisation and the check below throws on it. DO NOT "tidy" this back into an object literal.
+ *
+ * A regex `find` is still unchecked: it is filtered out because neither startsWith nor equality is
+ * meaningful on one. There are none today; a batch that adds one gets no protection here.
  */
 const assertAliasOrdering = () => ({
     name: "xui-assert-alias-ordering",
@@ -1236,6 +1287,17 @@ const assertAliasOrdering = () => ({
         const patterns = (config.resolve?.alias ?? [])
             .map((entry) => entry.find)
             .filter((find) => typeof find === "string");
+
+        const duplicated = [...new Set(patterns.filter((find, index) => patterns.indexOf(find) !== index))];
+
+        if (duplicated.length > 0) {
+            throw new Error(
+                "[xui-assert-alias-ordering] resolve.alias lists the same pattern more than once:\n" +
+                `${duplicated.map((find) => `    "${find}"`).join("\n")}\n` +
+                "@rollup/plugin-alias takes the first match, so the later entry is dead. Remove it, " +
+                "or merge the two into the single entry that was meant."
+            );
+        }
 
         const shadowed = patterns.flatMap((later, index) => {
             const captor = patterns
@@ -1732,7 +1794,7 @@ export default defineConfig({
      * typo here produces a silently external import, not an error.
      */
     resolve: {
-        alias: {
+        alias: [
             /*
              * 1. ThemeManager -- AM's own module. Bound identically by all three entries
              * (main.js:22, main-authorize.js:30, main-device.js:21). Consumers: ui-commons
@@ -1741,14 +1803,20 @@ export default defineConfig({
              * four identifiers ui-commons/NPM-PACKAGE.md lists under "Identifiers the consumer
              * must supply".
              */
-            "ThemeManager": fromSrc("org/forgerock/openam/ui/common/util/ThemeManager.js"),
+            {
+                find: "ThemeManager",
+                replacement: fromSrc("org/forgerock/openam/ui/common/util/ThemeManager.js")
+            },
 
             /*
              * 2. NavigationFilter -- AM's own module. main.js:28, main only. Exactly one consumer:
              * ui-commons components/Navigation.js:27. Also on NPM-PACKAGE.md's must-supply list.
              */
-            "NavigationFilter": fromSrc(
-                "org/forgerock/openam/ui/common/components/navigation/filters/RouteNavGroupFilter.js"),
+            {
+                find: "NavigationFilter",
+                replacement: fromSrc(
+                    "org/forgerock/openam/ui/common/components/navigation/filters/RouteNavGroupFilter.js")
+            },
 
             /*
              * 3. Router -- THE ONE NAME THE THREE ENTRIES BIND DIFFERENTLY, and the only real
@@ -1839,7 +1907,10 @@ export default defineConfig({
              * unresolvable, and per the note above that is a WARNING, not an error. These are the
              * first two entries in this config to depend on that arrangement.
              */
-            "Router": "@openidentityplatform/ui-commons/esm/org/forgerock/commons/ui/common/main/Router.js",
+            {
+                find: "Router",
+                replacement: "@openidentityplatform/ui-commons/esm/org/forgerock/commons/ui/common/main/Router.js"
+            },
 
             /*
              * 4. KBADelegate -- AM's own module. main.js:31, main only. Exactly one consumer:
@@ -1848,7 +1919,10 @@ export default defineConfig({
              * on serverInfo.kbaEnabled === "true", so this alias is exercised only down a
              * conditional dynamic-import path and will not show up in a default build graph.
              */
-            "KBADelegate": fromSrc("org/forgerock/openam/ui/user/services/KBADelegate.js"),
+            {
+                find: "KBADelegate",
+                replacement: fromSrc("org/forgerock/openam/ui/user/services/KBADelegate.js")
+            },
 
             /*
              * 5. UserProfileView -- THE ONLY NAME OF THE TWELVE REACHED BOTH WAYS. It is here
@@ -1871,7 +1945,10 @@ export default defineConfig({
              * the two routes resolve to two instances the KBA tab is registered on an object
              * nobody renders and simply never appears -- with no error anywhere.
              */
-            "UserProfileView": "@openidentityplatform/ui-user/esm/org/forgerock/commons/ui/user/profile/UserProfileView.js",
+            {
+                find: "UserProfileView",
+                replacement: "@openidentityplatform/ui-user/esm/org/forgerock/commons/ui/user/profile/UserProfileView.js"
+            },
 
             /*
              * 6. underscore -> lodash 3.10.1, VENDORED BY THIS TASK. Bound identically by all
@@ -1912,7 +1989,7 @@ export default defineConfig({
              * TODO at main.js:32, main-authorize.js:32 and main-device.js:23 asks for. Task 4.7
              * owns where the vendored file finally lives, through its per-file destination table.
              */
-            "underscore": fromSrc("libs/lodash-3.10.1-min.js"),
+            { find: "underscore", replacement: fromSrc("libs/lodash-3.10.1-min.js") },
 
             /*
              * NOT ONE OF THE TWELVE, AND DELIBERATELY WRITTEN ANYWAY. "lodash" is a main.js PATHS
@@ -1929,7 +2006,173 @@ export default defineConfig({
              * 4.7 still owns the paths block and where this file comes from; 8.3 still owns the
              * version. This entry is a pin, not a decision about either.
              */
-            "lodash": fromSrc("libs/lodash-3.10.1-min.js"),
+            { find: "lodash", replacement: fromSrc("libs/lodash-3.10.1-min.js") },
+
+            /*
+             * ================================================================================
+             * ==== 5.4/B0 -- D19's ID SPACE: THE FIVE PREFIXES AND THE SEVEN config/** IDS ====
+             * ================================================================================
+             *
+             * READ NOTES-amd-to-esm.md SECTION 3 IN THIS DIRECTORY BEFORE CHANGING ANYTHING BELOW.
+             * Every entry here is measured there, end to end: a scratch entry importing one id
+             * from each family was built through a copy of this config with the table in place,
+             * with a resolveId catcher logging any bare id nothing resolved. Exit 0, 560 modules,
+             * one deliberate miss (`dataTable`, a pre-existing break -- see section 2c, decided in
+             * batch B9).
+             *
+             * WHAT THIS IS FOR. D19 keeps the ES tree speaking the AMD id space: a converted module
+             * imports "org/forgerock/commons/ui/common/main/Router", not a package specifier, so
+             * that amd/ and esm/ remain provably the same modules under the same names and a
+             * product can still redirect ONE commons module by moving ONE alias entry. The cost
+             * D19 accepts is precisely this table -- the ES tree does not resolve without it.
+             *
+             * IT IS NOT ONLY 5.4's DEBT. The 46 .jsm/.jsx files task 5.1 wired up import by bare
+             * id too ("org/forgerock/openam/...", "components/Card", "store/index"), and nothing
+             * has resolved them until now; 5.1 was green because rollupOptions.input names only the
+             * three still-AMD entries, so Rollup never walked into them (NOTES-amd-to-esm.md 5a).
+             *
+             * ONE HOP. @rollup/plugin-alias does not re-enter itself, so a replacement gets exactly
+             * one chance. Each of these lands on an absolute filesystem path and normal resolution
+             * finishes the job -- resolve.extensions (below, with .jsm and .jsx from 5.1) supplies
+             * the extension the extensionless AMD id omits.
+             *
+             * ORDERING. A string `find` matches the id exactly or as a path prefix, and the first
+             * match wins, so the seven commons config/** ids MUST stay above anything that could
+             * capture them. xui-assert-alias-ordering enforces that mechanically at config time.
+             */
+
+            /*
+             * B0.1 -- AM's own tree. 131 distinct ids, and it also covers server/util/QRCodeReader
+             * because that id sits under org/forgerock/openam too.
+             *
+             * IDENTITY WITH ENTRIES 1 AND 2 ABOVE. ThemeManager and NavigationFilter are aliased
+             * by bare name for commons to reach, AND are reachable through this prefix by their
+             * full ids from AM's own 49 sites. Both routes land on the same absolute path under
+             * src/main/js, so they are one module. If they ever diverge, ThemeManager reads a
+             * second copy of itself -- the same class of silent failure the Router note below
+             * describes, arriving from AM's side.
+             */
+            { find: "org/forgerock/openam", replacement: fromSrc("org/forgerock/openam") },
+
+            /*
+             * B0.2 and B0.3 -- the two commons packages. 28 ids and 8 ids respectively.
+             *
+             * THIS IS THE POINTER THE Router NOTE ABOVE WARNS ABOUT, and the hazard is real:
+             * entry 3 reaches Router through the package specifier
+             * "@openidentityplatform/ui-commons/esm/.../Router.js" while all 49 AM sites and every
+             * commons module reach it through the bare id, i.e. through this prefix. Point this at
+             * anything but the SAME PHYSICAL esm/ tree -- the package's amd/ build, a vendored
+             * copy -- and there are two Routers: ThemeManager.js:168 then reads one whose
+             * currentRoute is never written, {}.navGroup !== "admin", and the admin theme silently
+             * stops being applied with a green build and no warning.
+             *
+             * MEASURED, NOT ASSUMED (NOTES-amd-to-esm.md 3b). A probe importing the same module
+             * both ways was built: the emitted bundle contains one copy of the Router source and
+             * one binding on both sides. node_modules/@openidentityplatform/ui-commons is a real
+             * directory here and not a symlink, so realpath dedup is not what is doing the work --
+             * the two resolved paths are simply the same string.
+             *
+             * Note that the exports map would have blocked an amd/ mistake for the package-
+             * specifier form of entry 3. It does NOT block it for a filesystem path like this one.
+             * The safety here is this comment and section 3b, not the package manifest.
+             */
+            {
+                find: "org/forgerock/commons/ui/common",
+                replacement: fromPkgPath("@openidentityplatform/ui-commons/esm/org/forgerock/commons/ui/common")
+            },
+            {
+                find: "org/forgerock/commons/ui/user",
+                replacement: fromPkgPath("@openidentityplatform/ui-user/esm/org/forgerock/commons/ui/user")
+            },
+
+            /*
+             * B0.4 and B0.5 -- AM's Redux store and its React component directory. Reached only
+             * from the 46 .jsm/.jsx files (store/index, store/actions/creators, and five
+             * components/ ids), which is why neither has been needed before 5.1 landed.
+             *
+             * These two are the only entries in this block whose blast radius reaches OUTSIDE AM's
+             * source tree. Every other id here is namespaced (org/forgerock/**, config/**); "store"
+             * and "components" are unqualified, and resolve.alias applies to every importer, node_
+             * modules included. "store" is also a real, widely depended-on npm package name, so a
+             * future transitive dependency that imports it would be redirected into AM's Redux
+             * store -- silently, with a green build and a wrong module at runtime.
+             *
+             * MEASURED, NOT ASSUMED, and worth re-measuring whenever a dependency is added:
+             * neither node_modules/store nor node_modules/components exists, and grepping both
+             * @openidentityplatform packages for a bare "store/" or "components/" specifier
+             * returns zero. Safe today because nothing else claims the names.
+             */
+            { find: "store", replacement: fromSrc("store") },
+            { find: "components", replacement: fromSrc("components") },
+
+            /*
+             * B0.6 -- THE SEVEN COMMONS config/** IDS, INDIVIDUALLY. D19 forbids the wholesale
+             * "config/" prefix that would be one line instead of eight: the five shipped ui-commons
+             * config modules are leaves the PRODUCT composes, and a prefix alias would also capture
+             * AM's own config/AppConfiguration and config/ThemeConfiguration and point them into
+             * the package -- inverting the customization route D6 replaces, so that editing AM's
+             * AppConfiguration would stop having any effect.
+             *
+             * THE LIST IS CONFIRMED FROM THE INSTALLED PACKAGES, not from prose:
+             * `find node_modules/@openidentityplatform/ui-commons/esm/config -type f` returns
+             * exactly these five, ui-user/esm/config exactly these two, and ui-commons'
+             * NPM-PACKAGE.md:192-205 ("The alias does not reach config/") lists the same five.
+             * Seven -- which is also the number of commons dependencies in AM's own config/main.js
+             * (section 3d, rewritten to these bare ids in batch B11).
+             */
+            {
+                find: "config/errorhandlers/CommonErrorHandlers",
+                replacement: fromPkgPath("@openidentityplatform/ui-commons/esm/config/errorhandlers/CommonErrorHandlers.js")
+            },
+            {
+                find: "config/validators/CommonValidators",
+                replacement: fromPkgPath("@openidentityplatform/ui-commons/esm/config/validators/CommonValidators.js")
+            },
+            {
+                find: "config/routes/CommonRoutesConfig",
+                replacement: fromPkgPath("@openidentityplatform/ui-commons/esm/config/routes/CommonRoutesConfig.js")
+            },
+            {
+                find: "config/messages/CommonMessages",
+                replacement: fromPkgPath("@openidentityplatform/ui-commons/esm/config/messages/CommonMessages.js")
+            },
+            {
+                find: "config/process/CommonConfig",
+                replacement: fromPkgPath("@openidentityplatform/ui-commons/esm/config/process/CommonConfig.js")
+            },
+            {
+                find: "config/routes/UserRoutesConfig",
+                replacement: fromPkgPath("@openidentityplatform/ui-user/esm/config/routes/UserRoutesConfig.js")
+            },
+            {
+                find: "config/messages/UserMessages",
+                replacement: fromPkgPath("@openidentityplatform/ui-user/esm/config/messages/UserMessages.js")
+            },
+
+            /*
+             * B0.7 -- AM's own config/AppConfiguration, which MUST be an alias and cannot be left
+             * to a relative specifier: ui-commons/esm/.../main/Configuration.js:19 imports it by
+             * this bare id, and AM cannot edit a file inside the package. This is one of the four
+             * AM -> commons -> AM edges section 2f describes; they are edges, not cycles (the graph
+             * has zero), and they are why config/AppConfiguration.js, ThemeManager.js and
+             * RouteNavGroupFilter.js are converted first, in batch B1.
+             *
+             * B0.8 -- config/ThemeConfiguration. NOTES-amd-to-esm.md 3a says this one needs no
+             * alias, because its only importer is AM's own common/util/ThemeManager.js:20 and a
+             * relative specifier would resolve natively. It is here anyway, and deliberately: D19
+             * keeps the ES tree speaking the AMD id space, and task 5.4's conversion rule is that
+             * an import keeps the id the define dep array used. The relative form that would save
+             * this entry is `../../../../../../../config/ThemeConfiguration.js` -- seven levels of
+             * ../ that say nothing about what is being imported, and the one spelling in the tree
+             * that a later move of either file breaks silently. So the table is FOURTEEN entries,
+             * not the thirteen section 3a counts; that is the only place this batch departs from
+             * the survey, and it departs by adding, not by removing.
+             *
+             * config/main still needs no alias -- its only importer is main.js:278, which batch
+             * B12 converts, and section 3d gives that file its own treatment.
+             */
+            { find: "config/AppConfiguration", replacement: fromSrc("config/AppConfiguration.js") },
+            { find: "config/ThemeConfiguration", replacement: fromSrc("config/ThemeConfiguration.js") },
 
             /*
              * ================================================================================
@@ -2027,10 +2270,10 @@ export default defineConfig({
              */
 
             // -- the four specific-file keys, which MUST precede their bare ids (see above) ----
-            "jquery/dist/jquery.js": fromPkg("jquery/dist/jquery.js"),
-            "backbone/backbone.js": fromPkg("backbone/backbone.js"),
-            "bootstrap/dist/js/bootstrap.js": fromPkg("bootstrap/dist/js/bootstrap.js"),
-            "i18next/lib/dep/i18next.min.js": fromPkg("i18next/lib/dep/i18next.min.js"),
+            { find: "jquery/dist/jquery.js", replacement: fromPkg("jquery/dist/jquery.js") },
+            { find: "backbone/backbone.js", replacement: fromPkg("backbone/backbone.js") },
+            { find: "bootstrap/dist/js/bootstrap.js", replacement: fromPkg("bootstrap/dist/js/bootstrap.js") },
+            { find: "i18next/lib/dep/i18next.min.js", replacement: fromPkg("i18next/lib/dep/i18next.min.js") },
 
             /*
              * ---- (4) A GLOBAL MUST BE ASSIGNED BEFORE THE LIBRARY EVALUATES -----------------
@@ -2043,7 +2286,7 @@ export default defineConfig({
              * that needs it imports that shim rather than trusting some earlier module to have
              * done it. 170 declarers.
              */
-            "jquery": fromSrc("shims/jquery.js"),
+            { find: "jquery", replacement: fromSrc("shims/jquery.js") },
 
             /*
              * Backbone's CommonJS branch passes THREE arguments where the AMD branch passes four,
@@ -2052,7 +2295,7 @@ export default defineConfig({
              * It needs an assignment after the import, which is the one thing an import graph
              * cannot express. 51 declarers, and the whole backgrid/backbone family inherits it.
              */
-            "backbone": fromSrc("shims/backbone.js"),
+            { find: "backbone", replacement: fromSrc("shims/backbone.js") },
 
             /*
              * Bootstrap: 12 plugin IIFEs reading the free `jQuery` global, behind an explicit
@@ -2060,7 +2303,7 @@ export default defineConfig({
              * concatenated dist/js/bootstrap.js that AM ships -- bare "bootstrap" resolves to
              * dist/js/npm.js, a different file that requires the 12 plugins separately.
              */
-            "bootstrap": fromSrc("shims/bootstrap.js"),
+            { find: "bootstrap", replacement: fromSrc("shims/bootstrap.js") },
 
             /*
              * i18next has BOTH problems. Bare "i18next" resolves to the NODE build
@@ -2071,7 +2314,7 @@ export default defineConfig({
              * `A.jQuery||A.Zepto` at evaluation, falling back silently to its own extend/each/ajax
              * and never registering $.t or $.fn.i18n. 15 declarers.
              */
-            "i18next": fromSrc("shims/i18next.js"),
+            { find: "i18next", replacement: fromSrc("shims/i18next.js") },
 
             /*
              * The remaining jQuery-plugin rows. Each ends by reading the free global at
@@ -2087,12 +2330,12 @@ export default defineConfig({
              * `paths` row at main.js:65 that reads `$.fn.popover.defaults` at evaluation and
              * worked only because its three consumers happened to load after AbstractView.
              */
-            "autosizeInput": fromSrc("shims/autosize-input.js"),
-            "doTimeout": fromSrc("shims/do-timeout.js"),
-            "bootstrap-tabdrop": fromSrc("shims/bootstrap-tabdrop.js"),
-            "popoverclickaway": fromSrc("shims/popover-clickaway.js"),
-            "sortable": fromSrc("shims/sortable.js"),
-            "clockPicker": fromSrc("shims/clockpicker.js"),
+            { find: "autosizeInput", replacement: fromSrc("shims/autosize-input.js") },
+            { find: "doTimeout", replacement: fromSrc("shims/do-timeout.js") },
+            { find: "bootstrap-tabdrop", replacement: fromSrc("shims/bootstrap-tabdrop.js") },
+            { find: "popoverclickaway", replacement: fromSrc("shims/popover-clickaway.js") },
+            { find: "sortable", replacement: fromSrc("shims/sortable.js") },
+            { find: "clockPicker", replacement: fromSrc("shims/clockpicker.js") },
 
             /*
              * jsonEditor is a plain IIFE ending `window.JSONEditor = g`: no CommonJS branch, no
@@ -2100,7 +2343,7 @@ export default defineConfig({
              * genuinely load-bearing exports fields in the entire shim block (the other is
              * i18next -> i18n); the shim re-exports the global so consumers get a value.
              */
-            "jsonEditor": fromSrc("shims/json-editor.js"),
+            { find: "jsonEditor", replacement: fromSrc("shims/json-editor.js") },
 
             /*
              * The vendored backgrid.paginator fork's UMD prologue uses a COMMA where a stock UMD
@@ -2112,7 +2355,7 @@ export default defineConfig({
              * separate module, because import declarations are hoisted and only a module boundary
              * orders them.
              */
-            "backgrid.paginator": fromSrc("shims/backgrid-paginator.js"),
+            { find: "backgrid.paginator", replacement: fromSrc("shims/backgrid-paginator.js") },
 
             /*
              * ---- (2) VENDORED FILES THAT NEED NO ORDERING, ONLY A PATH ----------------------
@@ -2124,9 +2367,12 @@ export default defineConfig({
              * installed: form2js and js2form have no usable npm publication, and
              * eonasdan-bootstrap-datetimepicker publishes src/ only and ships no built file.
              */
-            "form2js": fromSrc("libs/form2js-2.0-769718a.js"),
-            "js2form": fromSrc("libs/js2form-2.0-769718a.js"),
-            "bootstrap-datetimepicker": fromSrc("libs/bootstrap-datetimepicker-4.14.30-min.js"),
+            { find: "form2js", replacement: fromSrc("libs/form2js-2.0-769718a.js") },
+            { find: "js2form", replacement: fromSrc("libs/js2form-2.0-769718a.js") },
+            {
+                find: "bootstrap-datetimepicker",
+                replacement: fromSrc("libs/bootstrap-datetimepicker-4.14.30-min.js")
+            },
 
             /*
              * ---- (1) NOTHING NEEDED BUT THE NAME --------------------------------------------
@@ -2141,10 +2387,10 @@ export default defineConfig({
              * `module.exports = e(require("jquery"), require("bootstrap"))`, and both of those
              * resolve through the entries above, so the ordering arrives through its own imports.
              */
-            "backgrid-selectall": "backgrid-select-all",
-            "qrcode": "qrcode-generator",
-            "spin": "spin.js",
-            "bootstrap-dialog": "bootstrap3-dialog/dist/js/bootstrap-dialog.min.js",
+            { find: "backgrid-selectall", replacement: "backgrid-select-all" },
+            { find: "qrcode", replacement: "qrcode-generator" },
+            { find: "spin", replacement: "spin.js" },
+            { find: "bootstrap-dialog", replacement: "bootstrap3-dialog/dist/js/bootstrap-dialog.min.js" },
 
             /*
              * ---- dragula AND placeholder: NOT IN ANY paths BLOCK, AND STILL REQUIRED ---------
@@ -2207,8 +2453,8 @@ export default defineConfig({
              * shipped libs/ files, so the deployed tree is unchanged at 317 files and 4.7's
              * deliberate -6 manifest delta still stands as recorded.
              */
-            "placeholder": fromSrc("shims/placeholder.js")
-        },
+            { find: "placeholder", replacement: fromSrc("shims/placeholder.js") }
+        ],
 
         /*
          * ==== 5.1 -- resolve.extensions AND THE .jsm EXTENSION ====

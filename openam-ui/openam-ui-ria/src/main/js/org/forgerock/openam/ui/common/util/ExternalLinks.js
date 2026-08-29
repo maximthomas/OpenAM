@@ -14,21 +14,19 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "lodash"
-], (_) => {
-    const backstageDocsUrl = "https://backstage.forgerock.com/#!/docs/openam/13.5/";
+import _ from "lodash";
 
-    return {
-        backstage: {
-            authz: _.mapValues({
-                policySets: "#configure-apps-with-console",
-                policies: "#configure-policies-with-console",
-                resourceTypes: "#configure-resource-types-with-console"
-            }, (hash) => `${backstageDocsUrl}admin-guide${hash}`),
-            config: {
-                services : `${backstageDocsUrl}reference#chap-config-ref`
-            }
+const backstageDocsUrl = "https://backstage.forgerock.com/#!/docs/openam/13.5/";
+
+export default {
+    backstage: {
+        authz: _.mapValues({
+            policySets: "#configure-apps-with-console",
+            policies: "#configure-policies-with-console",
+            resourceTypes: "#configure-resource-types-with-console"
+        }, (hash) => `${backstageDocsUrl}admin-guide${hash}`),
+        config: {
+            services : `${backstageDocsUrl}reference#chap-config-ref`
         }
-    };
-});
+    }
+};

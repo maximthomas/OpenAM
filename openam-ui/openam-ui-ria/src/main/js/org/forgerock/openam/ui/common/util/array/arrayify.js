@@ -17,17 +17,15 @@
 /**
  * @module org/forgerock/openam/ui/common/util/array/arrayify
  */
-define(() => {
-    /**
-     * Wraps any value in an array.
-     * <p/>
-     * If the value is an array itself, a new array with the same elements is returned.
-     * @param   {*} value Value to wrap in an array
-     * @returns {Array}   Array containing the value
-     */
-    const exports = function (value) {
-        return [].concat(value);
-    };
+/**
+ * Wraps any value in an array.
+ * <p/>
+ * If the value is an array itself, a new array with the same elements is returned.
+ * @param   {*} value Value to wrap in an array
+ * @returns {Array}   Array containing the value
+ */
+const exports = function (value) {
+    return [].concat(value);
+};
 
-    return exports;
-});
+export default exports;

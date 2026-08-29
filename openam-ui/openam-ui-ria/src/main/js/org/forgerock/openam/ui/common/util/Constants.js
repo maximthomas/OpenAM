@@ -23,55 +23,52 @@
  * Portions Copyrighted 2025 3A Systems LLC.
  */
 
-define([
-    "org/forgerock/commons/ui/common/util/Constants"
-], function (Constants) {
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
 
-    var path = location.pathname.replace(new RegExp("^/|/$", "g"), "").split("/");
-    path.splice(-1);
+var path = location.pathname.replace(new RegExp("^/|/$", "g"), "").split("/");
+path.splice(-1);
 
-    Constants.context = path.join("/");
-    Constants.CONSOLE_PATH = `/${Constants.context}/console`;
-    Constants.OPENAM_HEADER_PARAM_CUR_PASSWORD = "currentpassword";
+Constants.context = path.join("/");
+Constants.CONSOLE_PATH = `/${Constants.context}/console`;
+Constants.OPENAM_HEADER_PARAM_CUR_PASSWORD = "currentpassword";
 
-    // Realm
-    Constants.EVENT_INVALID_REALM = "main.EVENT_INVALID_REALM";
+// Realm
+Constants.EVENT_INVALID_REALM = "main.EVENT_INVALID_REALM";
 
-    // Patterns
-    Constants.IPV4_PATTERN =
-        "^(((25[0-5])|(2[0-4]\\d)|(1\\d\\d)|([1-9]?\\d)))((\\.((25[0-5])|(2[0-4]\\d)|(1\\d\\d)|([1-9]?\\d))){3})";
-    Constants.IPV6_PATTERN =
-        "^((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4][0-" +
-        "9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3})|:))|(([0-9A-Fa-f]{1,4}:){5" +
-        "}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][" +
-        "0-9]|[1-9]?[0-9])){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5" +
-        "]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa" +
-        "-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[" +
-        "0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}" +
-        "){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0" +
-        "-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}" +
-        ":((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(" +
-        ":(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25" +
-        "[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:)))(%.+)?$";
-    Constants.NUMBER_PATTERN = "[-+]?[0-9]*[.,]?[0-9]+";
-    Constants.INTEGER_PATTERN = "\\d+";
+// Patterns
+Constants.IPV4_PATTERN =
+    "^(((25[0-5])|(2[0-4]\\d)|(1\\d\\d)|([1-9]?\\d)))((\\.((25[0-5])|(2[0-4]\\d)|(1\\d\\d)|([1-9]?\\d))){3})";
+Constants.IPV6_PATTERN =
+    "^((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4][0-" +
+    "9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3})|:))|(([0-9A-Fa-f]{1,4}:){5" +
+    "}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][" +
+    "0-9]|[1-9]?[0-9])){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5" +
+    "]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa" +
+    "-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[" +
+    "0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}" +
+    "){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0" +
+    "-9][0-9]|[1-9]?[0-9])){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}" +
+    ":((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:))|(" +
+    ":(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25" +
+    "[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}))|:)))(%.+)?$";
+Constants.NUMBER_PATTERN = "[-+]?[0-9]*[.,]?[0-9]+";
+Constants.INTEGER_PATTERN = "\\d+";
 
-    // Theme
-    Constants.DEFAULT_STYLESHEETS = ["css/bootstrap-3.3.5-custom.css", "css/styles-admin.css"];
-    Constants.EVENT_THEME_CHANGED = "main.EVENT_THEME_CHANGED";
+// Theme
+Constants.DEFAULT_STYLESHEETS = ["css/bootstrap-3.3.5-custom.css", "css/styles-admin.css"];
+Constants.EVENT_THEME_CHANGED = "main.EVENT_THEME_CHANGED";
 
-    Constants.EVENT_REDIRECT_TO_JATO_FEDERATION = "main.navigation.EVENT_REDIRECT_TO_JATO_FEDERATION";
-    Constants.EVENT_REDIRECT_TO_JATO_AGENTS_OAUTH20 = "main.navigation.EVENT_REDIRECT_TO_JATO_AGENTS_OAUTH20";
-    Constants.EVENT_REDIRECT_TO_JATO_AGENTS_JAVA = "main.navigation.EVENT_REDIRECT_TO_JATO_AGENTS_JAVA";
-    Constants.EVENT_REDIRECT_TO_JATO_AGENTS_WEB = "main.navigation.EVENT_REDIRECT_TO_JATO_AGENTS_WEB";
-    Constants.EVENT_REDIRECT_TO_JATO_DATASTORE = "main.navigation.EVENT_REDIRECT_TO_JATO_DATASTORES";
-    Constants.EVENT_REDIRECT_TO_JATO_PRIVILEGES = "main.navigation.EVENT_REDIRECT_TO_JATO_PRIVILEGES";
-    Constants.EVENT_REDIRECT_TO_JATO_SUBJECTS = "main.navigation.EVENT_REDIRECT_TO_JATO_SUBJECTS";
-    Constants.EVENT_REDIRECT_TO_JATO_STS = "main.navigation.EVENT_REDIRECT_TO_JATO_STS";
+Constants.EVENT_REDIRECT_TO_JATO_FEDERATION = "main.navigation.EVENT_REDIRECT_TO_JATO_FEDERATION";
+Constants.EVENT_REDIRECT_TO_JATO_AGENTS_OAUTH20 = "main.navigation.EVENT_REDIRECT_TO_JATO_AGENTS_OAUTH20";
+Constants.EVENT_REDIRECT_TO_JATO_AGENTS_JAVA = "main.navigation.EVENT_REDIRECT_TO_JATO_AGENTS_JAVA";
+Constants.EVENT_REDIRECT_TO_JATO_AGENTS_WEB = "main.navigation.EVENT_REDIRECT_TO_JATO_AGENTS_WEB";
+Constants.EVENT_REDIRECT_TO_JATO_DATASTORE = "main.navigation.EVENT_REDIRECT_TO_JATO_DATASTORES";
+Constants.EVENT_REDIRECT_TO_JATO_PRIVILEGES = "main.navigation.EVENT_REDIRECT_TO_JATO_PRIVILEGES";
+Constants.EVENT_REDIRECT_TO_JATO_SUBJECTS = "main.navigation.EVENT_REDIRECT_TO_JATO_SUBJECTS";
+Constants.EVENT_REDIRECT_TO_JATO_STS = "main.navigation.EVENT_REDIRECT_TO_JATO_STS";
 
-    Constants.SELF_SERVICE_FORGOTTEN_USERNAME = "selfservice/forgottenUsername";
-    Constants.SELF_SERVICE_RESET_PASSWORD = "selfservice/forgottenPassword";
-    Constants.SELF_SERVICE_REGISTER = "selfservice/userRegistration";
+Constants.SELF_SERVICE_FORGOTTEN_USERNAME = "selfservice/forgottenUsername";
+Constants.SELF_SERVICE_RESET_PASSWORD = "selfservice/forgottenPassword";
+Constants.SELF_SERVICE_REGISTER = "selfservice/userRegistration";
 
-    return Constants;
-});
+export default Constants;

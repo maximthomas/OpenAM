@@ -17,18 +17,16 @@
  /**
   * @module org/forgerock/openam/ui/common/util/object/flattenValues
   */
-define([
-    "lodash"
-], function (_) {
-    var exports = function (object) {
-        return _.mapValues(object, function (value) {
-            if (_.isArray(value) && value.length === 1) {
-                return value[0];
-            }
+import _ from "lodash";
 
-            return value;
-        });
-    };
+var exports = function (object) {
+    return _.mapValues(object, function (value) {
+        if (_.isArray(value) && value.length === 1) {
+            return value[0];
+        }
 
-    return exports;
-});
+        return value;
+    });
+};
+
+export default exports;

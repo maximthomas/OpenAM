@@ -15,7 +15,7 @@
  * Portions copyright 2025 3A Systems LLC.
  */
 
-define({
+export default {
     themes: {
         // There must be a theme named "default".
         "default": {
@@ -90,4 +90,4 @@ define({
         // Use the theme "my-fourth-theme" if the default authentication chain is in use.
         //{ theme: "my-fourth-theme", authenticationChains: [""] }
     ]
-});
+};

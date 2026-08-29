@@ -395,7 +395,6 @@ const NPM_LIBRARY_FILES = {
     "libs/selectize-non-standalone-0.12.1-min.js": "selectize/dist/js/selectize.min.js",   // MD5
     "libs/sifter-0.4.1-min.js": "sifter/sifter.min.js",                                    // MD5
     "libs/spin-2.0.1-min.js": "spin.js/spin.js",                                           // VER
-    "libs/text-2.0.15.js": "requirejs-text/text.js",                                       // MD5
     "libs/xdate-0.8-min.js": "xdate/src/xdate.js",                                         // MD5
 
     /*

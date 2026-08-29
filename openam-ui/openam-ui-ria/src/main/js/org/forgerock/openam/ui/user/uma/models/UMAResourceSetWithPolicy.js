@@ -15,67 +15,65 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "backbone",
-    "backbone-relational",
-    "org/forgerock/openam/ui/user/uma/models/UMAPolicy",
-    "org/forgerock/openam/ui/user/uma/models/UMAPolicyPermissionScope",
-    "org/forgerock/openam/ui/user/uma/util/URLHelper"
-], function ($, _, Backbone, BackboneRelational, UMAPolicy, UMAPolicyPermissionScope, URLHelper) {
-    return Backbone.RelationalModel.extend({
-        // Promise version of fetch
-        fetch () {
-            var d = $.Deferred();
-            Backbone.RelationalModel.prototype.fetch.call(this, {
-                success (model) {
-                    d.resolve(model);
-                },
-                error (model, response) {
-                    d.reject(response);
-                }
-            });
-            return d.promise();
-        },
-        idAttribute: "_id",
-        parse (response) {
-            // Hardwiring the id across to the UMAPolicy object as the server doesn't provide it
-            if (!response.policy) {
-                response.policy = {};
-                response.policy.permissions = [];
+import $ from "jquery";
+import _ from "lodash";
+import Backbone from "backbone";
+import "backbone-relational";
+import UMAPolicy from "org/forgerock/openam/ui/user/uma/models/UMAPolicy";
+import UMAPolicyPermissionScope from "org/forgerock/openam/ui/user/uma/models/UMAPolicyPermissionScope";
+import URLHelper from "org/forgerock/openam/ui/user/uma/util/URLHelper";
+
+export default Backbone.RelationalModel.extend({
+    // Promise version of fetch
+    fetch () {
+        var d = $.Deferred();
+        Backbone.RelationalModel.prototype.fetch.call(this, {
+            success (model) {
+                d.resolve(model);
+            },
+            error (model, response) {
+                d.reject(response);
             }
-            response.policy.policyId = response._id;
+        });
+        return d.promise();
+    },
+    idAttribute: "_id",
+    parse (response) {
+        // Hardwiring the id across to the UMAPolicy object as the server doesn't provide it
+        if (!response.policy) {
+            response.policy = {};
+            response.policy.permissions = [];
+        }
+        response.policy.policyId = response._id;
 
-            response.scopes = _.map(response.scopes, function (scope) {
-                return { id: scope };
-            });
+        response.scopes = _.map(response.scopes, function (scope) {
+            return { id: scope };
+        });
 
-            return response;
-        },
-        relations: [{
-            type: Backbone.HasOne,
-            key: "policy",
-            relatedModel: UMAPolicy,
-            parse: true
-        }, {
-            type: Backbone.HasMany,
-            key: "scopes",
-            relatedModel: UMAPolicyPermissionScope,
-            includeInJSON: Backbone.Model.prototype.idAttribute,
-            parse: true
-        }],
-        toggleStarred (starredLabelId) {
-            var isStarred = _.contains(this.get("labels"), starredLabelId);
+        return response;
+    },
+    relations: [{
+        type: Backbone.HasOne,
+        key: "policy",
+        relatedModel: UMAPolicy,
+        parse: true
+    }, {
+        type: Backbone.HasMany,
+        key: "scopes",
+        relatedModel: UMAPolicyPermissionScope,
+        includeInJSON: Backbone.Model.prototype.idAttribute,
+        parse: true
+    }],
+    toggleStarred (starredLabelId) {
+        var isStarred = _.contains(this.get("labels"), starredLabelId);
 
-            if (isStarred) {
-                this.set("labels", _.reject(this.get("labels"), function (label) {
-                    return label === starredLabelId;
-                }));
-            } else {
-                this.get("labels").push(starredLabelId);
-            }
-        },
-        urlRoot: URLHelper.substitute("__api__/__subrealm__/users/__username__/oauth2/resources/sets")
-    });
+        if (isStarred) {
+            this.set("labels", _.reject(this.get("labels"), function (label) {
+                return label === starredLabelId;
+            }));
+        } else {
+            this.get("labels").push(starredLabelId);
+        }
+    },
+    urlRoot: URLHelper.substitute("__api__/__subrealm__/users/__username__/oauth2/resources/sets")
 });

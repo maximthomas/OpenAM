@@ -14,106 +14,106 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/commons/ui/common/main/AbstractDelegate",
-    "org/forgerock/commons/ui/common/util/Constants"
-], (AbstractDelegate, Constants) => {
-    const obj = new AbstractDelegate(`${Constants.host}/${Constants.context}`);
-    const realmsRedirector = (tab) => (realm) => {
-        obj.realm.redirectToTab(tab, realm);
-    };
-    const agentsRedirector = (tab) => (realm) => {
-        obj.agents.redirectToTab(tab, realm);
-    };
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
 
-    obj.global = {
-        accessControl () { obj.global.redirectToTab(1); },
-        federation () { obj.global.redirectToTab(2); },
-        sessions () { obj.global.redirectToTab(5); },
-        redirectToTab (tabIndex) {
-            obj.getJATOPageSession("/").done((session) => {
-                if (session) {
-                    window.location.href = `/${Constants.context}/task/Home?Home.tabCommon.TabHref=${
-                        tabIndex
-                        }&jato.pageSession=${session}&requester=XUI`;
-                } else {
-                    window.location.href = `/${Constants.context}/UI/Login?service=adminconsoleservice`;
-                }
-            });
-        },
-        configuration () {
-            obj.getJATOPageSession("/").done((session) => {
-                if (session) {
-                    window.location.href = `/${
-                        Constants.context
-                        }/service/SCConfigAuth?SCConfigAuth.tabCommon.TabHref=445&jato.pageSession=${
-                        session
-                        }&requester=XUI`;
-                } else {
-                    window.location.href = `/${Constants.context}/UI/Login?service=adminconsoleservice`;
-                }
-            });
-        }
-    };
+const obj = new AbstractDelegate(`${Constants.host}/${Constants.context}`);
+const realmsRedirector = (tab) => (realm) => {
+    obj.realm.redirectToTab(tab, realm);
+};
+const agentsRedirector = (tab) => (realm) => {
+    obj.agents.redirectToTab(tab, realm);
+};
 
-    obj.commonTasks = function (realm, link) {
-        const query = link.indexOf("?") === -1 ? "?" : "&";
-        window.location.href = `/${Constants.context}/${link}${query}realm=${encodeURIComponent(realm)}`;
-    };
-
-    obj.serverSite = function () {
-        window.location.href = `/${Constants.context}/service/ServerSite`;
-    };
-
-    obj.realm = {
-        dataStores    : realmsRedirector(14),
-        privileges    : realmsRedirector(15),
-        subjects      : realmsRedirector(17),
-        sts           : realmsRedirector(19),
-        redirectToTab (tabIndex, realm) {
-            obj.getJATOPageSession(realm).done((session) => {
-                if (session) {
-                    window.location.href = `/${Constants.context}/realm/RealmProperties?RMRealm.tblDataActionHref=${
-                        realm
-                        }&RealmProperties.tabCommon.TabHref=${tabIndex}&jato.pageSession=${session}&requester=XUI`;
-                } else {
-                    window.location.href = `/${Constants.context}/UI/Login?service=adminconsoleservice`;
-                }
-            });
-        }
-    };
-
-    obj.agents = {
-        java       : agentsRedirector(181),
-        oauth20    : agentsRedirector(186),
-        web        : agentsRedirector(180),
-        redirectToTab (tabIndex, realm) {
-            obj.getJATOPageSession(realm).done((session) => {
-                if (session) {
-                    window.location.href = `/${
-                        Constants.context}/agentconfig/Agents?Agents.tabCommon.TabHref=${
-                            tabIndex}&jato.pageSession=${session}&requester=XUI`;
-                } else {
-                    window.location.href = `/${Constants.context}/UI/Login?service=adminconsoleservice`;
-                }
-            });
-        }
-    };
-
-
-    obj.getJATOPageSession = function (realm) {
-        return obj.serviceCall({
-            url: `/realm/RMRealm?RMRealm.tblDataActionHref=${realm}&requester=XUI`,
-            dataType: "html"
-        }).then((data) => {
-            const sessionRegEx = /jato.pageSession=(.*?)"/;
-            if (sessionRegEx.test(data)) {
-                return data.match(sessionRegEx)[1];
+obj.global = {
+    accessControl () { obj.global.redirectToTab(1); },
+    federation () { obj.global.redirectToTab(2); },
+    sessions () { obj.global.redirectToTab(5); },
+    redirectToTab (tabIndex) {
+        obj.getJATOPageSession("/").done((session) => {
+            if (session) {
+                window.location.href = `/${Constants.context}/task/Home?Home.tabCommon.TabHref=${
+                    tabIndex
+                    }&jato.pageSession=${session}&requester=XUI`;
             } else {
-                return null;
+                window.location.href = `/${Constants.context}/UI/Login?service=adminconsoleservice`;
             }
         });
-    };
+    },
+    configuration () {
+        obj.getJATOPageSession("/").done((session) => {
+            if (session) {
+                window.location.href = `/${
+                    Constants.context
+                    }/service/SCConfigAuth?SCConfigAuth.tabCommon.TabHref=445&jato.pageSession=${
+                    session
+                    }&requester=XUI`;
+            } else {
+                window.location.href = `/${Constants.context}/UI/Login?service=adminconsoleservice`;
+            }
+        });
+    }
+};
 
-    return obj;
-});
+obj.commonTasks = function (realm, link) {
+    const query = link.indexOf("?") === -1 ? "?" : "&";
+    window.location.href = `/${Constants.context}/${link}${query}realm=${encodeURIComponent(realm)}`;
+};
+
+obj.serverSite = function () {
+    window.location.href = `/${Constants.context}/service/ServerSite`;
+};
+
+obj.realm = {
+    dataStores    : realmsRedirector(14),
+    privileges    : realmsRedirector(15),
+    subjects      : realmsRedirector(17),
+    sts           : realmsRedirector(19),
+    redirectToTab (tabIndex, realm) {
+        obj.getJATOPageSession(realm).done((session) => {
+            if (session) {
+                window.location.href = `/${Constants.context}/realm/RealmProperties?RMRealm.tblDataActionHref=${
+                    realm
+                    }&RealmProperties.tabCommon.TabHref=${tabIndex}&jato.pageSession=${session}&requester=XUI`;
+            } else {
+                window.location.href = `/${Constants.context}/UI/Login?service=adminconsoleservice`;
+            }
+        });
+    }
+};
+
+obj.agents = {
+    java       : agentsRedirector(181),
+    oauth20    : agentsRedirector(186),
+    web        : agentsRedirector(180),
+    redirectToTab (tabIndex, realm) {
+        obj.getJATOPageSession(realm).done((session) => {
+            if (session) {
+                window.location.href = `/${
+                    Constants.context}/agentconfig/Agents?Agents.tabCommon.TabHref=${
+                        tabIndex}&jato.pageSession=${session}&requester=XUI`;
+            } else {
+                window.location.href = `/${Constants.context}/UI/Login?service=adminconsoleservice`;
+            }
+        });
+    }
+};
+
+
+obj.getJATOPageSession = function (realm) {
+    return obj.serviceCall({
+        url: `/realm/RMRealm?RMRealm.tblDataActionHref=${realm}&requester=XUI`,
+        dataType: "html"
+    }).then((data) => {
+        const sessionRegEx = /jato.pageSession=(.*?)"/;
+        if (sessionRegEx.test(data)) {
+            return data.match(sessionRegEx)[1];
+        } else {
+            return null;
+        }
+    });
+};
+
+export default obj;

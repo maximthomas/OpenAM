@@ -17,108 +17,109 @@
 /**
 * @module org/forgerock/openam/ui/admin/services/realm/PoliciesService
 */
-define([
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractDelegate",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/openam/ui/admin/utils/AdministeredRealmsHelper",
-    "org/forgerock/openam/ui/common/services/fetchUrl",
-    "org/forgerock/openam/ui/common/util/RealmHelper"
-], function (_, AbstractDelegate, Constants, AdministeredRealmsHelper, fetchUrl, RealmHelper) {
-    var obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`),
-        getCurrentAdministeredRealm = function () {
-            var realm = AdministeredRealmsHelper.getCurrentRealm();
-            return realm === "/" ? "" : RealmHelper.encodeRealm(realm);
-        };
 
-    obj.getApplicationType = function (type) {
-        return obj.serviceCall({
-            url: fetchUrl.default(`/applicationtypes/${type}`, { realm: false }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import "lodash";
+import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import AdministeredRealmsHelper from "org/forgerock/openam/ui/admin/utils/AdministeredRealmsHelper";
+import fetchUrl from "org/forgerock/openam/ui/common/services/fetchUrl";
+import RealmHelper from "org/forgerock/openam/ui/common/util/RealmHelper";
+
+var obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`),
+    getCurrentAdministeredRealm = function () {
+        var realm = AdministeredRealmsHelper.getCurrentRealm();
+        return realm === "/" ? "" : RealmHelper.encodeRealm(realm);
     };
 
-    obj.getDecisionCombiners = function () {
-        return obj.serviceCall({
-            url: fetchUrl.default("/decisioncombiners/?_queryId=&_fields=title", { realm: false }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.getApplicationType = function (type) {
+    return obj.serviceCall({
+        url: fetchUrl(`/applicationtypes/${type}`, { realm: false }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    obj.getEnvironmentConditions = function () {
-        return obj.serviceCall({
-            url: fetchUrl.default("/conditiontypes?_queryId=&_fields=title,logical,config", { realm: false }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.getDecisionCombiners = function () {
+    return obj.serviceCall({
+        url: fetchUrl("/decisioncombiners/?_queryId=&_fields=title", { realm: false }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    obj.getSubjectConditions = function () {
-        return obj.serviceCall({
-            url: fetchUrl.default("/subjecttypes?_queryId=&_fields=title,logical,config", { realm: false }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.getEnvironmentConditions = function () {
+    return obj.serviceCall({
+        url: fetchUrl("/conditiontypes?_queryId=&_fields=title,logical,config", { realm: false }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    obj.getAllUserAttributes = function () {
-        return obj.serviceCall({
-            url: fetchUrl.default("/subjectattributes?_queryFilter=true", { realm: getCurrentAdministeredRealm() }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.getSubjectConditions = function () {
+    return obj.serviceCall({
+        url: fetchUrl("/subjecttypes?_queryId=&_fields=title,logical,config", { realm: false }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    obj.queryIdentities = function (name, query) {
-        return obj.serviceCall({
-            url: fetchUrl.default(`/${name}?_queryId=${query}*`, { realm: getCurrentAdministeredRealm() }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.getAllUserAttributes = function () {
+    return obj.serviceCall({
+        url: fetchUrl("/subjectattributes?_queryFilter=true", { realm: getCurrentAdministeredRealm() }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    obj.getUniversalId = function (name, type) {
-        return obj.serviceCall({
-            url: fetchUrl.default(`/${type}/${name}?_fields=universalid`, { realm: getCurrentAdministeredRealm() }),
-            headers: { "Cache-Control": "no-cache", "Accept-API-Version": "protocol=1.0,resource=2.0" }
-        });
-    };
+obj.queryIdentities = function (name, query) {
+    return obj.serviceCall({
+        url: fetchUrl(`/${name}?_queryId=${query}*`, { realm: getCurrentAdministeredRealm() }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    obj.getDataByType = function (type) {
-        return obj.serviceCall({
-            url: fetchUrl.default(`/${type}?_queryFilter=true`, { realm: getCurrentAdministeredRealm() }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.getUniversalId = function (name, type) {
+    return obj.serviceCall({
+        url: fetchUrl(`/${type}/${name}?_fields=universalid`, { realm: getCurrentAdministeredRealm() }),
+        headers: { "Cache-Control": "no-cache", "Accept-API-Version": "protocol=1.0,resource=2.0" }
+    });
+};
 
-    obj.getScriptById = function (id) {
-        return obj.serviceCall({
-            url: fetchUrl.default(`/scripts/${id}`, { realm: getCurrentAdministeredRealm() }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.getDataByType = function (type) {
+    return obj.serviceCall({
+        url: fetchUrl(`/${type}?_queryFilter=true`, { realm: getCurrentAdministeredRealm() }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    obj.getAllRealms = function () {
-        return obj.serviceCall({
-            url: fetchUrl.default("/realms?_queryFilter=true", { realm: false }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.getScriptById = function (id) {
+    return obj.serviceCall({
+        url: fetchUrl(`/scripts/${id}`, { realm: getCurrentAdministeredRealm() }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    obj.importPolicies = function (data) {
-        return obj.serviceCall({
-            serviceUrl: `${Constants.host}/${Constants.context}`,
-            url: fetchUrl.default(`/xacml${getCurrentAdministeredRealm()}/policies`, { realm: false }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
-            type: "POST",
-            data
-        });
-    };
+obj.getAllRealms = function () {
+    return obj.serviceCall({
+        url: fetchUrl("/realms?_queryFilter=true", { realm: false }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    obj.listResourceTypes = function () {
-        return obj.serviceCall({
-            url: fetchUrl.default(
-                `/resourcetypes?_queryFilter=name+eq+${encodeURIComponent('"^(?!Delegation Service$).*"')}`,
-                { realm: getCurrentAdministeredRealm() }),
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.importPolicies = function (data) {
+    return obj.serviceCall({
+        serviceUrl: `${Constants.host}/${Constants.context}`,
+        url: fetchUrl(`/xacml${getCurrentAdministeredRealm()}/policies`, { realm: false }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
+        type: "POST",
+        data
+    });
+};
 
-    return obj;
-});
+obj.listResourceTypes = function () {
+    return obj.serviceCall({
+        url: fetchUrl(
+            `/resourcetypes?_queryFilter=name+eq+${encodeURIComponent('"^(?!Delegation Service$).*"')}`,
+            { realm: getCurrentAdministeredRealm() }),
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
+
+export default obj;

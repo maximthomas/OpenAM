@@ -17,17 +17,17 @@
  /**
   * @module org/forgerock/openam/ui/admin/views/common/schema/SubSchemaListComponent
   */
-define("org/forgerock/openam/ui/admin/views/common/schema/SubSchemaListComponent", [
-    "jquery",
-    "lodash",
-    "backbone",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/util/UIUtils",
-    "org/forgerock/openam/ui/admin/utils/FormHelper",
-    "org/forgerock/openam/ui/common/util/Promise"
-], ($, _, Backbone, Messages, EventManager, Constants, UIUtils, FormHelper, Promise) => Backbone.View.extend({
+import $ from "jquery";
+import _ from "lodash";
+import Backbone from "backbone";
+import Messages from "org/forgerock/commons/ui/common/components/Messages";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
+import FormHelper from "org/forgerock/openam/ui/admin/utils/FormHelper";
+import Promise from "org/forgerock/openam/ui/common/util/Promise";
+
+export default Backbone.View.extend({
     events: {
         "click [data-subschema-delete]" : "onDelete"
     },
@@ -78,4 +78,4 @@ define("org/forgerock/openam/ui/admin/views/common/schema/SubSchemaListComponent
             (response) => Messages.addMessage({ response, type: Messages.TYPE_DANGER }));
         });
     }
-}));
+});

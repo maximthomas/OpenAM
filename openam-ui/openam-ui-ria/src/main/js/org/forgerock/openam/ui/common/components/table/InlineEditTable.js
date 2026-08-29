@@ -14,130 +14,127 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "backbone",
-    "org/forgerock/commons/ui/common/util/UIUtils",
-    "org/forgerock/openam/ui/common/components/table/InlineEditRow"
-], ($, _, Backbone, UIUtils, EditRow) => {
+import $ from "jquery";
+import _ from "lodash";
+import Backbone from "backbone";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
+import EditRow from "org/forgerock/openam/ui/common/components/table/InlineEditRow";
 
-    const defaultKeyValueSchema = {
-        required: ["key"],
-        properties: {
-            key: { title: $.t("common.form.propertyName"), propertyOrder: 0 },
-            value: { title: $.t("common.form.propertyValue"), propertyOrder: 1 }
-        }
-    };
+const defaultKeyValueSchema = {
+    required: ["key"],
+    properties: {
+        key: { title: $.t("common.form.propertyName"), propertyOrder: 0 },
+        value: { title: $.t("common.form.propertyValue"), propertyOrder: 1 }
+    }
+};
 
-    return Backbone.View.extend({
-        template: "templates/common/components/table/InlineEditTable.html",
+export default Backbone.View.extend({
+    template: "templates/common/components/table/InlineEditTable.html",
 
-        /**
-         * Initializes the table with editables rows. Only single row is allowed to be in edit mode at a time.
-         *
-         * @param {object[]} values=[] Data array to be passed to the rows
-         * @param {object} rowSchema The Schema of an item. Should be valid JSON Schema.
-         */
-        initialize ({ values = [], rowSchema = defaultKeyValueSchema }) {
-            this.values = values;
-            this.rowSchema = rowSchema;
-            this.rows = [];
-        },
+    /**
+     * Initializes the table with editables rows. Only single row is allowed to be in edit mode at a time.
+     *
+     * @param {object[]} values=[] Data array to be passed to the rows
+     * @param {object} rowSchema The Schema of an item. Should be valid JSON Schema.
+     */
+    initialize ({ values = [], rowSchema = defaultKeyValueSchema }) {
+        this.values = values;
+        this.rowSchema = rowSchema;
+        this.rows = [];
+    },
 
-        getHeaders () {
-            const headers = [];
-            _.each(this.rowSchema.properties, (item) => {
-                headers[item.propertyOrder] = item.title;
-            });
-            return headers;
-        },
+    getHeaders () {
+        const headers = [];
+        _.each(this.rowSchema.properties, (item) => {
+            headers[item.propertyOrder] = item.title;
+        });
+        return headers;
+    },
 
-        getRenderData () {
-            return { headers: this.getHeaders() };
-        },
+    getRenderData () {
+        return { headers: this.getHeaders() };
+    },
 
-        render () {
-            this.$el.empty();
-            UIUtils.compileTemplate(this.template, this.getRenderData()).then((template) => {
-                this.$el.html(template);
+    render () {
+        this.$el.empty();
+        UIUtils.compileTemplate(this.template, this.getRenderData()).then((template) => {
+            this.$el.html(template);
 
-                this.tBody = this.$el.find("tbody");
+            this.tBody = this.$el.find("tbody");
 
-                _.each(this.values, (value) => {
-                    const row = this.initRow(value);
-                    this.tBody.append(row.renderInReadOnlyMode().$el);
-                    this.rows.push(row);
-                });
-
-                this.appendEmptyNewRowToTheBottom();
-            });
-
-            return this;
-        },
-
-        initRow (rowData = {}) {
-            const row = new EditRow(rowData, this.rowSchema);
-
-            const enterEditMode = (row) => {
-                if (row === this.currentlyEditedRow || row === this.newRow) {
-                    return;
-                }
-
-                if (this.currentlyEditedRow) {
-                    this.currentlyEditedRow.renderInReadOnlyMode();
-                }
-
-                row.renderInEditMode().focus();
-                this.currentlyEditedRow = row;
-                this.newRow.$el.hide();
-            };
-
-            const exitEditMode = () => {
-                if (this.currentlyEditedRow) {
-                    this.currentlyEditedRow.renderInReadOnlyMode();
-                    this.currentlyEditedRow = undefined;
-                }
-                this.newRow.$el.show();
-            };
-
-            const addRow = (row) => {
+            _.each(this.values, (value) => {
+                const row = this.initRow(value);
+                this.tBody.append(row.renderInReadOnlyMode().$el);
                 this.rows.push(row);
-                row.renderInReadOnlyMode();
-                this.appendEmptyNewRowToTheBottom();
-            };
+            });
 
-            const deleteRow = (row) => {
-                this.rows = _.without(this.rows, row);
-                row.remove();
-            };
+            this.appendEmptyNewRowToTheBottom();
+        });
 
-            row.on("edit", enterEditMode);
-            row.on("exitEditMode", exitEditMode);
-            row.on("delete", deleteRow);
-            row.on("add", addRow);
+        return this;
+    },
 
-            return row;
-        },
+    initRow (rowData = {}) {
+        const row = new EditRow(rowData, this.rowSchema);
 
-        appendEmptyNewRowToTheBottom () {
-            const row = this.initRow();
-            this.tBody.append(row.renderInNewMode().$el);
-            this.newRow = row;
-        },
+        const enterEditMode = (row) => {
+            if (row === this.currentlyEditedRow || row === this.newRow) {
+                return;
+            }
 
-        getData () {
-            return _.map(this.rows, (row) => row.getData());
-        },
+            if (this.currentlyEditedRow) {
+                this.currentlyEditedRow.renderInReadOnlyMode();
+            }
 
-        isValid () {
-            return true;
-        },
+            row.renderInEditMode().focus();
+            this.currentlyEditedRow = row;
+            this.newRow.$el.hide();
+        };
 
-        setData (data) {
-            this.values = data;
-            this.rows = [];
-            this.render();
-        }
-    });
+        const exitEditMode = () => {
+            if (this.currentlyEditedRow) {
+                this.currentlyEditedRow.renderInReadOnlyMode();
+                this.currentlyEditedRow = undefined;
+            }
+            this.newRow.$el.show();
+        };
+
+        const addRow = (row) => {
+            this.rows.push(row);
+            row.renderInReadOnlyMode();
+            this.appendEmptyNewRowToTheBottom();
+        };
+
+        const deleteRow = (row) => {
+            this.rows = _.without(this.rows, row);
+            row.remove();
+        };
+
+        row.on("edit", enterEditMode);
+        row.on("exitEditMode", exitEditMode);
+        row.on("delete", deleteRow);
+        row.on("add", addRow);
+
+        return row;
+    },
+
+    appendEmptyNewRowToTheBottom () {
+        const row = this.initRow();
+        this.tBody.append(row.renderInNewMode().$el);
+        this.newRow = row;
+    },
+
+    getData () {
+        return _.map(this.rows, (row) => row.getData());
+    },
+
+    isValid () {
+        return true;
+    },
+
+    setData (data) {
+        this.values = data;
+        this.rows = [];
+        this.render();
+    }
 });

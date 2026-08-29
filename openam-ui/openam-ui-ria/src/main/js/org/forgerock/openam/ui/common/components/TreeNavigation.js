@@ -14,94 +14,92 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "react-dom",
-    "react",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/util/ModuleLoader",
-    "org/forgerock/commons/ui/common/util/URIUtils",
-    "org/forgerock/openam/ui/common/util/es6/normaliseModule"
-], ($, _, ReactDOM, React, AbstractView, ModuleLoader, URIUtils, normaliseModule) => {
-    const isBackbonePage = (view) => view.prototype instanceof AbstractView;
-    const isReactPage = (view) => view.prototype instanceof React.Component || view.WrappedComponent;
-    const TreeNavigation = AbstractView.extend({
-        template: "templates/admin/views/common/navigation/TreeNavigationTemplate.html",
-        partials: [
-            "partials/breadcrumb/_Breadcrumb.html",
-            "templates/admin/views/common/navigation/_TreeNavigationLeaf.html"
-        ],
-        events: {
-            "click .sidenav a[href]:not([data-toggle])": "navigateToPage"
-        },
-        findActiveNavItem (fragment) {
-            const element = this.$el.find(`.sidenav ol > li > a[href^="#${fragment}"]`);
-            if (element.length) {
-                const parent = element.parent();
+import $ from "jquery";
+import _ from "lodash";
+import ReactDOM from "react-dom";
+import React from "react";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import ModuleLoader from "org/forgerock/commons/ui/common/util/ModuleLoader";
+import URIUtils from "org/forgerock/commons/ui/common/util/URIUtils";
+import normaliseModule from "org/forgerock/openam/ui/common/util/es6/normaliseModule";
 
-                this.$el.find(".sidenav ol > li").removeClass("active");
-                element.parentsUntil(this.$el.find(".sidenav"), "li").addClass("active");
+const isBackbonePage = (view) => view.prototype instanceof AbstractView;
+const isReactPage = (view) => view.prototype instanceof React.Component || view.WrappedComponent;
+const TreeNavigation = AbstractView.extend({
+    template: "templates/admin/views/common/navigation/TreeNavigationTemplate.html",
+    partials: [
+        "partials/breadcrumb/_Breadcrumb.html",
+        "templates/admin/views/common/navigation/_TreeNavigationLeaf.html"
+    ],
+    events: {
+        "click .sidenav a[href]:not([data-toggle])": "navigateToPage"
+    },
+    findActiveNavItem (fragment) {
+        const element = this.$el.find(`.sidenav ol > li > a[href^="#${fragment}"]`);
+        if (element.length) {
+            const parent = element.parent();
 
-                // Expand any collapsed element direct above. Only works one level up
-                if (parent.parent().hasClass("collapse")) {
-                    parent.parent().addClass("in");
-                }
-            } else {
-                const fragmentSections = fragment.split("/");
-                this.findActiveNavItem(fragmentSections.slice(0, -1).join("/"));
-            }
-        },
-        navigateToPage (event) {
             this.$el.find(".sidenav ol > li").removeClass("active");
-            $(event.currentTarget).parentsUntil(this.$el.find(".sidenav"), "li").addClass("active");
-            this.nextRenderPage = true;
-        },
-        setElement (element) {
-            AbstractView.prototype.setElement.call(this, element);
-            if (this.route && this.nextRenderPage) {
-                ModuleLoader.load(this.route.page).then(
-                    _.bind((module) => {
-                        this.renderPage(module, this.args);
-                    }, this),
-                    _.bind(() => {
-                        throw `Unable to render page for module ${this.route.page}`;
-                    }, this)
-                );
+            element.parentsUntil(this.$el.find(".sidenav"), "li").addClass("active");
+
+            // Expand any collapsed element direct above. Only works one level up
+            if (parent.parent().hasClass("collapse")) {
+                parent.parent().addClass("in");
             }
-        },
-
-        render (args, callback) {
-            this.args = args;
-            this.parentRender(() => {
-                this.$el.find(".sidenav li").removeClass("active");
-                this.findActiveNavItem(URIUtils.getCurrentFragment());
-                if (!this.nextRenderPage) {
-                    ModuleLoader.load(this.route.page).then((page) => {
-                        this.renderPage(page, args, callback);
-                    });
-                }
-            });
-        },
-        renderPage (Module, args, callback) {
-            Module = normaliseModule.default(Module);
-
-            const elementId = "#sidePageContent";
-
-            if (isBackbonePage(Module)) {
-                const page = new Module();
-                page.element = elementId;
-                page.render(args, callback);
-                this.delegateEvents();
-            } else if (isReactPage(Module)) {
-                ReactDOM.render(React.createElement(Module), this.$el.find(elementId)[0]);
-            } else {
-                throw new Error("[TreeNavigation] Unable to determine page type (Backbone or React).");
-            }
-
-            this.nextRenderPage = false;
+        } else {
+            const fragmentSections = fragment.split("/");
+            this.findActiveNavItem(fragmentSections.slice(0, -1).join("/"));
         }
-    });
+    },
+    navigateToPage (event) {
+        this.$el.find(".sidenav ol > li").removeClass("active");
+        $(event.currentTarget).parentsUntil(this.$el.find(".sidenav"), "li").addClass("active");
+        this.nextRenderPage = true;
+    },
+    setElement (element) {
+        AbstractView.prototype.setElement.call(this, element);
+        if (this.route && this.nextRenderPage) {
+            ModuleLoader.load(this.route.page).then(
+                _.bind((module) => {
+                    this.renderPage(module, this.args);
+                }, this),
+                _.bind(() => {
+                    throw `Unable to render page for module ${this.route.page}`;
+                }, this)
+            );
+        }
+    },
 
-    return TreeNavigation;
+    render (args, callback) {
+        this.args = args;
+        this.parentRender(() => {
+            this.$el.find(".sidenav li").removeClass("active");
+            this.findActiveNavItem(URIUtils.getCurrentFragment());
+            if (!this.nextRenderPage) {
+                ModuleLoader.load(this.route.page).then((page) => {
+                    this.renderPage(page, args, callback);
+                });
+            }
+        });
+    },
+    renderPage (Module, args, callback) {
+        Module = normaliseModule(Module);
+
+        const elementId = "#sidePageContent";
+
+        if (isBackbonePage(Module)) {
+            const page = new Module();
+            page.element = elementId;
+            page.render(args, callback);
+            this.delegateEvents();
+        } else if (isReactPage(Module)) {
+            ReactDOM.render(React.createElement(Module), this.$el.find(elementId)[0]);
+        } else {
+            throw new Error("[TreeNavigation] Unable to determine page type (Backbone or React).");
+        }
+
+        this.nextRenderPage = false;
+    }
 });
+
+export default TreeNavigation;

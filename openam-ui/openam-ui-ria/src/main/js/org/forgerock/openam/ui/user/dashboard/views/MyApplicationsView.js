@@ -15,27 +15,25 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/openam/ui/user/dashboard/services/MyApplicationsService"
-], function ($, _, AbstractView, MyApplicationsService) {
-    var Applications = AbstractView.extend({
-        template: "templates/user/dashboard/MyApplicationsTemplate.html",
-        noBaseTemplate: true,
-        element: "#myApplicationsSection",
-        render () {
-            var self = this;
+import "jquery";
+import "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import MyApplicationsService from "org/forgerock/openam/ui/user/dashboard/services/MyApplicationsService";
 
-            MyApplicationsService.getMyApplications().then(function (apps) {
-                if (apps.length > 0) {
-                    self.data.apps = apps;
-                }
-                self.parentRender();
-            });
-        }
-    });
+var Applications = AbstractView.extend({
+    template: "templates/user/dashboard/MyApplicationsTemplate.html",
+    noBaseTemplate: true,
+    element: "#myApplicationsSection",
+    render () {
+        var self = this;
 
-    return new Applications();
+        MyApplicationsService.getMyApplications().then(function (apps) {
+            if (apps.length > 0) {
+                self.data.apps = apps;
+            }
+            self.parentRender();
+        });
+    }
 });
+
+export default new Applications();

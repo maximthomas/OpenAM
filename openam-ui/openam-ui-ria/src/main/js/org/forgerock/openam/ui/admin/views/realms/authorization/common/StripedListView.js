@@ -15,126 +15,124 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/util/UIUtils"
-], function ($, _, AbstractView, UIUtils) {
-    return AbstractView.extend({
-        noBaseTemplate: true,
-        template: "templates/admin/views/realms/authorization/common/StripedListWrapperTemplate.html",
-        events: {
-            "click [data-list-item]":   "clickItem",
-            "keyup [data-list-item]":   "clickItem",
-            "click [data-list-filter]": "filterItems",
-            "keyup [data-list-filter]": "filterItems"
-        },
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
 
-        render (data, el, callback) {
-            this.data = data;
-            this.element = el;
-            this.items = data.items ? _.cloneDeep(data.items).sort() : [];
+export default AbstractView.extend({
+    noBaseTemplate: true,
+    template: "templates/admin/views/realms/authorization/common/StripedListWrapperTemplate.html",
+    events: {
+        "click [data-list-item]":   "clickItem",
+        "keyup [data-list-item]":   "clickItem",
+        "click [data-list-filter]": "filterItems",
+        "keyup [data-list-filter]": "filterItems"
+    },
 
-            if (!this.data.itemTpl) {
-                this.data.itemTpl = "templates/admin/views/realms/authorization/common/StripedListItemTemplate.html";
-            }
+    render (data, el, callback) {
+        this.data = data;
+        this.element = el;
+        this.items = data.items ? _.cloneDeep(data.items).sort() : [];
 
-            this.parentRender(function () {
-                this.renderItems();
-
-                if (callback) {
-                    callback();
-                }
-            });
-        },
-
-        setItems (items) {
-            this.items = _.cloneDeep(items).sort();
-        },
-
-        renderItems () {
-            var self = this;
-            this.data.items = this.filter ? this.getFilteredItems() : this.getAllItems();
-            UIUtils.fillTemplateWithData(this.data.itemTpl, this.data, function (tpl) {
-                self.$el.find(".list-group").html(tpl);
-            });
-        },
-
-        clickItem (e) {
-            if (e.type === "keyup") {
-                switch (e.keyCode) {
-                    case 38: // arrow down
-                        $(e.target).prev("li").focus();
-                        return;
-                    case 40: // arrow up
-                        $(e.target).next("li").focus();
-                        return;
-                    case 13:
-                        break;
-                    default:
-                        return;
-                }
-            }
-
-            if ((this.data.created && !$(e.target).is(".fa-close")) ||
-                $(e.target).is(".radio-inline") ||
-                $(e.target).parents(".radio-inline").length) {
-                return;
-            }
-
-            var target = $(e.currentTarget),
-                li = target.is("li") ? target : target.parents("li"),
-                item = li.data("listItem");
-
-            if (!item) {
-                return;
-            }
-
-            if (this.data.clickItem) {
-                this.data.clickItem(item);
-            }
-        },
-
-        filterItems (e) {
-            if (e.type === "keyup" && e.keyCode === 40) {
-                $(e.target).parent().next().find("li:first-child").focus();
-                return;
-            }
-
-            this.setFilter(e.currentTarget.value);
-            this.renderItems();
-        },
-
-        emptyFilter () {
-            this.setFilter("");
-
-            this.$el.find("[data-list-filter]").val("");
-        },
-
-        setFilter (filter) {
-            this.filter = filter.toString().toLowerCase();
-        },
-
-        getAllItems () {
-            return this.items;
-        },
-
-        getFilteredItems () {
-            var filter = this.filter;
-
-            return _.filter(this.items, function (item) {
-                return item.toString().toLowerCase().indexOf(filter) !== -1;
-            });
-        },
-
-        removeItem (item) {
-            this.items = _.without(this.items, item);
-        },
-
-        addItem (item) {
-            this.items.push(item);
-            this.items.sort();
+        if (!this.data.itemTpl) {
+            this.data.itemTpl = "templates/admin/views/realms/authorization/common/StripedListItemTemplate.html";
         }
-    });
+
+        this.parentRender(function () {
+            this.renderItems();
+
+            if (callback) {
+                callback();
+            }
+        });
+    },
+
+    setItems (items) {
+        this.items = _.cloneDeep(items).sort();
+    },
+
+    renderItems () {
+        var self = this;
+        this.data.items = this.filter ? this.getFilteredItems() : this.getAllItems();
+        UIUtils.fillTemplateWithData(this.data.itemTpl, this.data, function (tpl) {
+            self.$el.find(".list-group").html(tpl);
+        });
+    },
+
+    clickItem (e) {
+        if (e.type === "keyup") {
+            switch (e.keyCode) {
+                case 38: // arrow down
+                    $(e.target).prev("li").focus();
+                    return;
+                case 40: // arrow up
+                    $(e.target).next("li").focus();
+                    return;
+                case 13:
+                    break;
+                default:
+                    return;
+            }
+        }
+
+        if ((this.data.created && !$(e.target).is(".fa-close")) ||
+            $(e.target).is(".radio-inline") ||
+            $(e.target).parents(".radio-inline").length) {
+            return;
+        }
+
+        var target = $(e.currentTarget),
+            li = target.is("li") ? target : target.parents("li"),
+            item = li.data("listItem");
+
+        if (!item) {
+            return;
+        }
+
+        if (this.data.clickItem) {
+            this.data.clickItem(item);
+        }
+    },
+
+    filterItems (e) {
+        if (e.type === "keyup" && e.keyCode === 40) {
+            $(e.target).parent().next().find("li:first-child").focus();
+            return;
+        }
+
+        this.setFilter(e.currentTarget.value);
+        this.renderItems();
+    },
+
+    emptyFilter () {
+        this.setFilter("");
+
+        this.$el.find("[data-list-filter]").val("");
+    },
+
+    setFilter (filter) {
+        this.filter = filter.toString().toLowerCase();
+    },
+
+    getAllItems () {
+        return this.items;
+    },
+
+    getFilteredItems () {
+        var filter = this.filter;
+
+        return _.filter(this.items, function (item) {
+            return item.toString().toLowerCase().indexOf(filter) !== -1;
+        });
+    },
+
+    removeItem (item) {
+        this.items = _.without(this.items, item);
+    },
+
+    addItem (item) {
+        this.items.push(item);
+        this.items.sort();
+    }
 });

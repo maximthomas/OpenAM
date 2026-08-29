@@ -30,79 +30,77 @@
   * </code>
   * @module org/forgerock/openam/ui/common/views/jsonSchema/FlatJSONSchemaView
   */
-define([
-    "jquery",
-    "lodash",
-    "backbone",
-    "org/forgerock/openam/ui/common/models/JSONSchema",
-    "org/forgerock/openam/ui/common/models/JSONValues",
-    "org/forgerock/openam/ui/common/views/jsonSchema/editors/JSONEditorView"
-], ($, _, Backbone, JSONSchema, JSONValues, JSONEditorView) => {
-    /**
-     * There is no reliable method of knowing if the form rendered by the JSON Editor has finished being added to the
-     * DOM. We do however wish to signal when render is complete so views can perform actions (e.g. enabling buttons
-     * when the form is ready for input). The workaround is to add the callback to the browser event queue using
-     * setTimeout meaning his callback will be executed after the render cycle has complete.
-     * @param  {Function} callback Function to invoke after the timeout has expired
-     */
-    function invokeOnRenderedAfterTimeout (callback) {
-        if (callback) {
-            setTimeout(callback, 0);
+import "jquery";
+import _ from "lodash";
+import Backbone from "backbone";
+import JSONSchema from "org/forgerock/openam/ui/common/models/JSONSchema";
+import JSONValues from "org/forgerock/openam/ui/common/models/JSONValues";
+import JSONEditorView from "org/forgerock/openam/ui/common/views/jsonSchema/editors/JSONEditorView";
+
+/**
+ * There is no reliable method of knowing if the form rendered by the JSON Editor has finished being added to the
+ * DOM. We do however wish to signal when render is complete so views can perform actions (e.g. enabling buttons
+ * when the form is ready for input). The workaround is to add the callback to the browser event queue using
+ * setTimeout meaning his callback will be executed after the render cycle has complete.
+ * @param  {Function} callback Function to invoke after the timeout has expired
+ */
+function invokeOnRenderedAfterTimeout (callback) {
+    if (callback) {
+        setTimeout(callback, 0);
+    }
+}
+
+const FlatJSONSchemaView = Backbone.View.extend({
+    initialize (options) {
+        if (!(options.schema instanceof JSONSchema)) {
+            throw new TypeError("[FlatJSONSchemaView] \"schema\" argument is not an instance of JSONSchema.");
+        }
+        if (options.schema.isCollection() && !options.schema.hasInheritance()) {
+            throw new Error(
+                "[FlatJSONSchemaView] JSONSchema collections with no inheritance are not supported by this view.");
+        }
+        if (!(options.values instanceof JSONValues)) {
+            throw new TypeError("[FlatJSONSchemaView] \"values\" argument is not an instance of JSONValues.");
+        }
+
+        this.options = _.defaults(options, {
+            showOnlyRequiredAndEmpty: false
+        });
+    },
+    render () {
+        let schema = this.options.schema;
+
+        if (this.options.showOnlyRequiredAndEmpty) {
+            const requiredSchemaKeys = this.options.schema.getRequiredPropertyKeys();
+            const emptyValueKeys = this.options.values.getEmptyValueKeys();
+            const requiredAndEmptyKeys = _.intersection(requiredSchemaKeys, emptyValueKeys);
+            schema = schema.removeUnrequiredProperties().addDefaultProperties(requiredAndEmptyKeys);
+        }
+
+        this.subview = new JSONEditorView({
+            displayTitle: false,
+            el: this.$el,
+            schema,
+            values: this.options.values
+        }).render();
+
+        invokeOnRenderedAfterTimeout(this.options.onRendered);
+
+        return this;
+    },
+    isValid () {
+        return !this.subview || this.subview.isValid();
+    },
+    getData () {
+        if (this.subview) {
+            return this.subview.getData();
+        }
+    },
+    setData (data) {
+        if (this.subview) {
+            return this.subview.setData(data);
         }
     }
-
-    const FlatJSONSchemaView = Backbone.View.extend({
-        initialize (options) {
-            if (!(options.schema instanceof JSONSchema)) {
-                throw new TypeError("[FlatJSONSchemaView] \"schema\" argument is not an instance of JSONSchema.");
-            }
-            if (options.schema.isCollection() && !options.schema.hasInheritance()) {
-                throw new Error(
-                    "[FlatJSONSchemaView] JSONSchema collections with no inheritance are not supported by this view.");
-            }
-            if (!(options.values instanceof JSONValues)) {
-                throw new TypeError("[FlatJSONSchemaView] \"values\" argument is not an instance of JSONValues.");
-            }
-
-            this.options = _.defaults(options, {
-                showOnlyRequiredAndEmpty: false
-            });
-        },
-        render () {
-            let schema = this.options.schema;
-
-            if (this.options.showOnlyRequiredAndEmpty) {
-                const requiredSchemaKeys = this.options.schema.getRequiredPropertyKeys();
-                const emptyValueKeys = this.options.values.getEmptyValueKeys();
-                const requiredAndEmptyKeys = _.intersection(requiredSchemaKeys, emptyValueKeys);
-                schema = schema.removeUnrequiredProperties().addDefaultProperties(requiredAndEmptyKeys);
-            }
-
-            this.subview = new JSONEditorView({
-                displayTitle: false,
-                el: this.$el,
-                schema,
-                values: this.options.values
-            }).render();
-
-            invokeOnRenderedAfterTimeout(this.options.onRendered);
-
-            return this;
-        },
-        isValid () {
-            return !this.subview || this.subview.isValid();
-        },
-        getData () {
-            if (this.subview) {
-                return this.subview.getData();
-            }
-        },
-        setData (data) {
-            if (this.subview) {
-                return this.subview.setData(data);
-            }
-        }
-    });
-
-    return FlatJSONSchemaView;
 });
+
+export default FlatJSONSchemaView;

@@ -14,15 +14,12 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([], () => {
-
-    /**
-    * Recursively add string type to enum
-    * @param {Object} property Property to transform
-    */
-    return function transformEnumTypeToString (property) {
-        if (property.hasOwnProperty("enum")) {
-            property.type = "string";
-        }
-    };
-});
+/**
+* Recursively add string type to enum
+* @param {Object} property Property to transform
+*/
+export default function transformEnumTypeToString (property) {
+    if (property.hasOwnProperty("enum")) {
+        property.type = "string";
+    }
+}

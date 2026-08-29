@@ -17,91 +17,89 @@
  /**
  * @deprecated
  */
-define([
-    "jquery",
-    "lodash",
-    "jsonEditor",
-    "org/forgerock/openam/ui/admin/utils/JSONEditorTheme",
-    "popoverclickaway", // depends on jquery and bootstrap
-    "selectize" // jquery dependencies
-], function ($, _, JSONEditor, JSONEditorTheme) {
-    var obj = function Form (element, schema, values) {
-        console.warn("[Form] \"Form\" is deprecated. Use a FlatJSONSchemaView or GroupedJSONSchemaView instead.");
+import $ from "jquery";
+import _ from "lodash";
+import JSONEditor from "jsonEditor";
+import JSONEditorTheme from "org/forgerock/openam/ui/admin/utils/JSONEditorTheme";
+import "popoverclickaway"; // depends on jquery and bootstrap
+import "selectize"; // jquery dependencies
 
-        this.element = element;
-        this.schema = schema;
-        this.values = values;
+var obj = function Form (element, schema, values) {
+    console.warn("[Form] \"Form\" is deprecated. Use a FlatJSONSchemaView or GroupedJSONSchemaView instead.");
 
-        // Attributes that are identifiable as passwords
-        const passwordProperties = _.where(schema.properties, { format: "password" });
-        this.passwordAttributes = _.map(passwordProperties, (property) => _.findKey(schema.properties, property));
+    this.element = element;
+    this.schema = schema;
+    this.values = values;
 
-        JSONEditor.plugins.selectize.enable = true;
-        JSONEditor.defaults.themes.openam = JSONEditorTheme.getTheme(6, 4);
+    // Attributes that are identifiable as passwords
+    const passwordProperties = _.where(schema.properties, { format: "password" });
+    this.passwordAttributes = _.map(passwordProperties, (property) => _.findKey(schema.properties, property));
 
-        this.editor = new JSONEditor(element, {
-            "disable_collapse": true,
-            "disable_edit_json": true,
-            "iconlib": "fontawesome4",
-            schema,
-            "theme": "openam"
-        });
+    JSONEditor.plugins.selectize.enable = true;
+    JSONEditor.defaults.themes.openam = JSONEditorTheme.getTheme(6, 4);
 
-        /**
-         * Passwords are not delivered to the UI from the server. Thus we set a placeholder informing the user that
-         * the password will remain unchanged if they do nothing
-         */
-        $(element).find("input:password").attr("placeholder", $.t("common.form.passwordPlaceholder"));
-
-        $(element).find(".help-block").addClass("hidden-lg hidden-md hidden-sm").each(function () {
-            var group = $(this).parent(),
-                element = $('<a class="btn info-button visible-lg-inline-block' +
-                    ' visible-md-inline-block visible-sm-inline-block" ' +
-                    'tabindex="0" data-toggle="popoverclickaway" ><i class="fa fa-info-circle"></i></a>');
-
-            $(group).append(element);
-
-            element.popoverclickaway({
-                container: "#content",
-                html: true,
-                placement: "auto top",
-                content: this.innerHTML
-            });
-            element.click(function (event) {
-                event.preventDefault();
-            });
-        });
-
-        this.reset();
-    };
+    this.editor = new JSONEditor(element, {
+        "disable_collapse": true,
+        "disable_edit_json": true,
+        "iconlib": "fontawesome4",
+        schema,
+        "theme": "openam"
+    });
 
     /**
-     * Filters out empty, specified attributes from an object
-     * @param  {Object} object    Object to filter
-     * @param  {Array} attributes Attribute names to filter
-     * @returns {Object}          Filtered object
+     * Passwords are not delivered to the UI from the server. Thus we set a placeholder informing the user that
+     * the password will remain unchanged if they do nothing
      */
-    function filterEmptyAttributes (object, attributes) {
-        return _.omit(object, function (value, key) {
-            if (_.contains(attributes, key)) {
-                return _.isEmpty(value);
-            } else {
-                return false;
-            }
+    $(element).find("input:password").attr("placeholder", $.t("common.form.passwordPlaceholder"));
+
+    $(element).find(".help-block").addClass("hidden-lg hidden-md hidden-sm").each(function () {
+        var group = $(this).parent(),
+            element = $('<a class="btn info-button visible-lg-inline-block' +
+                ' visible-md-inline-block visible-sm-inline-block" ' +
+                'tabindex="0" data-toggle="popoverclickaway" ><i class="fa fa-info-circle"></i></a>');
+
+        $(group).append(element);
+
+        element.popoverclickaway({
+            container: "#content",
+            html: true,
+            placement: "auto top",
+            content: this.innerHTML
         });
-    }
+        element.click(function (event) {
+            event.preventDefault();
+        });
+    });
 
-    obj.prototype.data = function () {
-        return filterEmptyAttributes(this.editor.getValue(), this.passwordAttributes);
-    };
+    this.reset();
+};
 
-    obj.prototype.reset = function () {
-        this.editor.setValue(_.pick(this.values, _.keys(this.schema.properties)));
-    };
+/**
+ * Filters out empty, specified attributes from an object
+ * @param  {Object} object    Object to filter
+ * @param  {Array} attributes Attribute names to filter
+ * @returns {Object}          Filtered object
+ */
+function filterEmptyAttributes (object, attributes) {
+    return _.omit(object, function (value, key) {
+        if (_.contains(attributes, key)) {
+            return _.isEmpty(value);
+        } else {
+            return false;
+        }
+    });
+}
 
-    obj.prototype.destroy = function () {
-        this.editor.destroy();
-    };
+obj.prototype.data = function () {
+    return filterEmptyAttributes(this.editor.getValue(), this.passwordAttributes);
+};
 
-    return obj;
-});
+obj.prototype.reset = function () {
+    this.editor.setValue(_.pick(this.values, _.keys(this.schema.properties)));
+};
+
+obj.prototype.destroy = function () {
+    this.editor.destroy();
+};
+
+export default obj;

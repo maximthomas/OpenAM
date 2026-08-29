@@ -15,49 +15,48 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView",
-    "bootstrap-datetimepicker"
-], function ($, _, ConditionAttrBaseView) {
-    return ConditionAttrBaseView.extend({
-        template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrDate.html",
+import "jquery";
+import "lodash";
+import ConditionAttrBaseView from
+    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView";
+import "bootstrap-datetimepicker";
 
-        render (data, element, callback) {
-            this.initBasic(data, element, "pull-left attr-group");
+export default ConditionAttrBaseView.extend({
+    template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrDate.html",
 
-            this.parentRender(function () {
-                this.initDatePickers();
+    render (data, element, callback) {
+        this.initBasic(data, element, "pull-left attr-group");
 
-                if (callback) {
-                    callback();
+        this.parentRender(function () {
+            this.initDatePickers();
+
+            if (callback) {
+                callback();
+            }
+        });
+    },
+
+    initDatePickers () {
+        var options = {
+                format: "YYYY:MM:DD",
+                useCurrent: false,
+                icons: {
+                    previous: "fa fa-chevron-left",
+                    next: "fa fa-chevron-right"
                 }
-            });
-        },
+            },
+            startDate = this.$el.find("#startDate"),
+            endDate = this.$el.find("#endDate");
 
-        initDatePickers () {
-            var options = {
-                    format: "YYYY:MM:DD",
-                    useCurrent: false,
-                    icons: {
-                        previous: "fa fa-chevron-left",
-                        next: "fa fa-chevron-right"
-                    }
-                },
-                startDate = this.$el.find("#startDate"),
-                endDate = this.$el.find("#endDate");
+        startDate.datetimepicker(options);
+        endDate.datetimepicker(options);
 
-            startDate.datetimepicker(options);
-            endDate.datetimepicker(options);
+        startDate.on("dp.change", function (e) {
+            endDate.data("DateTimePicker").minDate(e.date);
+        });
 
-            startDate.on("dp.change", function (e) {
-                endDate.data("DateTimePicker").minDate(e.date);
-            });
-
-            endDate.on("dp.change", function (e) {
-                startDate.data("DateTimePicker").maxDate(e.date);
-            });
-        }
-    });
+        endDate.on("dp.change", function (e) {
+            startDate.data("DateTimePicker").maxDate(e.date);
+        });
+    }
 });

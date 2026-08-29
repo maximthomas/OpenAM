@@ -15,213 +15,210 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "backbone",
-    "backbone.paginator",
-    "backgrid-filter",
-    "org/forgerock/commons/ui/common/backgrid/Backgrid",
-    "org/forgerock/commons/ui/common/backgrid/extension/ThemeablePaginator",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/openam/ui/admin/models/authorization/PolicySetModel",
-    "org/forgerock/openam/ui/admin/views/realms/authorization/common/AbstractListView",
-    "org/forgerock/openam/ui/admin/services/realm/PoliciesService",
-    "org/forgerock/openam/ui/common/util/BackgridUtils",
-    "org/forgerock/openam/ui/common/util/RealmHelper",
-    "org/forgerock/openam/ui/common/util/URLHelper"
-], ($, _, Backbone, BackbonePaginator, BackgridFilter, Backgrid, ThemeablePaginator, Configuration, EventManager,
-    Router, Constants, PolicySetModel, AbstractListView, PoliciesService, BackgridUtils, RealmHelper, URLHelper) =>
-    AbstractListView.extend({
-        template: "templates/admin/views/realms/authorization/policySets/PolicySetsTemplate.html",
-        // Used in AbstractListView
-        toolbarTemplate: "templates/admin/views/realms/authorization/policySets/PolicySetsToolbarTemplate.html",
-        partials: [
-            "partials/util/_HelpLink.html"
-        ],
-        events: {
-            "click [data-add-entity]":      "addNewPolicySet",
-            "click [data-import-policies]": "startImportPolicies",
-            "click [data-export-policies]": "exportPolicies",
-            "click [data-add-resource]":    "addResource",
-            "change [name=upload]":         "readImportFile"
-        },
-        render (args, callback) {
-            this.realmPath = args[0];
-            this.data.headerActions = [{ actionPartial: "util/_HelpLink", helpLink: "backstage.authz.policySets" }];
-            PoliciesService.listResourceTypes().then(_.bind(function (resourceTypes) {
-                if (resourceTypes.resultCount < 1) {
-                    this.data.hasResourceTypes = false;
-                    this.parentRender(this.renderToolbar);
-                } else {
-                    const PolicySets = Backbone.PageableCollection.extend({
-                        url: URLHelper.substitute("__api__/applications"),
-                        model: PolicySetModel,
-                        state: BackgridUtils.getState(),
-                        queryParams: BackgridUtils.getQueryParams({
-                            filterName: "eq",
-                            _queryFilter: [
-                                `name+eq+${encodeURIComponent('"^(?!sunAMDelegationService$).*"')}`
-                            ]
-                        }),
-                        parseState: BackgridUtils.parseState,
-                        parseRecords: BackgridUtils.parseRecords,
-                        sync (method, model, options) {
-                            options.beforeSend = function (xhr) {
-                                xhr.setRequestHeader("Accept-API-Version", "protocol=1.0,resource=2.0");
-                            };
-                            return BackgridUtils.sync(method, model, options);
-                        }
-                    });
+import $ from "jquery";
+import _ from "lodash";
+import Backbone from "backbone";
+import "backbone.paginator";
+import "backgrid-filter";
+import Backgrid from "org/forgerock/commons/ui/common/backgrid/Backgrid";
+import "org/forgerock/commons/ui/common/backgrid/extension/ThemeablePaginator";
+import "org/forgerock/commons/ui/common/main/Configuration";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import PolicySetModel from "org/forgerock/openam/ui/admin/models/authorization/PolicySetModel";
+import AbstractListView from "org/forgerock/openam/ui/admin/views/realms/authorization/common/AbstractListView";
+import PoliciesService from "org/forgerock/openam/ui/admin/services/realm/PoliciesService";
+import BackgridUtils from "org/forgerock/openam/ui/common/util/BackgridUtils";
+import RealmHelper from "org/forgerock/openam/ui/common/util/RealmHelper";
+import URLHelper from "org/forgerock/openam/ui/common/util/URLHelper";
 
-                    this.data.selectedItems = [];
-                    this.data.hasResourceTypes = true;
-                    this.data.items = new PolicySets();
-                    this.data.items.fetch({ reset: true }).done((response) => {
-                        if (response.resultCount > 0) {
-                            this.data.hasPolicySets = true;
-                            this.renderTable(callback);
-                        } else {
-                            this.data.hasPolicySets = false;
-                            this.parentRender(this.renderToolbar);
-                        }
-                    }).fail(() => {
-                        Router.routeTo(Router.configuration.routes.realms, { args: [], trigger: true });
-                    });
-                }
-            }, this));
-        },
-
-        renderTable (callback) {
-            const self = this;
-            const ClickableRow = BackgridUtils.ClickableRow.extend({
-                callback (e) {
-                    var $target = $(e.target);
-
-                    if ($target.parents().hasClass("fr-col-btn-2")) {
-                        return;
-                    }
-                    self.editRecord(e, this.model.id, Router.configuration.routes.realmsPolicySetEdit);
-                }
-            });
-
-            const columns = [
-                {
-                    name: "displayName",
-                    label: $.t("console.authorization.policySets.list.grid.0"),
-                    cell: BackgridUtils.TemplateCell.extend({
-                        iconClass: "fa-folder",
-                        template: "templates/admin/backgrid/cell/IconAndDisplayNameCell.html",
-                        rendered () {
-                            this.$el.find("i.fa").addClass(this.iconClass);
-                        }
+export default AbstractListView.extend({
+    template: "templates/admin/views/realms/authorization/policySets/PolicySetsTemplate.html",
+    // Used in AbstractListView
+    toolbarTemplate: "templates/admin/views/realms/authorization/policySets/PolicySetsToolbarTemplate.html",
+    partials: [
+        "partials/util/_HelpLink.html"
+    ],
+    events: {
+        "click [data-add-entity]":      "addNewPolicySet",
+        "click [data-import-policies]": "startImportPolicies",
+        "click [data-export-policies]": "exportPolicies",
+        "click [data-add-resource]":    "addResource",
+        "change [name=upload]":         "readImportFile"
+    },
+    render (args, callback) {
+        this.realmPath = args[0];
+        this.data.headerActions = [{ actionPartial: "util/_HelpLink", helpLink: "backstage.authz.policySets" }];
+        PoliciesService.listResourceTypes().then(_.bind(function (resourceTypes) {
+            if (resourceTypes.resultCount < 1) {
+                this.data.hasResourceTypes = false;
+                this.parentRender(this.renderToolbar);
+            } else {
+                const PolicySets = Backbone.PageableCollection.extend({
+                    url: URLHelper.substitute("__api__/applications"),
+                    model: PolicySetModel,
+                    state: BackgridUtils.getState(),
+                    queryParams: BackgridUtils.getQueryParams({
+                        filterName: "eq",
+                        _queryFilter: [
+                            `name+eq+${encodeURIComponent('"^(?!sunAMDelegationService$).*"')}`
+                        ]
                     }),
-                    headerCell: BackgridUtils.FilterHeaderCell,
-                    sortType: "toggle",
-                    editable: false
-                },
-                {
-                    name: "",
-                    cell: BackgridUtils.TemplateCell.extend({
-                        className: "fr-col-btn-2",
-                        template: "templates/admin/backgrid/cell/RowActionsCell.html",
-                        events: {
-                            "click [data-edit-item]": "editItem",
-                            "click [data-delete-item]": "deleteItem"
-                        },
-                        editItem (e) {
-                            self.editRecord(e, this.model.id, Router.configuration.routes.realmsPolicySetEdit);
-                        },
-                        deleteItem (e) {
-                            self.onDeleteClick(e, { type: $.t("console.authorization.common.policySet") },
-                                this.model.id);
-                        }
-                    }),
-                    sortable: false,
-                    editable: false
-                }
-            ];
-
-            const grid = new Backgrid.Grid({
-                columns,
-                row: ClickableRow,
-                collection: this.data.items,
-                className: "backgrid table table-hover",
-                emptyText: $.t("console.common.noResults")
-            });
-
-            const paginator = new Backgrid.Extension.ThemeablePaginator({
-                collection: this.data.items,
-                windowSize: 3
-            });
-
-            this.bindDefaultHandlers();
-            this.parentRender(() => {
-                this.renderToolbar();
-                this.$el.find(".table-container").append(grid.render().el);
-                this.$el.find(".panel-body").append(paginator.render().el);
-
-                if (callback) { callback(); }
-            });
-        },
-
-        startImportPolicies () {
-            this.$el.find("[name=upload]").trigger("click");
-        },
-
-        importPolicies (e) {
-            PoliciesService.importPolicies(e.target.result)
-                .done(function () {
-                    EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "policiesUploaded");
-                })
-                .fail(function (e) {
-                    var applicationNotFoundInRealm = " application not found in realm",
-                        responseText = e ? e.responseText : "",
-                        messages = $($.parseXML(responseText)).find("message"),
-                        message = messages.length ? messages[0].textContent : "",
-                        index = message ? message.indexOf(applicationNotFoundInRealm) : -1;
-
-                    if (index > -1) {
-                        EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, {
-                            key: "policiesImportFailed",
-                            applicationName: message.slice(0, index)
-                        });
-                    } else {
-                        EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "policiesUploadFailed");
+                    parseState: BackgridUtils.parseState,
+                    parseRecords: BackgridUtils.parseRecords,
+                    sync (method, model, options) {
+                        options.beforeSend = function (xhr) {
+                            xhr.setRequestHeader("Accept-API-Version", "protocol=1.0,resource=2.0");
+                        };
+                        return BackgridUtils.sync(method, model, options);
                     }
                 });
-        },
 
-        readImportFile () {
-            var file = this.$el.find("[name=upload]")[0].files[0],
-                reader = new FileReader();
-            reader.onload = this.importPolicies;
-            if (file) {
-                reader.readAsText(file, "UTF-8");
+                this.data.selectedItems = [];
+                this.data.hasResourceTypes = true;
+                this.data.items = new PolicySets();
+                this.data.items.fetch({ reset: true }).done((response) => {
+                    if (response.resultCount > 0) {
+                        this.data.hasPolicySets = true;
+                        this.renderTable(callback);
+                    } else {
+                        this.data.hasPolicySets = false;
+                        this.parentRender(this.renderToolbar);
+                    }
+                }).fail(() => {
+                    Router.routeTo(Router.configuration.routes.realms, { args: [], trigger: true });
+                });
             }
-        },
+        }, this));
+    },
 
-        exportPolicies () {
-            var realm = this.realmPath === "/" ? "" : RealmHelper.encodeRealm(this.realmPath);
-            this.$el.find("[data-export-policies]").attr("href",
-                `${Constants.host}/${Constants.context}/xacml${realm}/policies`);
-        },
+    renderTable (callback) {
+        const self = this;
+        const ClickableRow = BackgridUtils.ClickableRow.extend({
+            callback (e) {
+                var $target = $(e.target);
 
-        addResource () {
-            Router.routeTo(Router.configuration.routes.realmsResourceTypeNew, {
-                args: [encodeURIComponent(this.realmPath)],
-                trigger: true
+                if ($target.parents().hasClass("fr-col-btn-2")) {
+                    return;
+                }
+                self.editRecord(e, this.model.id, Router.configuration.routes.realmsPolicySetEdit);
+            }
+        });
+
+        const columns = [
+            {
+                name: "displayName",
+                label: $.t("console.authorization.policySets.list.grid.0"),
+                cell: BackgridUtils.TemplateCell.extend({
+                    iconClass: "fa-folder",
+                    template: "templates/admin/backgrid/cell/IconAndDisplayNameCell.html",
+                    rendered () {
+                        this.$el.find("i.fa").addClass(this.iconClass);
+                    }
+                }),
+                headerCell: BackgridUtils.FilterHeaderCell,
+                sortType: "toggle",
+                editable: false
+            },
+            {
+                name: "",
+                cell: BackgridUtils.TemplateCell.extend({
+                    className: "fr-col-btn-2",
+                    template: "templates/admin/backgrid/cell/RowActionsCell.html",
+                    events: {
+                        "click [data-edit-item]": "editItem",
+                        "click [data-delete-item]": "deleteItem"
+                    },
+                    editItem (e) {
+                        self.editRecord(e, this.model.id, Router.configuration.routes.realmsPolicySetEdit);
+                    },
+                    deleteItem (e) {
+                        self.onDeleteClick(e, { type: $.t("console.authorization.common.policySet") },
+                            this.model.id);
+                    }
+                }),
+                sortable: false,
+                editable: false
+            }
+        ];
+
+        const grid = new Backgrid.Grid({
+            columns,
+            row: ClickableRow,
+            collection: this.data.items,
+            className: "backgrid table table-hover",
+            emptyText: $.t("console.common.noResults")
+        });
+
+        const paginator = new Backgrid.Extension.ThemeablePaginator({
+            collection: this.data.items,
+            windowSize: 3
+        });
+
+        this.bindDefaultHandlers();
+        this.parentRender(() => {
+            this.renderToolbar();
+            this.$el.find(".table-container").append(grid.render().el);
+            this.$el.find(".panel-body").append(paginator.render().el);
+
+            if (callback) { callback(); }
+        });
+    },
+
+    startImportPolicies () {
+        this.$el.find("[name=upload]").trigger("click");
+    },
+
+    importPolicies (e) {
+        PoliciesService.importPolicies(e.target.result)
+            .done(function () {
+                EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "policiesUploaded");
+            })
+            .fail(function (e) {
+                var applicationNotFoundInRealm = " application not found in realm",
+                    responseText = e ? e.responseText : "",
+                    messages = $($.parseXML(responseText)).find("message"),
+                    message = messages.length ? messages[0].textContent : "",
+                    index = message ? message.indexOf(applicationNotFoundInRealm) : -1;
+
+                if (index > -1) {
+                    EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, {
+                        key: "policiesImportFailed",
+                        applicationName: message.slice(0, index)
+                    });
+                } else {
+                    EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "policiesUploadFailed");
+                }
             });
-        },
+    },
 
-        addNewPolicySet () {
-            Router.routeTo(Router.configuration.routes.realmsPolicySetNew, {
-                args: [encodeURIComponent(this.realmPath)],
-                trigger: true
-            });
+    readImportFile () {
+        var file = this.$el.find("[name=upload]")[0].files[0],
+            reader = new FileReader();
+        reader.onload = this.importPolicies;
+        if (file) {
+            reader.readAsText(file, "UTF-8");
         }
-    })
-);
+    },
+
+    exportPolicies () {
+        var realm = this.realmPath === "/" ? "" : RealmHelper.encodeRealm(this.realmPath);
+        this.$el.find("[data-export-policies]").attr("href",
+            `${Constants.host}/${Constants.context}/xacml${realm}/policies`);
+    },
+
+    addResource () {
+        Router.routeTo(Router.configuration.routes.realmsResourceTypeNew, {
+            args: [encodeURIComponent(this.realmPath)],
+            trigger: true
+        });
+    },
+
+    addNewPolicySet () {
+        Router.routeTo(Router.configuration.routes.realmsPolicySetNew, {
+            args: [encodeURIComponent(this.realmPath)],
+            trigger: true
+        });
+    }
+});

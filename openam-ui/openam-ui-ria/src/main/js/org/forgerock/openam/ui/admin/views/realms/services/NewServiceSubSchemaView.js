@@ -14,14 +14,14 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/openam/ui/admin/services/realm/ServicesService",
-    "org/forgerock/openam/ui/admin/views/common/schema/NewSchemaComponent"
-], ($, _, AbstractView, Router, ServicesService, NewSchemaComponent) => AbstractView.extend({
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import ServicesService from "org/forgerock/openam/ui/admin/services/realm/ServicesService";
+import NewSchemaComponent from "org/forgerock/openam/ui/admin/views/common/schema/NewSchemaComponent";
+
+export default AbstractView.extend({
     render ([realmPath, serviceInstance, subSchemaType]) {
         const newSchemaComponent = new NewSchemaComponent({
             data: {
@@ -48,4 +48,4 @@ define([
 
         this.parentRender(() => { this.$el.append(newSchemaComponent.render().$el); });
     }
-}));
+});

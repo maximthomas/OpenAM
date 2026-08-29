@@ -102,6 +102,26 @@ function resolveAssetUrl (url) {
          * right - but it means the guard only becomes an alarm once group 5 removes the
          * bootstrap from index.html. Until then, "did configure() run?" is not a question this
          * module can answer for you.
+         *
+         * UPDATED BY TASK 5.4/B12, AND THE ANSWER IS NOW DIFFERENT PER ENTRY POINT.
+         *
+         * `main` (the console): index.html no longer loads RequireJS at all - it is a single
+         * `<script type="module" src="main.js?v=${version}">` - so `require` is undefined on
+         * that page and the throw below IS the forgot-to-configure alarm the paragraph above
+         * said it was not. main.js calls `configure({ urlArgs })` before it sends
+         * EVENT_DEPENDENCIES_LOADED.
+         *
+         * `main-authorize` / `main-device` (the six openam-oauth2 .ftl pages): those pages still
+         * load RequireJS by literal `<script src>` - it is what fetches the classic stub that
+         * imports the real chunk - so `require.toUrl` is present and this module stays on the
+         * delegating branch there, DELIBERATELY and un-configured. Two reasons, and the first is
+         * the load-bearing one: those pages are served from /oauth2/..., not from the XUI tree
+         * root, so difference 1 below stops being inert - a configured resolveAssetUrl would
+         * return `themes/...` where the page needs `${baseUrl}/XUI/themes/...`. RequireJS's
+         * baseUrl, inferred from its own script tag, is the only thing on those pages that knows
+         * where the tree is. Second, `data-main` never carried a urlArgs, so those pages have no
+         * cache-buster to preserve. Whoever lands group 6 should revisit this together with
+         * LoaderRuntime.configure({ baseUrl }), which has the same gap for template fetches.
          */
         if (typeof require !== "undefined" && require.toUrl) {
             return require.toUrl(url);

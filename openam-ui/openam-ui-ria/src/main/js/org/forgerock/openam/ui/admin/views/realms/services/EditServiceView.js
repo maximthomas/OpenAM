@@ -14,12 +14,12 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/openam/ui/admin/services/realm/ServicesService",
-    "org/forgerock/openam/ui/admin/views/common/schema/EditSchemaComponent"
-], (AbstractView, Router, ServicesService, EditSchemaComponent) => AbstractView.extend({
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import ServicesService from "org/forgerock/openam/ui/admin/services/realm/ServicesService";
+import EditSchemaComponent from "org/forgerock/openam/ui/admin/views/common/schema/EditSchemaComponent";
+
+export default AbstractView.extend({
     render ([realmPath, type]) {
         const editComponent = new EditSchemaComponent({
             data: {
@@ -47,4 +47,4 @@ define([
 
         this.parentRender(() => { this.$el.append(editComponent.render().$el); });
     }
-}));
+});

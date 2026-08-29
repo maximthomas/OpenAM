@@ -14,9 +14,17 @@
  * Copyright 2014-2016 ForgeRock AS.
  */
 
-define([
-    "./util/Constants",
-    "./util/RealmHelper",
-    "./services/SiteConfigurationService",
-    "./components/TemplateBasedView"
-]);
+/*
+ * An aggregator: it had no factory and exported nothing, so every dependency was already loaded
+ * purely for its side effects. Side-effect imports preserve that exactly.
+ *
+ * The four ids are RELATIVE and stay relative. They cannot be aliased -- resolve.alias never sees a
+ * relative specifier -- but they need no alias: each one resolves against this file's own directory
+ * to a file that exists (common/util/Constants.js, common/util/RealmHelper.js,
+ * common/services/SiteConfigurationService.js, common/components/TemplateBasedView.js), because the
+ * source layout already mirrors the module-id layout here.
+ */
+import "./util/Constants";
+import "./util/RealmHelper";
+import "./services/SiteConfigurationService";
+import "./components/TemplateBasedView";

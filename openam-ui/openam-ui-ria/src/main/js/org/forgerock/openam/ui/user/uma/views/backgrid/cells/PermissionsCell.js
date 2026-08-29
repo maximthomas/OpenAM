@@ -14,24 +14,21 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "org/forgerock/openam/ui/common/util/BackgridUtils",
+import "jquery";
+import BackgridUtils from "org/forgerock/openam/ui/common/util/BackgridUtils";
+// jquery dependencies
+import "selectize";
 
-    // jquery dependencies
-    "selectize"
-], function ($, BackgridUtils) {
-    return BackgridUtils.TemplateCell.extend({
-        className: "permissions-cell",
-        template: "templates/user/uma/backgrid/cell/PermissionsCell.html",
-        onChange () {},
-        rendered () {
-            this.$el.find("select").selectize({
-                dropdownParent: "body",
-                onChange: this.onChange.bind(this)
-            });
-        }
-    });
+export default BackgridUtils.TemplateCell.extend({
+    className: "permissions-cell",
+    template: "templates/user/uma/backgrid/cell/PermissionsCell.html",
+    onChange () {},
+    rendered () {
+        this.$el.find("select").selectize({
+            dropdownParent: "body",
+            onChange: this.onChange.bind(this)
+        });
+    }
 });
 
 // TODO: Extend in future with ability to specify selected permissions (currently all are selected)

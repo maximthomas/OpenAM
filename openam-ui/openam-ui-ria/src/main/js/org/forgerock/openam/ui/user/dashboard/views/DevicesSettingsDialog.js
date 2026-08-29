@@ -14,57 +14,55 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/components/BootstrapDialog",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/commons/ui/common/util/UIUtils",
-    "org/forgerock/openam/ui/user/dashboard/services/DeviceManagementService"
-], ($, _, BootstrapDialog, Messages, UIUtils, DeviceManagementService) => {
-    function closeDialog (dialog) {
-        dialog.close();
-    }
+import $ from "jquery";
+import "lodash";
+import BootstrapDialog from "org/forgerock/commons/ui/common/components/BootstrapDialog";
+import Messages from "org/forgerock/commons/ui/common/components/Messages";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
+import DeviceManagementService from "org/forgerock/openam/ui/user/dashboard/services/DeviceManagementService";
 
-    return function () {
-        const template = "templates/user/dashboard/DevicesSettingsDialogTemplate.html";
-        let authSkip = DeviceManagementService.checkDevicesOathSkippable();
+function closeDialog (dialog) {
+    dialog.close();
+}
 
-        BootstrapDialog.show({
-            title: $.t("openam.authDevices.devicesSettingDialog.title"),
-            cssClass: "devices-settings",
-            message: $("<div></div>"),
-            buttons: [{
-                label: $.t("common.form.cancel"),
-                action: closeDialog
-            }, {
-                label: $.t("common.form.save"),
-                cssClass: "btn-primary",
-                action (dialog) {
-                    authSkip = !dialog.$modalBody.find("#oathStatus").is(":checked");
-                    DeviceManagementService.setDevicesOathSkippable(authSkip).then(() => {
-                        dialog.close();
-                    }, (response) => {
-                        Messages.addMessage({
-                            type: Messages.TYPE_DANGER,
-                            response
-                        });
-                    });
-                }
-            }
-            ],
-            onshown (dialog) {
-                $.when(authSkip).then((skip) => {
-                    return UIUtils.compileTemplate(template, { authNeeded: !skip });
+export default function () {
+    const template = "templates/user/dashboard/DevicesSettingsDialogTemplate.html";
+    let authSkip = DeviceManagementService.checkDevicesOathSkippable();
+
+    BootstrapDialog.show({
+        title: $.t("openam.authDevices.devicesSettingDialog.title"),
+        cssClass: "devices-settings",
+        message: $("<div></div>"),
+        buttons: [{
+            label: $.t("common.form.cancel"),
+            action: closeDialog
+        }, {
+            label: $.t("common.form.save"),
+            cssClass: "btn-primary",
+            action (dialog) {
+                authSkip = !dialog.$modalBody.find("#oathStatus").is(":checked");
+                DeviceManagementService.setDevicesOathSkippable(authSkip).then(() => {
+                    dialog.close();
                 }, (response) => {
                     Messages.addMessage({
                         type: Messages.TYPE_DANGER,
                         response
                     });
-                }).then((tpl) => {
-                    dialog.$modalBody.append(tpl);
                 });
             }
-        });
-    };
-});
+        }
+        ],
+        onshown (dialog) {
+            $.when(authSkip).then((skip) => {
+                return UIUtils.compileTemplate(template, { authNeeded: !skip });
+            }, (response) => {
+                Messages.addMessage({
+                    type: Messages.TYPE_DANGER,
+                    response
+                });
+            }).then((tpl) => {
+                dialog.$modalBody.append(tpl);
+            });
+        }
+    });
+}

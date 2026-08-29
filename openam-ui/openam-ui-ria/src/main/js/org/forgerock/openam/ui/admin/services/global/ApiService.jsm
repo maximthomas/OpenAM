@@ -18,6 +18,8 @@
  * @module org/forgerock/openam/ui/admin/services/global/ApiService
  */
 
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
 import _ from "lodash";
 import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
 import Constants from "org/forgerock/commons/ui/common/util/Constants";

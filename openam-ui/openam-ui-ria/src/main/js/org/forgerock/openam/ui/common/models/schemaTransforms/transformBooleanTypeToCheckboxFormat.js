@@ -14,15 +14,12 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([], () => {
-
-    /**
-    * Transforms boolean types to checkbox format
-    * @param {Object} property Property to transform
-    */
-    return function transformBooleanTypeToCheckboxFormat (property) {
-        if (property.hasOwnProperty("type") && property.type === "boolean") {
-            property.format = "checkbox";
-        }
-    };
-});
+/**
+* Transforms boolean types to checkbox format
+* @param {Object} property Property to transform
+*/
+export default function transformBooleanTypeToCheckboxFormat (property) {
+    if (property.hasOwnProperty("type") && property.type === "boolean") {
+        property.format = "checkbox";
+    }
+}

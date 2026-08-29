@@ -15,27 +15,34 @@
  */
 
 
-define([
-    "./models/UMAPolicy",
-    "./models/UMAPolicyPermission",
-    "./models/UMAPolicyPermissionScope",
-    "./models/UMAResourceSetWithPolicy",
-    "./models/User",
+/*
+ * An aggregator: it had no factory and exported nothing, so every dependency was already loaded
+ * purely for its side effects. Side-effect imports preserve that exactly, in the original order.
+ *
+ * The 19 ids are RELATIVE and stay relative. resolve.alias never sees a relative specifier, but
+ * none of them needs one: each resolves against this file's own directory to a file that exists,
+ * because the source layout already mirrors the module-id layout here. Checked with a Rollup
+ * `this.resolve(id, importer)` probe against the real vite.config.js, not assumed.
+ */
+import "./models/UMAPolicy";
+import "./models/UMAPolicyPermission";
+import "./models/UMAPolicyPermissionScope";
+import "./models/UMAResourceSetWithPolicy";
+import "./models/User";
 
-    "./views/request/ListRequest",
-    "./views/request/EditRequest",
-    "./views/backgrid/cells/PermissionsCell",
-    "./views/history/ListHistory",
+import "./views/request/ListRequest";
+import "./views/request/EditRequest";
+import "./views/backgrid/cells/PermissionsCell";
+import "./views/history/ListHistory";
 
-    "./views/resource/BasePage",
-    "./views/resource/LabelTreeNavigationView",
-    "./views/resource/MyLabelsPage",
-    "./views/resource/MyResourcesPage",
-    "./views/resource/ResourcePage",
-    "./views/resource/SharedWithMePage",
-    "./views/resource/StarredPage",
+import "./views/resource/BasePage";
+import "./views/resource/LabelTreeNavigationView";
+import "./views/resource/MyLabelsPage";
+import "./views/resource/MyResourcesPage";
+import "./views/resource/ResourcePage";
+import "./views/resource/SharedWithMePage";
+import "./views/resource/StarredPage";
 
-    "./views/share/BaseShare",
-    "./views/share/CommonShare",
-    "./views/share/ShareCounter"
-]);
+import "./views/share/BaseShare";
+import "./views/share/CommonShare";
+import "./views/share/ShareCounter";

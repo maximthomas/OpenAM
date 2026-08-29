@@ -16,37 +16,37 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractDelegate",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/openam/ui/common/services/fetchUrl"
-], function (_, AbstractDelegate, Constants, fetchUrl) {
-    var obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import _ from "lodash";
+import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import fetchUrl from "org/forgerock/openam/ui/common/services/fetchUrl";
 
-    function sortApps (apps) {
-        return _.map(_.sortBy(_.keys(apps), function (key) { return key; }), function (key) {
-            var app = {
-                id: key
-            };
-            _.each(apps[key], function (v, k) { app[k] = v[0]; });
-            return app;
-        });
-    }
+var obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
 
-    obj.getMyApplications = function () {
-        return obj.serviceCall({
-            url: fetchUrl.default("/dashboard/assigned"),
-            headers: { "Cache-Control": "no-cache", "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        }).then(sortApps);
-    };
+function sortApps (apps) {
+    return _.map(_.sortBy(_.keys(apps), function (key) { return key; }), function (key) {
+        var app = {
+            id: key
+        };
+        _.each(apps[key], function (v, k) { app[k] = v[0]; });
+        return app;
+    });
+}
 
-    obj.getAvailableApplications = function () {
-        return obj.serviceCall({
-            url: fetchUrl.default("/dashboard/available"),
-            headers: { "Cache-Control": "no-cache", "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        }).then(sortApps);
-    };
+obj.getMyApplications = function () {
+    return obj.serviceCall({
+        url: fetchUrl("/dashboard/assigned"),
+        headers: { "Cache-Control": "no-cache", "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    }).then(sortApps);
+};
 
-    return obj;
-});
+obj.getAvailableApplications = function () {
+    return obj.serviceCall({
+        url: fetchUrl("/dashboard/available"),
+        headers: { "Cache-Control": "no-cache", "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    }).then(sortApps);
+};
+
+export default obj;

@@ -14,34 +14,30 @@
  * Copyright 2011-2016 ForgeRock AS.
  */
 
- define([
-     "i18next",
-     "org/forgerock/commons/ui/common/main/AbstractView",
-     "org/forgerock/commons/ui/common/main/EventManager",
-     "org/forgerock/commons/ui/common/main/Configuration",
-     "org/forgerock/openam/ui/common/util/Constants",
-     "org/forgerock/openam/ui/common/util/isRealmChanged",
-     "org/forgerock/openam/ui/user/login/RESTLoginHelper",
-     "org/forgerock/openam/ui/user/login/logout"
- ], (i18next, AbstractView, EventManager, Configuration, Constants, isRealmChanged, RESTLoginHelper, logout) => {
-     isRealmChanged = isRealmChanged.default;
+import i18next from "i18next";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import "org/forgerock/commons/ui/common/main/Configuration";
+import Constants from "org/forgerock/openam/ui/common/util/Constants";
+import isRealmChanged from "org/forgerock/openam/ui/common/util/isRealmChanged";
+import "org/forgerock/openam/ui/user/login/RESTLoginHelper";
+import logout from "org/forgerock/openam/ui/user/login/logout";
 
-     const ConfirmLoginView = AbstractView.extend({
-         template: "templates/openam/ReturnToLoginTemplate.html",
-         baseTemplate: "templates/common/LoginBaseTemplate.html",
-         data: {},
-         render () {
-             if (isRealmChanged()) {
-                 logout.default().always(() => {
-                     this.data.title = i18next.t("common.user.loggedOutOfPreviousSite");
-                     this.data.linkTitle = i18next.t("common.user.logInToNewSite");
-                     this.parentRender();
-                 });
-             } else {
-                 EventManager.sendEvent(Constants.EVENT_HANDLE_DEFAULT_ROUTE);
-             }
-         }
-     });
+const ConfirmLoginView = AbstractView.extend({
+    template: "templates/openam/ReturnToLoginTemplate.html",
+    baseTemplate: "templates/common/LoginBaseTemplate.html",
+    data: {},
+    render () {
+        if (isRealmChanged()) {
+            logout().always(() => {
+                this.data.title = i18next.t("common.user.loggedOutOfPreviousSite");
+                this.data.linkTitle = i18next.t("common.user.logInToNewSite");
+                this.parentRender();
+            });
+        } else {
+            EventManager.sendEvent(Constants.EVENT_HANDLE_DEFAULT_ROUTE);
+        }
+    }
+});
 
-     return new ConfirmLoginView();
- });
+export default new ConfirmLoginView();

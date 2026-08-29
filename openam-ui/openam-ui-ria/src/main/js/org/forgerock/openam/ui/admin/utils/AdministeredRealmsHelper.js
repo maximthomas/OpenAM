@@ -14,16 +14,14 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/commons/ui/common/util/URIUtils"
-], function (URIUtils) {
-    return {
-        /**
-         * Extracts from the URI hash fragment and returns realm which is being currently edited by administrator
-         * @returns {String} current realm decoded
-         */
-        getCurrentRealm () {
-            return decodeURIComponent(URIUtils.getCurrentFragment().split("/")[1]);
-        }
-    };
-});
+import URIUtils from "org/forgerock/commons/ui/common/util/URIUtils";
+
+export default {
+    /**
+     * Extracts from the URI hash fragment and returns realm which is being currently edited by administrator
+     * @returns {String} current realm decoded
+     */
+    getCurrentRealm () {
+        return decodeURIComponent(URIUtils.getCurrentFragment().split("/")[1]);
+    }
+};

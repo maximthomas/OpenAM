@@ -14,21 +14,19 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/openam/ui/common/util/RealmHelper"
-], function (Configuration, Constants, RealmHelper) {
-    return {
-        substitute (url) {
-            return function () {
-                var replacedUrl = url.replace("__api__", `${Constants.host}/${Constants.context}/json`)
-                    .replace("__host__", Constants.host)
-                    .replace("__context__", Constants.context)
-                    .replace("__username__", Configuration.loggedUser.get("username"));
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import RealmHelper from "org/forgerock/openam/ui/common/util/RealmHelper";
 
-                return RealmHelper.decorateURIWithSubRealm(replacedUrl);
-            };
-        }
-    };
-});
+export default {
+    substitute (url) {
+        return function () {
+            var replacedUrl = url.replace("__api__", `${Constants.host}/${Constants.context}/json`)
+                .replace("__host__", Constants.host)
+                .replace("__context__", Constants.context)
+                .replace("__username__", Configuration.loggedUser.get("username"));
+
+            return RealmHelper.decorateURIWithSubRealm(replacedUrl);
+        };
+    }
+};

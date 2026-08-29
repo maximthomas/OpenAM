@@ -14,47 +14,45 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "backbone",
-    "backbone-relational"
-], function ($, _, Backbone) {
-    return Backbone.RelationalModel.extend({
-        parse (response) {
-            if (_.isUrl(response.id)) {
-                response = this.resolve(response.id);
-            } else {
-                response.name = response.id;
-            }
+import $ from "jquery";
+import _ from "lodash";
+import Backbone from "backbone";
+import "backbone-relational";
 
-            return response;
-        },
-        resolve (url) {
-            var resolved = {
-                id: url,
-                name: url
-            };
-
-            // Synchronous!
-            $.ajax({
-                async: false,
-                dataType: "json",
-                success (data) {
-                    resolved.name = data.name;
-                    resolved["icon_uri"] = data.icon_uri;
-                },
-                url
-            });
-
-            return resolved;
-        },
-        sync (method, model, options) {
-            options.beforeSend = function (xhr) {
-                xhr.setRequestHeader("Accept-API-Version", "protocol=1.0,resource=1.0");
-            };
-
-            return Backbone.Model.prototype.sync.call(this, method, model, options);
+export default Backbone.RelationalModel.extend({
+    parse (response) {
+        if (_.isUrl(response.id)) {
+            response = this.resolve(response.id);
+        } else {
+            response.name = response.id;
         }
-    });
+
+        return response;
+    },
+    resolve (url) {
+        var resolved = {
+            id: url,
+            name: url
+        };
+
+        // Synchronous!
+        $.ajax({
+            async: false,
+            dataType: "json",
+            success (data) {
+                resolved.name = data.name;
+                resolved["icon_uri"] = data.icon_uri;
+            },
+            url
+        });
+
+        return resolved;
+    },
+    sync (method, model, options) {
+        options.beforeSend = function (xhr) {
+            xhr.setRequestHeader("Accept-API-Version", "protocol=1.0,resource=1.0");
+        };
+
+        return Backbone.Model.prototype.sync.call(this, method, model, options);
+    }
 });

@@ -14,43 +14,40 @@
  * Copyright 2014-2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "backbone",
-    "org/forgerock/openam/ui/common/components/table/InlineEditTable"
-], (_, Backbone, InlineEditTable) => {
+import _ from "lodash";
+import Backbone from "backbone";
+import InlineEditTable from "org/forgerock/openam/ui/common/components/table/InlineEditTable";
 
-    const StaticResponseAttributesView = Backbone.View.extend({
+const StaticResponseAttributesView = Backbone.View.extend({
 
-        initialize ({ staticAttributes }) {
-            this.staticAttributes = staticAttributes;
-        },
+    initialize ({ staticAttributes }) {
+        this.staticAttributes = staticAttributes;
+    },
 
-        render () {
-            const getFlattenedStaticAttributes = () => _.flatten(
-                _.map(this.staticAttributes, (attribute) =>
-                    _.map(attribute.propertyValues, (value) => ({ key: attribute.propertyName, value }))
-                ));
+    render () {
+        const getFlattenedStaticAttributes = () => _.flatten(
+            _.map(this.staticAttributes, (attribute) =>
+                _.map(attribute.propertyValues, (value) => ({ key: attribute.propertyName, value }))
+            ));
 
-            this.inlineEditList = new InlineEditTable({
-                values: getFlattenedStaticAttributes()
-            });
-            this.$el.append(this.inlineEditList.render().$el);
+        this.inlineEditList = new InlineEditTable({
+            values: getFlattenedStaticAttributes()
+        });
+        this.$el.append(this.inlineEditList.render().$el);
 
-            return this;
-        },
+        return this;
+    },
 
-        getGroupedData () {
-            return _(this.inlineEditList.getData())
-                .groupBy("key")
-                .map((values, key) => ({
-                    type: "Static",
-                    propertyName: key,
-                    propertyValues: _.map(values, "value")
-                }))
-                .value();
-        }
-    });
-
-    return StaticResponseAttributesView;
+    getGroupedData () {
+        return _(this.inlineEditList.getData())
+            .groupBy("key")
+            .map((values, key) => ({
+                type: "Static",
+                propertyName: key,
+                propertyValues: _.map(values, "value")
+            }))
+            .value();
+    }
 });
+
+export default StaticResponseAttributesView;

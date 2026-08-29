@@ -23,22 +23,20 @@
  */
 
 
-define("config/main", [
-    "./errorhandlers/CommonErrorHandlers",
-    "./validators/CommonValidators",
-    "./validators/AMValidators",
+import "config/errorhandlers/CommonErrorHandlers";
+import "config/validators/CommonValidators";
+import "./validators/AMValidators";
 
-    "./routes/CommonRoutesConfig",  // In FR-Commons
-    "./routes/AMRoutesConfig",
-    "./routes/UserRoutesConfig", // In FR-Commons
-    "./routes/admin/RealmsRoutes",
-    "./routes/admin/GlobalRoutes",
-    "./routes/user/UMARoutes",
+import "config/routes/CommonRoutesConfig";  // In FR-Commons
+import "./routes/AMRoutesConfig";
+import "config/routes/UserRoutesConfig"; // In FR-Commons
+import "./routes/admin/RealmsRoutes";
+import "./routes/admin/GlobalRoutes";
+import "./routes/user/UMARoutes";
 
-    "./messages/CommonMessages",
-    "./messages/UserMessages",
-    "./AppMessages",
-    "./AppConfiguration",
-    "./process/CommonConfig",
-    "./process/AMConfig"
-]);
+import "config/messages/CommonMessages";
+import "config/messages/UserMessages";
+import "./AppMessages";
+import "./AppConfiguration";
+import "config/process/CommonConfig";
+import "./process/AMConfig";

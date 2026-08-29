@@ -24,143 +24,125 @@
  * Portions Copyrighted 2019-2026 3A Systems LLC.
  */
 
-require.config({
-    map: {
-        "*" : {
-            "ThemeManager" : "org/forgerock/openam/ui/common/util/ThemeManager",
-            "Router": "org/forgerock/openam/ui/common/SingleRouteRouter",
-            // TODO: Remove this when there are no longer any references to the "underscore" dependency
-            "underscore"   : "lodash"
-        }
+/*
+ * TASK 5.4 (batch B12) -- THE OAUTH2 CONSENT / ERROR ENTRY POINT, NOW AN ES MODULE.
+ *
+ * This file never contained a define(); it was a `require.config` call plus a top-level runtime
+ * `require([...])`. The config block is deleted -- all six ids it bound are `resolve.alias`
+ * entries in vite.config.js since TASK 5.2, and the `map` entries for `ThemeManager` and `Router`
+ * are aliases too, which is why both are still imported by their short id below rather than by
+ * path. The dependency list became static imports.
+ *
+ * HOW THIS FILE IS LOADED (option c1). Four .ftl pages in the openam-oauth2 module fetch it with
+ * `<script data-main="${baseUrl}/XUI/main-authorize" ...>`, and RequireJS injects a CLASSIC script
+ * for that, which cannot execute an ES module. D8 and task 10.4 forbid editing those templates, so
+ * the build emits an unhashed classic-script STUB at `main-authorize.js` that dynamic-imports the
+ * real hashed chunk; see the xui-requirejs-entry-stubs plugin in vite.config.js. Nothing in this
+ * file has to know that.
+ *
+ * `text!` -> `UIUtils.compileTemplate(url, null)` (D22), and the HAND-ROLLED THEME PREFIXING WENT
+ * WITH IT. The four template ids were built at runtime as `text!${themePath}${templatePath}` from
+ * `Configuration.globalData.theme.path` -- which is a hand re-implementation of the theme-path
+ * prefixing compileTemplate already does internally, and a strictly worse one: it had no 404
+ * fallback, so a theme with a `path` that did not carry all four templates 404'd rather than
+ * falling back to the default copy. compileTemplate with a null `data` argument resolves with the
+ * RAW Handlebars source -- exactly what `text!` produced -- prefixes `theme.path` itself and falls
+ * back on a 404 (D3). So the prefixing is not lost, it moved to the one implementation of it.
+ */
+
+import $ from "jquery";
+import _ from "lodash";
+import HandleBars from "handlebars";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import Constants from "org/forgerock/openam/ui/common/util/Constants";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
+import Promise from "org/forgerock/openam/ui/common/util/Promise";
+import i18nManager from "org/forgerock/commons/ui/common/main/i18nManager";
+import ThemeManager from "ThemeManager";
+import Router from "Router";
+import { configure as configureLoader } from "org/forgerock/commons/ui/common/util/esm/LoaderRuntime";
+
+// Helpers for the code that hasn't been properly migrated to require these as explicit dependencies:
+window.$ = $;
+window._ = _;
+
+var formTemplate,
+    baseTemplate,
+    footerTemplate,
+    loginHeaderTemplate,
+    templatePaths = [
+        "templates/user/AuthorizeTemplate.html",
+        "templates/common/LoginBaseTemplate.html",
+        "templates/common/FooterTemplate.html",
+        "templates/common/LoginHeaderTemplate.html"
+    ],
+    data = window.pageData || {},
+    KEY_CODE_ENTER = 13,
+    KEY_CODE_SPACE = 32,
+    dataReady = $.Deferred();
+
+/* global __TARGET_VERSION__ */
+/*
+ * REVIEW FIX (D22 follow-up). compileTemplate fetches through LoaderRuntime.toUrl, whose baseUrl
+ * defaults to "" -- i.e. document-relative. These pages are served from /oauth2/..., NOT from
+ * /XUI/, so every template and locale fetch resolved against the wrong root and 404'd (the
+ * theme-path attempt AND its fallback), leaving a blank page with nothing logged. Under `text!`
+ * RequireJS resolved these against the baseUrl it inferred from `data-main`; that inference is
+ * gone, so the baseUrl has to be injected. `pageData.baseUrl` is already "<serverBase>/XUI"
+ * (see the six .ftl templates); toUrl appends the separating slash itself.
+ *
+ * This is deliberately NOT deferred to 6.1 with the rest of LoaderRuntime: `resolveModule` is
+ * 6.1's, but `baseUrl`/`urlArgs` are what this batch broke, so this batch restores them.
+ *
+ * MUST precede i18nManager.init: init() computes `resGetPath` from the runtime at call time.
+ */
+configureLoader({ baseUrl: data.baseUrl, urlArgs: `v=${__TARGET_VERSION__}` });
+
+i18nManager.init({
+    paramLang: {
+        locale: data.locale || Constants.DEFAULT_LANGUAGE
     },
-    /*
-     * TASK 5.2. Superseded by vite.config.js's resolve.alias, and deliberately still here -- see
-     * the longer note in main.js. This block binds six ids; all six have alias entries.
-     *
-     * Two things measured here that main.js's block does not show. `redux` is inert in this
-     * entry: nothing it loads imports redux (only store/index.jsm and store/reducers/index.jsm
-     * do, and they are reached from main.js alone). And `text` has no successor at all --
-     * requirejs-text is an AMD loader plugin that cannot be imported under ESM; TASK 5.5 owns
-     * the `text!` call sites, including the runtime-built one in this file.
-     */
-    paths: {
-        "handlebars": "libs/handlebars-4.7.7",
-        "i18next": "libs/i18next-1.7.3-min",
-        "jquery": "libs/jquery-3.7.1-min",
-        "lodash": "libs/lodash-3.10.1-min",
-        "redux": "libs/redux-3.5.2-min",
-        "text": "libs/text-2.0.15"
-    },
-    /*
-     * TASK 5.2. All three entries here are superseded, and two of the three were already dead.
-     *
-     * `handlebars` has a shim in THIS file and in main-device.js but NOT in main.js -- a
-     * divergence between the three entry points, and a harmless one: handlebars/dist/handlebars.js
-     * calls define(), so RequireJS ignores the exports field anyway, and the global it sets is
-     * `Handlebars`, not `handlebars`, so if it ever became live it would resolve to undefined.
-     * `lodash` is dead for the same reason. Only i18next -> i18n was load-bearing, and its
-     * "handlebars" dep is fiction: i18next.min.js contains zero occurrences of Handlebars.
-     *
-     * i18next is now vite.config.js's alias to src/main/js/shims/i18next.js, which fixes both the
-     * specifier (the bare name resolves to a Node build that requires fs) and the ordering (it
-     * reads jQuery from a global at evaluation and falls back SILENTLY if it is missing).
-     */
-    shim: {
-        "handlebars": {
-            exports: "handlebars"
-        },
-        "i18next": {
-            deps: ["jquery", "handlebars"],
-            exports: "i18n"
-        },
-        "lodash": {
-            exports: "_"
-        }
-    }
+    defaultLang: Constants.DEFAULT_LANGUAGE,
+    nameSpace: "authorize"
 });
 
-require([
-    "jquery",
-    "lodash",
-    "handlebars",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/openam/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/main/i18nManager",
-    "ThemeManager",
-    "Router"
-], function ($, _, HandleBars, Configuration, Constants, i18nManager, ThemeManager, Router) {
-
-    // Helpers for the code that hasn't been properly migrated to require these as explicit dependencies:
-    window.$ = $;
-    window._ = _;
-
-    var formTemplate,
-        baseTemplate,
-        footerTemplate,
-        loginHeaderTemplate,
-        templatePaths = [
-            "templates/user/AuthorizeTemplate.html",
-            "templates/common/LoginBaseTemplate.html",
-            "templates/common/FooterTemplate.html",
-            "templates/common/LoginHeaderTemplate.html"
-        ],
-        data = window.pageData || {},
-        KEY_CODE_ENTER = 13,
-        KEY_CODE_SPACE = 32,
-        dataReady = $.Deferred();
-
-    i18nManager.init({
-        paramLang: {
-            locale: data.locale || Constants.DEFAULT_LANGUAGE
-        },
-        defaultLang: Constants.DEFAULT_LANGUAGE,
-        nameSpace: "authorize"
+if (data.oauth2Data) {
+    _.each(data.oauth2Data.displayScopes, function (obj) {
+        if (_.isEmpty(obj.values)) {
+            delete obj.values;
+        }
+        return obj;
     });
 
-    if (data.oauth2Data) {
-        _.each(data.oauth2Data.displayScopes, function (obj) {
-            if (_.isEmpty(obj.values)) {
-                delete obj.values;
-            }
-            return obj;
-        });
-
-        _.each(data.oauth2Data.displayClaims, function (obj) {
-            if (_.isEmpty(obj.values)) {
-                delete obj.values;
-            }
-            return obj;
-        });
-
-        if (_.isEmpty(data.oauth2Data.displayScopes) && _.isEmpty(data.oauth2Data.displayClaims)) {
-            data.noScopes = true;
+    _.each(data.oauth2Data.displayClaims, function (obj) {
+        if (_.isEmpty(obj.values)) {
+            delete obj.values;
         }
+        return obj;
+    });
 
-        // The CSRF token is a dedicated, random value rendered into pageData by the server (no longer the
-        // script-readable SSO cookie value), so the SSO cookie can safely be HttpOnly.
-        dataReady.resolve();
-    } else {
+    if (_.isEmpty(data.oauth2Data.displayScopes) && _.isEmpty(data.oauth2Data.displayClaims)) {
         data.noScopes = true;
-        dataReady.resolve();
     }
 
-    dataReady.then(function () {
-        Configuration.globalData = { realm : data.realm };
+    // The CSRF token is a dedicated, random value rendered into pageData by the server (no longer the
+    // script-readable SSO cookie value), so the SSO cookie can safely be HttpOnly.
+    dataReady.resolve();
+} else {
+    data.noScopes = true;
+    dataReady.resolve();
+}
 
-        Router.currentRoute = {
-            navGroup: "user"
-        };
+dataReady.then(function () {
+    Configuration.globalData = { realm : data.realm };
 
-        ThemeManager.getTheme().always(function (theme) {
+    Router.currentRoute = {
+        navGroup: "user"
+    };
 
-            // add prefix to templates for custom theme when path is defined
-            var themePath = Configuration.globalData.theme.path;
-            templatePaths = _.map(templatePaths, function (templatePath) {
-                return `text!${themePath}${templatePath}`;
-            });
-
-            require(templatePaths, function (AuthorizeTemplate, LoginBaseTemplate, FooterTemplate,
-                                             LoginHeaderTemplate) {
+    ThemeManager.getTheme().always(function (theme) {
+        Promise.all(templatePaths.map((templatePath) => UIUtils.compileTemplate(templatePath, null)))
+            .then(([AuthorizeTemplate, LoginBaseTemplate, FooterTemplate, LoginHeaderTemplate]) => {
                 data.theme = theme;
                 baseTemplate = HandleBars.compile(LoginBaseTemplate);
                 formTemplate = HandleBars.compile(AuthorizeTemplate);
@@ -178,7 +160,8 @@ require([
                     }
                     $(this).toggleClass("expanded").next(".panel-collapse").slideToggle();
                 });
+            }, (error) => {
+                console.error("main-authorize: templates failed to load", error);
             });
-        });
     });
 });

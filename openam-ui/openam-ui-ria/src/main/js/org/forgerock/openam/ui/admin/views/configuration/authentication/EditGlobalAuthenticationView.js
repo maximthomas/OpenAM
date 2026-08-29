@@ -17,29 +17,27 @@
  /**
   * @module org/forgerock/openam/ui/admin/views/configuration/authentication/EditGlobalAuthenticationView
   */
-define([
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/util/UIUtils",
-    "org/forgerock/openam/ui/admin/services/global/AuthenticationService",
-    "org/forgerock/openam/ui/admin/views/common/Backlink",
-    "org/forgerock/openam/ui/admin/views/common/schema/EditSchemaComponent"
-], (AbstractView, UIUtils, AuthenticationService, Backlink, EditSchemaComponent) => {
-    const EditGlobalAuthenticationView = AbstractView.extend({
-        template: "templates/admin/views/configuration/EditGlobalConfigurationBaseTemplate.html",
-        render ([type]) {
-            const editComponent = new EditSchemaComponent({
-                template: "templates/admin/views/configuration/EditGlobalConfigurationTemplate.html",
-                data: { type },
-                getInstance: () => AuthenticationService.authentication.get(type),
-                updateInstance: (values) => AuthenticationService.authentication.update(type, values)
-            });
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import "org/forgerock/commons/ui/common/util/UIUtils";
+import AuthenticationService from "org/forgerock/openam/ui/admin/services/global/AuthenticationService";
+import Backlink from "org/forgerock/openam/ui/admin/views/common/Backlink";
+import EditSchemaComponent from "org/forgerock/openam/ui/admin/views/common/schema/EditSchemaComponent";
 
-            this.parentRender(() => {
-                new Backlink().render();
-                this.$el.find("[data-global-configuration]").append(editComponent.render().$el);
-            });
-        }
-    });
+const EditGlobalAuthenticationView = AbstractView.extend({
+    template: "templates/admin/views/configuration/EditGlobalConfigurationBaseTemplate.html",
+    render ([type]) {
+        const editComponent = new EditSchemaComponent({
+            template: "templates/admin/views/configuration/EditGlobalConfigurationTemplate.html",
+            data: { type },
+            getInstance: () => AuthenticationService.authentication.get(type),
+            updateInstance: (values) => AuthenticationService.authentication.update(type, values)
+        });
 
-    return new EditGlobalAuthenticationView();
+        this.parentRender(() => {
+            new Backlink().render();
+            this.$el.find("[data-global-configuration]").append(editComponent.render().$el);
+        });
+    }
 });
+
+export default new EditGlobalAuthenticationView();

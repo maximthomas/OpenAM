@@ -14,29 +14,27 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "backbone",
-    "org/forgerock/commons/ui/common/util/UIUtils"
-], (_, Backbone, UIUtils) =>
-    Backbone.View.extend({
-        initialize ({ template, data = {}, callback = _.noop }) {
-            if (!template) {
-                throw new Error("[TemplateBasedView] No \"template\" found.");
-            }
-            this.template = template;
-            this.callback = callback;
-            this.data = data;
-        },
-        render () {
-            UIUtils.compileTemplate(
-                this.template,
-                this.data
-            ).then((html) => {
-                this.$el.html(html);
-                this.callback();
-            });
-            return this;
+import _ from "lodash";
+import Backbone from "backbone";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
+
+export default Backbone.View.extend({
+    initialize ({ template, data = {}, callback = _.noop }) {
+        if (!template) {
+            throw new Error("[TemplateBasedView] No \"template\" found.");
         }
-    })
-);
+        this.template = template;
+        this.callback = callback;
+        this.data = data;
+    },
+    render () {
+        UIUtils.compileTemplate(
+            this.template,
+            this.data
+        ).then((html) => {
+            this.$el.html(html);
+            this.callback();
+        });
+        return this;
+    }
+});

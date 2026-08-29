@@ -14,38 +14,36 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "org/forgerock/commons/ui/common/components/BootstrapDialog",
-    "org/forgerock/commons/ui/common/main/Router"
-], function ($, BootstrapDialog, Router) {
-    function closeDialog (dialog) {
-        dialog.close();
-    }
-    function redirectAndClose (dialog) {
-        Router.setUrl(dialog.options.data.link);
-        dialog.close();
-    }
+import $ from "jquery";
+import BootstrapDialog from "org/forgerock/commons/ui/common/components/BootstrapDialog";
+import Router from "org/forgerock/commons/ui/common/main/Router";
 
-    return function (name, chains, href) {
-        BootstrapDialog.show({
-            title: $.t("console.authentication.modules.inUse.title"),
-            message: $.t("console.authentication.modules.inUse.message", {
-                moduleName: name,
-                usedChains: chains
-            }),
-            data: {
-                link : href
-            },
-            buttons: [{
-                label: $.t("common.form.cancel"),
-                cssClass: "btn-default",
-                action: closeDialog
-            }, {
-                label: $.t("common.form.yes"),
-                cssClass: "btn-primary",
-                action: redirectAndClose
-            }]
-        });
-    };
-});
+function closeDialog (dialog) {
+    dialog.close();
+}
+function redirectAndClose (dialog) {
+    Router.setUrl(dialog.options.data.link);
+    dialog.close();
+}
+
+export default function (name, chains, href) {
+    BootstrapDialog.show({
+        title: $.t("console.authentication.modules.inUse.title"),
+        message: $.t("console.authentication.modules.inUse.message", {
+            moduleName: name,
+            usedChains: chains
+        }),
+        data: {
+            link : href
+        },
+        buttons: [{
+            label: $.t("common.form.cancel"),
+            cssClass: "btn-default",
+            action: closeDialog
+        }, {
+            label: $.t("common.form.yes"),
+            cssClass: "btn-primary",
+            action: redirectAndClose
+        }]
+    });
+}

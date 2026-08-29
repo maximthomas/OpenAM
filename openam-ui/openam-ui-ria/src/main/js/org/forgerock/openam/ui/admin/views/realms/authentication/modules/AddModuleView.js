@@ -13,103 +13,98 @@
  *
  * Copyright 2016 ForgeRock AS.
  */
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/openam/ui/admin/services/realm/AuthenticationService",
-    "org/forgerock/openam/ui/common/components/SelectComponent"
-], function ($, _, AbstractView, Router, Messages, AuthenticationService, SelectComponent) {
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import Messages from "org/forgerock/commons/ui/common/components/Messages";
+import AuthenticationService from "org/forgerock/openam/ui/admin/services/realm/AuthenticationService";
+import SelectComponent from "org/forgerock/openam/ui/common/components/SelectComponent";
 
-    SelectComponent = SelectComponent.default;
+function validateModuleProps () {
+    var moduleName = this.$el.find("#newModuleName").val(),
+        moduleType = this.moduleType,
+        isValid;
 
-    function validateModuleProps () {
-        var moduleName = this.$el.find("#newModuleName").val(),
-            moduleType = this.moduleType,
-            isValid;
-
-        if (moduleName.indexOf(" ") !== -1) {
-            moduleName = false;
-            Messages.addMessage({
-                type: Messages.TYPE_DANGER,
-                message: $.t("console.authentication.modules.moduleNameValidationError")
-            });
-        }
-        isValid = moduleName && moduleType;
-        this.$el.find("[data-save]").attr("disabled", !isValid);
+    if (moduleName.indexOf(" ") !== -1) {
+        moduleName = false;
+        Messages.addMessage({
+            type: Messages.TYPE_DANGER,
+            message: $.t("console.authentication.modules.moduleNameValidationError")
+        });
     }
+    isValid = moduleName && moduleType;
+    this.$el.find("[data-save]").attr("disabled", !isValid);
+}
 
 
-    return AbstractView.extend({
-        template: "templates/admin/views/realms/authentication/modules/AddModuleTemplate.html",
-        events: {
-            "change [data-module-name]": "onValidateModuleProps",
-            "keyup  [data-module-name]": "onValidateModuleProps",
-            "change [data-module-type]": "onValidateModuleProps",
-            "click [data-save]"        : "save"
-        },
-        render (args, callback) {
-            var self = this;
-            this.data.realmPath = args[0];
+export default AbstractView.extend({
+    template: "templates/admin/views/realms/authentication/modules/AddModuleTemplate.html",
+    events: {
+        "change [data-module-name]": "onValidateModuleProps",
+        "keyup  [data-module-name]": "onValidateModuleProps",
+        "change [data-module-type]": "onValidateModuleProps",
+        "click [data-save]"        : "save"
+    },
+    render (args, callback) {
+        var self = this;
+        this.data.realmPath = args[0];
 
-            AuthenticationService.authentication.modules.types.all(this.data.realmPath).then(function (modulesData) {
-                self.parentRender(function () {
-                    const selectComponent = new SelectComponent({
-                        options: modulesData.result,
-                        onChange: (option) => {
-                            self.moduleType = option._id;
-                            self.onValidateModuleProps();
-                        },
-                        searchFields: ["name"],
-                        labelField: "name",
-                        placeholderText: $.t("console.authentication.modules.selectModuleType")
-                    });
-                    self.$el.find("[data-module-type]").append(selectComponent.render().el);
-                    self.$el.find("[autofocus]").focus();
-                    if (callback) {
-                        callback();
-                    }
+        AuthenticationService.authentication.modules.types.all(this.data.realmPath).then(function (modulesData) {
+            self.parentRender(function () {
+                const selectComponent = new SelectComponent({
+                    options: modulesData.result,
+                    onChange: (option) => {
+                        self.moduleType = option._id;
+                        self.onValidateModuleProps();
+                    },
+                    searchFields: ["name"],
+                    labelField: "name",
+                    placeholderText: $.t("console.authentication.modules.selectModuleType")
                 });
-            });
-        },
-        save () {
-            var self = this,
-                moduleName = self.$el.find("#newModuleName").val(),
-                moduleType = this.moduleType,
-                modulesService = AuthenticationService.authentication.modules;
-
-            modulesService.exists(self.data.realmPath, moduleName).then(function (result) {
-                var authenticationModules = modulesService;
-                if (result) {
-                    Messages.addMessage({
-                        type: Messages.TYPE_DANGER,
-                        message: $.t("console.authentication.modules.addModuleError")
-                    });
-                } else {
-                    authenticationModules.create(self.data.realmPath, { _id: moduleName }, moduleType)
-                    .then(function () {
-                        Router.routeTo(Router.configuration.routes.realmsAuthenticationModuleEdit, {
-                            args: _.map([self.data.realmPath, moduleType, moduleName], encodeURIComponent),
-                            trigger: true
-                        });
-                    }, function (response) {
-                        Messages.addMessage({
-                            type: Messages.TYPE_DANGER,
-                            response
-                        });
-                    });
+                self.$el.find("[data-module-type]").append(selectComponent.render().el);
+                self.$el.find("[autofocus]").focus();
+                if (callback) {
+                    callback();
                 }
-            }, function (response) {
+            });
+        });
+    },
+    save () {
+        var self = this,
+            moduleName = self.$el.find("#newModuleName").val(),
+            moduleType = this.moduleType,
+            modulesService = AuthenticationService.authentication.modules;
+
+        modulesService.exists(self.data.realmPath, moduleName).then(function (result) {
+            var authenticationModules = modulesService;
+            if (result) {
                 Messages.addMessage({
                     type: Messages.TYPE_DANGER,
-                    response
+                    message: $.t("console.authentication.modules.addModuleError")
                 });
+            } else {
+                authenticationModules.create(self.data.realmPath, { _id: moduleName }, moduleType)
+                .then(function () {
+                    Router.routeTo(Router.configuration.routes.realmsAuthenticationModuleEdit, {
+                        args: _.map([self.data.realmPath, moduleType, moduleName], encodeURIComponent),
+                        trigger: true
+                    });
+                }, function (response) {
+                    Messages.addMessage({
+                        type: Messages.TYPE_DANGER,
+                        response
+                    });
+                });
+            }
+        }, function (response) {
+            Messages.addMessage({
+                type: Messages.TYPE_DANGER,
+                response
             });
-        },
-        onValidateModuleProps () {
-            validateModuleProps.call(this);
-        }
-    });
+        });
+    },
+    onValidateModuleProps () {
+        validateModuleProps.call(this);
+    }
 });

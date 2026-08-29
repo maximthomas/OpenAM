@@ -13,76 +13,74 @@
  *
  * Copyright 2016 ForgeRock AS.
  */
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/openam/ui/admin/services/realm/AuthenticationService"
-], function ($, _, AbstractView, Router, Messages, AuthenticationService) {
-    function validateChainProps () {
-        var name = this.$el.find("[data-chain-name]").val().trim(),
-            nameExists,
-            isValid;
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import Messages from "org/forgerock/commons/ui/common/components/Messages";
+import AuthenticationService from "org/forgerock/openam/ui/admin/services/realm/AuthenticationService";
 
-        nameExists = _.findWhere(this.data.chainsData, { _id:name });
-        if (nameExists) {
+function validateChainProps () {
+    var name = this.$el.find("[data-chain-name]").val().trim(),
+        nameExists,
+        isValid;
+
+    nameExists = _.findWhere(this.data.chainsData, { _id:name });
+    if (nameExists) {
+        Messages.addMessage({
+            type: Messages.TYPE_DANGER,
+            message: $.t("console.authentication.chains.duplicateChain")
+        });
+    }
+    isValid = name && !nameExists;
+    this.$el.find("[data-save]").attr("disabled", !isValid);
+}
+
+export default AbstractView.extend({
+    template: "templates/admin/views/realms/authentication/chains/AddChainTemplate.html",
+    events: {
+        "keyup [data-chain-name]" : "onValidateChainProps",
+        "change [data-chain-name]": "onValidateChainProps",
+        "click [data-save]"       : "save"
+    },
+    render (args, callback) {
+        var self = this,
+            chainsData = [];
+        this.data.realmPath = args[0];
+
+        AuthenticationService.authentication.chains.all(this.data.realmPath).then(function (data) {
+            _.each(data.values.result, function (obj) {
+                chainsData.push(obj);
+            });
+            self.data.chainsData = chainsData;
+
+            self.parentRender(function () {
+                if (callback) {
+                    callback();
+                }
+            });
+        });
+    },
+    save () {
+        var self = this,
+            name = this.$el.find("[data-chain-name]").val().trim();
+
+        AuthenticationService.authentication.chains.create(
+            self.data.realmPath,
+            { _id: name }
+        ).then(function () {
+            Router.routeTo(Router.configuration.routes.realmsAuthenticationChainEdit, {
+                args: _.map([self.data.realmPath, name], encodeURIComponent),
+                trigger: true
+            });
+        }, function (response) {
             Messages.addMessage({
                 type: Messages.TYPE_DANGER,
-                message: $.t("console.authentication.chains.duplicateChain")
+                response
             });
-        }
-        isValid = name && !nameExists;
-        this.$el.find("[data-save]").attr("disabled", !isValid);
+        });
+    },
+    onValidateChainProps () {
+        validateChainProps.call(this);
     }
-
-    return AbstractView.extend({
-        template: "templates/admin/views/realms/authentication/chains/AddChainTemplate.html",
-        events: {
-            "keyup [data-chain-name]" : "onValidateChainProps",
-            "change [data-chain-name]": "onValidateChainProps",
-            "click [data-save]"       : "save"
-        },
-        render (args, callback) {
-            var self = this,
-                chainsData = [];
-            this.data.realmPath = args[0];
-
-            AuthenticationService.authentication.chains.all(this.data.realmPath).then(function (data) {
-                _.each(data.values.result, function (obj) {
-                    chainsData.push(obj);
-                });
-                self.data.chainsData = chainsData;
-
-                self.parentRender(function () {
-                    if (callback) {
-                        callback();
-                    }
-                });
-            });
-        },
-        save () {
-            var self = this,
-                name = this.$el.find("[data-chain-name]").val().trim();
-
-            AuthenticationService.authentication.chains.create(
-                self.data.realmPath,
-                { _id: name }
-            ).then(function () {
-                Router.routeTo(Router.configuration.routes.realmsAuthenticationChainEdit, {
-                    args: _.map([self.data.realmPath, name], encodeURIComponent),
-                    trigger: true
-                });
-            }, function (response) {
-                Messages.addMessage({
-                    type: Messages.TYPE_DANGER,
-                    response
-                });
-            });
-        },
-        onValidateChainProps () {
-            validateChainProps.call(this);
-        }
-    });
 });

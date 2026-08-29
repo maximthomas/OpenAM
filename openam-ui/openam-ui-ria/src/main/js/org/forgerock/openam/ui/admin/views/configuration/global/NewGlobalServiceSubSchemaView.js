@@ -14,46 +14,44 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/openam/ui/admin/services/global/ServicesService",
-    "org/forgerock/openam/ui/admin/views/common/Backlink",
-    "org/forgerock/openam/ui/admin/views/common/schema/NewSchemaComponent"
-], ($, _, AbstractView, Router, ServicesService, Backlink, NewSchemaComponent) => {
-    const NewGlobalServiceSubSchemaView = AbstractView.extend({
-        template: "templates/admin/views/configuration/EditGlobalConfigurationBaseTemplate.html",
-        render ([serviceInstance, subSchemaType]) {
-            const newSchemaComponent = new NewSchemaComponent({
-                data: {
-                    serviceInstance,
-                    subSchemaType,
-                    title: $.t("console.services.subSchema.new.title", { subSchema: subSchemaType })
-                },
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import ServicesService from "org/forgerock/openam/ui/admin/services/global/ServicesService";
+import Backlink from "org/forgerock/openam/ui/admin/views/common/Backlink";
+import NewSchemaComponent from "org/forgerock/openam/ui/admin/views/common/schema/NewSchemaComponent";
 
-                listRoute: Router.configuration.routes.editGlobalService,
-                listRouteArgs: [encodeURIComponent(serviceInstance)],
+const NewGlobalServiceSubSchemaView = AbstractView.extend({
+    template: "templates/admin/views/configuration/EditGlobalConfigurationBaseTemplate.html",
+    render ([serviceInstance, subSchemaType]) {
+        const newSchemaComponent = new NewSchemaComponent({
+            data: {
+                serviceInstance,
+                subSchemaType,
+                title: $.t("console.services.subSchema.new.title", { subSchema: subSchemaType })
+            },
 
-                editRoute: Router.configuration.routes.globalServiceSubSchemaEdit,
-                editRouteArgs: (newInstanceId) => _.map([serviceInstance, subSchemaType, newInstanceId],
-                    encodeURIComponent),
+            listRoute: Router.configuration.routes.editGlobalService,
+            listRouteArgs: [encodeURIComponent(serviceInstance)],
 
-                template: "templates/admin/views/common/schema/NewServiceSubSchemaTemplate.html",
+            editRoute: Router.configuration.routes.globalServiceSubSchemaEdit,
+            editRouteArgs: (newInstanceId) => _.map([serviceInstance, subSchemaType, newInstanceId],
+                encodeURIComponent),
 
-                getInitialState: () => ServicesService.type.subSchema.instance.getInitialState(
-                        serviceInstance, subSchemaType),
-                createInstance: (values) => ServicesService.type.subSchema.instance.create(
-                        serviceInstance, subSchemaType, values)
-            });
+            template: "templates/admin/views/common/schema/NewServiceSubSchemaTemplate.html",
 
-            this.parentRender(() => {
-                new Backlink().render();
-                this.$el.find("[data-global-configuration]").append(newSchemaComponent.render().$el);
-            });
-        }
-    });
+            getInitialState: () => ServicesService.type.subSchema.instance.getInitialState(
+                    serviceInstance, subSchemaType),
+            createInstance: (values) => ServicesService.type.subSchema.instance.create(
+                    serviceInstance, subSchemaType, values)
+        });
 
-    return new NewGlobalServiceSubSchemaView();
+        this.parentRender(() => {
+            new Backlink().render();
+            this.$el.find("[data-global-configuration]").append(newSchemaComponent.render().$el);
+        });
+    }
 });
+
+export default new NewGlobalServiceSubSchemaView();

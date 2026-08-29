@@ -14,23 +14,21 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "backbone",
-    "backbone-relational",
-    "org/forgerock/openam/ui/user/uma/models/UMAPolicyPermissionScope"
-], function (Backbone, BackboneRelational, UMAPolicyPermissionScope) {
-    return Backbone.RelationalModel.extend({
-        idAttribute: "subject",
-        relations: [{
-            type: Backbone.HasMany,
-            key: "scopes",
-            relatedModel: UMAPolicyPermissionScope,
-            includeInJSON: Backbone.Model.prototype.idAttribute,
-            parse: true
-        }],
-        validate (attributes) {
-            if (!attributes.subject) { return "no subject"; } // FIXME i18n
-            if (!attributes.scopes || !attributes.scopes.length) { return "no scopes"; } // FIXME i18n
-        }
-    });
+import Backbone from "backbone";
+import "backbone-relational";
+import UMAPolicyPermissionScope from "org/forgerock/openam/ui/user/uma/models/UMAPolicyPermissionScope";
+
+export default Backbone.RelationalModel.extend({
+    idAttribute: "subject",
+    relations: [{
+        type: Backbone.HasMany,
+        key: "scopes",
+        relatedModel: UMAPolicyPermissionScope,
+        includeInJSON: Backbone.Model.prototype.idAttribute,
+        parse: true
+    }],
+    validate (attributes) {
+        if (!attributes.subject) { return "no subject"; } // FIXME i18n
+        if (!attributes.scopes || !attributes.scopes.length) { return "no scopes"; } // FIXME i18n
+    }
 });

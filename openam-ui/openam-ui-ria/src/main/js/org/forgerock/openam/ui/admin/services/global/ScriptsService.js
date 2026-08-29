@@ -17,75 +17,76 @@
 /**
  * @module org/forgerock/openam/ui/admin/services/global/ScriptsService
  */
-define([
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractDelegate",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/openam/ui/common/services/fetchUrl"
-], (_, AbstractDelegate, Constants, fetchUrl) => {
-    const obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
 
-    obj.scripts = {
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import _ from "lodash";
+import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import fetchUrl from "org/forgerock/openam/ui/common/services/fetchUrl";
 
-        /**
-         * Gets the list of default scripts.
-         * @param {String} subSchemaType SubSchema type
-         * @returns {Promise.<Object>} promise with the list of default scripts
-         */
-        getAllDefault (subSchemaType) {
-            return obj.serviceCall({
-                url: fetchUrl.default("/scripts?_pageSize=10&_sortKeys=name&_queryFilter=default eq true and context " +
-                    `eq %22${subSchemaType}%22&_pagedResultsOffset=0`, { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-            }).then((response) => _.sortBy(response.result, "name"));
-        },
+const obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
 
-        /**
-         * Gets all script's contexts.
-         * @returns {Promise.<Object>} Service promise
-         */
-        getAllContexts () {
-            return obj.serviceCall({
-                url: fetchUrl.default("/global-config/services/scripting/contexts?_queryFilter=true", { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-            });
-        },
+obj.scripts = {
 
-        /**
-         * Gets a default global script's context.
-         * @returns {Promise.<Object>} Service promise
-         */
-        getDefaultGlobalContext () {
-            return obj.serviceCall({
-                url: fetchUrl.default("/global-config/services/scripting", { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-            });
-        },
+    /**
+     * Gets the list of default scripts.
+     * @param {String} subSchemaType SubSchema type
+     * @returns {Promise.<Object>} promise with the list of default scripts
+     */
+    getAllDefault (subSchemaType) {
+        return obj.serviceCall({
+            url: fetchUrl("/scripts?_pageSize=10&_sortKeys=name&_queryFilter=default eq true and context " +
+                `eq %22${subSchemaType}%22&_pagedResultsOffset=0`, { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+        }).then((response) => _.sortBy(response.result, "name"));
+    },
 
-        /**
-         * Gets a script's schema.
-         * @returns {Promise.<Object>} Service promise
-         */
-        getSchema () {
-            return obj.serviceCall({
-                url: fetchUrl.default("/global-config/services/scripting?_action=schema", { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
-                type: "POST"
-            });
-        },
+    /**
+     * Gets all script's contexts.
+     * @returns {Promise.<Object>} Service promise
+     */
+    getAllContexts () {
+        return obj.serviceCall({
+            url: fetchUrl("/global-config/services/scripting/contexts?_queryFilter=true", { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+        });
+    },
 
-        /**
-         * Gets a script context's schema.
-         * @returns {Promise.<Object>} Service promise
-         */
-        getContextSchema () {
-            return obj.serviceCall({
-                url: fetchUrl.default("/global-config/services/scripting/contexts?_action=schema", { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
-                type: "POST"
-            });
-        }
-    };
+    /**
+     * Gets a default global script's context.
+     * @returns {Promise.<Object>} Service promise
+     */
+    getDefaultGlobalContext () {
+        return obj.serviceCall({
+            url: fetchUrl("/global-config/services/scripting", { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+        });
+    },
 
-    return obj;
-});
+    /**
+     * Gets a script's schema.
+     * @returns {Promise.<Object>} Service promise
+     */
+    getSchema () {
+        return obj.serviceCall({
+            url: fetchUrl("/global-config/services/scripting?_action=schema", { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
+            type: "POST"
+        });
+    },
+
+    /**
+     * Gets a script context's schema.
+     * @returns {Promise.<Object>} Service promise
+     */
+    getContextSchema () {
+        return obj.serviceCall({
+            url: fetchUrl("/global-config/services/scripting/contexts?_action=schema", { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
+            type: "POST"
+        });
+    }
+};
+
+export default obj;

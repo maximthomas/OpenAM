@@ -17,10 +17,10 @@
  /**
   * @module org/forgerock/openam/ui/common/views/jsonSchema/iteratees/createJSONEditorView
   */
-define([
-    "org/forgerock/openam/ui/common/views/jsonSchema/editors/JSONEditorView",
-    "org/forgerock/openam/ui/common/views/jsonSchema/editors/TogglableJSONEditorView"
-], (JSONEditorView, TogglableJSONEditorView) => (schemaValuePair) => {
+import JSONEditorView from "org/forgerock/openam/ui/common/views/jsonSchema/editors/JSONEditorView";
+import TogglableJSONEditorView from "org/forgerock/openam/ui/common/views/jsonSchema/editors/TogglableJSONEditorView";
+
+export default (schemaValuePair) => {
     const Editor = schemaValuePair.schema.hasEnableProperty() ? TogglableJSONEditorView : JSONEditorView;
     return new Editor(schemaValuePair);
-});
+};

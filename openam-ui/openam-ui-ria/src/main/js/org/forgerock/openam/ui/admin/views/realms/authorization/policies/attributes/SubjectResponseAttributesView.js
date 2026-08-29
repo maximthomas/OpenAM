@@ -14,80 +14,78 @@
  * Portions copyright 2014-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
 
-    // jquery dependencies
-    "selectize"
-], function ($, _, AbstractView) {
-    var SubjectResponseAttributesView = AbstractView.extend({
-        element: "#userAttrs",
-        template: "templates/admin/views/realms/authorization/policies/attributes/SubjectAttributesTemplate.html",
-        noBaseTemplate: true,
-        attrType: "User",
+// jquery dependencies
+import "selectize";
 
-        render (args, callback) {
+var SubjectResponseAttributesView = AbstractView.extend({
+    element: "#userAttrs",
+    template: "templates/admin/views/realms/authorization/policies/attributes/SubjectAttributesTemplate.html",
+    noBaseTemplate: true,
+    attrType: "User",
 
-            var self = this,
-                attr;
+    render (args, callback) {
 
-            this.data.selectedUserAttributes = args[0];
-            this.data.allUserAttributes = [];
+        var self = this,
+            attr;
 
-            _.each(args[1], function (propertyName) {
-                attr = {};
-                attr.propertyName = propertyName;
-                attr.selected = (_.find(self.data.selectedUserAttributes, function (obj) {
-                    return obj.propertyName === propertyName;
-                }));
-                self.data.allUserAttributes.push(attr);
-            });
+        this.data.selectedUserAttributes = args[0];
+        this.data.allUserAttributes = [];
 
-            this.parentRender(function () {
-                self.initSelectize();
+        _.each(args[1], function (propertyName) {
+            attr = {};
+            attr.propertyName = propertyName;
+            attr.selected = (_.find(self.data.selectedUserAttributes, function (obj) {
+                return obj.propertyName === propertyName;
+            }));
+            self.data.allUserAttributes.push(attr);
+        });
 
-                if (callback) {
-                    callback();
+        this.parentRender(function () {
+            self.initSelectize();
+
+            if (callback) {
+                callback();
+            }
+        });
+    },
+
+    getAttrs () {
+        var data = [],
+            attr,
+            self = this;
+
+        _.each(this.data.selectedUserAttributes, function (value) {
+            attr = {};
+            attr.type = self.attrType;
+            attr.propertyName = value.propertyName || value;
+            data.push(attr);
+        });
+
+        data = _.sortBy(data, "propertyName");
+
+        return data;
+    },
+
+    initSelectize () {
+        var self = this;
+
+        this.$el.find(".selectize").each(function () {
+            $(this).selectize({
+                plugins: ["restore_on_backspace"],
+                delimiter: false,
+                persist: false,
+                create: false,
+                hideSelected: true,
+                onChange (value) {
+                    self.data.selectedUserAttributes = value;
                 }
             });
-        },
-
-        getAttrs () {
-            var data = [],
-                attr,
-                self = this;
-
-            _.each(this.data.selectedUserAttributes, function (value) {
-                attr = {};
-                attr.type = self.attrType;
-                attr.propertyName = value.propertyName || value;
-                data.push(attr);
-            });
-
-            data = _.sortBy(data, "propertyName");
-
-            return data;
-        },
-
-        initSelectize () {
-            var self = this;
-
-            this.$el.find(".selectize").each(function () {
-                $(this).selectize({
-                    plugins: ["restore_on_backspace"],
-                    delimiter: false,
-                    persist: false,
-                    create: false,
-                    hideSelected: true,
-                    onChange (value) {
-                        self.data.selectedUserAttributes = value;
-                    }
-                });
-            });
-        }
-    });
-
-    return new SubjectResponseAttributesView();
+        });
+    }
 });
+
+export default new SubjectResponseAttributesView();

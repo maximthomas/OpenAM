@@ -14,16 +14,15 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/user/delegates/KBADelegate",
-    "org/forgerock/openam/ui/common/util/RealmHelper"
-], function (Constants, KBADelegate, RealmHelper) {
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import KBADelegate from "org/forgerock/commons/ui/user/delegates/KBADelegate";
+import RealmHelper from "org/forgerock/openam/ui/common/util/RealmHelper";
 
-    KBADelegate.serviceUrl = RealmHelper.decorateURIWithSubRealm(`/${Constants.context}/json/__subrealm__/${
-            Constants.SELF_SERVICE_CONTEXT
-        }`);
-    KBADelegate.baseEntity = RealmHelper.decorateURIWithSubRealm(`json/__subrealm__/${Constants.SELF_SERVICE_CONTEXT}`);
+KBADelegate.serviceUrl = RealmHelper.decorateURIWithSubRealm(`/${Constants.context}/json/__subrealm__/${
+        Constants.SELF_SERVICE_CONTEXT
+    }`);
+KBADelegate.baseEntity = RealmHelper.decorateURIWithSubRealm(`json/__subrealm__/${Constants.SELF_SERVICE_CONTEXT}`);
 
-    return KBADelegate;
-});
+export default KBADelegate;

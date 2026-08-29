@@ -38,157 +38,155 @@
  *   }
  * }
  */
-define([
-    "lodash"
-], (_) => {
-    function groupTopLevelSimpleValues (raw) {
-        const collectionProperties = _(raw)
-            .pick((property) => _.isObject(property) && !_.isArray(property))
-            .keys()
-            .value();
+import _ from "lodash";
 
-        const predicate = ["_id", "_type", "defaults", ...collectionProperties];
-        const simplePropertiesToGroup = _.omit(raw, ...predicate);
+function groupTopLevelSimpleValues (raw) {
+    const collectionProperties = _(raw)
+        .pick((property) => _.isObject(property) && !_.isArray(property))
+        .keys()
+        .value();
 
-        if (_.isEmpty(simplePropertiesToGroup)) {
-            return raw;
-        }
+    const predicate = ["_id", "_type", "defaults", ...collectionProperties];
+    const simplePropertiesToGroup = _.omit(raw, ...predicate);
 
-        const values = {
-            ..._.omit(raw, _.keys(simplePropertiesToGroup)),
-            global: simplePropertiesToGroup
-        };
-
-        return values;
+    if (_.isEmpty(simplePropertiesToGroup)) {
+        return raw;
     }
 
+    const values = {
+        ..._.omit(raw, _.keys(simplePropertiesToGroup)),
+        global: simplePropertiesToGroup
+    };
+
+    return values;
+}
+
+/**
+* Ungroups collection properties, moving them one level up.
+*
+* @param   {Object} raw Values
+* @param   {string} groupKey Group key of the property value object
+* @returns {JSONValues} JSONValues object with new value set
+*/
+function ungroupCollectionProperties (raw, groupKey) {
+    const collectionProperties = _.pick(raw[groupKey], (value) => {
+        return _.isObject(value) && !_.isArray(value);
+    });
+
+    if (_.isEmpty(collectionProperties)) {
+        return raw;
+    }
+
+    const values = { ...raw, ...collectionProperties };
+
+    const collectionPropertiesKeys = _.keys(collectionProperties);
+    values[`_${groupKey}CollectionProperties`] = collectionPropertiesKeys;
+    values[groupKey] = _.omit(values[groupKey], collectionPropertiesKeys);
+
+    if (_.isEmpty(values[groupKey])) {
+        delete values[groupKey];
+    }
+
+    return values;
+}
+
+export default class JSONValues {
+    constructor (values) {
+        const hasDefaults = _.has(values, "defaults");
+        const hasDynamic = _.has(values, "dynamic");
+
+        if (hasDefaults || hasDynamic) {
+            values = groupTopLevelSimpleValues(values);
+        }
+
+        if (hasDefaults) {
+            values = ungroupCollectionProperties(values, "defaults");
+        }
+        if (values) {
+            this.raw = Object.freeze(values);
+        }
+    }
+    addInheritance (inheritance) {
+        const valuesWithInheritance = _.mapValues(this.raw, (value, key) => ({
+            value,
+            inherited: inheritance[key].inherited
+        }));
+
+        return new JSONValues(valuesWithInheritance);
+    }
     /**
-    * Ungroups collection properties, moving them one level up.
-    *
-    * @param   {Object} raw Values
-    * @param   {string} groupKey Group key of the property value object
-    * @returns {JSONValues} JSONValues object with new value set
-    */
-    function ungroupCollectionProperties (raw, groupKey) {
-        const collectionProperties = _.pick(raw[groupKey], (value) => {
-            return _.isObject(value) && !_.isArray(value);
+     * Adds value for the property.
+     *
+     * @param   {string} path Property key
+     * @param   {string} key Key of the property value object
+     * @param   {string} value Value to be set
+     * @returns {JSONValues} JSONValues object with new value set
+     */
+    addValueForKey (path, key, value) {
+        const clone = _.cloneDeep(this.raw);
+        clone[path][key] = value;
+        return new JSONValues(clone);
+    }
+    extend (object) {
+        return new JSONValues(_.extend({}, this.raw, object));
+    }
+    getEmptyValueKeys () {
+        function isEmpty (value) {
+            if (_.isNumber(value)) {
+                return false;
+            } else if (_.isBoolean(value)) {
+                return false;
+            }
+
+            return _.isEmpty(value);
+        }
+
+        const keys = [];
+
+        _.forIn(this.raw, (value, key) => {
+            if (isEmpty(value)) {
+                keys.push(key);
+            }
         });
 
-        if (_.isEmpty(collectionProperties)) {
-            return raw;
-        }
-
-        const values = { ...raw, ...collectionProperties };
-
-        const collectionPropertiesKeys = _.keys(collectionProperties);
-        values[`_${groupKey}CollectionProperties`] = collectionPropertiesKeys;
-        values[groupKey] = _.omit(values[groupKey], collectionPropertiesKeys);
-
-        if (_.isEmpty(values[groupKey])) {
-            delete values[groupKey];
-        }
-
-        return values;
+        return keys;
     }
+    omit (predicate) {
+        return new JSONValues(_.omit(this.raw, predicate));
+    }
+    pick (predicate) {
+        return new JSONValues(_.pick(this.raw, predicate));
+    }
+    removeInheritance () {
+        return new JSONValues(_.mapValues(this.raw, "value"));
+    }
+    toJSON () {
+        let json = _.cloneDeep(this.raw);
 
-    return class JSONValues {
-        constructor (values) {
-            const hasDefaults = _.has(values, "defaults");
-            const hasDynamic = _.has(values, "dynamic");
+        const wrapCollectionProperties = (json, propertyKey) => {
+            let data = _.cloneDeep(json);
 
-            if (hasDefaults || hasDynamic) {
-                values = groupTopLevelSimpleValues(values);
-            }
+            const collectionPropertiesKeys = data[`_${propertyKey}CollectionProperties`];
+            const collectionProperties = _.pick(data, collectionPropertiesKeys);
+            data[propertyKey] = { ...data[propertyKey], ...collectionProperties };
+            data = _.omit(data, collectionPropertiesKeys);
 
-            if (hasDefaults) {
-                values = ungroupCollectionProperties(values, "defaults");
-            }
-            if (values) {
-                this.raw = Object.freeze(values);
-            }
+            return data;
+        };
+
+        const collectionPropertiesPresent = (json, propertyKey) => {
+            const collectionPropertiesKeys = json[`_${propertyKey}CollectionProperties`];
+            return collectionPropertiesKeys && !_.isEmpty(collectionPropertiesKeys);
+        };
+
+        if (collectionPropertiesPresent(json, "defaults")) {
+            json = wrapCollectionProperties(json, "defaults");
+            delete json._defaultsCollectionProperties;
         }
-        addInheritance (inheritance) {
-            const valuesWithInheritance = _.mapValues(this.raw, (value, key) => ({
-                value,
-                inherited: inheritance[key].inherited
-            }));
 
-            return new JSONValues(valuesWithInheritance);
-        }
-        /**
-         * Adds value for the property.
-         *
-         * @param   {string} path Property key
-         * @param   {string} key Key of the property value object
-         * @param   {string} value Value to be set
-         * @returns {JSONValues} JSONValues object with new value set
-         */
-        addValueForKey (path, key, value) {
-            const clone = _.cloneDeep(this.raw);
-            clone[path][key] = value;
-            return new JSONValues(clone);
-        }
-        extend (object) {
-            return new JSONValues(_.extend({}, this.raw, object));
-        }
-        getEmptyValueKeys () {
-            function isEmpty (value) {
-                if (_.isNumber(value)) {
-                    return false;
-                } else if (_.isBoolean(value)) {
-                    return false;
-                }
+        json = { ...json, ...json.global };
+        delete json.global;
 
-                return _.isEmpty(value);
-            }
-
-            const keys = [];
-
-            _.forIn(this.raw, (value, key) => {
-                if (isEmpty(value)) {
-                    keys.push(key);
-                }
-            });
-
-            return keys;
-        }
-        omit (predicate) {
-            return new JSONValues(_.omit(this.raw, predicate));
-        }
-        pick (predicate) {
-            return new JSONValues(_.pick(this.raw, predicate));
-        }
-        removeInheritance () {
-            return new JSONValues(_.mapValues(this.raw, "value"));
-        }
-        toJSON () {
-            let json = _.cloneDeep(this.raw);
-
-            const wrapCollectionProperties = (json, propertyKey) => {
-                let data = _.cloneDeep(json);
-
-                const collectionPropertiesKeys = data[`_${propertyKey}CollectionProperties`];
-                const collectionProperties = _.pick(data, collectionPropertiesKeys);
-                data[propertyKey] = { ...data[propertyKey], ...collectionProperties };
-                data = _.omit(data, collectionPropertiesKeys);
-
-                return data;
-            };
-
-            const collectionPropertiesPresent = (json, propertyKey) => {
-                const collectionPropertiesKeys = json[`_${propertyKey}CollectionProperties`];
-                return collectionPropertiesKeys && !_.isEmpty(collectionPropertiesKeys);
-            };
-
-            if (collectionPropertiesPresent(json, "defaults")) {
-                json = wrapCollectionProperties(json, "defaults");
-                delete json._defaultsCollectionProperties;
-            }
-
-            json = { ...json, ...json.global };
-            delete json.global;
-
-            return JSON.stringify(json);
-        }
-    };
-});
+        return JSON.stringify(json);
+    }
+}

@@ -14,58 +14,55 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/openam/ui/admin/services/global/SitesService",
-    "org/forgerock/openam/ui/common/views/jsonSchema/FlatJSONSchemaView",
-    "org/forgerock/openam/ui/admin/views/common/Backlink"
-], ($, _, Messages, AbstractView, Router, SitesService, FlatJSONSchemaView, Backlink) => {
+import $ from "jquery";
+import _ from "lodash";
+import Messages from "org/forgerock/commons/ui/common/components/Messages";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import SitesService from "org/forgerock/openam/ui/admin/services/global/SitesService";
+import FlatJSONSchemaView from "org/forgerock/openam/ui/common/views/jsonSchema/FlatJSONSchemaView";
+import Backlink from "org/forgerock/openam/ui/admin/views/common/Backlink";
 
-    const NewSiteView = AbstractView.extend({
-        template: "templates/admin/views/deployment/sites/NewSiteTemplate.html",
-        events: {
-            "click [data-create]": "onCreate",
-            "keyup  [data-site-name]": "onValidateProps"
-        },
+const NewSiteView = AbstractView.extend({
+    template: "templates/admin/views/deployment/sites/NewSiteTemplate.html",
+    events: {
+        "click [data-create]": "onCreate",
+        "keyup  [data-site-name]": "onValidateProps"
+    },
 
-        render () {
-            SitesService.sites.getInitialState().then((data) => this.parentRender(() => {
-                new Backlink().render();
-                this.jsonSchemaView = new FlatJSONSchemaView({
-                    schema: data.schema,
-                    values: data.values
-                });
-                $(this.jsonSchemaView.render().el).appendTo(this.$el.find("[data-site-form]"));
-            }));
-        },
+    render () {
+        SitesService.sites.getInitialState().then((data) => this.parentRender(() => {
+            new Backlink().render();
+            this.jsonSchemaView = new FlatJSONSchemaView({
+                schema: data.schema,
+                values: data.values
+            });
+            $(this.jsonSchemaView.render().el).appendTo(this.$el.find("[data-site-form]"));
+        }));
+    },
 
-        onCreate () {
-            const values = _.cloneDeep(this.jsonSchemaView.getData());
-            const siteId = this.$el.find("[data-site-name]").val();
-            values["_id"] = siteId;
+    onCreate () {
+        const values = _.cloneDeep(this.jsonSchemaView.getData());
+        const siteId = this.$el.find("[data-site-name]").val();
+        values["_id"] = siteId;
 
-            SitesService.sites.create(values)
-                .then(() => { Router.routeTo(Router.configuration.routes.listSites, { args: [], trigger: true }); },
-                (response) => { Messages.addMessage({ response, type: Messages.TYPE_DANGER }); }
-            );
-        },
+        SitesService.sites.create(values)
+            .then(() => { Router.routeTo(Router.configuration.routes.listSites, { args: [], trigger: true }); },
+            (response) => { Messages.addMessage({ response, type: Messages.TYPE_DANGER }); }
+        );
+    },
 
-        onValidateProps (event) {
-            let siteId = $(event.currentTarget).val();
-            if (siteId.indexOf(" ") !== -1) {
-                siteId = false;
-                Messages.addMessage({
-                    type: Messages.TYPE_DANGER,
-                    message: $.t("console.sites.new.nameValidationError")
-                });
-            }
-            this.$el.find("[data-create]").prop("disabled", !siteId);
+    onValidateProps (event) {
+        let siteId = $(event.currentTarget).val();
+        if (siteId.indexOf(" ") !== -1) {
+            siteId = false;
+            Messages.addMessage({
+                type: Messages.TYPE_DANGER,
+                message: $.t("console.sites.new.nameValidationError")
+            });
         }
-    });
-
-    return new NewSiteView();
+        this.$el.find("[data-create]").prop("disabled", !siteId);
+    }
 });
+
+export default new NewSiteView();

@@ -30,3 +30,15 @@ import "./jquery.js";
 import i18n from "i18next/lib/dep/i18next.min.js";
 
 export default i18n;
+
+/*
+ * TASK 5.7. Nine files across the tree do `import { t } from "i18next"` -- all of them task 5.1
+ * output, written against the real package rather than against this shim, which had only a default.
+ * Any build whose graph reached one of them died with `"t" is not exported by ...`, and every batch
+ * verification entry since B2 has been stubbing it in a scratch config to see past it.
+ *
+ * Forwarded lazily rather than bound once (`i18n.t.bind(i18n)`): i18next replaces its own `t` on
+ * init and on language change, and a binding captured at module evaluation would keep calling the
+ * pre-init one. The wrapper always reaches today's.
+ */
+export const t = (...args) => i18n.t(...args);

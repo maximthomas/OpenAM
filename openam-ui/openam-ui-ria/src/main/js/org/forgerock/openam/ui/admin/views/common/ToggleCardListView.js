@@ -14,44 +14,42 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "backbone",
-    "org/forgerock/commons/ui/common/util/UIUtils"
-], ($, Backbone, UIUtils) =>
-    Backbone.View.extend({
+import "jquery";
+import Backbone from "backbone";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
 
-        initialize (options) {
-            this.options = options;
-            this.options.activeView = this.options.activeView || 0;
-        },
+export default Backbone.View.extend({
 
-        getElementA () {
-            return "#viewAContainer";
-        },
+    initialize (options) {
+        this.options = options;
+        this.options.activeView = this.options.activeView || 0;
+    },
 
-        getElementB () {
-            return "#viewBContainer";
-        },
+    getElementA () {
+        return "#viewAContainer";
+    },
 
-        getActiveView () {
-            const index = this.$el.find(".tab-pane.active").index();
-            return index > 0 ? index : 0;
-        },
+    getElementB () {
+        return "#viewBContainer";
+    },
 
-        render (callback) {
-            UIUtils.fillTemplateWithData(
-                "templates/admin/views/common/ToggleCardListTemplate.html",
-                this.options.button,
-                (html) => {
-                    this.$el.html(html);
-                    this.$el.find(".tab-pane").eq(this.options.activeView).addClass("active");
-                    this.$el.find(".tab-toggles").eq(this.options.activeView).addClass("active");
-                    callback(this);
-                }
-            );
-        }
-    }, {
-        DEFAULT_VIEW: 0
-    })
-);
+    getActiveView () {
+        const index = this.$el.find(".tab-pane.active").index();
+        return index > 0 ? index : 0;
+    },
+
+    render (callback) {
+        UIUtils.fillTemplateWithData(
+            "templates/admin/views/common/ToggleCardListTemplate.html",
+            this.options.button,
+            (html) => {
+                this.$el.html(html);
+                this.$el.find(".tab-pane").eq(this.options.activeView).addClass("active");
+                this.$el.find(".tab-toggles").eq(this.options.activeView).addClass("active");
+                callback(this);
+            }
+        );
+    }
+}, {
+    DEFAULT_VIEW: 0
+});

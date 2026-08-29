@@ -22,54 +22,54 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  */
 
-define([
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/main/AbstractDelegate"
-], function (Constants, AbstractDelegate) {
-    var obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/frrest/oauth2/token`);
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
 
-    /**
-     * Gets all the OAuth 2 tokens for a user
-     * @param {Function} successCallback Success callback function
-     * @param {Function} errorCallback Error callback function
-     */
-    obj.getAllTokens = function (successCallback, errorCallback) {
+var obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/frrest/oauth2/token`);
 
-        obj.serviceCall({ url: "/?_queryid=*", success (data) {
-            if (successCallback) {
-                successCallback(data.result);
-            }
-        }, error: errorCallback });
+/**
+ * Gets all the OAuth 2 tokens for a user
+ * @param {Function} successCallback Success callback function
+ * @param {Function} errorCallback Error callback function
+ */
+obj.getAllTokens = function (successCallback, errorCallback) {
 
-    };
+    obj.serviceCall({ url: "/?_queryid=*", success (data) {
+        if (successCallback) {
+            successCallback(data.result);
+        }
+    }, error: errorCallback });
 
-    /**
-     *  Deletes a token given a tokenID
-     * @param {Function} successCallback success handler
-     * @param {Function} errorCallback error handler
-     * @param {String} id TokenID
-     */
-    obj.deleteToken = function (successCallback, errorCallback, id) {
-        obj.serviceCall({ type: "DELETE", url: `/${id}`, success () {
-            if (successCallback) {
-                successCallback(id);
-            }
-        }, error: errorCallback(id) });
-    };
+};
 
-    /**
-     * Gets a token given a token ID
-     * @param {Function} successCallback success handler
-     * @param {Function} errorCallback error handler
-     * @param {String} id TokenID
-     */
-    obj.getTokenByID = function (successCallback, errorCallback, id) {
-        obj.serviceCall({ url: `/${id}`, success (data) {
-            if (successCallback) {
-                successCallback(data);
-            }
-        }, error: errorCallback });
-    };
+/**
+ *  Deletes a token given a tokenID
+ * @param {Function} successCallback success handler
+ * @param {Function} errorCallback error handler
+ * @param {String} id TokenID
+ */
+obj.deleteToken = function (successCallback, errorCallback, id) {
+    obj.serviceCall({ type: "DELETE", url: `/${id}`, success () {
+        if (successCallback) {
+            successCallback(id);
+        }
+    }, error: errorCallback(id) });
+};
 
-    return obj;
-});
+/**
+ * Gets a token given a token ID
+ * @param {Function} successCallback success handler
+ * @param {Function} errorCallback error handler
+ * @param {String} id TokenID
+ */
+obj.getTokenByID = function (successCallback, errorCallback, id) {
+    obj.serviceCall({ url: `/${id}`, success (data) {
+        if (successCallback) {
+            successCallback(data);
+        }
+    }, error: errorCallback });
+};
+
+export default obj;

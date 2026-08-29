@@ -15,27 +15,24 @@
  */
 
 
-define([
-    "jquery",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/util/URIUtils",
-    "org/forgerock/openam/ui/user/login/tokens/SessionToken",
-    "org/forgerock/openam/ui/user/login/tokens/AuthenticationToken"
-], ($, AbstractView, URIUtils, SessionToken, AuthenticationToken) => {
+import $ from "jquery";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import URIUtils from "org/forgerock/commons/ui/common/util/URIUtils";
+import { remove as removeSessionToken } from "org/forgerock/openam/ui/user/login/tokens/SessionToken";
+import { remove as removeAuthenticationToken } from "org/forgerock/openam/ui/user/login/tokens/AuthenticationToken";
 
-    var LoginFailureView = AbstractView.extend({
-        template: "templates/openam/ReturnToLoginTemplate.html",
-        baseTemplate: "templates/common/LoginBaseTemplate.html",
-        data: {},
-        render () {
-            SessionToken.remove();
-            AuthenticationToken.remove();
-            const params = URIUtils.getCurrentFragmentQueryString();
-            this.data.params = params ? `&${params}` : "";
-            this.data.title = $.t("openam.authentication.unavailable");
-            this.parentRender();
-        }
-    });
-
-    return new LoginFailureView();
+var LoginFailureView = AbstractView.extend({
+    template: "templates/openam/ReturnToLoginTemplate.html",
+    baseTemplate: "templates/common/LoginBaseTemplate.html",
+    data: {},
+    render () {
+        removeSessionToken();
+        removeAuthenticationToken();
+        const params = URIUtils.getCurrentFragmentQueryString();
+        this.data.params = params ? `&${params}` : "";
+        this.data.title = $.t("openam.authentication.unavailable");
+        this.parentRender();
+    }
 });
+
+export default new LoginFailureView();

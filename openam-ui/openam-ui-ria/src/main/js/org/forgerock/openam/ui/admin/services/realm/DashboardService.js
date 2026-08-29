@@ -17,21 +17,22 @@
 /**
  * @module org/forgerock/openam/ui/admin/services/realm/DashboardService
  */
-define([
-    "org/forgerock/commons/ui/common/main/AbstractDelegate",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/openam/ui/common/services/fetchUrl"
-], (AbstractDelegate, Constants, fetchUrl) => {
-    const obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
 
-    obj.dashboard = {
-        commonTasks: {
-            all: (realm) => obj.serviceCall({
-                url: fetchUrl.default("/realm-config/commontasks?_queryFilter=true", { realm }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-            })
-        }
-    };
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import fetchUrl from "org/forgerock/openam/ui/common/services/fetchUrl";
 
-    return obj;
-});
+const obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
+
+obj.dashboard = {
+    commonTasks: {
+        all: (realm) => obj.serviceCall({
+            url: fetchUrl("/realm-config/commontasks?_queryFilter=true", { realm }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+        })
+    }
+};
+
+export default obj;

@@ -14,11 +14,9 @@
  * Portions copyright 2015-2016 ForgeRock AS.
  */
 
-define("org/forgerock/openam/ui/main", [
-    "./common/services/SiteConfigurationService",
-    "./common/util/Helpers",
-    "./user/login/RESTLoginHelper",
-    "./user/services/AuthNService",
-    "./user/services/SessionService",
-    "./user/login/RESTLoginView"
-]);
+import "./common/services/SiteConfigurationService";
+import "./common/util/Helpers";
+import "./user/login/RESTLoginHelper";
+import "./user/services/AuthNService";
+import "./user/services/SessionService";
+import "./user/login/RESTLoginView";

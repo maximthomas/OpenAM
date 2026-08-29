@@ -18,13 +18,26 @@
             <div id="popup-content" class="radious"></div>
         </div>
         <footer id="footer" class="footer text-muted"></footer>
-        <script src="libs/base64-1.0.0-min.js"></script>
-        <script type="text/javascript">
-            var require = {
-                urlArgs : "v=${version}",
-                deps : ['main']
-            };
-        </script>
-        <script src="libs/requirejs-2.3.7-min.js"></script>
+        <!--
+            TASK 5.4 (batch B12). The XUI is an ES module tree; this is the whole loader.
+
+            WHAT WENT. The RequireJS bootstrap (a global `require` object carrying `deps:['main']`,
+            plus the requirejs <script src>) and the base64-1.0.0-min.js btoa/atob polyfill.
+            `libs/requirejs-2.3.7-min.js` still SHIPS -- six .ftl pages in the openam-oauth2 module
+            load it by literal <script src> and D8/task 10.4 forbid editing them -- it is simply no
+            longer loaded here. base64 was loaded from this line and nowhere else; every browser
+            that runs type="module" has btoa/atob natively, and commons' own util/Base64 has a
+            complete pure-JS fallback besides.
+
+            WHY THE VERSION QUERY IS STILL ON THE src BELOW. It is the direct successor of
+            RequireJS's `urlArgs`, not a leftover: main.js is the one JS file the build emits
+            UNHASHED, so it is the one a browser could serve stale across a redeploy. Every other
+            asset is either content-hashed by Vite or fetched through resolveAssetUrl, which
+            main.js configures with the same version (design.md D4). `readIndexHtmlSource` in
+            vite.config.js fails the build if that query string disappears -- and it looks for it
+            INSIDE the module script's src attribute, so writing the token in a comment (as this
+            one deliberately does not) would not satisfy it.
+        -->
+        <script type="module" src="main.js?v=${version}"></script>
     </body>
 </html>

@@ -15,46 +15,45 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView",
-    "clockPicker"
-], function ($, _, ConditionAttrBaseView) {
-    return ConditionAttrBaseView.extend({
-        template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrTime.html",
+import $ from "jquery";
+import _ from "lodash";
+import ConditionAttrBaseView from
+    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView";
+import "clockPicker";
 
-        clickClockPicker (e) {
-            e.stopPropagation();
-            $(e.currentTarget).prev("input").clockpicker("show");
-        },
+export default ConditionAttrBaseView.extend({
+    template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrTime.html",
 
-        render (data, element, callback) {
-            this.initBasic(data, element, "pull-left attr-group");
+    clickClockPicker (e) {
+        e.stopPropagation();
+        $(e.currentTarget).prev("input").clockpicker("show");
+    },
 
-            this.events["click [data-clock]"] = _.bind(this.clickClockPicker, this);
+    render (data, element, callback) {
+        this.initBasic(data, element, "pull-left attr-group");
 
-            this.parentRender(function () {
-                this.initClockPickers();
+        this.events["click [data-clock]"] = _.bind(this.clickClockPicker, this);
 
-                if (callback) {
-                    callback();
+        this.parentRender(function () {
+            this.initClockPickers();
+
+            if (callback) {
+                callback();
+            }
+        });
+    },
+
+    initClockPickers () {
+        this.$el.find(".clockpicker").each(function () {
+
+            var clock = $(this);
+            clock.clockpicker({
+                placement: "top",
+                autoclose: true,
+                afterDone () {
+                    clock.trigger("change");
                 }
             });
-        },
-
-        initClockPickers () {
-            this.$el.find(".clockpicker").each(function () {
-
-                var clock = $(this);
-                clock.clockpicker({
-                    placement: "top",
-                    autoclose: true,
-                    afterDone () {
-                        clock.trigger("change");
-                    }
-                });
-            });
-        }
-    });
+        });
+    }
 });

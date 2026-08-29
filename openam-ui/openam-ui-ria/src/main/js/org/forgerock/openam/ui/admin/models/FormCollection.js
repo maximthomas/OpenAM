@@ -14,28 +14,26 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "lodash"
-], function (_) {
-    var obj = function FormCollection () {
-        this.forms = [];
-    };
+import _ from "lodash";
 
-    obj.prototype.add = function (form) {
-        this.forms.push(form);
-    };
+var obj = function FormCollection () {
+    this.forms = [];
+};
 
-    obj.prototype.data = function () {
-        return _.reduce(this.forms, function (merged, form) {
-            return _.merge(merged, form.data());
-        }, this.forms[0].data());
-    };
+obj.prototype.add = function (form) {
+    this.forms.push(form);
+};
 
-    obj.prototype.reset = function () {
-        _.each(this.forms, function (form) {
-            form.reset();
-        });
-    };
+obj.prototype.data = function () {
+    return _.reduce(this.forms, function (merged, form) {
+        return _.merge(merged, form.data());
+    }, this.forms[0].data());
+};
 
-    return obj;
-});
+obj.prototype.reset = function () {
+    _.each(this.forms, function (form) {
+        form.reset();
+    });
+};
+
+export default obj;

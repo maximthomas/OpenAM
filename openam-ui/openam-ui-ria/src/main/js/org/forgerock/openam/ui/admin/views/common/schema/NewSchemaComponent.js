@@ -14,93 +14,91 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "backbone",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/commons/ui/common/util/UIUtils",
-    "org/forgerock/openam/ui/common/util/Promise",
-    "org/forgerock/openam/ui/common/views/jsonSchema/FlatJSONSchemaView",
-    "org/forgerock/openam/ui/common/views/jsonSchema/GroupedJSONSchemaView"
-], (_, Backbone, Messages, Router, UIUtils, Promise, FlatJSONSchemaView, GroupedJSONSchemaView) =>
-    Backbone.View.extend({
-        events: {
-            "click [data-save]": "onSave",
-            "click [data-cancel]": "onCancel",
-            "keyup [data-instance-id]": "onIdChange",
-            "change [data-instance-id]": "onIdChange"
-        },
+import _ from "lodash";
+import Backbone from "backbone";
+import Messages from "org/forgerock/commons/ui/common/components/Messages";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
+import "org/forgerock/openam/ui/common/util/Promise";
+import FlatJSONSchemaView from "org/forgerock/openam/ui/common/views/jsonSchema/FlatJSONSchemaView";
+import GroupedJSONSchemaView from "org/forgerock/openam/ui/common/views/jsonSchema/GroupedJSONSchemaView";
 
-        onIdChange (event) {
-            const isEmpty = _.isEmpty(event.currentTarget.value);
-            this.setCreateEnabled(!isEmpty);
-        },
+export default Backbone.View.extend({
+    events: {
+        "click [data-save]": "onSave",
+        "click [data-cancel]": "onCancel",
+        "keyup [data-instance-id]": "onIdChange",
+        "change [data-instance-id]": "onIdChange"
+    },
 
-        setCreateEnabled (enabled) {
-            this.$el.find("[data-save]").prop("disabled", !enabled);
-        },
+    onIdChange (event) {
+        const isEmpty = _.isEmpty(event.currentTarget.value);
+        this.setCreateEnabled(!isEmpty);
+    },
 
-        // TODO: document the interface and put guard clauses
-        initialize ({
-            data,
-            listRoute,
-            listRouteArgs,
-            editRoute,
-            editRouteArgs,
-            template,
-            getInitialState,
-            createInstance
-        }) {
-            this.data = data;
-            this.listRoute = listRoute;
-            this.listRouteArgs = listRouteArgs;
-            this.editRoute = editRoute;
-            this.editRouteArgs = editRouteArgs;
-            this.template = template;
-            this.getInitialState = getInitialState;
-            this.createInstance = createInstance;
-        },
+    setCreateEnabled (enabled) {
+        this.$el.find("[data-save]").prop("disabled", !enabled);
+    },
 
-        render () {
-            this.getInitialState().then((response) => {
-                const options = {
-                    schema: response.schema,
-                    values: response.values,
-                    showOnlyRequiredAndEmpty: true
-                };
+    // TODO: document the interface and put guard clauses
+    initialize ({
+        data,
+        listRoute,
+        listRouteArgs,
+        editRoute,
+        editRouteArgs,
+        template,
+        getInitialState,
+        createInstance
+    }) {
+        this.data = data;
+        this.listRoute = listRoute;
+        this.listRouteArgs = listRouteArgs;
+        this.editRoute = editRoute;
+        this.editRouteArgs = editRouteArgs;
+        this.template = template;
+        this.getInitialState = getInitialState;
+        this.createInstance = createInstance;
+    },
 
-                if (response.schema.isCollection()) {
-                    this.jsonSchemaView = new GroupedJSONSchemaView(options);
-                } else {
-                    this.jsonSchemaView = new FlatJSONSchemaView(options);
-                }
+    render () {
+        this.getInitialState().then((response) => {
+            const options = {
+                schema: response.schema,
+                values: response.values,
+                showOnlyRequiredAndEmpty: true
+            };
 
-                UIUtils.compileTemplate(this.template, this.data).then((html) => {
-                    this.$el.html(html);
-                    this.$el.find("[data-json-form]").html(this.jsonSchemaView.render().$el);
-                });
+            if (response.schema.isCollection()) {
+                this.jsonSchemaView = new GroupedJSONSchemaView(options);
+            } else {
+                this.jsonSchemaView = new FlatJSONSchemaView(options);
+            }
+
+            UIUtils.compileTemplate(this.template, this.data).then((html) => {
+                this.$el.html(html);
+                this.$el.find("[data-json-form]").html(this.jsonSchemaView.render().$el);
             });
+        });
 
-            return this;
-        },
+        return this;
+    },
 
-        onSave () {
-            const formData = _.cloneDeep(this.jsonSchemaView.getData());
-            const instanceId = this.$el.find("[data-instance-id]").val();
+    onSave () {
+        const formData = _.cloneDeep(this.jsonSchemaView.getData());
+        const instanceId = this.$el.find("[data-instance-id]").val();
 
-            formData["_id"] = instanceId;
+        formData["_id"] = instanceId;
 
-            this.createInstance(formData).then(() => {
-                Router.routeTo(this.editRoute, {
-                    args: this.editRouteArgs(encodeURIComponent(instanceId)),
-                    trigger: true
-                });
-            }, (response) => { Messages.addMessage({ response, type: Messages.TYPE_DANGER }); });
-        },
+        this.createInstance(formData).then(() => {
+            Router.routeTo(this.editRoute, {
+                args: this.editRouteArgs(encodeURIComponent(instanceId)),
+                trigger: true
+            });
+        }, (response) => { Messages.addMessage({ response, type: Messages.TYPE_DANGER }); });
+    },
 
-        onCancel () {
-            Router.routeTo(this.listRoute, { args: this.listRouteArgs, trigger: true });
-        }
-    })
-);
+    onCancel () {
+        Router.routeTo(this.listRoute, { args: this.listRouteArgs, trigger: true });
+    }
+});

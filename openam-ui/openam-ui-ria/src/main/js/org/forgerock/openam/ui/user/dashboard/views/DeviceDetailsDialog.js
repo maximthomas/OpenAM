@@ -14,30 +14,28 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/components/BootstrapDialog",
-    "org/forgerock/commons/ui/common/util/UIUtils"
-], ($, _, BootstrapDialog, UIUtils) => {
-    return function (uuid, device) {
-        const data = {
-            deviceName: device.deviceName,
-            recoveryCodes: device.recoveryCodes
-        };
+import $ from "jquery";
+import "lodash";
+import BootstrapDialog from "org/forgerock/commons/ui/common/components/BootstrapDialog";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
 
-        UIUtils.compileTemplate("templates/user/dashboard/EditDeviceDialogTemplate.html", data).then((tpl) => {
-            BootstrapDialog.show({
-                title: device.deviceName,
-                message: $(tpl),
-                cssClass: "device-details",
-                buttons: [{
-                    label: $.t("common.form.close"),
-                    action: (dialog) => {
-                        dialog.close();
-                    }
-                }]
-            });
-        });
+export default function (uuid, device) {
+    const data = {
+        deviceName: device.deviceName,
+        recoveryCodes: device.recoveryCodes
     };
-});
+
+    UIUtils.compileTemplate("templates/user/dashboard/EditDeviceDialogTemplate.html", data).then((tpl) => {
+        BootstrapDialog.show({
+            title: device.deviceName,
+            message: $(tpl),
+            cssClass: "device-details",
+            buttons: [{
+                label: $.t("common.form.close"),
+                action: (dialog) => {
+                    dialog.close();
+                }
+            }]
+        });
+    });
+}

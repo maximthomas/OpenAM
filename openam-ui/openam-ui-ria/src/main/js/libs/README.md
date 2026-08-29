@@ -2,8 +2,10 @@
 
 Third-party JavaScript that ships to the browser but is **not** installed from npm. Everything in
 this directory is copied verbatim into the built tree's `/libs` by `copyLibraries` in
-`vite.config.js`, under the same filename, and is bound by id in the `require.config.paths` block
-of `src/main/js/main.js` (or loaded by a literal `<script src>`; the table says which).
+`vite.config.js`, under the same filename. Task 5.4 deleted the `require.config.paths` block in
+`src/main/js/main.js` that used to bind them by id, so what binds each file now is either a
+`resolve.alias` entry in `vite.config.js` (the ten library files) or a literal `<script src>` in a
+FreeMarker template outside this Maven module (`requirejs-2.3.7-min.js`, and only that one).
 
 **This directory is an exception to a spec requirement, not the normal route.**
 `ui-build-and-packaging` requires that *"third-party JavaScript executed at runtime SHALL be
@@ -48,7 +50,6 @@ CDN minifications with the upstream header stripped, and those are marked so rat
 | File | md5 | Bytes | Origin | Licence in file | Since |
 |---|---|---:|---|---|---|
 | `backgrid-paginator-0.3.5-custom.min.js` | `ebd4b6db` | 3,915 | local fork of backgrid-paginator 0.3.5 | MIT | pre-existing |
-| `base64-1.0.0-min.js` | `152e3662` | 835 | `cdnjs.cloudflare.com/ajax/libs/Base64/1.0.0/base64.min.js` | **not stated** (minified) | 4.7 |
 | `bootstrap-datetimepicker-4.14.30-min.js` | `7b418408` | 35,776 | `cdnjs.cloudflare.com/ajax/libs/bootstrap-datetimepicker/4.14.30/js/bootstrap-datetimepicker.min.js` | **not stated** (minified; upstream `Eonasdan/bootstrap-datetimepicker`) | 4.7 |
 | `bootstrap-tabdrop-1.0.js` | `7c4081d5` | 5,105 | `www.eyecon.ro/bootstrap-tabdrop/js/bootstrap-tabdrop.js` — **dead domain** | Apache-2.0 | 4.7 |
 | `form2js-2.0-769718a.js` | `897ec696` | 10,160 | `raw.githubusercontent.com/maxatwork/form2js/769718a159ff88da82613c2c7e5b1eaa2e0c73e7/src/form2js.js` | MIT | 4.7 |
@@ -81,10 +82,25 @@ CDN-fetched-and-republished binary artifacts. Seven files could not follow the r
   unreproducible; vendoring is what makes it reproducible again.
 - **`jquery.ba-dotimeout`** — `jquery-dotimeout`, `jquery.ba-dotimeout`, `jquery-ba-dotimeout` and
   `dotimeout` all 404 on npm. There is nothing to replace it with.
-- **`requirejs`, `base64`** — these two must exist as files at fixed URLs no matter what the
-  bundler does, because six `.ftl` pages and `index.html` load them with a literal `<script src>`
-  before any module system is running. Byte-exactness is the requirement; see
-  `NOTES-libs-retire.md` §4.1 and §4.2.
+- **`requirejs`** — it must exist as a file at a fixed URL no matter what the bundler does,
+  because six `.ftl` pages in the **openam-oauth2** Maven module load it with a literal
+  `<script src>` before any module system is running, and D8/task 10.4 forbid editing them.
+  Byte-exactness is the requirement; see `NOTES-libs-retire.md` §4.1.
+
+  Under task 5.4's option (c1) it is loaded and parsed on those six pages and then does exactly one
+  thing: fetch the unhashed classic-script stub the build emits at `main-authorize.js` /
+  `main-device.js`, which dynamic-imports the real ES module chunk. It is no longer on any critical
+  path and `index.html` no longer loads it at all.
+
+  **`base64` was the second row here and task 5.4 removed it.** Its justification was the same
+  sentence as `requirejs`', and the sentence was wrong about it: `index.html:21` was its ONLY
+  loader — zero of the six `.ftl` pages mention it — and 5.4 replaced that line with a single
+  `<script type="module">`. It is a `btoa`/`atob` polyfill that installs itself only when the
+  globals are missing (`r.btoa||(r.btoa=…)`); it defines no `base64` global, no AM module reads
+  one, and commons' own `util/Base64` calls native `btoa`/`atob` with a complete pure-JS fallback
+  behind a `typeof` test. Every browser that can run `<script type="module">` has both. That is
+  D20's removal trigger firing on its own terms — *"a row leaves the register … when the module
+  that binds it goes"*.
 - **`bootstrap-datetimepicker`** (js and css) — npm publishes `src/` only, no built js and no built
   css. The **dependency is still declared** in `package.json` so the library keeps a lockfile entry
   and stays visible to `npm audit`; only the built bytes are vendored. `assertVendoredVersions` in

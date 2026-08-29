@@ -14,19 +14,16 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "org/forgerock/openam/ui/common/util/Constants",
-    "org/forgerock/openam/ui/user/anonymousProcess/AnonymousProcessView",
-    "org/forgerock/commons/ui/user/anonymousProcess/ForgotUsernameView"
-], function (_, Constants, AnonymousProcessView, ForgotUsernameView) {
+import _ from "lodash";
+import Constants from "org/forgerock/openam/ui/common/util/Constants";
+import AnonymousProcessView from "org/forgerock/openam/ui/user/anonymousProcess/AnonymousProcessView";
+import ForgotUsernameView from "org/forgerock/commons/ui/user/anonymousProcess/ForgotUsernameView";
 
-    function AMForgotUsernameView () { }
+function AMForgotUsernameView () { }
 
-    AMForgotUsernameView.prototype = ForgotUsernameView;
-    AMForgotUsernameView.prototype.endpoint = Constants.SELF_SERVICE_FORGOTTEN_USERNAME;
+AMForgotUsernameView.prototype = ForgotUsernameView;
+AMForgotUsernameView.prototype.endpoint = Constants.SELF_SERVICE_FORGOTTEN_USERNAME;
 
-    _.extend(AMForgotUsernameView.prototype, AnonymousProcessView.prototype);
+_.extend(AMForgotUsernameView.prototype, AnonymousProcessView.prototype);
 
-    return new AMForgotUsernameView();
-});
+export default new AMForgotUsernameView();

@@ -14,30 +14,30 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/commons/ui/common/main/AbstractDelegate",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/openam/ui/common/services/fetchUrl"
-], function (AbstractDelegate, Configuration, Constants, fetchUrl) {
-    var obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import fetchUrl from "org/forgerock/openam/ui/common/services/fetchUrl";
 
-    obj.getTrustedDevices = function () {
-        return obj.serviceCall({
-            url: fetchUrl.default(`/users/${
-                encodeURIComponent(Configuration.loggedUser.get("username"))}/devices/trusted/?_queryId=*`),
-            headers: { "Cache-Control": "no-cache", "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+var obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
 
-    obj.deleteTrustedDevice = function (id) {
-        return obj.serviceCall({
-            url: fetchUrl.default(`/users/${
-                encodeURIComponent(Configuration.loggedUser.get("username"))}/devices/trusted/${id}`),
-            type: "DELETE",
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-        });
-    };
+obj.getTrustedDevices = function () {
+    return obj.serviceCall({
+        url: fetchUrl(`/users/${
+            encodeURIComponent(Configuration.loggedUser.get("username"))}/devices/trusted/?_queryId=*`),
+        headers: { "Cache-Control": "no-cache", "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
 
-    return obj;
-});
+obj.deleteTrustedDevice = function (id) {
+    return obj.serviceCall({
+        url: fetchUrl(`/users/${
+            encodeURIComponent(Configuration.loggedUser.get("username"))}/devices/trusted/${id}`),
+        type: "DELETE",
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+    });
+};
+
+export default obj;

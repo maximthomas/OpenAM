@@ -14,86 +14,83 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "backbone",
-    "org/forgerock/commons/ui/common/backgrid/Backgrid",
-    "org/forgerock/openam/ui/common/util/BackgridUtils",
-    "org/forgerock/openam/ui/user/uma/views/resource/BasePage",
-    "org/forgerock/commons/ui/common/components/BootstrapDialog",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/openam/ui/user/uma/services/UMAService"
-], function ($, Backbone, Backgrid, BackgridUtils, BasePage, BootstrapDialog, Configuration, Constants, EventManager,
-             Router, UMAService) {
-    var MyLabelsPage = BasePage.extend({
-        template: "templates/user/uma/views/resource/MyLabelsPageTemplate.html",
-        partials: [
-            "templates/user/uma/views/resource/_DeleteLabelButton.html"
-        ],
-        events: {
-            "click button#deleteLabel": "deleteLabel"
-        },
-        deleteLabel () {
-            var self = this,
-                buttons = [{
-                    label: $.t("common.form.cancel"),
-                    action (dialog) {
-                        dialog.close();
-                    }
-                }, {
-                    id: "ok",
-                    label: $.t("common.form.ok"),
-                    cssClass: "btn-primary btn-danger",
-                    action (dialog) {
-                        dialog.enableButtons(false);
-                        dialog.getButton("ok").text($.t("common.form.working"));
+import $ from "jquery";
+import "backbone";
+import "org/forgerock/commons/ui/common/backgrid/Backgrid";
+import "org/forgerock/openam/ui/common/util/BackgridUtils";
+import BasePage from "org/forgerock/openam/ui/user/uma/views/resource/BasePage";
+import BootstrapDialog from "org/forgerock/commons/ui/common/components/BootstrapDialog";
+import "org/forgerock/commons/ui/common/main/Configuration";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import UMAService from "org/forgerock/openam/ui/user/uma/services/UMAService";
 
-                        UMAService.labels.remove(self.data.label._id).done(function () {
-                            EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "deleteLabelSuccess");
-
-                            dialog.close();
-                            Router.routeTo(Router.configuration.routes.umaResourcesMyResources, {
-                                trigger: true,
-                                args: []
-                            });
-                        }).fail(function () {
-                            EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "deleteLabelFail");
-
-                            dialog.enableButtons(true);
-                            dialog.getButton("ok").text($.t("common.form.ok"));
-                        });
-                    }
-                }];
-
-            BootstrapDialog.show({
-                type: BootstrapDialog.TYPE_DANGER,
-                title: $.t("uma.resources.myLabels.deleteLabel.dialog.title"),
-                message: $.t("uma.resources.myLabels.deleteLabel.dialog.message"),
-                closable: false,
-                buttons
-            });
-        },
-        recordsPresent () {
-            this.$el.find("button#deleteLabel").prop("disabled", false);
-        },
-        render (args, callback) {
-            var labelId = args[0],
-                self = this;
-
-            UMAService.labels.get(labelId).then(function (result) {
-                self.data.label = result;
-                if (result) {
-                    self.renderGrid(self.createLabelCollection(labelId), self.createColumns(`mylabels/${labelId}`),
-                        callback);
-                } else {
-                    self.parentRender(callback);
+var MyLabelsPage = BasePage.extend({
+    template: "templates/user/uma/views/resource/MyLabelsPageTemplate.html",
+    partials: [
+        "templates/user/uma/views/resource/_DeleteLabelButton.html"
+    ],
+    events: {
+        "click button#deleteLabel": "deleteLabel"
+    },
+    deleteLabel () {
+        var self = this,
+            buttons = [{
+                label: $.t("common.form.cancel"),
+                action (dialog) {
+                    dialog.close();
                 }
-            });
-        }
-    });
+            }, {
+                id: "ok",
+                label: $.t("common.form.ok"),
+                cssClass: "btn-primary btn-danger",
+                action (dialog) {
+                    dialog.enableButtons(false);
+                    dialog.getButton("ok").text($.t("common.form.working"));
 
-    return MyLabelsPage;
+                    UMAService.labels.remove(self.data.label._id).done(function () {
+                        EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "deleteLabelSuccess");
+
+                        dialog.close();
+                        Router.routeTo(Router.configuration.routes.umaResourcesMyResources, {
+                            trigger: true,
+                            args: []
+                        });
+                    }).fail(function () {
+                        EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "deleteLabelFail");
+
+                        dialog.enableButtons(true);
+                        dialog.getButton("ok").text($.t("common.form.ok"));
+                    });
+                }
+            }];
+
+        BootstrapDialog.show({
+            type: BootstrapDialog.TYPE_DANGER,
+            title: $.t("uma.resources.myLabels.deleteLabel.dialog.title"),
+            message: $.t("uma.resources.myLabels.deleteLabel.dialog.message"),
+            closable: false,
+            buttons
+        });
+    },
+    recordsPresent () {
+        this.$el.find("button#deleteLabel").prop("disabled", false);
+    },
+    render (args, callback) {
+        var labelId = args[0],
+            self = this;
+
+        UMAService.labels.get(labelId).then(function (result) {
+            self.data.label = result;
+            if (result) {
+                self.renderGrid(self.createLabelCollection(labelId), self.createColumns(`mylabels/${labelId}`),
+                    callback);
+            } else {
+                self.parentRender(callback);
+            }
+        });
+    }
 });
+
+export default MyLabelsPage;

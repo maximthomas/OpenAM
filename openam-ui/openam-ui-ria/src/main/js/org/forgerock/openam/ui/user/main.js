@@ -15,15 +15,32 @@
  */
 
 
-define("org/forgerock/openam/ui/user/main", [
-    "./profile/ChangeSecurityDataDialog",
-    "./services/TokenService",
-    "./services/SessionService",
-    "./services/AuthNService",
-    "./services/KBADelegate",
-    "./login/RESTLoginHelper",
-    "./login/RESTLoginView",
-    "./login/RESTConfirmLoginView",
-    "./login/RESTLoginDialog",
-    "./login/RESTLogoutView"
-]);
+/*
+ * An aggregator: it had no factory and exported nothing, so every dependency was already loaded
+ * purely for its side effects. Side-effect imports preserve that exactly, in the original order.
+ * The define carried the named id "org/forgerock/openam/ui/user/main", which is this file's own
+ * path, so dropping the name changes nothing.
+ *
+ * The ids are RELATIVE and stay relative. resolve.alias never sees a relative specifier, but none
+ * of them needs one: each resolves against this file's own directory to a file that exists, because
+ * the source layout already mirrors the module-id layout here. Checked with a Rollup
+ * `this.resolve(id, importer)` probe against the real vite.config.js, not assumed.
+ */
+
+/*
+ * "./profile/ChangeSecurityDataDialog" stood here and is deliberately dropped. Its target was
+ * deleted in e649bbca1a "CR-8321 - AME-8518 - Align XUI profile page with changes from
+ * forgerock-ui-user as part of CUI-91", which never updated this list. Inside an AMD define([...])
+ * a dangling id is only a string literal, so it has resolved to nothing since that commit; under
+ * ESM it is a hard build error. Dropping it preserves current behaviour exactly and does not
+ * restore the dialog.
+ */
+import "./services/TokenService";
+import "./services/SessionService";
+import "./services/AuthNService";
+import "./services/KBADelegate";
+import "./login/RESTLoginHelper";
+import "./login/RESTLoginView";
+import "./login/RESTConfirmLoginView";
+import "./login/RESTLoginDialog";
+import "./login/RESTLogoutView";

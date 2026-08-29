@@ -15,106 +15,103 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "backbone",
-    "backbone.paginator",
-    "backgrid-filter",
-    "org/forgerock/commons/ui/common/backgrid/Backgrid",
-    "org/forgerock/commons/ui/common/backgrid/extension/ThemeablePaginator",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/openam/ui/common/services/fetchUrl",
-    "org/forgerock/openam/ui/common/util/BackgridUtils"
-], function ($, _, Backbone, BackbonePaginator, BackgridFilter, Backgrid, ThemeablePaginator, AbstractView,
-             Configuration, Constants, fetchUrl, BackgridUtils) {
-    var HistoryView = AbstractView.extend({
-        template: "templates/user/uma/views/history/ListHistory.html",
-        baseTemplate: "templates/common/DefaultBaseTemplate.html",
-        events: {},
+import $ from "jquery";
+import _ from "lodash";
+import Backbone from "backbone";
+import "backbone.paginator";
+import "backgrid-filter";
+import Backgrid from "org/forgerock/commons/ui/common/backgrid/Backgrid";
+import "org/forgerock/commons/ui/common/backgrid/extension/ThemeablePaginator";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import fetchUrl from "org/forgerock/openam/ui/common/services/fetchUrl";
+import BackgridUtils from "org/forgerock/openam/ui/common/util/BackgridUtils";
 
-        render () {
-            var self = this,
-                collection,
-                grid,
-                paginator;
+var HistoryView = AbstractView.extend({
+    template: "templates/user/uma/views/history/ListHistory.html",
+    baseTemplate: "templates/common/DefaultBaseTemplate.html",
+    events: {},
 
-            collection = new (Backbone.PageableCollection.extend({
-                url: `/${Constants.context}/json${
-                    fetchUrl.default(`/users/${Configuration.loggedUser.get("username")}/uma/auditHistory`)}`,
-                state: {
-                    pageSize: 10,
-                    sortKey: "eventTime",
-                    order: 1
+    render () {
+        var self = this,
+            collection,
+            grid,
+            paginator;
+
+        collection = new (Backbone.PageableCollection.extend({
+            url: `/${Constants.context}/json${
+                fetchUrl(`/users/${Configuration.loggedUser.get("username")}/uma/auditHistory`)}`,
+            state: {
+                pageSize: 10,
+                sortKey: "eventTime",
+                order: 1
+            },
+            queryParams: {
+                pageSize: "_pageSize",
+                _sortKeys: BackgridUtils.sortKeys,
+                _queryFilter: BackgridUtils.queryFilter,
+                _pagedResultsOffset: BackgridUtils.pagedResultsOffset
+            },
+            parseState: BackgridUtils.parseState,
+            parseRecords: BackgridUtils.parseRecords,
+            sync: BackgridUtils.sync
+        }))();
+
+        grid = new Backgrid.Grid({
+            columns: [{
+                name: "requestingPartyId",
+                label: $.t("uma.history.grid.header.0"),
+                headerCell: BackgridUtils.FilterHeaderCell,
+                cell: "string",
+                editable: false,
+                sortType: "toggle"
+            }, {
+                name: "resourceSetName",
+                label: $.t("uma.history.grid.header.1"),
+                headerCell: BackgridUtils.FilterHeaderCell,
+                cell: BackgridUtils.UriExtCell,
+                href (rawValue, formattedValue, model) {
+                    return `#uma/resources/myresources/all/${encodeURIComponent(model.get("resourceSetId"))}`;
                 },
-                queryParams: {
-                    pageSize: "_pageSize",
-                    _sortKeys: BackgridUtils.sortKeys,
-                    _queryFilter: BackgridUtils.queryFilter,
-                    _pagedResultsOffset: BackgridUtils.pagedResultsOffset
-                },
-                parseState: BackgridUtils.parseState,
-                parseRecords: BackgridUtils.parseRecords,
-                sync: BackgridUtils.sync
-            }))();
+                editable: false,
+                sortType: "toggle"
+            }, {
+                name: "type",
+                label: $.t("uma.history.grid.header.2"),
+                cell: "string",
+                formatter: _.extend({}, Backgrid.CellFormatter.prototype, {
+                    fromRaw (rawValue) {
+                        return $.t(`uma.history.grid.types.${rawValue.toLowerCase()}`);
+                    }
+                }),
+                editable: false,
+                sortType: "toggle"
+            }, {
+                name: "eventTime",
+                label: $.t("uma.history.grid.header.3"),
+                cell: BackgridUtils.DatetimeAgoCell,
+                editable: false,
+                sortType: "toggle"
+            }],
+            emptyText: $.t("console.common.noResults"),
+            className:"backgrid table",
+            collection
+        });
 
-            grid = new Backgrid.Grid({
-                columns: [{
-                    name: "requestingPartyId",
-                    label: $.t("uma.history.grid.header.0"),
-                    headerCell: BackgridUtils.FilterHeaderCell,
-                    cell: "string",
-                    editable: false,
-                    sortType: "toggle"
-                }, {
-                    name: "resourceSetName",
-                    label: $.t("uma.history.grid.header.1"),
-                    headerCell: BackgridUtils.FilterHeaderCell,
-                    cell: BackgridUtils.UriExtCell,
-                    href (rawValue, formattedValue, model) {
-                        return `#uma/resources/myresources/all/${encodeURIComponent(model.get("resourceSetId"))}`;
-                    },
-                    editable: false,
-                    sortType: "toggle"
-                }, {
-                    name: "type",
-                    label: $.t("uma.history.grid.header.2"),
-                    cell: "string",
-                    formatter: _.extend({}, Backgrid.CellFormatter.prototype, {
-                        fromRaw (rawValue) {
-                            return $.t(`uma.history.grid.types.${rawValue.toLowerCase()}`);
-                        }
-                    }),
-                    editable: false,
-                    sortType: "toggle"
-                }, {
-                    name: "eventTime",
-                    label: $.t("uma.history.grid.header.3"),
-                    cell: BackgridUtils.DatetimeAgoCell,
-                    editable: false,
-                    sortType: "toggle"
-                }],
-                emptyText: $.t("console.common.noResults"),
-                className:"backgrid table",
-                collection
-            });
+        collection.on("backgrid:sort", BackgridUtils.doubleSortFix);
 
-            collection.on("backgrid:sort", BackgridUtils.doubleSortFix);
+        paginator = new Backgrid.Extension.ThemeablePaginator({
+            collection,
+            windowSize: 3
+        });
 
-            paginator = new Backgrid.Extension.ThemeablePaginator({
-                collection,
-                windowSize: 3
-            });
-
-            self.parentRender(function () {
-                self.$el.find(".table-container").append(grid.render().el);
-                self.$el.find(".panel-body").append(paginator.render().el);
-                collection.fetch({ processData: false, reset: true });
-            });
-        }
-    });
-
-    return new HistoryView();
+        self.parentRender(function () {
+            self.$el.find(".table-container").append(grid.render().el);
+            self.$el.find(".panel-body").append(paginator.render().el);
+            collection.fetch({ processData: false, reset: true });
+        });
+    }
 });
+
+export default new HistoryView();

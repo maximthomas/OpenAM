@@ -14,22 +14,20 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/util/Constants"
-], function (AbstractView, Constants) {
-    const ApiExplorerView = AbstractView.extend({
-        template: "templates/admin/views/common/IframeViewTemplate.html",
-        render (args, callback) {
-            this.data.iframeSrc = `/${Constants.context}/api`;
-            this.data.iframeClass = "api-explorer-iframe";
-            this.parentRender (function () {
-                if (callback) {
-                    callback();
-                }
-            });
-        }
-    });
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
 
-    return new ApiExplorerView();
+const ApiExplorerView = AbstractView.extend({
+    template: "templates/admin/views/common/IframeViewTemplate.html",
+    render (args, callback) {
+        this.data.iframeSrc = `/${Constants.context}/api`;
+        this.data.iframeClass = "api-explorer-iframe";
+        this.parentRender (function () {
+            if (callback) {
+                callback();
+            }
+        });
+    }
 });
+
+export default new ApiExplorerView();

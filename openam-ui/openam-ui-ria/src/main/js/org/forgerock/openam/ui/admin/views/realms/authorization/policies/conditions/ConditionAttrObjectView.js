@@ -15,81 +15,80 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView",
+import $ from "jquery";
+import _ from "lodash";
+import ConditionAttrBaseView from
+    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView";
 
-    // jquery dependencies
-    "selectize"
-], function ($, _, ConditionAttrBaseView) {
-    return ConditionAttrBaseView.extend({
-        template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrObject.html",
+// jquery dependencies
+import "selectize";
 
-        render (data, element, callback) {
-            this.initBasic(data, element, "field-float-selectize data-obj");
+export default ConditionAttrBaseView.extend({
+    template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrObject.html",
 
-            this.parentRender(function () {
-                this.initSelectize();
+    render (data, element, callback) {
+        this.initBasic(data, element, "field-float-selectize data-obj");
 
-                if (callback) {
-                    callback();
-                }
-            });
-        },
+        this.parentRender(function () {
+            this.initSelectize();
 
-        initSelectize () {
-            var view = this,
-                title = "",
-                itemData,
-                options,
-                keyValPair,
-                propName,
-                propVal,
-                $item;
+            if (callback) {
+                callback();
+            }
+        });
+    },
 
-            this.$el.find("select.selectize").each(function () {
-                $item = $(this);
-                options = {
-                    persist: false,
-                    delimiter: ";",
-                    onItemRemove (value) {
-                        title = this.$input.parent().find("label").data().title;
-                        itemData = view.data.itemData;
-                        keyValPair = value.split(":");
-                        delete itemData[title][keyValPair[0]];
-                    },
-                    onItemAdd (value) {
-                        title = this.$input.parent().find("label").data().title;
-                        itemData = view.data.itemData;
-                        keyValPair = value.split(":");
-                        propName = keyValPair[0];
-                        propVal = keyValPair[1];
+    initSelectize () {
+        var view = this,
+            title = "",
+            itemData,
+            options,
+            keyValPair,
+            propName,
+            propVal,
+            $item;
 
-                        if (!itemData[title][propName]) {
-                            itemData[title][propName] = [];
-                        }
+        this.$el.find("select.selectize").each(function () {
+            $item = $(this);
+            options = {
+                persist: false,
+                delimiter: ";",
+                onItemRemove (value) {
+                    title = this.$input.parent().find("label").data().title;
+                    itemData = view.data.itemData;
+                    keyValPair = value.split(":");
+                    delete itemData[title][keyValPair[0]];
+                },
+                onItemAdd (value) {
+                    title = this.$input.parent().find("label").data().title;
+                    itemData = view.data.itemData;
+                    keyValPair = value.split(":");
+                    propName = keyValPair[0];
+                    propVal = keyValPair[1];
 
-                        itemData[title][propName] = _.union(_.compact(propVal.split(",")), itemData[title][propName]);
-                    },
-                    create (input) {
-                        return {
-                            value: input,
-                            text: input
-                        };
-                    },
-                    onChange () {
-                        title = this.$input.parent().find("label").data().title;
-                        itemData = view.data.itemData;
-                    },
-                    createFilter (text) {
-                        return (/^\w+:(?:\w+,?)+$/).test(text);
+                    if (!itemData[title][propName]) {
+                        itemData[title][propName] = [];
                     }
-                };
 
-                _.extend(options, { plugins: ["restore_on_backspace"] });
-                $item.selectize(options);
-            });
-        }
-    });
+                    itemData[title][propName] = _.union(_.compact(propVal.split(",")), itemData[title][propName]);
+                },
+                create (input) {
+                    return {
+                        value: input,
+                        text: input
+                    };
+                },
+                onChange () {
+                    title = this.$input.parent().find("label").data().title;
+                    itemData = view.data.itemData;
+                },
+                createFilter (text) {
+                    return (/^\w+:(?:\w+,?)+$/).test(text);
+                }
+            };
+
+            _.extend(options, { plugins: ["restore_on_backspace"] });
+            $item.selectize(options);
+        });
+    }
 });

@@ -14,30 +14,28 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "org/forgerock/openam/ui/user/uma/views/resource/BasePage",
-    "org/forgerock/openam/ui/user/uma/services/UMAService"
-], function (_, BasePage, UMAService) {
-    var StarredPage = BasePage.extend({
-        template: "templates/user/uma/views/resource/StarredPageTemplate.html",
-        render (args, callback) {
-            var self = this;
+import _ from "lodash";
+import BasePage from "org/forgerock/openam/ui/user/uma/views/resource/BasePage";
+import UMAService from "org/forgerock/openam/ui/user/uma/services/UMAService";
 
-            UMAService.labels.all().done(function (data) {
-                var starred = _.find(data.result, function (label) {
-                    return label.name.toLowerCase() === "starred";
-                });
+var StarredPage = BasePage.extend({
+    template: "templates/user/uma/views/resource/StarredPageTemplate.html",
+    render (args, callback) {
+        var self = this;
 
-                if (starred) {
-                    self.renderGrid(self.createLabelCollection(starred._id), self.createColumns("starred"), callback);
-                } else {
-                    console.error("Unable to find \"starred\" label. " +
-                                  "Label should have been created by UI on first load.");
-                }
+        UMAService.labels.all().done(function (data) {
+            var starred = _.find(data.result, function (label) {
+                return label.name.toLowerCase() === "starred";
             });
-        }
-    });
 
-    return StarredPage;
+            if (starred) {
+                self.renderGrid(self.createLabelCollection(starred._id), self.createColumns("starred"), callback);
+            } else {
+                console.error("Unable to find \"starred\" label. " +
+                              "Label should have been created by UI on first load.");
+            }
+        });
+    }
 });
+
+export default StarredPage;

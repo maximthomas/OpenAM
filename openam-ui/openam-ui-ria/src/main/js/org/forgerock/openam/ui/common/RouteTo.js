@@ -19,49 +19,47 @@
   *
   * @module org/forgerock/openam/ui/common/RouteTo
   */
-define([
-    "org/forgerock/openam/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/main/SessionManager"
-], function (Constants, EventManager, Router, Configuration, SessionManager) {
-    var obj = {
-        setGoToUrlProperty () {
-            var hash = Router.getCurrentHash();
-            if (!Configuration.gotoURL && !hash.match(Router.configuration.routes.login.url)) {
-                Configuration.setProperty("gotoURL", `#${hash}`);
-            }
-        },
-        forbiddenPage () {
-            delete Configuration.globalData.authorizationFailurePending;
-            return EventManager.sendEvent(Constants.EVENT_CHANGE_VIEW, {
-                route: {
-                    view: "org/forgerock/openam/ui/common/views/error/ForbiddenView",
-                    url: /.*/
-                },
-                fromRouter: true
-            });
-        },
-        forbiddenError () {
-            EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "unauthorized");
-        },
-        logout () {
-            obj.setGoToUrlProperty();
+import Constants from "org/forgerock/openam/ui/common/util/Constants";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import SessionManager from "org/forgerock/commons/ui/common/main/SessionManager";
 
-            return SessionManager.logout().then(function () {
-                EventManager.sendEvent(Constants.EVENT_AUTHENTICATION_DATA_CHANGED, {
-                    anonymousMode: true
-                });
-                return EventManager.sendEvent(Constants.EVENT_CHANGE_VIEW, {
-                    route: Router.configuration.routes.login
-                });
-            });
-        },
-        loginDialog () {
-            return EventManager.sendEvent(Constants.EVENT_SHOW_LOGIN_DIALOG);
+var obj = {
+    setGoToUrlProperty () {
+        var hash = Router.getCurrentHash();
+        if (!Configuration.gotoURL && !hash.match(Router.configuration.routes.login.url)) {
+            Configuration.setProperty("gotoURL", `#${hash}`);
         }
-    };
+    },
+    forbiddenPage () {
+        delete Configuration.globalData.authorizationFailurePending;
+        return EventManager.sendEvent(Constants.EVENT_CHANGE_VIEW, {
+            route: {
+                view: "org/forgerock/openam/ui/common/views/error/ForbiddenView",
+                url: /.*/
+            },
+            fromRouter: true
+        });
+    },
+    forbiddenError () {
+        EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "unauthorized");
+    },
+    logout () {
+        obj.setGoToUrlProperty();
 
-    return obj;
-});
+        return SessionManager.logout().then(function () {
+            EventManager.sendEvent(Constants.EVENT_AUTHENTICATION_DATA_CHANGED, {
+                anonymousMode: true
+            });
+            return EventManager.sendEvent(Constants.EVENT_CHANGE_VIEW, {
+                route: Router.configuration.routes.login
+            });
+        });
+    },
+    loginDialog () {
+        return EventManager.sendEvent(Constants.EVENT_SHOW_LOGIN_DIALOG);
+    }
+};
+
+export default obj;

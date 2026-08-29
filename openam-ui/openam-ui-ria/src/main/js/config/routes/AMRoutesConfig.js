@@ -14,63 +14,61 @@
  * Portions copyright 2011-2016 ForgeRock AS.
  */
 
-define([], function () {
-    return {
-        continuePasswordReset: {
-            view: "org/forgerock/openam/ui/user/anonymousProcess/PasswordResetView",
-            url: /continuePasswordReset(\/[^&]*)(&.+)?/,
-            pattern: "continuePasswordReset??",
-            forceUpdate: true,
-            defaults: ["/", ""],
-            argumentNames: ["realm", "additionalParameters"]
-        },
-        continueSelfRegister: {
-            view: "org/forgerock/openam/ui/user/anonymousProcess/SelfRegistrationView",
-            url: /continueRegister(\/[^&]*)(&.+)?/,
-            pattern: "continueRegister??",
-            forceUpdate: true,
-            defaults: ["/", ""],
-            argumentNames: ["realm", "additionalParameters"]
-        },
-        confirmLogin: {
-            view: "org/forgerock/openam/ui/user/login/RESTConfirmLoginView",
-            role: "ui-user",
-            url: "confirmLogin/",
-            forceUpdate: true
-        },
-        dashboard: {
-            view: "org/forgerock/openam/ui/user/dashboard/views/DashboardView",
-            role: "ui-self-service-user",
-            url: "dashboard/",
-            forceUpdate: true,
-            navGroup: "user"
-        },
-        oauth2Tokens: {
-            view: "org/forgerock/openam/ui/user/oauth2/TokensView",
-            role: "ui-user",
-            url: "oauth2/tokens",
-            forceUpdate: true
-        },
-        loggedOut: {
-            view: "org/forgerock/openam/ui/user/login/RESTLogoutView",
-            url: /loggedOut([^&]+)?(&.+)?/,
-            pattern: "loggedOut??",
-            defaults: ["/", ""],
-            argumentNames: ["realm", "additionalParameters"]
-        },
-        loginFailure: {
-            view: "org/forgerock/openam/ui/user/login/LoginFailureView",
-            url: /failedLogin([^&]+)?(&.+)?/,
-            pattern: "failedLogin??",
-            defaults: ["/", ""],
-            argumentNames: ["realm", "additionalParameters"]
-        },
-        sessionExpired: {
-            view: "org/forgerock/openam/ui/user/login/SessionExpiredView",
-            url: /sessionExpired([^&]+)?(&.+)?/,
-            pattern: "sessionExpired??",
-            defaults: ["/", ""],
-            argumentNames: ["realm", "additionalParameters"]
-        }
-    };
-});
+export default {
+    continuePasswordReset: {
+        view: "org/forgerock/openam/ui/user/anonymousProcess/PasswordResetView",
+        url: /continuePasswordReset(\/[^&]*)(&.+)?/,
+        pattern: "continuePasswordReset??",
+        forceUpdate: true,
+        defaults: ["/", ""],
+        argumentNames: ["realm", "additionalParameters"]
+    },
+    continueSelfRegister: {
+        view: "org/forgerock/openam/ui/user/anonymousProcess/SelfRegistrationView",
+        url: /continueRegister(\/[^&]*)(&.+)?/,
+        pattern: "continueRegister??",
+        forceUpdate: true,
+        defaults: ["/", ""],
+        argumentNames: ["realm", "additionalParameters"]
+    },
+    confirmLogin: {
+        view: "org/forgerock/openam/ui/user/login/RESTConfirmLoginView",
+        role: "ui-user",
+        url: "confirmLogin/",
+        forceUpdate: true
+    },
+    dashboard: {
+        view: "org/forgerock/openam/ui/user/dashboard/views/DashboardView",
+        role: "ui-self-service-user",
+        url: "dashboard/",
+        forceUpdate: true,
+        navGroup: "user"
+    },
+    oauth2Tokens: {
+        view: "org/forgerock/openam/ui/user/oauth2/TokensView",
+        role: "ui-user",
+        url: "oauth2/tokens",
+        forceUpdate: true
+    },
+    loggedOut: {
+        view: "org/forgerock/openam/ui/user/login/RESTLogoutView",
+        url: /loggedOut([^&]+)?(&.+)?/,
+        pattern: "loggedOut??",
+        defaults: ["/", ""],
+        argumentNames: ["realm", "additionalParameters"]
+    },
+    loginFailure: {
+        view: "org/forgerock/openam/ui/user/login/LoginFailureView",
+        url: /failedLogin([^&]+)?(&.+)?/,
+        pattern: "failedLogin??",
+        defaults: ["/", ""],
+        argumentNames: ["realm", "additionalParameters"]
+    },
+    sessionExpired: {
+        view: "org/forgerock/openam/ui/user/login/SessionExpiredView",
+        url: /sessionExpired([^&]+)?(&.+)?/,
+        pattern: "sessionExpired??",
+        defaults: ["/", ""],
+        argumentNames: ["realm", "additionalParameters"]
+    }
+};

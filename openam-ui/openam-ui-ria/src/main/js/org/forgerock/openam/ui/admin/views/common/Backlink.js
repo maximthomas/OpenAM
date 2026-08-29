@@ -17,41 +17,37 @@
 /**
  * @module org/forgerock/openam/ui/admin/views/common/Backlink
  */
-define([
-    "jquery",
-    "lodash",
-    "backbone",
-    "org/forgerock/commons/ui/common/util/URIUtils",
-    "org/forgerock/commons/ui/common/util/UIUtils"
-], ($, _, Backbone, URIUtils, UIUtils) => {
+import $ from "jquery";
+import _ from "lodash";
+import Backbone from "backbone";
+import URIUtils from "org/forgerock/commons/ui/common/util/URIUtils";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
 
-    function getBaseURI (allFragments, fragmentIndex) {
-        return _.take(allFragments, fragmentIndex + 1).join("/");
+function getBaseURI (allFragments, fragmentIndex) {
+    return _.take(allFragments, fragmentIndex + 1).join("/");
+}
+
+export default Backbone.View.extend({
+    el:"#backlink",
+    /**
+     * Renders a back link navigation element.
+     * @param {number} [fragmentIndex=1] Fragment index indicates which url fragment used for back link
+     */
+    render (fragmentIndex = 1) {
+        const allFragments = URIUtils.getCurrentFragment().split("/");
+        const pageFragment = allFragments[fragmentIndex];
+        const defaultValue = _.startCase(`${pageFragment}`);
+        const data = {
+            "title": $.t(`console.common.navigation.${pageFragment}`, { defaultValue }),
+            "hash": `#${getBaseURI(allFragments, fragmentIndex)}`
+        };
+
+        UIUtils.fillTemplateWithData(
+            "templates/admin/views/common/BackLink.html",
+            data,
+            (html) => {
+                this.$el.html(html);
+            }
+        );
     }
-
-    return Backbone.View.extend({
-        el:"#backlink",
-        /**
-         * Renders a back link navigation element.
-         * @param {number} [fragmentIndex=1] Fragment index indicates which url fragment used for back link
-         */
-        render (fragmentIndex = 1) {
-            const allFragments = URIUtils.getCurrentFragment().split("/");
-            const pageFragment = allFragments[fragmentIndex];
-            const defaultValue = _.startCase(`${pageFragment}`);
-            const data = {
-                "title": $.t(`console.common.navigation.${pageFragment}`, { defaultValue }),
-                "hash": `#${getBaseURI(allFragments, fragmentIndex)}`
-            };
-
-            UIUtils.fillTemplateWithData(
-                "templates/admin/views/common/BackLink.html",
-                data,
-                (html) => {
-                    this.$el.html(html);
-                }
-            );
-        }
-    });
-
 });

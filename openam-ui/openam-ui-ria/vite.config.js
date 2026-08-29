@@ -439,12 +439,16 @@ const NPM_LIBRARY_FILES = {
      * the script editor with no spec behind it, so it is not 4.8's -- it belongs with the other
      * advisories NOTES-libs-retire.md leaves open.
      */
-    "libs/codemirror/lib/codemirror.js": "codemirror/lib/codemirror.js",                   // MD5
-    "libs/codemirror/mode/groovy/groovy.js": "codemirror/mode/groovy/groovy.js",           // MD5
-    "libs/codemirror/mode/javascript/javascript.js":
-        "codemirror/mode/javascript/javascript.js",                                        // MD5
-    "libs/codemirror/addon/display/fullscreen.js":
-        "codemirror/addon/display/fullscreen.js",                                          // MD5
+    /*
+     * THE FOUR ROWS THAT WERE HERE ARE GONE -- 5.4/B7, under D23. EditScriptView.js is ESM now and
+     * imports all four through the `libs/codemirror` prefix alias, so they are bundled rather than
+     * staged and shipping them too would be duplicate bytes. That is the -4 delta against
+     * PHASE1-TREE.md:251-254, taken deliberately.
+     *
+     * Everything 4.8 established above still holds and is why this was safe: same package, same
+     * release (Maven 4.10 == npm 4.10.0), and all four md5-identical to the shipped bytes. What
+     * changed is only how they reach the browser.
+     */
 
     // ---- css/ : 8 stylesheets -----------------------------------------------------------------
     // The only one that ships verbatim; the rest are LESS inputs compiled into structure.css
@@ -884,9 +888,24 @@ const copyLibraries = (root, outDir) => {
  * paths stop being how it loads them at all -- and that conversion has to decide what replaces
  * this, not discover later that the guard quietly stopped guarding.
  */
-const LITERAL_PATH_LIBRARY_CONSUMERS = [
-    "src/main/js/org/forgerock/openam/ui/admin/views/realms/scripts/EditScriptView.js"
-];
+/*
+ * EMPTIED BY 5.4/B7 UNDER D23, and this is the disposal route the guard's own third error message
+ * prescribes: "this consumer should be removed from LITERAL_PATH_LIBRARY_CONSUMERS as part of
+ * deciding that, not before." The decision is D23's `libs/codemirror` prefix alias, so the four ids
+ * are now bundled imports and the four NPM_LIBRARY_FILES rows that fed them are gone with them.
+ *
+ * THE GUARD IS KEPT, NOT DELETED. It is generic -- any future view that names a runtime library by
+ * literal shipped path belongs in this list, and the mechanism is the only thing in the build that
+ * would catch such a path moving. With the list empty it checks nothing and reports 0, which is
+ * honest; a deleted guard would have to be rediscovered.
+ *
+ * WHAT REPLACED IT AS A CHECK. The old failure mode was silent: a shipped path and a source string
+ * that disagreed 404'd at runtime with the build still green, and no e2e spec loads CodeMirror. As
+ * bundled imports they cannot fail that way -- an unresolved "libs/codemirror/..." specifier is a
+ * hard Rollup error, because build.commonjsOptions.include matches neither src/main/js/config/ nor
+ * src/main/js/org/, so nothing rescues it quietly.
+ */
+const LITERAL_PATH_LIBRARY_CONSUMERS = [];
 
 const assertLiteralPathLibraries = (root, shippedLibraries) => {
     let checked = 0;
@@ -967,11 +986,13 @@ const assertLiteralPathLibraries = (root, shippedLibraries) => {
  * this comment says it is dead rather than treating it as the live one.
  *
  * WHY NOT A VITE HTML INPUT. Adding index.html to rollupOptions.input makes Vite parse it and
- * pull its <script src> tags into the module graph. Both would fail to resolve: src/main/resources
- * has NO libs/ directory at all -- libs/base64-1.0.0-min.js and libs/requirejs-2.3.7-min.js are
- * vendored under src/main/js/libs (4.7; neither has an npm publication that could supply them,
- * and both must exist as files before any module system runs) and reach the tree through
- * copyLibraries, not through this html
+ * pull its <script src> tags into the module graph. (As of 5.4/B12 it has ONE tag and it names
+ * main.js, which IS an input already -- so the double-emit half of this now matters more than the
+ * unresolvable half. Both are still reasons.) At 4.5 both tags would have failed to resolve:
+ * src/main/resources has NO libs/ directory at all -- libs/base64-1.0.0-min.js and
+ * libs/requirejs-2.3.7-min.js were vendored under src/main/js/libs (4.7; neither had an npm
+ * publication that could supply them, and both had to exist as files before any module system
+ * runs) and reach the tree through copyLibraries, not through this html
  * -- so the build throws at resolve time. If it somehow did resolve, Vite would bundle and hash
  * both, moving two files PHASE1-TREE.md:244 and :279 record at fixed paths. It would also derive a
  * fourth entry chunk from the html while `main` is already an explicit JS input, which is the
@@ -991,6 +1012,30 @@ const assertLiteralPathLibraries = (root, shippedLibraries) => {
  * resolveAssetUrl takes that over. The two literal <script src> tags stay the only urls on a
  * login page with no cache-buster -- the pre-existing gap task 1.12 measured (38 of 41 urls carry
  * ?v=), unchanged by this task rather than introduced by it.
+ *
+ * ---- SUPERSEDED BY 5.4/B12. THE PARAGRAPH ABOVE IS THE 4.5 STATE, KEPT FOR ITS REASONING. ----
+ * The tree is ESM now, so the condition that paragraph waited on is met and all three tags are
+ * gone. index.html carries ONE tag:
+ *
+ *     <script type="module" src="main.js?v=${version}"></script>
+ *
+ * - The `var require = {urlArgs, deps:["main"]}` object and the requirejs <script src> went with
+ *   it. `libs/requirejs-2.3.7-min.js` still SHIPS -- six .ftl pages in openam-oauth2 load it by
+ *   literal <script src> and D8/task 10.4 forbid editing them -- but nothing in THIS module loads
+ *   it any more. Under option (c1) its remaining job on those six pages is to fetch the classic
+ *   stub xui-requirejs-entry-stubs emits; see that plugin's header.
+ * - `libs/base64-1.0.0-min.js` is GONE from the tree, not merely unreferenced. index.html:21 was
+ *   its only loader in the whole repository -- zero of the six .ftl pages mention it -- it is a
+ *   btoa/atob polyfill that installs itself only when those globals are absent, no AM module reads
+ *   a `base64` global, and commons util/Base64 has a complete pure-JS fallback behind a `typeof`
+ *   test. Any browser that runs type="module" has both natively. D20's register row went with the
+ *   file; see src/main/js/libs/README.md.
+ * - `urlArgs` is replaced in two places, not one. For the runtime-fetched templates, partials,
+ *   locales and theme assets it is main.js's `resolveAssetUrl.configure({ urlArgs })` call, fed by
+ *   the `__TARGET_VERSION__` define below. For main.js ITSELF -- the one JS file this build emits
+ *   unhashed, and so the only one a browser could serve stale across a redeploy -- it is the
+ *   `?v=${version}` on the tag above. That is why the VERSION_TOKEN guard in readIndexHtmlSource
+ *   is untouched by B12: it still guards a live mechanism rather than a decorative token.
  *
  * THE PATH CONVENTION TASK 6.3 NEEDS SURVIVES THIS. 6.3 derives a url from a module identifier
  * "using the deployed layout's own convention": identifier `org/forgerock/.../Foo` -> `Foo.js` at
@@ -1044,14 +1089,61 @@ const VERSION_TOKEN = "${version}";
  * copy was always this file. The new failure mode is also the better one -- a missing source
  * throws ENOENT naming the path, where Grunt would silently have stamped whichever source won.
  */
+/*
+ * ==== 5.4/B12 -- WHAT THIS GUARD NOW CHECKS, AND WHY IT MOVED ====
+ *
+ * At 4.5 the token was read by RequireJS as `urlArgs` and applied to EVERY runtime-fetched asset,
+ * so `source.includes("${version}")` was a faithful test of the whole mechanism. B12 removed the
+ * RequireJS bootstrap: the runtime-asset half of D4 is now main.js's
+ * `resolveAssetUrl.configure({ urlArgs })`, fed by the `__TARGET_VERSION__` define, and the token
+ * that is LEFT in index.html covers exactly one thing -- the cache-buster on main.js itself, the
+ * single unhashed JS file this build emits.
+ *
+ * A plain `includes` would therefore have become a decorative check, and measurably so: it is
+ * satisfied by the word appearing anywhere, a comment included, while the src attribute quietly
+ * lost its query string. (That is not hypothetical -- the first draft of B12's index.html
+ * comment mentioned the token, and the negative test passed a build with the cache-buster
+ * deleted.) So the check is against the module script tag itself. It hard-codes nothing about the
+ * entry NAME, only that the module script's src carries the token.
+ *
+ * Note this file is not a Vite HTML input (see the block above), so nothing else in the build
+ * parses index.html and nothing else would notice.
+ */
+const MODULE_SCRIPT_WITH_VERSION =
+    /<script\b(?=[^>]*\btype\s*=\s*["']module["'])(?=[^>]*\bsrc\s*=\s*["'][^"']*\$\{version\})[^>]*>/;
+
+/*
+ * REVIEW FIX. The guard is tested against the file with HTML COMMENTS REMOVED. Probing it showed
+ * the same false green the tightening was meant to close, one level down: a commented-out correct
+ * tag plus a live tag with no token passed. Stripping comments first is the only form of this
+ * check that cannot be satisfied by text the browser never executes.
+ */
+const stripHtmlComments = (source) => source.replace(/<!--[\s\S]*?-->/g, "");
+
+/*
+ * REVIEW FIX. Returns the module script's src with any query stripped -- i.e. the file name
+ * index.html actually asks the browser for. xui-assert-index-entry checks the bundle contains it.
+ */
+const indexHtmlModuleEntry = (source) => {
+    const tag = MODULE_SCRIPT_WITH_VERSION.exec(stripHtmlComments(source));
+    const src = tag && /\bsrc\s*=\s*["']([^"']+)["']/.exec(tag[0]);
+    return src ? src[1].split("?")[0] : null;
+};
+
 const readIndexHtmlSource = (root) => {
     const source = fs.readFileSync(path.resolve(root, INDEX_HTML_SOURCE), "utf8");
-    if (!source.includes(VERSION_TOKEN)) {
+    if (!MODULE_SCRIPT_WITH_VERSION.test(stripHtmlComments(source))) {
         throw new Error(
-            `${INDEX_HTML_SOURCE} no longer contains the ${VERSION_TOKEN} token. The deployed ` +
-            "index.html would ship without a cache-buster, and every template, partial, locale " +
-            "and theme asset fetched at runtime through require.toUrl's urlArgs would be served " +
-            "from a stale browser cache after a redeploy. See design.md D4."
+            `${INDEX_HTML_SOURCE} has no <script type="module"> whose src carries the ` +
+            `${VERSION_TOKEN} token. main.js is the one JS file this build emits UNHASHED, so ` +
+            "that query string is the only thing stopping a browser serving a stale copy of the " +
+            "whole application after a redeploy. Write it as:\n\n" +
+            `    <script type="module" src="main.js?v=${VERSION_TOKEN}"></script>\n\n` +
+            "Putting the token anywhere else in the file -- a comment (HTML comments are stripped " +
+            "before this test), an attribute on something that is not the module script -- does " +
+            "NOT satisfy this, deliberately. See design.md " +
+            "D4, and note that the runtime-asset half of D4 is main.js's resolveAssetUrl." +
+            "configure({ urlArgs }) call, not this token."
         );
     }
     return source;
@@ -1225,7 +1317,14 @@ const SLOPPY_MODE_PATCHES = [
          */
         match: /i18next[\\/]lib[\\/]dep[\\/]i18next\.min\.js$/,
         from: "A=this,B=A.jQuery",
-        to: "A=globalThis,B=A.jQuery"
+        to: "A=globalThis,B=A.jQuery",
+        /*
+         * 5.4/B12: REQUIRED, i.e. a build in which this patch does not fire FAILS. Measured, not
+         * assumed: i18next is a static import of shims/i18next.js, which every one of the three
+         * entry points reaches (main.js imports it directly; both secondaries reach it through
+         * commons main/i18nManager), so it is in the graph on every build from B12 onwards.
+         */
+        requiredFrom: null
     },
     {
         /*
@@ -1243,12 +1342,37 @@ const SLOPPY_MODE_PATCHES = [
          */
         match: /libs[\\/]jsoneditor-0\.7\.23-custom\.js$/,
         from: "a.extend=function(a){",
-        to: "a.extend=function __jsonEditorExtend(a){"
+        to: "a.extend=function __jsonEditorExtend(a){",
+        /*
+         * ==== NOT YET REQUIRED, AND 5.2's STATED PREMISE FOR THE PROMOTION WAS WRONG ====
+         *
+         * 5.2 wrote that once 5.4 converted the tree "both files ARE reachable". B12 converted the
+         * tree and MEASURED otherwise: `vite build` walks 563 modules and jsoneditor is in none of
+         * them. Converting a module to ESM does not make it statically reachable; only an import
+         * edge does, and jsoneditor has no static edge from any entry.
+         *
+         * The three importers of the `jsonEditor` id are admin/models/Form.js,
+         * admin/utils/JSONEditorTheme.js and common/views/jsonSchema/editors/JSONEditorView.js.
+         * Every path into all three runs through a view id that exists only as a STRING -- a
+         * `moduleClass` in config/AppConfiguration.js, or a view name in config/routes/admin/*.js --
+         * resolved at run time by ModuleLoader. Under AMD that was `require([id])`; under ESM it is
+         * LoaderRuntime.loadModule, which rejects until a consumer supplies `resolveModule`. So the
+         * task that puts this file in the graph is 6.1's `import.meta.glob` registry (D1), NOT 5.4.
+         * `org/forgerock/openam/ui/admin/main.js`, the aggregator that side-effect-imports Form and
+         * JSONEditorTheme, has zero references of any kind in the tree -- string or import.
+         *
+         * So this entry warns instead of failing, and the exception is dated and self-closing: the
+         * buildEnd check FAILS if a `requiredFrom` patch starts firing, so whoever lands 6.1 is told
+         * to delete these two fields rather than left to remember.
+         */
+        requiredFrom: "6.1"
     },
     {
         match: /libs[\\/]jsoneditor-0\.7\.23-custom\.js$/,
         from: "d.extend=arguments.callee",
-        to: "d.extend=__jsonEditorExtend"
+        to: "d.extend=__jsonEditorExtend",
+        // Same file, same reachability story as the entry above.
+        requiredFrom: "6.1"
     }
 ];
 
@@ -1359,6 +1483,112 @@ const GLOBAL_FREE_REACT_PACKAGES = {
     "react-select": "lib/Select.js",
     "react-input-autosize": "lib/AutosizeInput.js"
 };
+
+/*
+ * D23 FOLLOW-UP, ADDED BY THE 5.4 REVIEW. D23 deleted the four `libs/codemirror` NPM_LIBRARY_FILES
+ * rows on the premise that EditScriptView.js now imports them through the prefix alias, so they are
+ * bundled rather than staged. That premise is CORRECT but NOT YET IN EFFECT, and the difference
+ * matters: `find target/compiled -iname '*codemirror*'` returns nothing today, because
+ * EditScriptView is reachable only through a runtime view-id string -- the identical situation this
+ * config already diagnosed for jsoneditor at the SLOPPY_MODE_PATCHES `requiredFrom` note.
+ *
+ * So the -4 delta is contingent on 6.1, not on B7, and until 6.1 lands the safety claim on
+ * LITERAL_PATH_LIBRARY_CONSUMERS ("an unresolved libs/codemirror/... specifier is a hard Rollup
+ * error") is vacuous -- nothing resolves those ids at all, so a broken alias would fail silently.
+ *
+ * RESTORING THE FOUR ROWS WOULD BE THE WRONG FIX. Nothing fetches the staged copies: EditScriptView
+ * loads CodeMirror by ESM import, not by literal path, so shipping them again would ship four files
+ * with no reader. What was missing is the CHECK, not the files. This is that check, in the same
+ * bidirectional shape as the sloppy-mode deferral: it cannot become a permanent exemption.
+ */
+const DEFERRED_ALIASED_LIBRARIES = [
+    {
+        label: "libs/codemirror  ->  node_modules/codemirror (D23 prefix alias)",
+        consumer: "/src/main/js/org/forgerock/openam/ui/admin/views/realms/scripts/EditScriptView.js",
+        inGraph: (id) => /\/node_modules\/codemirror\//.test(id),
+        requiredFrom: "6.1 (D1 runtime module registry -- what makes EditScriptView statically reachable)"
+    }
+];
+
+const assertAliasedLibrariesBundled = () => ({
+    name: "xui-assert-aliased-libraries",
+    buildEnd (error) {
+        if (error) {
+            return;
+        }
+        const ids = Array.from(this.getModuleIds()).map((id) => id.replace(/\\/g, "/"));
+
+        for (const lib of DEFERRED_ALIASED_LIBRARIES) {
+            const consumerInGraph = ids.some((id) => id.endsWith(lib.consumer));
+            const libraryInGraph = ids.some((id) => lib.inGraph(id));
+
+            if (consumerInGraph && !libraryInGraph) {
+                throw new Error(
+                    `[xui-assert-aliased-libraries] ${lib.label}\n\n` +
+                    "Its consumer IS in the module graph now, but the library is NOT. The alias no " +
+                    "longer resolves, so the four staged files D23 removed have no replacement and " +
+                    "the script editor ships without CodeMirror. Fix the alias -- do not re-add the " +
+                    "NPM_LIBRARY_FILES rows, which would ship files nothing fetches."
+                );
+            }
+
+            if (consumerInGraph && libraryInGraph) {
+                throw new Error(
+                    `[xui-assert-aliased-libraries] ${lib.label}\n\n` +
+                    "The deferral is SPENT: the library is bundled through the alias, exactly as " +
+                    `D23 predicted, now that ${lib.requiredFrom} has landed. Delete this entry from ` +
+                    "DEFERRED_ALIASED_LIBRARIES. Leaving it would let the deferral outlive its " +
+                    "reason, which is the failure mode this check exists to prevent."
+                );
+            }
+
+            this.warn(
+                `[xui-assert-aliased-libraries] ${lib.label} is in NO chunk, as declared.\n` +
+                `Its consumer has no static import edge from any entry point yet; ${lib.requiredFrom} ` +
+                "closes this. Until then the -4 delta against PHASE1-TREE.md ships nothing in its place."
+            );
+        }
+    }
+});
+
+/*
+ * ADDED BY THE 5.4 REVIEW. 269 bare `import "id";` side-effect imports survived the AMD->ESM
+ * conversion, and 28 of them ARE the D21 fix -- the graft that guarantees AM's Constants keys are
+ * installed before a module-top-level reader runs. Nothing in this build pins the setting that
+ * keeps them: Rollup's default `moduleSideEffects: true`. Adding `"sideEffects": false` to
+ * package.json, or a treeshake preset that disables it, would delete all 269 edges silently, and
+ * D21 would fail as `.../undefined/json` request paths at runtime with the build still green.
+ *
+ * This is the same unenforced-invariant shape D21 records for "nothing enforces file 29", and it
+ * is cheaper to check: it is two fields.
+ */
+const assertSideEffectsPinned = () => ({
+    name: "xui-assert-side-effects",
+    configResolved (config) {
+        const treeshake = config.build && config.build.rollupOptions && config.build.rollupOptions.treeshake;
+        const disabled = treeshake === false ||
+            (treeshake && treeshake.moduleSideEffects === false) ||
+            (treeshake && treeshake.preset === "smallest");
+        if (disabled) {
+            throw new Error(
+                "[xui-assert-side-effects] build.rollupOptions.treeshake disables moduleSideEffects.\n\n" +
+                "269 bare side-effect imports depend on it, 28 of them the D21 Constants graft. " +
+                "Dropping those edges makes D21 fail at runtime, not at build time."
+            );
+        }
+
+        const pkg = JSON.parse(fs.readFileSync(path.resolve(config.root, "package.json"), "utf8"));
+        if (pkg.sideEffects === false || (Array.isArray(pkg.sideEffects) && pkg.sideEffects.length === 0)) {
+            throw new Error(
+                '[xui-assert-side-effects] package.json declares "sideEffects": false.\n\n' +
+                "That tells Rollup every module in this package is side-effect free, which would " +
+                "delete all 269 bare `import \"id\";` edges -- including the 28 that implement D21. " +
+                "The failure would surface as undefined Constants values at runtime, behind a " +
+                "green build. Remove the field, or list the D21 files explicitly."
+            );
+        }
+    }
+});
 
 const assertReactSelectNeedsNoGlobals = () => ({
     name: "xui-assert-react-select-globals",
@@ -1496,31 +1726,290 @@ const sloppyModeLibraries = () => {
             if (error) {
                 return;
             }
-            const missed = SLOPPY_MODE_PATCHES
-                .map((patch, index) => ({ patch, index }))
-                .filter(({ index }) => !applied.has(index));
-            if (missed.length > 0) {
-                /*
-                 * A WARNING, NOT AN ERROR, AND ONLY UNTIL 5.4. While the tree is still AMD the
-                 * three entry points import nothing -- `vite build` reports "3 modules
-                 * transformed" -- so neither of these libraries is in the graph and neither patch
-                 * can fire. Throwing here would fail every build for a condition that is correct
-                 * today.
-                 *
-                 * ONCE 5.4 HAS CONVERTED THE TREE THIS SHOULD BECOME A THROW: at that point both
-                 * files ARE reachable, and a patch that did not fire means the library was
-                 * bundled unpatched and will throw at evaluation in a browser, with nothing in
-                 * the build saying so.
-                 */
+            const entries = SLOPPY_MODE_PATCHES.map((patch, index) => ({ patch, index }));
+            const missed = entries.filter(({ index }) => !applied.has(index));
+
+            /*
+             * A `requiredFrom` entry declares "this library is not in the static graph yet, and
+             * here is the task that puts it there". The declaration is only allowed to be a
+             * DEFERRAL, never a permanent exemption, so it is checked in both directions: a
+             * deferred patch that has started firing fails the build asking for the field to go.
+             * Without this half, the exemption would outlive its reason and silently become the
+             * warning-that-never-fires this whole plugin exists to avoid.
+             */
+            const stale = entries.filter(({ patch, index }) => patch.requiredFrom && applied.has(index));
+            if (stale.length > 0) {
+                throw new Error(
+                    "[xui-sloppy-mode-libraries] these patches carry a `requiredFrom` deferral and " +
+                    "yet DID fire:\n" +
+                    stale.map(({ patch }) => `    ${patch.match}  (requiredFrom: ${patch.requiredFrom})`)
+                        .join("\n") +
+                    "\n\nThe library is in the static module graph now, so the deferral is spent. " +
+                    "Delete the `requiredFrom` field from each entry above -- that puts the patch " +
+                    "back under the hard check, which is where it belongs. Do not widen the " +
+                    "deferral instead."
+                );
+            }
+
+            const deferred = missed.filter(({ patch }) => patch.requiredFrom);
+            if (deferred.length > 0) {
                 this.warn(
+                    "[xui-sloppy-mode-libraries] these patches did not fire, as declared:\n" +
+                    deferred.map(({ patch }) =>
+                        `    ${patch.match}  ${patch.from}   (reachable from task ${patch.requiredFrom})`)
+                        .join("\n") +
+                    "\n\nThe library has no static import edge from any entry point yet. See the " +
+                    "`requiredFrom` comment on the first of these entries for the measurement and " +
+                    "for which task closes it."
+                );
+            }
+
+            const missing = missed.filter(({ patch }) => !patch.requiredFrom);
+            if (missing.length > 0) {
+                /*
+                 * A THROW SINCE 5.4/B12, AND IT WAS A WARNING BEFORE IT. 5.2 added this check as a
+                 * `this.warn` for one reason: while the tree was still AMD the three entry points
+                 * imported nothing -- `vite build` reported "3 modules transformed" -- so neither
+                 * library was in the graph and neither patch COULD fire. Throwing then would have
+                 * failed every build for a condition that was correct.
+                 *
+                 * B12 converted the three entries, so a real module graph exists and any patch
+                 * whose library sits in it must match on every build. A patch that does not fire
+                 * now means one of two things and both are defects: the library moved under the
+                 * patch (the regex stopped matching a real file), or it stopped being reachable at
+                 * all. The first ships an UNPATCHED library that throws at evaluation in the
+                 * browser -- i18next silently loses $.t, jsoneditor throws a TypeError on first use
+                 * -- behind a green build, which is the exact failure this plugin exists to
+                 * prevent. The second is worth failing on too: it means a runtime library left the
+                 * tree without anyone deciding that, and the patch entry is then dead weight to
+                 * delete deliberately rather than leave sitting there matching nothing.
+                 *
+                 * WHAT B12 DID *NOT* GET TO PROMOTE, AND WHY. 5.2's premise for the promotion was
+                 * "once 5.4 lands, both files ARE reachable". Half of that is false and B12
+                 * measured it: converting a module to ESM does not create an import edge to it. The
+                 * jsoneditor entries' only importers hang off view ids that exist as STRINGS in
+                 * config/AppConfiguration.js and config/routes/admin/*.js and are resolved at run
+                 * time, so nothing static reaches them until 6.1's import.meta.glob registry (D1).
+                 * Those two entries therefore carry `requiredFrom: "6.1"` and warn instead, and the
+                 * `stale` check above fails the build the moment they start firing so the deferral
+                 * cannot outlive its reason. The i18next entry is under the hard check today.
+                 *
+                 * Do NOT demote this back to a warning to get a build through, and do NOT reach for
+                 * `requiredFrom` for anything but a measured, dated absence from the graph. Either
+                 * fix the pattern against the current bytes or delete the SLOPPY_MODE_PATCHES entry
+                 * with a note saying why the library no longer needs it.
+                 */
+                throw new Error(
                     "[xui-sloppy-mode-libraries] these patches never fired:\n" +
-                    missed.map(({ patch }) => `    ${patch.match}  ${patch.from}`).join("\n") +
-                    "\n\nExpected while the tree is still AMD and the entries import nothing. " +
-                    "Once 5.4 lands, this means the library is being bundled unpatched -- make " +
-                    "this a throw then."
+                    missing.map(({ patch }) => `    ${patch.match}  ${patch.from}`).join("\n") +
+                    "\n\nSince 5.4/B12 the whole module tree is reachable from the three entry " +
+                    "points, so every patch here must match on every build. A patch that fires " +
+                    "zero times means the library is being bundled UNPATCHED and will throw at " +
+                    "evaluation in a browser, or that it has silently left the graph. Re-read the " +
+                    "file, fix the pattern, or delete the entry deliberately -- do not turn this " +
+                    "back into a warning."
                 );
             }
         }
+    };
+};
+
+/*
+ * ==== 5.4/B12 -- OPTION (c1): AN UNHASHED CLASSIC-SCRIPT STUB PER REQUIREJS-LOADED ENTRY ====
+ *
+ * THE PROBLEM 4.2 DEFERRED AND B12 HAD TO SETTLE. RequireJS injects a CLASSIC script --
+ * req.createNode sets type="text/javascript" (NOTES-vite-entrypoints.md 2.4) -- for both of its
+ * loader forms. Six .ftl pages in the **openam-oauth2** Maven module load main-authorize and
+ * main-device that way, through `data-main`:
+ *
+ *   openam-oauth2/src/main/resources/templates/page/authorize.ftl:65        main-authorize
+ *   openam-oauth2/src/main/resources/templates/popup/authorize.ftl:64       main-authorize
+ *   openam-oauth2/src/main/resources/templates/touch/authorize.ftl:64       main-authorize
+ *   openam-oauth2/src/main/resources/templates/page/error.ftl:56            main-authorize
+ *   openam-oauth2/src/main/resources/templates/CodeVerificationForm.ftl:37  main-device
+ *   openam-oauth2/src/main/resources/templates/CodeThanks.ftl:37            main-device
+ *
+ * D8 and task 10.4 both say this migration lands without a coordinated server-side change, so those
+ * six lines are fixed. Once the tree is ESM, an `import`/`export` in the file they name is a
+ * SyntaxError at parse. index.html is in THIS module and B12 rewrote it to
+ * `<script type="module" src="main.js?v=${version}">`, so `main` has an escape the other two do not
+ * -- the difference is editability, not mechanism.
+ *
+ * ONE ROLLUP OUTPUT HAS ONE FORMAT. `output.format` is a single value for the whole build, so an
+ * ESM `main` and two AMD secondaries cannot share a bundle, and they must share one: they share
+ * jquery, lodash, handlebars, i18next, Configuration, Constants, i18nManager, ThemeManager and
+ * Router.
+ *
+ * WHAT (c1) DOES. The two RequireJS-loaded entries are emitted as ordinary hashed ES chunks under
+ * assets/, and this plugin writes an unhashed CLASSIC script at each one's fixed root name whose
+ * only job is `import()` of that chunk. RequireJS is loaded, parsed, and then does exactly one
+ * thing per page: fetch a ~1 kB stub. It is off the critical path and the whole tree stays ESM.
+ *
+ * WHY NOT (c2) -- EMIT EVERYTHING AS AMD. Measured to work, and rejected on three counts: it keeps
+ * RequireJS on two pages' critical path, it keeps a second module format alive through phase 3, and
+ * it SILENTLY disables modulepreload, because vite:build-import-analysis' generateBundle returns
+ * early for any format that is not "es". Rejected (a) -- three separate single-entry builds --
+ * because it triplicates the vendor set across the three outputs.
+ *
+ * WHY document.currentScript AND NOT A RELATIVE URL. The .ftl pages are served from /oauth2/...,
+ * not from the XUI tree root, so resolving the chunk against the DOCUMENT would look for it under
+ * the OAuth2 path. The script element's own src is the only thing on the page that knows where the
+ * XUI tree is -- it is `${baseUrl}/XUI/main-authorize.js`, RequireJS's nameToUrl of `data-main`.
+ * `document.currentScript` is set during the synchronous execution of a classic script, including
+ * one inserted by appendChild with async=true, which is exactly how RequireJS injects it. The
+ * getElementsByTagName sweep is the fallback for the case where it is not, and the document base is
+ * the last resort rather than the first.
+ *
+ * WHY NO CACHE-BUSTER ON THE STUB'S OWN URL. There never was one: `data-main` goes through
+ * nameToUrl with no `urlArgs` configured (the config object that used to carry one lived in
+ * index.html, which these pages do not load), so `${baseUrl}/XUI/main-authorize.js` is fetched bare
+ * today too. The chunk the stub imports IS content-hashed, so the payload behind it cannot go
+ * stale; only the one-line stub can, and it changes only when the hash does.
+ */
+const REQUIREJS_LOADED_ENTRIES = new Set(["main-authorize", "main-device"]);
+
+const renderEntryStub = (entryName, chunkFileName) => `/*
+ * Generated by vite.config.js (xui-requirejs-entry-stubs). DO NOT EDIT -- it is rewritten on every
+ * build and its content is derived from the hashed chunk name below.
+ *
+ * ${entryName} is an ES module, and the six openam-oauth2 FreeMarker pages load it through
+ * RequireJS \`data-main\`, which injects a classic <script type="text/javascript">. This file is
+ * what that <script> gets: a classic script that dynamic-imports the real module. See the
+ * "OPTION (c1)" block in vite.config.js.
+ */
+(function () {
+    "use strict";
+    var chunk = ${JSON.stringify(chunkFileName)};
+    var self = ${JSON.stringify(`${entryName}.js`)};
+    var base = document.currentScript && document.currentScript.src;
+
+    if (!base) {
+        // Only reachable if something other than a <script src> evaluated this file.
+        var scripts = document.getElementsByTagName("script");
+        for (var i = scripts.length - 1; i >= 0 && !base; i--) {
+            if (scripts[i].src && scripts[i].src.indexOf(self) !== -1) { base = scripts[i].src; }
+        }
+    }
+
+    var url = new URL(chunk, base || document.baseURI || window.location.href).href;
+
+    import(url)["catch"](function (error) {
+        // Without this the failure is an unhandled rejection and the page just stays blank.
+        console.error("[XUI] " + self + " could not load " + url, error);
+    });
+}());
+`;
+
+/*
+ * Emitted in generateBundle rather than writeBundle because the chunk file names -- hashes included
+ * -- are final there, and emitFile puts the stub through rollup's own output pipeline so it lands in
+ * outDir with everything else and shows up in the build's file list.
+ *
+ * IT THROWS WHEN AN EXPECTED ENTRY IS ABSENT. The failure this guards against is silent in exactly
+ * the way the .ftl pages cannot report: rename an input key, or drop an entry, and the six pages
+ * 404 on main-authorize.js / main-device.js while this build still exits 0 -- in a different Maven
+ * module, which this build does not test and which no e2e spec in this repo would reach.
+ */
+const requirejsEntryStubs = () => {
+    let root = process.cwd();
+    return {
+    name: "xui-requirejs-entry-stubs",
+    configResolved (config) {
+        root = config.root;
+    },
+    generateBundle (options, bundle) {
+        const stubbed = new Map();
+
+        for (const chunk of Object.values(bundle)) {
+            if (chunk.type !== "chunk" || !chunk.isEntry || !REQUIREJS_LOADED_ENTRIES.has(chunk.name)) {
+                continue;
+            }
+            const fileName = `${chunk.name}.js`;
+            if (bundle[fileName]) {
+                throw new Error(
+                    `[xui-requirejs-entry-stubs] cannot emit the classic stub ${fileName}: the ` +
+                    "bundle already contains a file at that path. build.rollupOptions.output." +
+                    "entryFileNames must send every name in REQUIREJS_LOADED_ENTRIES to a HASHED " +
+                    "path under assets/, leaving the root name free for the stub."
+                );
+            }
+            this.emitFile({
+                type: "asset",
+                fileName,
+                source: renderEntryStub(chunk.name, chunk.fileName)
+            });
+            stubbed.set(chunk.name, chunk.fileName);
+        }
+
+        /*
+         * REVIEW FIX. web.xml serves /XUI/* with `Cache-Control: public, max-age=2592000`. These
+         * two stubs sit at fixed URLs and embed the hashed name of the chunk they import, so
+         * their content moves on nearly every build while their URL does not -- cached for a
+         * month, a returning browser imports a chunk that no longer exists and the OAuth2 consent
+         * page goes blank. The fix is one `excludes` entry each; this asserts it is still there,
+         * because nothing else connects the two files and the failure is invisible for 30 days.
+         */
+        const webXml = path.resolve(root, "../../openam-server-only/src/main/webapp/WEB-INF/web.xml");
+        if (fs.existsSync(webXml)) {
+            const excluded = fs.readFileSync(webXml, "utf8");
+            const unexcluded = [...stubbed.keys()].filter((name) => !excluded.includes(`/XUI/${name}.js`));
+            if (unexcluded.length > 0) {
+                throw new Error(
+                    "[xui-requirejs-entry-stubs] web.xml does not exclude these entry stubs from " +
+                    `CacheForAMonth: ${unexcluded.map((n) => `/XUI/${n}.js`).join(", ")}.\n\n` +
+                    "Add them to the `excludes` param of the CacheForAMonth filter. Without it a " +
+                    "returning browser holds a month-old stub pointing at a chunk hash that no " +
+                    "longer exists, and the OAuth2 consent and device-flow pages render blank " +
+                    "after every upgrade -- with this build still green."
+                );
+            }
+        } else {
+            this.warn(
+                "[xui-requirejs-entry-stubs] openam-server-only/.../web.xml not found, so the " +
+                "CacheForAMonth exclusion for the entry stubs could not be verified."
+            );
+        }
+
+        const missing = [...REQUIREJS_LOADED_ENTRIES].filter((name) => !stubbed.has(name));
+        if (missing.length > 0) {
+            throw new Error(
+                "[xui-requirejs-entry-stubs] no entry chunk was emitted for: " +
+                `${missing.join(", ")}.\n\n` +
+                "Six FreeMarker pages in the openam-oauth2 Maven module fetch these by fixed name " +
+                "through RequireJS data-main, and neither this build nor any e2e spec here loads " +
+                "them -- so a missing stub is a 404 on the OAuth2 consent, OAuth2 error and " +
+                "device-flow pages behind a green build. Either restore the entry in " +
+                "build.rollupOptions.input under this exact key, or -- if the entry is genuinely " +
+                "gone -- remove it from REQUIREJS_LOADED_ENTRIES and from those six templates in " +
+                "the same change (D8 and task 10.4 say this migration does not touch them)."
+            );
+        }
+
+        /*
+         * REVIEW FIX. The two names above cannot be seen by this build, so they get the checks
+         * higher up. main.js CAN be seen and had none: MODULE_SCRIPT_WITH_VERSION only asserted
+         * that SOME module script carried the token, so renaming the `main` input key would 404
+         * the whole console behind a green build -- exactly what this plugin refuses to allow for
+         * main-authorize and main-device. Symmetry restored.
+         */
+        const indexEntry = indexHtmlModuleEntry(fs.readFileSync(
+            path.resolve(root, INDEX_HTML_SOURCE), "utf8"));
+        if (indexEntry && !indexEntry.startsWith("http") && !bundle[indexEntry]) {
+            throw new Error(
+                `[xui-requirejs-entry-stubs] ${INDEX_HTML_SOURCE} loads "${indexEntry}", but the ` +
+                "bundle emits no file at that path.\n\nindex.html names the console entry as a " +
+                "literal string, so a renamed build.rollupOptions.input key -- or an " +
+                "entryFileNames that hashes it -- 404s the entire admin console with the build " +
+                "still green. Keep the two in step, or update index.html in the same change."
+            );
+        }
+
+        this.info(
+            `emitted ${stubbed.size} classic-script entry stubs: ` +
+            [...stubbed].map(([name, target]) => `${name}.js -> ${target}`).join(", ") +
+            `; index.html entry "${indexEntry}" present in bundle`
+        );
+    }
     };
 };
 
@@ -1715,6 +2204,8 @@ export default defineConfig({
          */
         sloppyModeLibraries(),
         assertAliasOrdering(),
+        assertAliasedLibrariesBundled(),
+        assertSideEffectsPinned(),
 
         /*
          * 5.3. Config-time only. Guards the ABSENCE of a react-select / react-input-autosize
@@ -1722,6 +2213,14 @@ export default defineConfig({
          * window globals unnecessary. Defined above; the measurement is NOTES-shims.md 3.2 B.
          */
         assertReactSelectNeedsNoGlobals(),
+
+        /*
+         * 5.4/B12. Option (c1). Emits the two unhashed classic-script stubs the six openam-oauth2
+         * .ftl pages fetch through RequireJS data-main, each dynamic-importing the hashed ES chunk
+         * that entryFileNames below sends under assets/. Defined above, with the costing of the
+         * options that were not taken.
+         */
+        requirejsEntryStubs(),
 
         /*
          * 4.4. Replays Grunt's copy:compose + copy:compiled passes in writeBundle. Defined above
@@ -1833,11 +2332,14 @@ export default defineConfig({
              *
              * WHY THIS DIRECTION SURVIVES -- and this CORRECTS NOTES-vite-entrypoints.md section
              * 5.2, which has both failure modes backwards. The mechanism 5.2 misses is that the
-             * two secondary entries request the ALIASED name themselves (main-authorize.js:66,
-             * main-device.js:61), so under a global alias the entries and ThemeManager always
-             * receive the same object and cannot diverge:
+             * two secondary entries request the ALIASED name themselves (as of 5.4/B12,
+             * `import Router from "Router"` at main-authorize.js:62 and main-device.js:50 -- the
+             * conversion deliberately kept the aliased id rather than reaching past it to
+             * SingleRouteRouter, so this property survives the ESM rewrite), so under a global
+             * alias the entries and ThemeManager always receive the same object and cannot
+             * diverge:
              *
-             *   main-authorize.js:126 / main-device.js:76   Router.currentRoute = {navGroup:"user"}
+             *   main-authorize.js / main-device.js   Router.currentRoute = {navGroup:"user"}
              *   ui-commons Router.js:32                     obj.currentRoute = {}     <- never null
              *   ThemeManager.js:168                         Router.currentRoute.navGroup === "admin"
              *                                                 -> "user" === "admin" -> false
@@ -1849,9 +2351,10 @@ export default defineConfig({
              * whole closure -- backbone, lodash, EventManager, Configuration,
              * AbstractConfigurationAware, URIUtils -- onto the OAuth2 consent, OAuth2 error and
              * device-flow pages, which today load a 22-line zero-dependency stub. backbone is in
-             * NEITHER secondary entry's paths block (main-authorize.js:37-42 and
-             * main-device.js:28-33 list only handlebars, i18next, jquery, lodash, redux, text), so
-             * this is a dependency those two bundles have never carried. Import-time side effects
+             * NEITHER secondary entry's paths block (before 5.4/B12 deleted them, they listed
+             * only handlebars, i18next, jquery, lodash, redux, text), so this is a dependency those
+             * two bundles have never carried. B12 measured the cost: the two secondary chunks are
+             * 1.42 kB and 0.93 kB, and the shared chunk they and main.js all pull is 332 kB. Import-time side effects
              * were checked and are nil: Backbone.history.start() and new Backbone.Router(...) are
              * both inside obj.init (ui-commons Router.js:188,227,228), which only
              * AppConfiguration's moduleDefinition invokes, and the secondaries never load it. The
@@ -1871,11 +2374,12 @@ export default defineConfig({
              * build can execute here -- the tree is still AMD until group 5, and a green
              * `vite build` proves nothing (see READ BEFORE EDITING at the top of this file).
              * Confirm the first time the tree actually runs, and confirm it against main.js, not
-             * only the two secondary specs.
+             * only the two secondary specs. STILL UNVERIFIED after 5.4/B12: the build now walks 563
+             * real modules and exits 0, which is a resolution proof, not an execution proof.
              *
-             * CONSEQUENCE: SingleRouteRouter.js is now dead code. Its only two references were
-             * main-authorize.js:31 and main-device.js:22, both superseded by this entry. It is NOT
-             * deleted here -- deleting it is a source change 4.3 was not asked to make, and group
+             * CONSEQUENCE: SingleRouteRouter.js is now dead code. Its only two references were the
+             * `map` blocks of main-authorize.js and main-device.js, both superseded by this entry
+             * and both deleted outright by 5.4/B12. It is NOT deleted here -- deleting it is a source change 4.3 was not asked to make, and group
              * 5 will be in these files anyway. Note the consequence for 6.1: because the file
              * stays, D1's import.meta.glob registry will still register it, so it remains
              * reachable by a configured identifier even though no alias points at it.
@@ -2007,6 +2511,38 @@ export default defineConfig({
              * version. This entry is a pin, not a decision about either.
              */
             { find: "lodash", replacement: fromSrc("libs/lodash-3.10.1-min.js") },
+
+            /*
+             * 5.4/B7 -- D23. CodeMirror by LITERAL libs/ path.
+             *
+             * admin/views/realms/scripts/EditScriptView.js is the only consumer in the tree and it
+             * names all four files by literal AMD path (`libs/codemirror/lib/codemirror`,
+             * `mode/groovy/groovy`, `mode/javascript/javascript`, `addon/display/fullscreen`).
+             * Those ids never pass through main.js's require.config.paths, so nothing else could
+             * redirect them -- which is why the source file needs no edit and the ids stay spelled
+             * exactly as they are.
+             *
+             * ONE PREFIX COVERS ALL FOUR. The sub-paths under libs/codemirror/ are byte-for-byte
+             * the sub-paths under the npm package, which is what makes a prefix legal here rather
+             * than four separate entries. codemirror@4.10.0 is installed and is the same source
+             * NPM_LIBRARY_FILES already stages -- 4.8 measured all four md5-identical between the
+             * npm package and PHASE1-TREE.md:251-254, so no bytes move.
+             *
+             * WHY NOT fromPkg. require.resolve() honours "exports", and this must resolve a
+             * DIRECTORY so the four sub-paths continue past it; the same reason the D19 prefixes
+             * below use fromPkgPath.
+             *
+             * THE -4 DELTA IS TAKEN, and it was taken only after a build proved the replacement.
+             * B7's verification build has CodeMirror in the graph as four real modules, with the
+             * three mode/ and addon/ UMD factories provably attaching to ONE core instance
+             * (`(function(X){X(Gi())})(...)`, Gi being the memoised factory for lib/codemirror.js,
+             * which appears exactly once). 154.8 kB min / 52.5 kB gzip as its own chunk.
+             *
+             * So the four libs/codemirror rows are gone from NPM_LIBRARY_FILES and
+             * LITERAL_PATH_LIBRARY_CONSUMERS is empty -- see the note on that constant for why the
+             * three edits are one edit. PHASE1-TREE.md is -4 against this build by design.
+             */
+            { find: "libs/codemirror", replacement: fromPkgPath("codemirror") },
 
             /*
              * ================================================================================
@@ -2170,6 +2706,12 @@ export default defineConfig({
              *
              * config/main still needs no alias -- its only importer is main.js:278, which batch
              * B12 converts, and section 3d gives that file its own treatment.
+             *
+             * B12 CONFIRMED THAT AND CHOSE THE RELATIVE FORM: `import "./config/main.js"`. main.js
+             * sits at the module-tree root, so the relative specifier is one level and reads
+             * plainly -- the opposite of the seven-../ chain that put config/ThemeConfiguration in
+             * the table above. Nothing else in the tree imports config/main, so no second spelling
+             * of it exists to disagree with this one.
              */
             { find: "config/AppConfiguration", replacement: fromSrc("config/AppConfiguration.js") },
             { find: "config/ThemeConfiguration", replacement: fromSrc("config/ThemeConfiguration.js") },
@@ -2582,11 +3124,13 @@ export default defineConfig({
      * config/AppConfiguration and config/ThemeConfiguration are the product's own files and a
      * prefix alias would invert the customization route. If those ids are never individually
      * aliased, these six bindings have no consumer at all and the absence looks like "the alias
-     * was unnecessary" rather than like a failure. Compounding it, AM config/main.js:26-44 reaches
-     * 7 of its 15 dependencies by RELATIVE id (./routes/CommonRoutesConfig and friends), and
-     * relative specifiers cannot be aliased at all -- Grunt's copy:compose flattening is the only
-     * reason they resolve today. Neither is 4.3's to settle; both are recorded so they are not
-     * rediscovered.
+     * was unnecessary" rather than like a failure. Compounding it, ALL FIFTEEN of AM
+     * config/main.js:26-44's dependencies are RELATIVE ids, and relative specifiers cannot be
+     * aliased at all -- Grunt's copy:compose flattening is the only reason they resolve today.
+     * SEVEN of the fifteen resolve into the commons config/** tree -- CommonErrorHandlers,
+     * CommonValidators, CommonRoutesConfig, UserRoutesConfig, CommonMessages, UserMessages and
+     * CommonConfig -- and the other eight are AM's own files. Task 5.4 owns that resolution.
+     * Neither is 4.3's to settle; both are recorded so they are not rediscovered.
      *
      * THREE MORE PRODUCT-SUPPLIED IDENTIFIERS THAT ARE NOT map BINDINGS AND HAVE NO OWNER.
      * They are the same mechanism as the six above -- commons names a collaborator, the product
@@ -2603,11 +3147,17 @@ export default defineConfig({
      *   form2js / js2form        ui-user NPM-PACKAGE.md:245-246 -- 5 and 3 modules respectively.
      *                            NO npm package exists for either: they are maxatwork/form2js at
      *                            pinned commit 769718a, and the registry's form2js is a different
-     *                            fork. They are ALSO the same failure mode this task just fixed
-     *                            for lodash -- neither file calls define(), both are plain scripts
-     *                            assigning a global, so a paths entry or a bare alias is not
-     *                            sufficient on its own. Whoever owns them will need the
-     *                            commonjsOptions treatment in build below, or a shim.
+     *                            fork. CORRECTION, 5.4/B11: the claim that stood
+     *                            here -- that they are "the same failure mode as lodash", that
+     *                            "neither file calls define()", and that a bare alias is therefore
+     *                            insufficient -- is WRONG on its premise. Both are UMD:
+     *                            form2js-2.0-769718a.js:34-37 is `else if (typeof define ===
+     *                            "function" && define.amd) define(factory);`, and js2form matches.
+     *                            That changes the mechanism, not just a detail -- as UMD they are
+     *                            what @rollup/plugin-commonjs handles, and commonjsOptions.include
+     *                            below already matches /src[\/]main[\/]js[\/]libs[\/]/, so the
+     *                            bare aliases above are sufficient and no shim is pending.
+     *                            Re-measure before inheriting either version of this paragraph.
      *
      * NOT DONE BY 4.3, AND NOW OWNED: resolve.extensions and the .jsm extension, which this
      * file's own 4.1 header assigned to 4.3. tasks.md:69 scopes 4.3 to the 12 map bindings and
@@ -2860,6 +3410,16 @@ export default defineConfig({
              * dynamic-imports the hashed chunk, (c2) AMD output, (c3) copy the two entries
              * verbatim. 4.2 deliberately chose none of them: configure the naming now, decide the
              * loader story when the source can actually execute. Nothing below forecloses any.
+             *
+             * ---- SETTLED BY 5.4/B12: OPTION (c1). ----
+             * The change owner took (c1). `main` uses the escape this block describes -- index.html
+             * is now a single `<script type="module" src="main.js?v=${version}">` -- and the two
+             * secondaries get an unhashed CLASSIC stub at the fixed name the six .ftl pages fetch,
+             * which dynamic-imports the hashed ES chunk. The stub is emitted by
+             * xui-requirejs-entry-stubs (defined above this config object, with the costing of
+             * (a) and (c2) that went with the decision), and it is the reason entryFileNames below
+             * is a function rather than the plain "[name].js" 4.5 left here. The names in this
+             * block are unchanged and still load-bearing: the STUB now carries them.
              */
             input: {
                 /*
@@ -2900,12 +3460,28 @@ export default defineConfig({
                 format: "es",
 
                 /*
-                 * [name] for an entry chunk is the KEY of the input object above, so those three
-                 * keys are what put main.js, main-authorize.js and main-device.js at the tree root
-                 * with stable, unhashed names. PHASE1-TREE.md:155-156 records that as the
-                 * requirement Vite's default assets/[name]-[hash].js violates.
+                 * [name] for an entry chunk is the KEY of the input object above, so `main` is what
+                 * puts main.js at the tree root with a stable, unhashed name. PHASE1-TREE.md:155-156
+                 * records that as the requirement Vite's default assets/[name]-[hash].js violates.
+                 *
+                 * ---- CHANGED BY 5.4/B12, AND THE STRING FORM WOULD NOW BE WRONG. ----
+                 * 4.5 recorded that "entryFileNames stays the plain [name].js rather than 4.3's
+                 * function form". That held only while all three entries were classic AMD scripts
+                 * emitted at their own fixed names. Under option (c1) the two RequireJS-loaded
+                 * entries do NOT own their fixed names any more -- the classic stub emitted by
+                 * xui-requirejs-entry-stubs does, and the real ES chunk has to move out of its way.
+                 * So those two are hashed under assets/ like any other chunk, and the stub is what
+                 * the six .ftl pages fetch at main-authorize.js / main-device.js. Keeping the string
+                 * form here does not fail loudly: rollup would refuse the duplicate file name from
+                 * emitFile, which is why that plugin's guard names THIS option.
+                 *
+                 * `main` keeps its unhashed root name because index.html is in this Maven module and
+                 * B12 rewrote it -- `<script type="module" src="main.js?v=${version}">` -- so it
+                 * needs no stub and no hash.
                  */
-                entryFileNames: "[name].js",
+                entryFileNames: (chunkInfo) => (
+                    REQUIREJS_LOADED_ENTRIES.has(chunkInfo.name) ? "assets/[name]-[hash].js" : "[name].js"
+                ),
 
                 /*
                  * entryFileNames applies ONLY to entry chunks, so hashing stays on for everything

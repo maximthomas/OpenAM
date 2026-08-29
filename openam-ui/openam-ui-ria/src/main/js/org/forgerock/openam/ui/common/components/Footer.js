@@ -14,24 +14,22 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/components/Footer",
-    "org/forgerock/openam/ui/common/services/ServerService"
-], function (_, Configuration, Footer, ServerService) {
-    function isAdmin () {
-        return Configuration.loggedUser && _.contains(Configuration.loggedUser.uiroles, "ui-realm-admin");
+import _ from "lodash";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import Footer from "org/forgerock/commons/ui/common/components/Footer";
+import { getVersion as getServerVersion } from "org/forgerock/openam/ui/common/services/ServerService";
+
+function isAdmin () {
+    return Configuration.loggedUser && _.contains(Configuration.loggedUser.uiroles, "ui-realm-admin");
+}
+
+var Component = Footer.extend({
+    getVersion () {
+        return getServerVersion();
+    },
+    showVersion () {
+        return isAdmin();
     }
-
-    var Component = Footer.extend({
-        getVersion () {
-            return ServerService.getVersion();
-        },
-        showVersion () {
-            return isAdmin();
-        }
-    });
-
-    return new Component();
 });
+
+export default new Component();

@@ -15,46 +15,44 @@
  */
 
 
-define([
-    "lodash",
-    "backbone",
-    "backbone-relational",
-    "org/forgerock/openam/ui/user/uma/models/UMAPolicyPermission",
-    "org/forgerock/openam/ui/user/uma/util/URLHelper"
-], function (_, Backbone, BackboneRelational, UMAPolicyPermission, URLHelper) {
-    return Backbone.RelationalModel.extend({
-        idAttribute: "policyId",
-        toBeCreated: true,
-        relations: [{
-            type: Backbone.HasMany,
-            key: "permissions",
-            relatedModel: UMAPolicyPermission
-        }],
-        parse (response) {
-            if (!_.isEmpty(response.permissions)) {
-                this.toBeCreated = false;
-            }
+import _ from "lodash";
+import Backbone from "backbone";
+import "backbone-relational";
+import UMAPolicyPermission from "org/forgerock/openam/ui/user/uma/models/UMAPolicyPermission";
+import URLHelper from "org/forgerock/openam/ui/user/uma/util/URLHelper";
 
-            return response;
-        },
-        sync (method, model, options) {
-            options = options || {};
-            options.beforeSend = function (xhr) {
-                xhr.setRequestHeader("Accept-API-Version", "protocol=1.0,resource=1.0");
-            };
+export default Backbone.RelationalModel.extend({
+    idAttribute: "policyId",
+    toBeCreated: true,
+    relations: [{
+        type: Backbone.HasMany,
+        key: "permissions",
+        relatedModel: UMAPolicyPermission
+    }],
+    parse (response) {
+        if (!_.isEmpty(response.permissions)) {
+            this.toBeCreated = false;
+        }
 
-            if (method.toLowerCase() === "update" && model.toBeCreated === true) {
-                model.toBeCreated = false;
-                options.headers = {};
-                options.headers["If-None-Match"] = "*";
-            }
+        return response;
+    },
+    sync (method, model, options) {
+        options = options || {};
+        options.beforeSend = function (xhr) {
+            xhr.setRequestHeader("Accept-API-Version", "protocol=1.0,resource=1.0");
+        };
 
-            if (!model.get("permissions").length) {
-                model.toBeCreated = true;
-            }
+        if (method.toLowerCase() === "update" && model.toBeCreated === true) {
+            model.toBeCreated = false;
+            options.headers = {};
+            options.headers["If-None-Match"] = "*";
+        }
 
-            return Backbone.Model.prototype.sync.call(this, method, model, options);
-        },
-        urlRoot: URLHelper.substitute("__api__/__subrealm__/users/__username__/uma/policies")
-    });
+        if (!model.get("permissions").length) {
+            model.toBeCreated = true;
+        }
+
+        return Backbone.Model.prototype.sync.call(this, method, model, options);
+    },
+    urlRoot: URLHelper.substitute("__api__/__subrealm__/users/__username__/uma/policies")
 });

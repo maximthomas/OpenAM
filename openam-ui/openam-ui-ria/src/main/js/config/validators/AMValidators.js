@@ -14,71 +14,69 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery"
-], function ($) {
-    var obj = {
-        "validPhoneFormat": {
-            "name": "Valid Phone Number",
-            "dependencies": [],
-            "validator": (el, input, callback) => {
-                var phonePattern = /^\+?([0-9\- \(\)])*$/,
-                    value = input.val();
+import $ from "jquery";
 
-                if (typeof value === "string" && value.length && !phonePattern.test(value)) {
-                    callback([$.t("common.form.validation.VALID_PHONE_FORMAT")]);
-                } else {
-                    callback();
-                }
-            }
-        },
-        "validEmailAddressFormat": {
-            "name": "Valid Email Address",
-            "dependencies": [],
-            "validator": (el, input, callback) => {
-                var emailPattern = /^([A-Za-z0-9_\-\.])+@([A-Za-z0-9_\-\.])+\.([A-Za-z]{2,4})$/,
-                    value = input.val();
+var obj = {
+    "validPhoneFormat": {
+        "name": "Valid Phone Number",
+        "dependencies": [],
+        "validator": (el, input, callback) => {
+            var phonePattern = /^\+?([0-9\- \(\)])*$/,
+                value = input.val();
 
-                if (typeof value === "string" && value.length && !emailPattern.test(value)) {
-                    callback([$.t("common.form.validation.VALID_EMAIL_ADDRESS_FORMAT")]);
-                } else {
-                    callback();
-                }
-            }
-        },
-        "atLeastXLowercaseLetters": {
-            "name": "Minimum occurrence of lowercase letter characters in string",
-            "dependencies": [],
-            "validator": (el, input, callback) => {
-                var v = input.val(),
-                    minLowers = input.attr("atLeastXLowercaseLetters"),
-                    foundLowers = v.match(/[(a-z)]/g);
-
-                if (!foundLowers || foundLowers.length < minLowers) {
-                    callback([$.t("common.form.validation.AT_LEAST_X_LOWERCASE_LETTERS", { numLowers: minLowers })]);
-                } else {
-                    callback();
-                }
-            }
-        },
-        "atLeastXSpecialChars": {
-            "name": "Minimum occurrence of special characters in string",
-            "dependencies": [],
-            "validator": (el, input, callback) => {
-                var v = input.val(),
-                    minSpecials = input.attr("atLeastXSpecialChars"),
-                    specialChars = input.attr("specialChars"),
-                    escapedSpecialChars = specialChars.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"),
-                    foundSpecials = v.match(new RegExp(`[${escapedSpecialChars}]`, "g"));
-
-                if (!foundSpecials || foundSpecials.length < minSpecials) {
-                    callback([$.t("common.form.validation.AT_LEAST_X_SPECIAL_CHARACTERS",
-                        { numSpecials: minSpecials, specialChars })]);
-                } else {
-                    callback();
-                }
+            if (typeof value === "string" && value.length && !phonePattern.test(value)) {
+                callback([$.t("common.form.validation.VALID_PHONE_FORMAT")]);
+            } else {
+                callback();
             }
         }
-    };
-    return obj;
-});
+    },
+    "validEmailAddressFormat": {
+        "name": "Valid Email Address",
+        "dependencies": [],
+        "validator": (el, input, callback) => {
+            var emailPattern = /^([A-Za-z0-9_\-\.])+@([A-Za-z0-9_\-\.])+\.([A-Za-z]{2,4})$/,
+                value = input.val();
+
+            if (typeof value === "string" && value.length && !emailPattern.test(value)) {
+                callback([$.t("common.form.validation.VALID_EMAIL_ADDRESS_FORMAT")]);
+            } else {
+                callback();
+            }
+        }
+    },
+    "atLeastXLowercaseLetters": {
+        "name": "Minimum occurrence of lowercase letter characters in string",
+        "dependencies": [],
+        "validator": (el, input, callback) => {
+            var v = input.val(),
+                minLowers = input.attr("atLeastXLowercaseLetters"),
+                foundLowers = v.match(/[(a-z)]/g);
+
+            if (!foundLowers || foundLowers.length < minLowers) {
+                callback([$.t("common.form.validation.AT_LEAST_X_LOWERCASE_LETTERS", { numLowers: minLowers })]);
+            } else {
+                callback();
+            }
+        }
+    },
+    "atLeastXSpecialChars": {
+        "name": "Minimum occurrence of special characters in string",
+        "dependencies": [],
+        "validator": (el, input, callback) => {
+            var v = input.val(),
+                minSpecials = input.attr("atLeastXSpecialChars"),
+                specialChars = input.attr("specialChars"),
+                escapedSpecialChars = specialChars.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"),
+                foundSpecials = v.match(new RegExp(`[${escapedSpecialChars}]`, "g"));
+
+            if (!foundSpecials || foundSpecials.length < minSpecials) {
+                callback([$.t("common.form.validation.AT_LEAST_X_SPECIAL_CHARACTERS",
+                    { numSpecials: minSpecials, specialChars })]);
+            } else {
+                callback();
+            }
+        }
+    }
+};
+export default obj;

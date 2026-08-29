@@ -14,42 +14,40 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "org/forgerock/commons/ui/common/main/AbstractView"
-], function ($, AbstractView) {
-    var ShareCounter = AbstractView.extend({
+import $ from "jquery";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
 
-        template: "templates/user/uma/views/share/ShareCounter.html",
-        element: "#shareCounter",
+var ShareCounter = AbstractView.extend({
 
-        render (count, callback) {
+    template: "templates/user/uma/views/share/ShareCounter.html",
+    element: "#shareCounter",
 
-            this.data.shareCount = count;
-            this.data.shareInfo = this.getShareInfo(count);
-            this.data.shareIcon = this.getShareIcon(count);
+    render (count, callback) {
 
-            this.parentRender(function () {
-                if (callback) { callback(); }
-            });
-        },
+        this.data.shareCount = count;
+        this.data.shareInfo = this.getShareInfo(count);
+        this.data.shareIcon = this.getShareIcon(count);
+
+        this.parentRender(function () {
+            if (callback) { callback(); }
+        });
+    },
 
 
-        getShareInfo (count) {
-            var options = count ? { count } : { context: "none" };
-            return $.t("uma.share.info", options);
-        },
+    getShareInfo (count) {
+        var options = count ? { count } : { context: "none" };
+        return $.t("uma.share.info", options);
+    },
 
-        getShareIcon (count) {
-            var shareIcon = "fa fa-lock";
-            if (count === 1) {
-                shareIcon = "fa fa-user";
-            } else if (count > 1) {
-                shareIcon = "fa fa-users";
-            }
-            return shareIcon;
+    getShareIcon (count) {
+        var shareIcon = "fa fa-lock";
+        if (count === 1) {
+            shareIcon = "fa fa-user";
+        } else if (count > 1) {
+            shareIcon = "fa fa-users";
         }
-    });
-
-    return new ShareCounter();
+        return shareIcon;
+    }
 });
+
+export default new ShareCounter();

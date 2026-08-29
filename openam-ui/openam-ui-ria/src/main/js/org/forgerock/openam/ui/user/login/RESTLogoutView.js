@@ -15,41 +15,38 @@
  */
 
 
-define([
-    "jquery",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/openam/ui/user/login/RESTLoginHelper",
-    "org/forgerock/openam/ui/user/login/navigateThenRefresh"
-], ($, AbstractView, Configuration, Constants, EventManager, RESTLoginHelper, navigateThenRefresh) => {
+import $ from "jquery";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import RESTLoginHelper from "org/forgerock/openam/ui/user/login/RESTLoginHelper";
+import navigateThenRefresh from "org/forgerock/openam/ui/user/login/navigateThenRefresh";
 
-    var LogoutView = AbstractView.extend({
-        template: "templates/openam/ReturnToLoginTemplate.html",
-        baseTemplate: "templates/common/LoginBaseTemplate.html",
-        data: {},
-        events: {
-            "click [data-return-to-login-page]" : navigateThenRefresh
-        },
-        render () {
-            /*
-            The RESTLoginHelper.filterUrlParams returns a filtered list of the parameters from the value set within the
-            Configuration.globalData.auth.fullLoginURL which is populated by the server upon successful login.
-            Once the session has ended we need to manually remove the fullLoginURL as it is no longer valid and can
-            cause problems to subsequent failed login requests - i.e ones which do not override the current value.
-            FIXME: Remove all session specific properties from the globalData object.
-            */
-            this.data.params = RESTLoginHelper.filterUrlParams(RESTLoginHelper.getSuccessfulLoginUrlParams());
-            delete Configuration.globalData.auth.fullLoginURL;
+var LogoutView = AbstractView.extend({
+    template: "templates/openam/ReturnToLoginTemplate.html",
+    baseTemplate: "templates/common/LoginBaseTemplate.html",
+    data: {},
+    events: {
+        "click [data-return-to-login-page]" : navigateThenRefresh
+    },
+    render () {
+        /*
+        The RESTLoginHelper.filterUrlParams returns a filtered list of the parameters from the value set within the
+        Configuration.globalData.auth.fullLoginURL which is populated by the server upon successful login.
+        Once the session has ended we need to manually remove the fullLoginURL as it is no longer valid and can
+        cause problems to subsequent failed login requests - i.e ones which do not override the current value.
+        FIXME: Remove all session specific properties from the globalData object.
+        */
+        this.data.params = RESTLoginHelper.filterUrlParams(RESTLoginHelper.getSuccessfulLoginUrlParams());
+        delete Configuration.globalData.auth.fullLoginURL;
 
-            delete Configuration.gotoURL;
-            EventManager.sendEvent(Constants.EVENT_AUTHENTICATION_DATA_CHANGED, { anonymousMode: true });
+        delete Configuration.gotoURL;
+        EventManager.sendEvent(Constants.EVENT_AUTHENTICATION_DATA_CHANGED, { anonymousMode: true });
 
-            this.data.title = $.t("templates.user.RestLogoutTemplate.loggedOut");
-            this.parentRender();
-        }
-    });
-
-    return new LogoutView();
+        this.data.title = $.t("templates.user.RestLogoutTemplate.loggedOut");
+        this.parentRender();
+    }
 });
+
+export default new LogoutView();

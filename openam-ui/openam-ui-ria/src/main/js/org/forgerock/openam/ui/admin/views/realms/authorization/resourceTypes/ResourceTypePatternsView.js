@@ -15,50 +15,48 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/openam/ui/admin/views/realms/authorization/common/StripedListEditingView"
-], ($, _, AbstractView, StripedListEditingView) => {
+import $ from "jquery";
+import _ from "lodash";
+import "org/forgerock/commons/ui/common/main/AbstractView";
+import StripedListEditingView from
+    "org/forgerock/openam/ui/admin/views/realms/authorization/common/StripedListEditingView";
 
-    function ResourceTypePatternsView () {
-    }
+function ResourceTypePatternsView () {
+}
 
-    // TODO: Rename StripedListEditingView or rewrite to bootstrap table
-    ResourceTypePatternsView.prototype = new StripedListEditingView();
+// TODO: Rename StripedListEditingView or rewrite to bootstrap table
+ResourceTypePatternsView.prototype = new StripedListEditingView();
 
-    ResourceTypePatternsView.prototype.render = function (entity, actions, el, callback) {
-        this.data = {};
-        this.entity = entity;
+ResourceTypePatternsView.prototype.render = function (entity, actions, el, callback) {
+    this.data = {};
+    this.entity = entity;
 
-        this.data.items = actions || [];
+    this.data.items = actions || [];
 
-        this.baseRender(this.data,
-            "templates/admin/views/realms/authorization/resourceTypes/ResourceTypesPatternsTemplate.html",
-            el, callback);
-    };
+    this.baseRender(this.data,
+        "templates/admin/views/realms/authorization/resourceTypes/ResourceTypesPatternsTemplate.html",
+        el, callback);
+};
 
-    ResourceTypePatternsView.prototype.getPendingItem = function () {
-        return this.$el.find("[data-editing-input]").val().toString();
-    };
+ResourceTypePatternsView.prototype.getPendingItem = function () {
+    return this.$el.find("[data-editing-input]").val().toString();
+};
 
-    ResourceTypePatternsView.prototype.isValid = function (e) {
-        return this.getPendingItem(e) !== "";
-    };
+ResourceTypePatternsView.prototype.isValid = function (e) {
+    return this.getPendingItem(e) !== "";
+};
 
-    ResourceTypePatternsView.prototype.isExistingItem = function (itemPending, itemFromCollection) {
-        return itemPending === itemFromCollection;
-    };
+ResourceTypePatternsView.prototype.isExistingItem = function (itemPending, itemFromCollection) {
+    return itemPending === itemFromCollection;
+};
 
-    ResourceTypePatternsView.prototype.getCollectionWithout = function (e) {
-        const itemName = $(e.target).parents("li").data("item-name").toString();
-        return _.without(this.data.items, itemName);
-    };
+ResourceTypePatternsView.prototype.getCollectionWithout = function (e) {
+    const itemName = $(e.target).parents("li").data("item-name").toString();
+    return _.without(this.data.items, itemName);
+};
 
-    ResourceTypePatternsView.prototype.updateEntity = function () {
-        this.entity.patterns = this.data.items;
-    };
+ResourceTypePatternsView.prototype.updateEntity = function () {
+    this.entity.patterns = this.data.items;
+};
 
-    return ResourceTypePatternsView;
-});
+export default ResourceTypePatternsView;

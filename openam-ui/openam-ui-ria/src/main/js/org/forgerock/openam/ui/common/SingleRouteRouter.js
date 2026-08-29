@@ -17,6 +17,6 @@
 /**
  * A simple router to be used in place of a full blown router when there is only a single route.
  */
-define({
+export default {
     currentRoute: null
-});
+};

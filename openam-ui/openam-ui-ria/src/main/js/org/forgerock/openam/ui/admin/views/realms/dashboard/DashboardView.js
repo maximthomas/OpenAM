@@ -15,47 +15,45 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/openam/ui/admin/views/realms/dashboard/DashboardTasksView",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/openam/ui/admin/services/global/RealmsService",
-    "org/forgerock/openam/ui/admin/services/realm/DashboardService"
-], function ($, _, AbstractView, DashboardTasksView, Messages, RealmsService, DashboardService) {
-    return AbstractView.extend({
-        template: "templates/admin/views/realms/dashboard/DashboardTemplate.html",
-        partials: [
-            "partials/util/_Status.html"
-        ],
-        render (args, callback) {
-            var self = this,
-                realmPromise = RealmsService.realms.get(args[0]),
-                tasksPromise = DashboardService.dashboard.commonTasks.all(args[0]);
+import $ from "jquery";
+import "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import DashboardTasksView from "org/forgerock/openam/ui/admin/views/realms/dashboard/DashboardTasksView";
+import Messages from "org/forgerock/commons/ui/common/components/Messages";
+import RealmsService from "org/forgerock/openam/ui/admin/services/global/RealmsService";
+import DashboardService from "org/forgerock/openam/ui/admin/services/realm/DashboardService";
 
-            this.data.realmPath = args[0];
+export default AbstractView.extend({
+    template: "templates/admin/views/realms/dashboard/DashboardTemplate.html",
+    partials: [
+        "partials/util/_Status.html"
+    ],
+    render (args, callback) {
+        var self = this,
+            realmPromise = RealmsService.realms.get(args[0]),
+            tasksPromise = DashboardService.dashboard.commonTasks.all(args[0]);
 
-            $.when(realmPromise, tasksPromise).then(function (realmData, tasksData) {
-                self.data.realm = {
-                    status: realmData.values.active ? $.t("common.form.active") : $.t("common.form.inactive"),
-                    active: realmData.values.active,
-                    aliases: realmData.values.aliases
-                };
+        this.data.realmPath = args[0];
 
-                self.parentRender(function () {
-                    var dashboardTasks = new DashboardTasksView();
-                    dashboardTasks.data.allTasks = tasksData[0].result;
-                    dashboardTasks.data.taskGroup = { tasks: tasksData[0].result };
-                    dashboardTasks.render(args, callback);
-                }, callback);
-            }, function (errorRealm, errorTasks) {
-                Messages.addMessage({
-                    type: Messages.TYPE_DANGER,
-                    response: errorRealm ? errorRealm : errorTasks
-                });
+        $.when(realmPromise, tasksPromise).then(function (realmData, tasksData) {
+            self.data.realm = {
+                status: realmData.values.active ? $.t("common.form.active") : $.t("common.form.inactive"),
+                active: realmData.values.active,
+                aliases: realmData.values.aliases
+            };
+
+            self.parentRender(function () {
+                var dashboardTasks = new DashboardTasksView();
+                dashboardTasks.data.allTasks = tasksData[0].result;
+                dashboardTasks.data.taskGroup = { tasks: tasksData[0].result };
+                dashboardTasks.render(args, callback);
+            }, callback);
+        }, function (errorRealm, errorTasks) {
+            Messages.addMessage({
+                type: Messages.TYPE_DANGER,
+                response: errorRealm ? errorRealm : errorTasks
             });
+        });
 
-        }
-    });
+    }
 });

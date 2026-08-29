@@ -17,9 +17,9 @@
  /**
   * @module org/forgerock/openam/ui/common/views/jsonSchema/iteratees/showEnablePropertyIfAllPropertiesHidden
   */
-define([
-    "lodash"
-], (_) => (schemaValuePair) => {
+import _ from "lodash";
+
+export default (schemaValuePair) => {
     const allPropertiesHidden = _.isEmpty(schemaValuePair.schema.raw.defaultProperties);
 
     if (allPropertiesHidden && schemaValuePair.schema.hasEnableProperty()) {
@@ -31,4 +31,4 @@ define([
     }
 
     return schemaValuePair;
-});
+};

@@ -14,183 +14,182 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView",
-    "org/forgerock/openam/ui/admin/services/realm/PoliciesService",
+import $ from "jquery";
+import _ from "lodash";
+import ConditionAttrBaseView from
+    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView";
+import PoliciesService from "org/forgerock/openam/ui/admin/services/realm/PoliciesService";
 
-    // jquery dependencies
-    "selectize"
-], function ($, _, ConditionAttrBaseView, PoliciesService) {
-    return ConditionAttrBaseView.extend({
-        template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrArray.html",
-        MIN_QUERY_LENGTH: 1,
-        IDENTITY_PLACEHOLDER: "console.authorization.policies.edit.subjectTypes.Identity.placeholder",
-        SCRIPT_PLACEHOLDER: "console.authorization.policies.edit.conditionTypes.Script.placeholder",
-        TIME_ZONE_PLACEHOLDER: "console.authorization.policies.edit.conditionTypes.SimpleTime.props.enterTimeZone",
-        SCRIPT_TYPE: "scriptId",
-        TIME_ZONE_TYPE: "enforcementTimeZone",
-        IDENTITY_TYPES: ["users", "groups"],
-        DEFAULT_TIME_ZONE: "GMT",
+// jquery dependencies
+import "selectize";
 
-        render (data, element, callback) {
+export default ConditionAttrBaseView.extend({
+    template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrArray.html",
+    MIN_QUERY_LENGTH: 1,
+    IDENTITY_PLACEHOLDER: "console.authorization.policies.edit.subjectTypes.Identity.placeholder",
+    SCRIPT_PLACEHOLDER: "console.authorization.policies.edit.conditionTypes.Script.placeholder",
+    TIME_ZONE_PLACEHOLDER: "console.authorization.policies.edit.conditionTypes.SimpleTime.props.enterTimeZone",
+    SCRIPT_TYPE: "scriptId",
+    TIME_ZONE_TYPE: "enforcementTimeZone",
+    IDENTITY_TYPES: ["users", "groups"],
+    DEFAULT_TIME_ZONE: "GMT",
 
-            // default to multiple selection if this option is not specified
-            if (data.multiple === undefined) {
-                data.multiple = true;
-            }
+    render (data, element, callback) {
 
-            this.initBasic(data, element, "field-float-selectize data-obj");
+        // default to multiple selection if this option is not specified
+        if (data.multiple === undefined) {
+            data.multiple = true;
+        }
 
-            this.parentRender(function () {
-                var view = this,
-                    title = "",
-                    text = "",
-                    itemData,
-                    options,
-                    item, $item,
-                    type;
+        this.initBasic(data, element, "field-float-selectize data-obj");
 
-                this.$el.find("select.selectize").each(function () {
-                    item = this;
-                    $item = $(this);
-                    type = $item.parent().find("label").data().title;
-                    options = {};
+        this.parentRender(function () {
+            var view = this,
+                title = "",
+                text = "",
+                itemData,
+                options,
+                item, $item,
+                type;
 
-                    if ($item.data().source) {
-                        if (type === view.SCRIPT_TYPE) {
-                            _.extend(options, {
-                                placeholder: $.t(view.SCRIPT_PLACEHOLDER),
-                                preload: true,
-                                sortField: "value",
-                                load (query, callback) {
-                                    view.loadFromDataSource.call(this, item, callback);
-                                },
-                                onChange (value) {
-                                    title = this.$input.parent().find("label").data().title;
-                                    text = this.$input.find(":selected").text();
-                                    view.data.itemData[title] = value ? value : "";
-                                    view.data.hiddenData[view.data.itemData.type] = text ? text : "";
-                                }
-                            });
-                        } else if (type === view.TIME_ZONE_TYPE) {
-                            _.extend(options, {
-                                placeholder: $.t(view.TIME_ZONE_PLACEHOLDER),
-                                preload: true,
-                                sortField: "value",
-                                render: {
-                                    item (item) {
-                                        return `<span class='time-zone-selected'>${item.text}</span>`;
-                                    }
-                                },
-                                load () {
-                                    var selectize = this;
-                                    $.ajax({
-                                        url: "timezones.json",
-                                        dataType: "json",
-                                        cache: true
-                                    }).done(function (data) {
-                                        _.each(data.timezones, function (value) {
-                                            selectize.addOption({ value, text: value });
-                                        });
-                                    });
-                                },
-                                onChange (value) {
-                                    view.data.itemData.enforcementTimeZone = value ? value : view.DEFAULT_TIME_ZONE;
-                                }
-                            });
-                        } else if (_.contains(view.IDENTITY_TYPES, type)) {
-                            _.extend(options, {
-                                placeholder: $.t(view.IDENTITY_PLACEHOLDER),
-                                sortField: "value",
-                                load (query, callback) {
-                                    if (query.length < view.MIN_QUERY_LENGTH) {
-                                        return callback();
-                                    }
-                                    view.queryIdentities.call(this, item, query, callback);
-                                },
-                                onItemAdd (item) {
-                                    view.getUniversalId(item, type);
-                                },
-                                onItemRemove (item) {
-                                    var universalid = _.findKey(view.data.hiddenData[type], function (obj) {
-                                        return obj === item;
-                                    });
+            this.$el.find("select.selectize").each(function () {
+                item = this;
+                $item = $(this);
+                type = $item.parent().find("label").data().title;
+                options = {};
 
-                                    view.data.itemData.subjectValues = _.without(view.data.itemData.subjectValues,
-                                        universalid);
-                                    delete view.data.hiddenData[type][universalid];
-                                }
-                            });
-                        }
-                    } else {
+                if ($item.data().source) {
+                    if (type === view.SCRIPT_TYPE) {
                         _.extend(options, {
-                            delimiter: false,
-                            persist: false,
-                            create (input) {
-                                return {
-                                    value: input,
-                                    text: input
-                                };
+                            placeholder: $.t(view.SCRIPT_PLACEHOLDER),
+                            preload: true,
+                            sortField: "value",
+                            load (query, callback) {
+                                view.loadFromDataSource.call(this, item, callback);
                             },
                             onChange (value) {
                                 title = this.$input.parent().find("label").data().title;
-                                itemData = view.data.itemData;
-                                itemData[title] = value ? value : [];
+                                text = this.$input.find(":selected").text();
+                                view.data.itemData[title] = value ? value : "";
+                                view.data.hiddenData[view.data.itemData.type] = text ? text : "";
                             }
                         });
-                        if ($item.prev("label").data("title") === "dnsName") {
-                            options.createFilter = function (text) {
-                                return text.indexOf("*") === -1 || text.lastIndexOf("*") === 0;
-                            };
-                        }
+                    } else if (type === view.TIME_ZONE_TYPE) {
+                        _.extend(options, {
+                            placeholder: $.t(view.TIME_ZONE_PLACEHOLDER),
+                            preload: true,
+                            sortField: "value",
+                            render: {
+                                item (item) {
+                                    return `<span class='time-zone-selected'>${item.text}</span>`;
+                                }
+                            },
+                            load () {
+                                var selectize = this;
+                                $.ajax({
+                                    url: "timezones.json",
+                                    dataType: "json",
+                                    cache: true
+                                }).done(function (data) {
+                                    _.each(data.timezones, function (value) {
+                                        selectize.addOption({ value, text: value });
+                                    });
+                                });
+                            },
+                            onChange (value) {
+                                view.data.itemData.enforcementTimeZone = value ? value : view.DEFAULT_TIME_ZONE;
+                            }
+                        });
+                    } else if (_.contains(view.IDENTITY_TYPES, type)) {
+                        _.extend(options, {
+                            placeholder: $.t(view.IDENTITY_PLACEHOLDER),
+                            sortField: "value",
+                            load (query, callback) {
+                                if (query.length < view.MIN_QUERY_LENGTH) {
+                                    return callback();
+                                }
+                                view.queryIdentities.call(this, item, query, callback);
+                            },
+                            onItemAdd (item) {
+                                view.getUniversalId(item, type);
+                            },
+                            onItemRemove (item) {
+                                var universalid = _.findKey(view.data.hiddenData[type], function (obj) {
+                                    return obj === item;
+                                });
+
+                                view.data.itemData.subjectValues = _.without(view.data.itemData.subjectValues,
+                                    universalid);
+                                delete view.data.hiddenData[type][universalid];
+                            }
+                        });
                     }
-
-                    _.extend(options, { plugins: ["restore_on_backspace"] });
-                    $item.selectize(options);
-                });
-
-                if (callback) {
-                    callback();
+                } else {
+                    _.extend(options, {
+                        delimiter: false,
+                        persist: false,
+                        create (input) {
+                            return {
+                                value: input,
+                                text: input
+                            };
+                        },
+                        onChange (value) {
+                            title = this.$input.parent().find("label").data().title;
+                            itemData = view.data.itemData;
+                            itemData[title] = value ? value : [];
+                        }
+                    });
+                    if ($item.prev("label").data("title") === "dnsName") {
+                        options.createFilter = function (text) {
+                            return text.indexOf("*") === -1 || text.lastIndexOf("*") === 0;
+                        };
+                    }
                 }
+
+                _.extend(options, { plugins: ["restore_on_backspace"] });
+                $item.selectize(options);
             });
-        },
 
-        queryIdentities (item, query, callback) {
-            var selectize = this;
-            PoliciesService.queryIdentities($(item).data().source, query)
-                .done(function (data) {
-                    _.each(data.result, function (value) {
-                        selectize.addOption({ value, text: value });
-                    });
-                    callback(data.result);
-                }).error(function (e) {
-                    console.error("error", e);
-                    callback();
+            if (callback) {
+                callback();
+            }
+        });
+    },
+
+    queryIdentities (item, query, callback) {
+        var selectize = this;
+        PoliciesService.queryIdentities($(item).data().source, query)
+            .done(function (data) {
+                _.each(data.result, function (value) {
+                    selectize.addOption({ value, text: value });
                 });
-        },
-
-        getUniversalId (item, type) {
-            var self = this;
-            PoliciesService.getUniversalId(item, type).done(function (subject) {
-                self.data.itemData.subjectValues = _.union(self.data.itemData.subjectValues, subject.universalid);
-                self.data.hiddenData[type][subject.universalid[0]] = item;
+                callback(data.result);
+            }).error(function (e) {
+                console.error("error", e);
+                callback();
             });
-        },
+    },
 
-        loadFromDataSource (item, callback) {
-            var selectize = this;
-            PoliciesService.getDataByType($(item).data().source)
-                .done(function (data) {
-                    _.each(data.result, function (value) {
-                        selectize.addOption({ value: value._id, text: value.name });
-                    });
-                    callback(data.result);
-                }).error(function (e) {
-                    console.error("error", e);
-                    callback();
+    getUniversalId (item, type) {
+        var self = this;
+        PoliciesService.getUniversalId(item, type).done(function (subject) {
+            self.data.itemData.subjectValues = _.union(self.data.itemData.subjectValues, subject.universalid);
+            self.data.hiddenData[type][subject.universalid[0]] = item;
+        });
+    },
+
+    loadFromDataSource (item, callback) {
+        var selectize = this;
+        PoliciesService.getDataByType($(item).data().source)
+            .done(function (data) {
+                _.each(data.result, function (value) {
+                    selectize.addOption({ value: value._id, text: value.name });
                 });
-        }
-    });
+                callback(data.result);
+            }).error(function (e) {
+                console.error("error", e);
+                callback();
+            });
+    }
 });

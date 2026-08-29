@@ -15,22 +15,21 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView"
-], function ($, _, ConditionAttrBaseView) {
-    return ConditionAttrBaseView.extend({
-        template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrEnum.html",
+import "jquery";
+import "lodash";
+import ConditionAttrBaseView from
+    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView";
 
-        render (data, element, callback) {
-            this.initBasic(data, element, "field-float-select data-obj");
+export default ConditionAttrBaseView.extend({
+    template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrEnum.html",
 
-            this.parentRender(function () {
-                if (callback) {
-                    callback();
-                }
-            });
-        }
-    });
+    render (data, element, callback) {
+        this.initBasic(data, element, "field-float-select data-obj");
+
+        this.parentRender(function () {
+            if (callback) {
+                callback();
+            }
+        });
+    }
 });

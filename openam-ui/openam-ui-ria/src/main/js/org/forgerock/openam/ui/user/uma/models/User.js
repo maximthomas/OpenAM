@@ -14,14 +14,12 @@
  * Copyright 2011-2016 ForgeRock AS.
  */
 
-define([
-    "backbone"
-], function (Backbone) {
-    var User = Backbone.Model.extend({
-        initialize (username) {
-            this.username = username;
-        }
-    });
+import Backbone from "backbone";
 
-    return User;
+var User = Backbone.Model.extend({
+    initialize (username) {
+        this.username = username;
+    }
 });
+
+export default User;

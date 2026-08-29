@@ -15,159 +15,158 @@
  * Portions copyright 2026 3A Systems, LLC
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractConfigurationAware",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/main/ServiceInvoker",
-    "org/forgerock/commons/ui/common/main/ViewManager",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/util/URIUtils",
-    "org/forgerock/openam/ui/common/services/fetchUrl",
-    "org/forgerock/openam/ui/user/login/tokens/SessionToken",
-    "org/forgerock/openam/ui/user/services/AuthNService",
-    "org/forgerock/openam/ui/user/services/SessionService",
-    "org/forgerock/openam/ui/user/UserModel",
-    "org/forgerock/openam/ui/user/login/logout",
-    "org/forgerock/openam/ui/common/util/uri/query",
-    "org/forgerock/openam/ui/user/login/gotoUrl"
-], ($, _, AbstractConfigurationAware, Configuration, ServiceInvoker, ViewManager, Constants, URIUtils,
-    fetchUrl, SessionToken, AuthNService, SessionService, UserModel, logout, query, gotoUrl) => {
-    var obj = new AbstractConfigurationAware();
+import $ from "jquery";
+import _ from "lodash";
+import AbstractConfigurationAware from "org/forgerock/commons/ui/common/main/AbstractConfigurationAware";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import ServiceInvoker from "org/forgerock/commons/ui/common/main/ServiceInvoker";
+import ViewManager from "org/forgerock/commons/ui/common/main/ViewManager";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import "org/forgerock/commons/ui/common/util/URIUtils";
+import fetchUrl from "org/forgerock/openam/ui/common/services/fetchUrl";
+import {
+    get as getSessionToken, isAuthenticated, remove as removeSessionToken
+} from "org/forgerock/openam/ui/user/login/tokens/SessionToken";
+import AuthNService from "org/forgerock/openam/ui/user/services/AuthNService";
+import { updateSessionInfo } from "org/forgerock/openam/ui/user/services/SessionService";
+import UserModel from "org/forgerock/openam/ui/user/UserModel";
+import logout from "org/forgerock/openam/ui/user/login/logout";
+import { parseParameters } from "org/forgerock/openam/ui/common/util/uri/query";
+import { exists as gotoUrlExists, set as setGotoUrl } from "org/forgerock/openam/ui/user/login/gotoUrl";
 
-    obj.login = function (params, successCallback, errorCallback) {
-        var self = this;
-        AuthNService.getRequirements(params).then(function (requirements) {
-            // populate the current set of requirements with the values we have from params
-            var populatedRequirements = _.clone(requirements);
-            _.each(requirements.callbacks, function (obj, i) {
-                if (params.hasOwnProperty(`callback_${i}`)) {
-                    populatedRequirements.callbacks[i].input[0].value = params[`callback_${i}`];
-                }
-            });
+var obj = new AbstractConfigurationAware();
 
-            AuthNService.submitRequirements(populatedRequirements, params).then(function (result) {
-                if (SessionToken.isAuthenticated(result)) {
-                    obj.getLoggedUser(function (user) {
-                        Configuration.setProperty("loggedUser", user);
-                        self.setSuccessURL(result.tokenId, result.successUrl).then(function () {
-                            successCallback(user);
-                            AuthNService.resetProcess();
-                        });
-                    }, errorCallback);
-                } else if (result.hasOwnProperty("authId")) {
-                    // re-render login form for next set of required inputs
-                    if (ViewManager.currentView === "LoginView") {
-                        ViewManager.refresh();
-                    } else {
-                        // TODO: If using a module chain with autologin the user is
-                        // currently routed to the first login screen.
-                        var href = "#login",
-                            realm = Configuration.globalData.auth.subRealm;
-                        if (realm) {
-                            href += `/${realm}`;
-                        }
-                        location.href = href;
-                    }
-                }
-            }, function (failedStage, errorMsg) {
-                if (failedStage > 1) {
-                    // re-render login form, sending back to the start of the process.
+obj.login = function (params, successCallback, errorCallback) {
+    var self = this;
+    AuthNService.getRequirements(params).then(function (requirements) {
+        // populate the current set of requirements with the values we have from params
+        var populatedRequirements = _.clone(requirements);
+        _.each(requirements.callbacks, function (obj, i) {
+            if (params.hasOwnProperty(`callback_${i}`)) {
+                populatedRequirements.callbacks[i].input[0].value = params[`callback_${i}`];
+            }
+        });
+
+        AuthNService.submitRequirements(populatedRequirements, params).then(function (result) {
+            if (isAuthenticated(result)) {
+                obj.getLoggedUser(function (user) {
+                    Configuration.setProperty("loggedUser", user);
+                    self.setSuccessURL(result.tokenId, result.successUrl).then(function () {
+                        successCallback(user);
+                        AuthNService.resetProcess();
+                    });
+                }, errorCallback);
+            } else if (result.hasOwnProperty("authId")) {
+                // re-render login form for next set of required inputs
+                if (ViewManager.currentView === "LoginView") {
                     ViewManager.refresh();
+                } else {
+                    // TODO: If using a module chain with autologin the user is
+                    // currently routed to the first login screen.
+                    var href = "#login",
+                        realm = Configuration.globalData.auth.subRealm;
+                    if (realm) {
+                        href += `/${realm}`;
+                    }
+                    location.href = href;
                 }
-                errorCallback(errorMsg);
-            });
-        });
-    };
-
-    obj.getLoggedUser = function (successCallback, errorCallback) {
-        const sessionToken = SessionToken.get();
-        const noSessionHandler = (xhr) => {
-            // Try to remove any cookie that is lingering, as it is apparently no longer valid
-            SessionToken.remove();
-
-            if (_.get(xhr, "responseJSON.code") === 404) {
-                errorCallback("loggedIn");
-            } else {
-                errorCallback();
             }
-        };
-        // TODO AME-11593 Call to idFromSession is required to populate the fullLoginURL, which we use later to
-        // determine the parameters you logged in with. We should remove the support of fragment parameters and use
-        // persistent url query parameters instead.
-        ServiceInvoker.restCall({
-            url: `${Constants.host}/${Constants.context}/json${
-                fetchUrl.default("/users?_action=idFromSession")}`,
-            headers: { "Accept-API-Version": "protocol=1.0,resource=2.0" },
-            type: "POST",
-            errorsHandlers: { "serverError": { status: "503" }, "unauthorized": { status: "401" } }
-        }).then((data) => {
-            Configuration.globalData.auth.fullLoginURL = data.fullLoginURL;
+        }, function (failedStage, errorMsg) {
+            if (failedStage > 1) {
+                // re-render login form, sending back to the start of the process.
+                ViewManager.refresh();
+            }
+            errorCallback(errorMsg);
         });
+    });
+};
 
-        // We do not want to trigger an unauthorized error when we are getting the logged user.
-        const suppressError = { errorsHandlers : { "Unauthorized": { status: 401 } } };
+obj.getLoggedUser = function (successCallback, errorCallback) {
+    const sessionToken = getSessionToken();
+    const noSessionHandler = (xhr) => {
+        // Try to remove any cookie that is lingering, as it is apparently no longer valid
+        removeSessionToken();
 
-        if (sessionToken) {
-            return SessionService.updateSessionInfo(sessionToken, suppressError).then((data) => {
-                return UserModel.fetchById(data.username).then(successCallback);
-            }, noSessionHandler);
+        if (_.get(xhr, "responseJSON.code") === 404) {
+            errorCallback("loggedIn");
         } else {
-            noSessionHandler();
+            errorCallback();
         }
     };
+    // TODO AME-11593 Call to idFromSession is required to populate the fullLoginURL, which we use later to
+    // determine the parameters you logged in with. We should remove the support of fragment parameters and use
+    // persistent url query parameters instead.
+    ServiceInvoker.restCall({
+        url: `${Constants.host}/${Constants.context}/json${
+            fetchUrl("/users?_action=idFromSession")}`,
+        headers: { "Accept-API-Version": "protocol=1.0,resource=2.0" },
+        type: "POST",
+        errorsHandlers: { "serverError": { status: "503" }, "unauthorized": { status: "401" } }
+    }).then((data) => {
+        Configuration.globalData.auth.fullLoginURL = data.fullLoginURL;
+    });
 
-    obj.getSuccessfulLoginUrlParams = function () {
-        // The successfulLoginURL is populated by the server upon successful authentication,
-        // not from window.location of the browser.
-        const fullLoginURL = Configuration.globalData.auth.fullLoginURL;
-        const paramString = fullLoginURL ? fullLoginURL.substring(fullLoginURL.indexOf("?") + 1) : "";
-        return query.parseParameters(paramString);
-    };
+    // We do not want to trigger an unauthorized error when we are getting the logged user.
+    const suppressError = { errorsHandlers : { "Unauthorized": { status: 401 } } };
+
+    if (sessionToken) {
+        return updateSessionInfo(sessionToken, suppressError).then((data) => {
+            return UserModel.fetchById(data.username).then(successCallback);
+        }, noSessionHandler);
+    } else {
+        noSessionHandler();
+    }
+};
+
+obj.getSuccessfulLoginUrlParams = function () {
+    // The successfulLoginURL is populated by the server upon successful authentication,
+    // not from window.location of the browser.
+    const fullLoginURL = Configuration.globalData.auth.fullLoginURL;
+    const paramString = fullLoginURL ? fullLoginURL.substring(fullLoginURL.indexOf("?") + 1) : "";
+    return parseParameters(paramString);
+};
 
 
-    obj.setSuccessURL = function (tokenId, successUrl) {
-        const promise = $.Deferred();
-        let context = "";
+obj.setSuccessURL = function (tokenId, successUrl) {
+    const promise = $.Deferred();
+    let context = "";
 
-        const goto = query.parseParameters().goto;
+    const goto = parseParameters().goto;
 
-        if (goto) {
-            AuthNService.validateGotoUrl(goto).then((data) => {
-                if (data.successURL.indexOf("/") === 0 &&
-                    data.successURL.indexOf(`/${Constants.context}`) !== 0) {
-                    context = `/${Constants.context}`;
-                }
-                gotoUrl.set(encodeURIComponent(context + data.successURL));
-                promise.resolve();
-            }, () => {
-                promise.reject();
-            });
-        } else {
-            if (successUrl !== Constants.CONSOLE_PATH) {
-                if (!Configuration.globalData.auth.urlParams) {
-                    Configuration.globalData.auth.urlParams = {};
-                }
-
-                if (!gotoUrl.exists()) {
-                    gotoUrl.set(successUrl);
-                }
+    if (goto) {
+        AuthNService.validateGotoUrl(goto).then((data) => {
+            if (data.successURL.indexOf("/") === 0 &&
+                data.successURL.indexOf(`/${Constants.context}`) !== 0) {
+                context = `/${Constants.context}`;
             }
+            setGotoUrl(encodeURIComponent(context + data.successURL));
             promise.resolve();
+        }, () => {
+            promise.reject();
+        });
+    } else {
+        if (successUrl !== Constants.CONSOLE_PATH) {
+            if (!Configuration.globalData.auth.urlParams) {
+                Configuration.globalData.auth.urlParams = {};
+            }
+
+            if (!gotoUrlExists()) {
+                setGotoUrl(successUrl);
+            }
         }
-        return promise;
-    };
+        promise.resolve();
+    }
+    return promise;
+};
 
-    obj.filterUrlParams = function (params) {
-        const filtered = ["arg", "authIndexType", "authIndexValue", "goto", "gotoOnFail", "ForceAuth", "locale"];
-        return _.reduce(_.pick(params, filtered), (result, value, key) => `${result}&${key}=${value}`, "");
-    };
+obj.filterUrlParams = function (params) {
+    const filtered = ["arg", "authIndexType", "authIndexValue", "goto", "gotoOnFail", "ForceAuth", "locale"];
+    return _.reduce(_.pick(params, filtered), (result, value, key) => `${result}&${key}=${value}`, "");
+};
 
-    // called by commons
-    obj.logout = function (successCallback, errorCallback) {
-        logout.default().then(successCallback, errorCallback);
-    };
+// called by commons
+obj.logout = function (successCallback, errorCallback) {
+    logout().then(successCallback, errorCallback);
+};
 
-    return obj;
-});
+export default obj;

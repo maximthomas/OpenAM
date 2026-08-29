@@ -14,28 +14,26 @@
  * Portions copyright 2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/commons/ui/common/main/AbstractView"
-], function (AbstractView) {
-    var CustomResponseAttributesView = AbstractView.extend({
-        element: "#customAttrs",
-        template: "templates/admin/views/realms/authorization/policies/attributes/CustomAttributesTemplate.html",
-        noBaseTemplate: true,
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
 
-        render (customAttributes, callback) {
-            this.data.customAttributes = customAttributes;
+var CustomResponseAttributesView = AbstractView.extend({
+    element: "#customAttrs",
+    template: "templates/admin/views/realms/authorization/policies/attributes/CustomAttributesTemplate.html",
+    noBaseTemplate: true,
 
-            this.parentRender(function () {
-                if (callback) {
-                    callback();
-                }
-            });
-        },
+    render (customAttributes, callback) {
+        this.data.customAttributes = customAttributes;
 
-        getAttrs () {
-            return this.data.customAttributes;
-        }
-    });
+        this.parentRender(function () {
+            if (callback) {
+                callback();
+            }
+        });
+    },
 
-    return new CustomResponseAttributesView();
+    getAttrs () {
+        return this.data.customAttributes;
+    }
 });
+
+export default new CustomResponseAttributesView();

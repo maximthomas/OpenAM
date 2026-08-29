@@ -17,9 +17,9 @@
  /**
   * @module org/forgerock/openam/ui/common/views/jsonSchema/iteratees/setDefaultPropertiesToRequiredAndEmpty
   */
-define([
-    "lodash"
-], (_) => (schemaValuePair) => {
+import _ from "lodash";
+
+export default (schemaValuePair) => {
     const requiredSchemaKeys = schemaValuePair.schema.getRequiredPropertyKeys();
     const emptyValueKeys = schemaValuePair.values.getEmptyValueKeys();
     const requiredAndEmptyKeys = _.intersection(requiredSchemaKeys, emptyValueKeys);
@@ -27,4 +27,4 @@ define([
     return _.extend(schemaValuePair, {
         schema: schemaValuePair.schema.addDefaultProperties(requiredAndEmptyKeys)
     });
-});
+};

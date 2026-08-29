@@ -14,82 +14,79 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/openam/ui/admin/models/Form",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/openam/ui/admin/services/SMSServiceUtils",
-    "org/forgerock/openam/ui/admin/services/realm/AuthenticationService",
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import Form from "org/forgerock/openam/ui/admin/models/Form";
+import Messages from "org/forgerock/commons/ui/common/components/Messages";
+import SMSServiceUtils from "org/forgerock/openam/ui/admin/services/SMSServiceUtils";
+import AuthenticationService from "org/forgerock/openam/ui/admin/services/realm/AuthenticationService";
+// jquery dependencies
+import "bootstrap-tabdrop";
 
-    // jquery dependencies
-    "bootstrap-tabdrop"
-], function ($, _, AbstractView, Constants, EventManager, Form, Messages, SMSServiceUtils, AuthenticationService) {
-    var SettingsView = AbstractView.extend({
-        template: "templates/admin/views/realms/authentication/SettingsTemplate.html",
-        events: {
-            "click [data-revert]"          : "revert",
-            "click [data-save]"            : "save",
-            "show.bs.tab ul.nav.nav-tabs a": "renderTab"
-        },
+var SettingsView = AbstractView.extend({
+    template: "templates/admin/views/realms/authentication/SettingsTemplate.html",
+    events: {
+        "click [data-revert]"          : "revert",
+        "click [data-save]"            : "save",
+        "show.bs.tab ul.nav.nav-tabs a": "renderTab"
+    },
 
-        render (args, callback) {
-            var self = this;
+    render (args, callback) {
+        var self = this;
 
-            this.data.realmLocation = args[0];
+        this.data.realmLocation = args[0];
 
-            AuthenticationService.authentication.get(this.data.realmLocation).then((data) => {
-                self.data.formData = data;
+        AuthenticationService.authentication.get(this.data.realmLocation).then((data) => {
+            self.data.formData = data;
 
-                self.parentRender(function () {
-                    self.$el.find("div.tab-pane").show(); // FIXME: To remove
-                    self.$el.find("ul.nav a:first").tab("show");
+            self.parentRender(function () {
+                self.$el.find("div.tab-pane").show(); // FIXME: To remove
+                self.$el.find("ul.nav a:first").tab("show");
 
-                    self.$el.find(".tab-menu .nav-tabs").tabdrop();
+                self.$el.find(".tab-menu .nav-tabs").tabdrop();
 
-                    if (callback) {
-                        callback();
-                    }
-                });
-            }, (response) => {
-                Messages.addMessage({
-                    type: Messages.TYPE_DANGER,
-                    response
-                });
+                if (callback) {
+                    callback();
+                }
             });
-        },
-        renderTab (event) {
-            this.$el.find("#tabpanel").empty();
-
-            var id = $(event.target).attr("href").slice(1),
-                schema = SMSServiceUtils.sanitizeSchema(this.data.formData.schema.properties[id]),
-                element = this.$el.find("#tabpanel").get(0);
-
-            this.data.form = new Form(element, schema, this.data.formData.values[id]);
-            this.$el.find("[data-header]").parent().hide();
-        },
-        revert () {
-            this.data.form.reset();
-        },
-        save () {
-            var formData = this.data.form.data(),
-                self = this;
-
-            AuthenticationService.authentication.update(this.data.realmLocation, formData).then((data) => {
-                // update formData for correct re-render tab after saving
-                _.extend(self.data.formData.values, data);
-                EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "changesSaved");
-            }, (response) => {
-                Messages.addMessage({
-                    type: Messages.TYPE_DANGER,
-                    response
-                });
+        }, (response) => {
+            Messages.addMessage({
+                type: Messages.TYPE_DANGER,
+                response
             });
-        }
-    });
+        });
+    },
+    renderTab (event) {
+        this.$el.find("#tabpanel").empty();
 
-    return SettingsView;
+        var id = $(event.target).attr("href").slice(1),
+            schema = SMSServiceUtils.sanitizeSchema(this.data.formData.schema.properties[id]),
+            element = this.$el.find("#tabpanel").get(0);
+
+        this.data.form = new Form(element, schema, this.data.formData.values[id]);
+        this.$el.find("[data-header]").parent().hide();
+    },
+    revert () {
+        this.data.form.reset();
+    },
+    save () {
+        var formData = this.data.form.data(),
+            self = this;
+
+        AuthenticationService.authentication.update(this.data.realmLocation, formData).then((data) => {
+            // update formData for correct re-render tab after saving
+            _.extend(self.data.formData.values, data);
+            EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "changesSaved");
+        }, (response) => {
+            Messages.addMessage({
+                type: Messages.TYPE_DANGER,
+                response
+            });
+        });
+    }
 });
+
+export default SettingsView;

@@ -17,69 +17,70 @@
 /**
  * @module org/forgerock/openam/ui/admin/services/global/AuthenticationService
  */
-define([
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractDelegate",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/openam/ui/common/models/JSONSchema",
-    "org/forgerock/openam/ui/common/models/JSONValues",
-    "org/forgerock/openam/ui/common/services/fetchUrl",
-    "org/forgerock/openam/ui/common/util/Promise"
-], (_, AbstractDelegate, Constants, JSONSchema, JSONValues, fetchUrl, Promise) => {
-    const obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
 
-    function getModuleUrl (id) {
-        return id === "core" ? "" : `/modules/${id}`;
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import _ from "lodash";
+import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import JSONSchema from "org/forgerock/openam/ui/common/models/JSONSchema";
+import JSONValues from "org/forgerock/openam/ui/common/models/JSONValues";
+import fetchUrl from "org/forgerock/openam/ui/common/services/fetchUrl";
+import Promise from "org/forgerock/openam/ui/common/util/Promise";
+
+const obj = new AbstractDelegate(`${Constants.host}/${Constants.context}/json`);
+
+function getModuleUrl (id) {
+    return id === "core" ? "" : `/modules/${id}`;
+}
+
+obj.authentication = {
+    getAll () {
+        return obj.serviceCall({
+            url: fetchUrl("/global-config/authentication/modules?_action=getAllTypes", { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
+            type: "POST"
+        }).then((data) => _.sortBy(data.result, "name"));
+    },
+    schema () {
+        const serviceCall = (action) => obj.serviceCall({
+            url: fetchUrl(`/global-config/authentication?_action=${action}`, { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
+            type: "POST"
+        });
+
+        return Promise.all([serviceCall("schema"), serviceCall("template")]).then((response) => ({
+            schema: response[0][0],
+            values: response[1][0]
+        }));
+    },
+    get: (id) => {
+        const moduleUrl = getModuleUrl(id);
+
+        const getSchema = () => obj.serviceCall({
+            url: fetchUrl(`/global-config/authentication${moduleUrl}?_action=schema`, { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
+            type: "POST"
+        }).then((response) => new JSONSchema(response));
+
+        const getValues = () => obj.serviceCall({
+            url: fetchUrl(`/global-config/authentication${moduleUrl}`, { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
+        }).then((response) => new JSONValues(response));
+
+        return Promise.all([getSchema(), getValues()]).then((response) => ({
+            schema: response[0],
+            values: response[1],
+            name: response[1].raw._type.name
+        }));
+    },
+    update (id, data) {
+        return obj.serviceCall({
+            url: fetchUrl(`/global-config/authentication${getModuleUrl(id)}`, { realm: false }),
+            headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
+            type: "PUT",
+            data: new JSONValues(data).toJSON()
+        });
     }
-
-    obj.authentication = {
-        getAll () {
-            return obj.serviceCall({
-                url: fetchUrl.default("/global-config/authentication/modules?_action=getAllTypes", { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
-                type: "POST"
-            }).then((data) => _.sortBy(data.result, "name"));
-        },
-        schema () {
-            const serviceCall = (action) => obj.serviceCall({
-                url: fetchUrl.default(`/global-config/authentication?_action=${action}`, { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
-                type: "POST"
-            });
-
-            return Promise.all([serviceCall("schema"), serviceCall("template")]).then((response) => ({
-                schema: response[0][0],
-                values: response[1][0]
-            }));
-        },
-        get: (id) => {
-            const moduleUrl = getModuleUrl(id);
-
-            const getSchema = () => obj.serviceCall({
-                url: fetchUrl.default(`/global-config/authentication${moduleUrl}?_action=schema`, { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
-                type: "POST"
-            }).then((response) => new JSONSchema(response));
-
-            const getValues = () => obj.serviceCall({
-                url: fetchUrl.default(`/global-config/authentication${moduleUrl}`, { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" }
-            }).then((response) => new JSONValues(response));
-
-            return Promise.all([getSchema(), getValues()]).then((response) => ({
-                schema: response[0],
-                values: response[1],
-                name: response[1].raw._type.name
-            }));
-        },
-        update (id, data) {
-            return obj.serviceCall({
-                url: fetchUrl.default(`/global-config/authentication${getModuleUrl(id)}`, { realm: false }),
-                headers: { "Accept-API-Version": "protocol=1.0,resource=1.0" },
-                type: "PUT",
-                data: new JSONValues(data).toJSON()
-            });
-        }
-    };
-    return obj;
-});
+};
+export default obj;

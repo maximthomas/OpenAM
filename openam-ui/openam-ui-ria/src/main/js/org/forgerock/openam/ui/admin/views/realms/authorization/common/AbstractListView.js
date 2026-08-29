@@ -14,70 +14,67 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/commons/ui/common/main/Router",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/util/UIUtils",
-    "org/forgerock/openam/ui/admin/utils/FormHelper",
-    "org/forgerock/openam/ui/common/util/BackgridUtils"
-], function ($, _, Messages, AbstractView, EventManager, Router, Constants, UIUtils, FormHelper, BackgridUtils) {
+import "jquery";
+import _ from "lodash";
+import "org/forgerock/commons/ui/common/components/Messages";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import Router from "org/forgerock/commons/ui/common/main/Router";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
+import FormHelper from "org/forgerock/openam/ui/admin/utils/FormHelper";
+import BackgridUtils from "org/forgerock/openam/ui/common/util/BackgridUtils";
 
-    return AbstractView.extend({
-        toolbarTemplateID: "[data-grid-toolbar]",
+export default AbstractView.extend({
+    toolbarTemplateID: "[data-grid-toolbar]",
 
-        initialize () {
-            AbstractView.prototype.initialize.call(this);
-        },
+    initialize () {
+        AbstractView.prototype.initialize.call(this);
+    },
 
-        onDeleteClick (e, msg, id, callback) {
-            e.preventDefault();
+    onDeleteClick (e, msg, id, callback) {
+        e.preventDefault();
 
-            FormHelper.showConfirmationBeforeDeleting(msg, _.bind(this.deleteRecord, this, id, callback));
-        },
+        FormHelper.showConfirmationBeforeDeleting(msg, _.bind(this.deleteRecord, this, id, callback));
+    },
 
-        deleteRecord (id, callback) {
-            var self = this,
-                item = self.data.items.get(id),
-                onSuccess = function () {
-                    EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "changesSaved");
+    deleteRecord (id, callback) {
+        var self = this,
+            item = self.data.items.get(id),
+            onSuccess = function () {
+                EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "changesSaved");
 
-                    if (callback) {
-                        callback();
-                    }
-                };
+                if (callback) {
+                    callback();
+                }
+            };
 
-            item.destroy({
-                success: onSuccess,
-                wait: true
-            }).always(function () {
-                self.data.items.fetch({ reset: true });
-            });
-        },
+        item.destroy({
+            success: onSuccess,
+            wait: true
+        }).always(function () {
+            self.data.items.fetch({ reset: true });
+        });
+    },
 
-        editRecord (e, id, route) {
-            var self = this;
+    editRecord (e, id, route) {
+        var self = this;
 
-            Router.routeTo(route, {
-                args: _.map([self.realmPath, id], encodeURIComponent),
-                trigger: true
-            });
-        },
+        Router.routeTo(route, {
+            args: _.map([self.realmPath, id], encodeURIComponent),
+            trigger: true
+        });
+    },
 
-        bindDefaultHandlers () {
-            this.data.items.on("backgrid:sort", BackgridUtils.doubleSortFix);
-        },
+    bindDefaultHandlers () {
+        this.data.items.on("backgrid:sort", BackgridUtils.doubleSortFix);
+    },
 
-        renderToolbar () {
-            var self = this;
+    renderToolbar () {
+        var self = this;
 
-            UIUtils.fillTemplateWithData(this.toolbarTemplate, this.data, function (tpl) {
-                self.$el.find(self.toolbarTemplateID).html(tpl);
-            });
-        }
-    });
+        UIUtils.fillTemplateWithData(this.toolbarTemplate, this.data, function (tpl) {
+            self.$el.find(self.toolbarTemplateID).html(tpl);
+        });
+    }
 });

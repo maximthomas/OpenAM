@@ -14,11 +14,11 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "backbone",
-    "handlebars",
-    "lodash"
-], (Backbone, Handlebars, _) => Backbone.View.extend({
+import Backbone from "backbone";
+import Handlebars from "handlebars";
+import _ from "lodash";
+
+export default Backbone.View.extend({
     initialize (options) {
         if (!_.isString(options.partial)) {
             throw new TypeError("[PartialBasedView] \"partial\" argument is not a String.");
@@ -32,4 +32,4 @@ define([
         this.$el.html(html);
         return this;
     }
-}));
+});

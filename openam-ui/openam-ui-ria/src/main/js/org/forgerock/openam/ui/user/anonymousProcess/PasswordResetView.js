@@ -14,19 +14,16 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "org/forgerock/openam/ui/common/util/Constants",
-    "org/forgerock/openam/ui/user/anonymousProcess/AnonymousProcessView",
-    "org/forgerock/commons/ui/user/anonymousProcess/PasswordResetView"
-], function (_, Constants, AnonymousProcessView, PasswordResetView) {
+import _ from "lodash";
+import Constants from "org/forgerock/openam/ui/common/util/Constants";
+import AnonymousProcessView from "org/forgerock/openam/ui/user/anonymousProcess/AnonymousProcessView";
+import PasswordResetView from "org/forgerock/commons/ui/user/anonymousProcess/PasswordResetView";
 
-    function AMPasswordResetView () { }
+function AMPasswordResetView () { }
 
-    AMPasswordResetView.prototype = PasswordResetView;
-    AMPasswordResetView.prototype.endpoint = Constants.SELF_SERVICE_RESET_PASSWORD;
+AMPasswordResetView.prototype = PasswordResetView;
+AMPasswordResetView.prototype.endpoint = Constants.SELF_SERVICE_RESET_PASSWORD;
 
-    _.extend(AMPasswordResetView.prototype, AnonymousProcessView.prototype);
+_.extend(AMPasswordResetView.prototype, AnonymousProcessView.prototype);
 
-    return new AMPasswordResetView();
-});
+export default new AMPasswordResetView();

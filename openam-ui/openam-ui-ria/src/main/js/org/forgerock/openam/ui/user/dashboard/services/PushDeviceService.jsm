@@ -14,6 +14,8 @@
  * Copyright 2016 ForgeRock AS.
  */
 
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
 import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
 import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
 import Constants from "org/forgerock/commons/ui/common/util/Constants";

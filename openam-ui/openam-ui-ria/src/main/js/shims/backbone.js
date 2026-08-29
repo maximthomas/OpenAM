@@ -30,3 +30,12 @@ import Backbone from "backbone/backbone.js";
 Backbone.$ = $;
 
 export default Backbone;
+
+/*
+ * TASK 5.7. `common/components/SelectComponent.jsm:20` and `common/components/TemplateComponent
+ * .jsm:18` -- both task 5.1 output -- do `import { View } from "backbone"`. Same defect as the
+ * i18next shim above and found the same way, by a verification build. `View` is the only name any
+ * consumer takes; a bare re-export is enough, and `Backbone.View` is fixed by the time this module
+ * finishes evaluating.
+ */
+export const View = Backbone.View;

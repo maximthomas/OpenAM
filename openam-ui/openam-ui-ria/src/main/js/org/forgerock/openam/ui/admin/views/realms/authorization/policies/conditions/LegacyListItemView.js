@@ -15,34 +15,32 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/util/UIUtils"
-], function ($, _, AbstractView, UIUtils) {
-    return AbstractView.extend({
-        data: {},
-        mode: "append",
-        render (itemData, callback, element, itemID) {
-            this.setElement(element);
-            this.data.itemID = itemID;
-            this.data.itemData = itemData;
+import "jquery";
+import "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
 
-            var self = this;
+export default AbstractView.extend({
+    data: {},
+    mode: "append",
+    render (itemData, callback, element, itemID) {
+        this.setElement(element);
+        this.data.itemID = itemID;
+        this.data.itemData = itemData;
 
-            UIUtils.fillTemplateWithData(
-                "templates/admin/views/realms/authorization/policies/conditions/LegacyListItem.html",
-                this.data,
-                function () {
-                    self.setElement(`#legacy_${itemID}`);
-                    self.delegateEvents();
+        var self = this;
 
-                    self.$el.data("itemData", itemData);
-                    if (callback) {
-                        callback();
-                    }
-                });
-        }
-    });
+        UIUtils.fillTemplateWithData(
+            "templates/admin/views/realms/authorization/policies/conditions/LegacyListItem.html",
+            this.data,
+            function () {
+                self.setElement(`#legacy_${itemID}`);
+                self.delegateEvents();
+
+                self.$el.data("itemData", itemData);
+                if (callback) {
+                    callback();
+                }
+            });
+    }
 });

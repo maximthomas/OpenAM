@@ -17,30 +17,30 @@
 /**
  * @module org/forgerock/openam/ui/user/oauth2/OAuth2ConsentPageHelper
  */
-define([
-    "org/forgerock/commons/ui/common/main/AbstractDelegate",
-    "org/forgerock/commons/ui/common/main/ServiceInvoker",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/util/CookieHelper",
-    "org/forgerock/openam/ui/common/services/fetchUrl"
-], function (AbstractDelegate, ServiceInvoker, Constants, CookieHelper, fetchUrl) {
-    const oauth2ContextPath = "oauth2";
-    const uriContextParts = Constants.context.split("/");
-    const uriContext = uriContextParts.slice(0, uriContextParts.indexOf(oauth2ContextPath));
-    const obj = new AbstractDelegate(`${Constants.host}/${uriContext}/json`);
-    const getConfiguration = () => {
-        return obj.serviceCall({
-            headers: { "Accept-API-Version": "protocol=1.0,resource=1.1" },
-            url: fetchUrl.default("/serverinfo/*")
-        });
-    };
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
+import AbstractDelegate from "org/forgerock/commons/ui/common/main/AbstractDelegate";
+import ServiceInvoker from "org/forgerock/commons/ui/common/main/ServiceInvoker";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import CookieHelper from "org/forgerock/commons/ui/common/util/CookieHelper";
+import fetchUrl from "org/forgerock/openam/ui/common/services/fetchUrl";
 
-    obj.getUserSessionId = () => {
-        ServiceInvoker.updateConfigurationCallback({});
-        return getConfiguration().then((config) => {
-            return CookieHelper.getCookie(config.cookieName);
-        });
-    };
+const oauth2ContextPath = "oauth2";
+const uriContextParts = Constants.context.split("/");
+const uriContext = uriContextParts.slice(0, uriContextParts.indexOf(oauth2ContextPath));
+const obj = new AbstractDelegate(`${Constants.host}/${uriContext}/json`);
+const getConfiguration = () => {
+    return obj.serviceCall({
+        headers: { "Accept-API-Version": "protocol=1.0,resource=1.1" },
+        url: fetchUrl("/serverinfo/*")
+    });
+};
 
-    return obj;
-});
+obj.getUserSessionId = () => {
+    ServiceInvoker.updateConfigurationCallback({});
+    return getConfiguration().then((config) => {
+        return CookieHelper.getCookie(config.cookieName);
+    });
+};
+
+export default obj;

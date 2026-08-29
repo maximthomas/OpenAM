@@ -14,31 +14,29 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "backbone",
-    "org/forgerock/commons/ui/common/util/UIUtils"
-], (Backbone, UIUtils) => {
-    const PanelComponent = Backbone.View.extend({
-        template: "templates/common/components/PanelComponentTemplate.html",
-        initialize ({ createBody, createFooter }) {
-            this.createBody = createBody;
-            this.createFooter = createFooter;
-        },
+import Backbone from "backbone";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
 
-        getBody () {
-            return this.panelBody;
-        },
+const PanelComponent = Backbone.View.extend({
+    template: "templates/common/components/PanelComponentTemplate.html",
+    initialize ({ createBody, createFooter }) {
+        this.createBody = createBody;
+        this.createFooter = createFooter;
+    },
 
-        render () {
-            UIUtils.compileTemplate(this.template).then((html) => {
-                this.$el.html(html);
-                this.panelBody = this.createBody();
-                this.$el.find("[data-panel-body]").append(this.panelBody.render().$el);
-                this.$el.find("[data-panel-footer]").append(this.createFooter().render().$el);
-            });
-            return this;
-        }
-    });
+    getBody () {
+        return this.panelBody;
+    },
 
-    return PanelComponent;
+    render () {
+        UIUtils.compileTemplate(this.template).then((html) => {
+            this.$el.html(html);
+            this.panelBody = this.createBody();
+            this.$el.find("[data-panel-body]").append(this.panelBody.render().$el);
+            this.$el.find("[data-panel-footer]").append(this.createFooter().render().$el);
+        });
+        return this;
+    }
 });
+
+export default PanelComponent;

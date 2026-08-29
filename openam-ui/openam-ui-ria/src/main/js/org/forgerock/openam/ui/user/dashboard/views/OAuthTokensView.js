@@ -15,51 +15,49 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/openam/ui/user/dashboard/services/OAuthTokensService"
-], function ($, _, AbstractView, OAuthTokensService) {
-    var OAuthToken = AbstractView.extend({
-        template: "templates/user/dashboard/TokensTemplate.html",
-        noBaseTemplate: true,
-        element: "#myOAuthTokensSection",
-        events: {
-            "click a.deleteToken": "deleteToken"
-        },
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import OAuthTokensService from "org/forgerock/openam/ui/user/dashboard/services/OAuthTokensService";
 
-        render () {
-            var self = this;
+var OAuthToken = AbstractView.extend({
+    template: "templates/user/dashboard/TokensTemplate.html",
+    noBaseTemplate: true,
+    element: "#myOAuthTokensSection",
+    events: {
+        "click a.deleteToken": "deleteToken"
+    },
 
-            OAuthTokensService.getApplications().then(function (data) {
-                self.data.applications = _.map(data.result, function (application) {
-                    return {
-                        id: application._id,
-                        name: application.name,
-                        scopes: _.values(application.scopes).join(", "),
-                        expiryDateTime: (!application.expiryDateTime)
-                            ? $.t("openam.oAuth2.tokens.neverExpires")
-                            : new Date(application.expiryDateTime).toLocaleString()
-                    };
-                });
-                self.parentRender(function () {
-                    self.$el.find("[data-toggle=\"tooltip\"]").tooltip();
-                });
+    render () {
+        var self = this;
+
+        OAuthTokensService.getApplications().then(function (data) {
+            self.data.applications = _.map(data.result, function (application) {
+                return {
+                    id: application._id,
+                    name: application.name,
+                    scopes: _.values(application.scopes).join(", "),
+                    expiryDateTime: (!application.expiryDateTime)
+                        ? $.t("openam.oAuth2.tokens.neverExpires")
+                        : new Date(application.expiryDateTime).toLocaleString()
+                };
             });
-        },
-
-        deleteToken (event) {
-            event.preventDefault();
-            var self = this;
-
-            OAuthTokensService.revokeApplication(event.currentTarget.id).then(function () {
-                self.render();
-            }, function () {
-                console.error("Failed to revoke application");
+            self.parentRender(function () {
+                self.$el.find("[data-toggle=\"tooltip\"]").tooltip();
             });
-        }
-    });
+        });
+    },
 
-    return new OAuthToken();
+    deleteToken (event) {
+        event.preventDefault();
+        var self = this;
+
+        OAuthTokensService.revokeApplication(event.currentTarget.id).then(function () {
+            self.render();
+        }, function () {
+            console.error("Failed to revoke application");
+        });
+    }
 });
+
+export default new OAuthToken();

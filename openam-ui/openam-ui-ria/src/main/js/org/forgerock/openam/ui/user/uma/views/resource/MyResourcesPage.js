@@ -14,91 +14,89 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/components/BootstrapDialog",
-    "org/forgerock/openam/ui/user/uma/views/resource/BasePage",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/openam/ui/user/uma/services/UMAService"
-], function ($, _, BootstrapDialog, BasePage, Configuration, Constants, EventManager, UMAService) {
-    var MyResourcesPage = BasePage.extend({
-        template: "templates/user/uma/views/resource/MyResourcesPageTemplate.html",
-        partials: [
-            "templates/user/uma/views/resource/_UnshareAllResourcesButton.html"
-        ],
-        events: {
-            "click button#unshareAllResources": "unshareAllResources"
-        },
-        recordsPresent () {
-            this.$el.find("button#unshareAllResources").prop("disabled", false);
-        },
-        render (args, callback) {
+import $ from "jquery";
+import _ from "lodash";
+import BootstrapDialog from "org/forgerock/commons/ui/common/components/BootstrapDialog";
+import BasePage from "org/forgerock/openam/ui/user/uma/views/resource/BasePage";
+import "org/forgerock/commons/ui/common/main/Configuration";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import UMAService from "org/forgerock/openam/ui/user/uma/services/UMAService";
 
-            this.data.labelId = args[1];
-            this.data.topLevel = args[1] === "";
-            this.renderResources(callback);
-        },
-        renderResources (callback) {
-            var self = this,
-                columns;
+var MyResourcesPage = BasePage.extend({
+    template: "templates/user/uma/views/resource/MyResourcesPageTemplate.html",
+    partials: [
+        "templates/user/uma/views/resource/_UnshareAllResourcesButton.html"
+    ],
+    events: {
+        "click button#unshareAllResources": "unshareAllResources"
+    },
+    recordsPresent () {
+        this.$el.find("button#unshareAllResources").prop("disabled", false);
+    },
+    render (args, callback) {
 
-            if (this.data.topLevel) {
-                this.renderGrid(this.createSetCollection(), this.createColumns("myresources/all"), callback);
-            } else {
-                // Resolve label ID to name
-                UMAService.labels.get(this.data.labelId).then(function (data) {
-                    columns = self.createColumns(`myresources/${encodeURIComponent(data.id)}`);
-                    // Splice out the "Hosts" column
-                    columns.splice(1, 1);
+        this.data.labelId = args[1];
+        this.data.topLevel = args[1] === "";
+        this.renderResources(callback);
+    },
+    renderResources (callback) {
+        var self = this,
+            columns;
 
-                    self.data.labelName = data.name;
-                    self.renderGrid(self.createLabelCollection(this.data.labelId), columns, callback);
-                });
-            }
+        if (this.data.topLevel) {
+            this.renderGrid(this.createSetCollection(), this.createColumns("myresources/all"), callback);
+        } else {
+            // Resolve label ID to name
+            UMAService.labels.get(this.data.labelId).then(function (data) {
+                columns = self.createColumns(`myresources/${encodeURIComponent(data.id)}`);
+                // Splice out the "Hosts" column
+                columns.splice(1, 1);
 
-        },
-        unshareAllResources () {
-            var self = this,
-                buttons = [{
-                    label: $.t("common.form.cancel"),
-                    action (dialog) {
-                        dialog.close();
-                    }
-                }, {
-                    id: "ok",
-                    label: $.t("common.form.ok"),
-                    cssClass: "btn-primary btn-danger",
-                    action (dialog) {
-                        dialog.enableButtons(false);
-                        dialog.getButton("ok").text($.t("common.form.working"));
-
-                        UMAService.unshareAllResources().then(() => {
-                            self.renderResources(function () {
-                                _.forEach(self.data.collection.models, (model) => { model.toBeCreated = true; });
-                                EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST,
-                                    "unshareAllResourcesSuccess");
-                                dialog.close();
-                            });
-                        }, () => {
-                            EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "unshareAllResourcesFail");
-                            dialog.enableButtons(true);
-                            dialog.getButton("ok").text($.t("common.form.ok"));
-                        });
-                    }
-                }];
-
-            BootstrapDialog.show({
-                type: BootstrapDialog.TYPE_DANGER,
-                title: $.t("uma.resources.myresources.unshareAllResources.dialog.title"),
-                message: $.t("uma.resources.myresources.unshareAllResources.dialog.message"),
-                closable: false,
-                buttons
+                self.data.labelName = data.name;
+                self.renderGrid(self.createLabelCollection(this.data.labelId), columns, callback);
             });
         }
-    });
 
-    return MyResourcesPage;
+    },
+    unshareAllResources () {
+        var self = this,
+            buttons = [{
+                label: $.t("common.form.cancel"),
+                action (dialog) {
+                    dialog.close();
+                }
+            }, {
+                id: "ok",
+                label: $.t("common.form.ok"),
+                cssClass: "btn-primary btn-danger",
+                action (dialog) {
+                    dialog.enableButtons(false);
+                    dialog.getButton("ok").text($.t("common.form.working"));
+
+                    UMAService.unshareAllResources().then(() => {
+                        self.renderResources(function () {
+                            _.forEach(self.data.collection.models, (model) => { model.toBeCreated = true; });
+                            EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST,
+                                "unshareAllResourcesSuccess");
+                            dialog.close();
+                        });
+                    }, () => {
+                        EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "unshareAllResourcesFail");
+                        dialog.enableButtons(true);
+                        dialog.getButton("ok").text($.t("common.form.ok"));
+                    });
+                }
+            }];
+
+        BootstrapDialog.show({
+            type: BootstrapDialog.TYPE_DANGER,
+            title: $.t("uma.resources.myresources.unshareAllResources.dialog.title"),
+            message: $.t("uma.resources.myresources.unshareAllResources.dialog.message"),
+            closable: false,
+            buttons
+        });
+    }
 });
+
+export default MyResourcesPage;

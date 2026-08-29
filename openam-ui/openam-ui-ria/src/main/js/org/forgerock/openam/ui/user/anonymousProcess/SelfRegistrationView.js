@@ -14,53 +14,49 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "org/forgerock/openam/ui/common/util/Constants",
-    "org/forgerock/openam/ui/user/anonymousProcess/AnonymousProcessView",
-    "org/forgerock/commons/ui/user/anonymousProcess/SelfRegistrationView",
-    "org/forgerock/commons/ui/user/anonymousProcess/KBAView",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/openam/ui/user/login/RESTLoginView",
-    "org/forgerock/openam/ui/user/login/tokens/SessionToken"
-], (_, Constants, AnonymousProcessView, SelfRegistrationView, KBAView, Configuration, RESTLoginView,
-    SessionToken) => {
+import _ from "lodash";
+import Constants from "org/forgerock/openam/ui/common/util/Constants";
+import AnonymousProcessView from "org/forgerock/openam/ui/user/anonymousProcess/AnonymousProcessView";
+import SelfRegistrationView from "org/forgerock/commons/ui/user/anonymousProcess/SelfRegistrationView";
+import KBAView from "org/forgerock/commons/ui/user/anonymousProcess/KBAView";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import RESTLoginView from "org/forgerock/openam/ui/user/login/RESTLoginView";
+import { set as setSessionToken } from "org/forgerock/openam/ui/user/login/tokens/SessionToken";
 
-    function shouldRouteToLoginView (response, destination) {
-        return response.type === "selfRegistration" && response.tag === "end" && destination === "login";
+function shouldRouteToLoginView (response, destination) {
+    return response.type === "selfRegistration" && response.tag === "end" && destination === "login";
+}
+
+function shouldAutoLogin (response, destination) {
+    return response.type === "autoLoginStage" && response.tag === "end" && destination === "auto-login";
+}
+
+function AMSelfRegistrationView () { }
+
+AMSelfRegistrationView.prototype = SelfRegistrationView;
+AMSelfRegistrationView.prototype.endpoint = Constants.SELF_SERVICE_REGISTER;
+
+_.extend(AMSelfRegistrationView.prototype, AnonymousProcessView.prototype);
+
+AMSelfRegistrationView.prototype.renderProcessState = function (response) {
+
+    const destination = _.get(Configuration, "globalData.successfulUserRegistrationDestination");
+    const realm = _.get(Configuration, "globalData.realm", "");
+
+    if (shouldAutoLogin(response, destination)) {
+        const tokenId = _.get(response, "additions.tokenId");
+        setSessionToken(tokenId);
+        RESTLoginView.handleExistingSession(response.additions);
+
+    } else if (shouldRouteToLoginView(response, destination)) {
+        window.location.href = `#login${realm}`;
+    } else {
+        AnonymousProcessView.prototype.renderProcessState.call(this, response).then(() => {
+            if (response.type === "kbaSecurityAnswerDefinitionStage" && response.tag === "initial") {
+                KBAView.render(response.requirements.properties.kba);
+            }
+        });
     }
+};
 
-    function shouldAutoLogin (response, destination) {
-        return response.type === "autoLoginStage" && response.tag === "end" && destination === "auto-login";
-    }
-
-    function AMSelfRegistrationView () { }
-
-    AMSelfRegistrationView.prototype = SelfRegistrationView;
-    AMSelfRegistrationView.prototype.endpoint = Constants.SELF_SERVICE_REGISTER;
-
-    _.extend(AMSelfRegistrationView.prototype, AnonymousProcessView.prototype);
-
-    AMSelfRegistrationView.prototype.renderProcessState = function (response) {
-
-        const destination = _.get(Configuration, "globalData.successfulUserRegistrationDestination");
-        const realm = _.get(Configuration, "globalData.realm", "");
-
-        if (shouldAutoLogin(response, destination)) {
-            const tokenId = _.get(response, "additions.tokenId");
-            SessionToken.set(tokenId);
-            RESTLoginView.handleExistingSession(response.additions);
-
-        } else if (shouldRouteToLoginView(response, destination)) {
-            window.location.href = `#login${realm}`;
-        } else {
-            AnonymousProcessView.prototype.renderProcessState.call(this, response).then(() => {
-                if (response.type === "kbaSecurityAnswerDefinitionStage" && response.tag === "initial") {
-                    KBAView.render(response.requirements.properties.kba);
-                }
-            });
-        }
-    };
-
-    return new AMSelfRegistrationView();
-});
+export default new AMSelfRegistrationView();

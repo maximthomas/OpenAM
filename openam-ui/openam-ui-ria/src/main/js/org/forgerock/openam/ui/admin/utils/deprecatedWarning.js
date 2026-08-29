@@ -14,12 +14,12 @@
  * Copyright 2016 ForgeRock AS.
  */
 
- /**
-  * @module org/forgerock/openam/ui/admin/utils/deprecatedWarning
-  */
- define([
- ], () =>
-     function deprecatedWarning (deprecated, replacement) {
-         console.warn(`${deprecated} is marked as deprecated. \nPlease use ${replacement}`);
-     }
-);
+/**
+ * Warns on the console that an entity is deprecated and names its replacement.
+ * @module org/forgerock/openam/ui/admin/utils/deprecatedWarning
+ * @param  {string} deprecated Name of the deprecated entity
+ * @param  {string} replacement Name of the entity to use instead
+ */
+export default function deprecatedWarning (deprecated, replacement) {
+    console.warn(`${deprecated} is marked as deprecated. \nPlease use ${replacement}`);
+}

@@ -14,20 +14,18 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Configuration"
-], function (AbstractView, Configuration) {
-    var ForbiddenView = AbstractView.extend({
-        template: "templates/common/error/403.html",
-        data: {},
-        render () {
-            if (!Configuration.loggedUser) {
-                this.baseTemplate = "templates/common/LoginBaseTemplate.html";
-            }
-            this.parentRender();
-        }
-    });
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
 
-    return new ForbiddenView();
+var ForbiddenView = AbstractView.extend({
+    template: "templates/common/error/403.html",
+    data: {},
+    render () {
+        if (!Configuration.loggedUser) {
+            this.baseTemplate = "templates/common/LoginBaseTemplate.html";
+        }
+        this.parentRender();
+    }
 });
+
+export default new ForbiddenView();

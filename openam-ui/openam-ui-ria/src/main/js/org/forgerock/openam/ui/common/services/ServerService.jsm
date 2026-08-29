@@ -17,6 +17,8 @@
 /**
  * @module org/forgerock/openam/ui/common/services/ServerService
  */
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
 import { t } from "i18next";
 import _ from "lodash";
 import { serverAddRealm } from "store/actions/creators";

@@ -28,11 +28,8 @@
   *
   * @module org/forgerock/openam/ui/common/sessions/strategies/MaxIdleTimeLeftStrategy
   */
-define([
-    "org/forgerock/openam/ui/user/services/SessionService"
-], (SessionService) => {
+import { getTimeLeft } from "org/forgerock/openam/ui/user/services/SessionService";
 
-    return function (token) {
-        return SessionService.getTimeLeft(token);
-    };
-});
+export default function (token) {
+    return getTimeLeft(token);
+}

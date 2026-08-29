@@ -15,38 +15,37 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView"
-], function ($, _, ConditionAttrBaseView) {
-    return ConditionAttrBaseView.extend({
-        template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrDay.html",
-        i18n: {
-            "weekdays": { "key": "console.authorization.common.weekdays.", "full": ".full", "short": ".short" }
-        },
-        days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+import $ from "jquery";
+import _ from "lodash";
+import ConditionAttrBaseView from
+    "org/forgerock/openam/ui/admin/views/realms/authorization/policies/conditions/ConditionAttrBaseView";
 
-        render (data, element, callback) {
-            this.initBasic(data, element, "pull-left attr-group");
+export default ConditionAttrBaseView.extend({
+    template: "templates/admin/views/realms/authorization/policies/conditions/ConditionAttrDay.html",
+    i18n: {
+        "weekdays": { "key": "console.authorization.common.weekdays.", "full": ".full", "short": ".short" }
+    },
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
 
-            this.data.weekdays = this.getWeekDays();
-            this.parentRender(function () {
-                if (callback) {
-                    callback();
-                }
-            });
-        },
+    render (data, element, callback) {
+        this.initBasic(data, element, "pull-left attr-group");
 
-        getWeekDays () {
-            var weekdays = [], i = 0, self = this;
-            _.invoke(self.days, function () {
-                weekdays[i] = {};
-                weekdays[i].title = $.t(self.i18n.weekdays.key + this + self.i18n.weekdays.full);
-                weekdays[i].value = $.t(self.i18n.weekdays.key + this + self.i18n.weekdays.short);
-                i++;
-            });
-            return weekdays;
-        }
-    });
+        this.data.weekdays = this.getWeekDays();
+        this.parentRender(function () {
+            if (callback) {
+                callback();
+            }
+        });
+    },
+
+    getWeekDays () {
+        var weekdays = [], i = 0, self = this;
+        _.invoke(self.days, function () {
+            weekdays[i] = {};
+            weekdays[i].title = $.t(self.i18n.weekdays.key + this + self.i18n.weekdays.full);
+            weekdays[i].value = $.t(self.i18n.weekdays.key + this + self.i18n.weekdays.short);
+            i++;
+        });
+        return weekdays;
+    }
 });

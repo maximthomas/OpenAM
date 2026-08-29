@@ -14,45 +14,43 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/openam/ui/admin/utils/RedirectToLegacyConsole"
-], function ($, _, AbstractView, RedirectToLegacyConsole) {
-    var DashboardTasksView = AbstractView.extend({
-        template: "templates/admin/views/realms/dashboard/DashboardTasksTemplate.html",
-        data: {},
-        element: "[data-common-tasks-container]",
-        events: {
-            "click [data-panel-card] a" : "cardClick",
-            "click [data-common-tasks]" : "commonTasksBtnClick"
-        },
-        render (args, callback) {
-            this.realmPath = args[0];
-            this.parentRender(callback);
-        },
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import RedirectToLegacyConsole from "org/forgerock/openam/ui/admin/utils/RedirectToLegacyConsole";
 
-        cardClick (e) {
-            var dataset = $(e.currentTarget).data();
-            if (!dataset.taskLink || dataset.taskLink.indexOf("http") !== 0) {
-                e.preventDefault();
-                if (dataset.taskGroup) {
-                    this.data.taskGroup = _.find(this.data.allTasks, { _id: dataset.taskGroup });
-                    this.parentRender();
-                } else {
-                    RedirectToLegacyConsole.commonTasks(this.realmPath, dataset.taskLink);
-                }
-            }
-        },
+var DashboardTasksView = AbstractView.extend({
+    template: "templates/admin/views/realms/dashboard/DashboardTasksTemplate.html",
+    data: {},
+    element: "[data-common-tasks-container]",
+    events: {
+        "click [data-panel-card] a" : "cardClick",
+        "click [data-common-tasks]" : "commonTasksBtnClick"
+    },
+    render (args, callback) {
+        this.realmPath = args[0];
+        this.parentRender(callback);
+    },
 
-        commonTasksBtnClick (e) {
+    cardClick (e) {
+        var dataset = $(e.currentTarget).data();
+        if (!dataset.taskLink || dataset.taskLink.indexOf("http") !== 0) {
             e.preventDefault();
-            this.data.taskGroup = {};
-            this.data.taskGroup.tasks = this.data.allTasks;
-            this.parentRender();
+            if (dataset.taskGroup) {
+                this.data.taskGroup = _.find(this.data.allTasks, { _id: dataset.taskGroup });
+                this.parentRender();
+            } else {
+                RedirectToLegacyConsole.commonTasks(this.realmPath, dataset.taskLink);
+            }
         }
-    });
+    },
 
-    return DashboardTasksView;
+    commonTasksBtnClick (e) {
+        e.preventDefault();
+        this.data.taskGroup = {};
+        this.data.taskGroup.tasks = this.data.allTasks;
+        this.parentRender();
+    }
 });
+
+export default DashboardTasksView;

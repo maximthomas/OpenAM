@@ -14,15 +14,13 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "org/forgerock/openam/ui/user/uma/views/resource/BasePage"
-], function (BasePage) {
-    var SharedWithMePage = BasePage.extend({
-        template: "templates/user/uma/views/resource/SharedWithMePageTemplate.html",
-        render (args, callback) {
-            this.renderGrid(this.createSetCollection(true), this.createColumns("sharedwithme"), callback);
-        }
-    });
+import BasePage from "org/forgerock/openam/ui/user/uma/views/resource/BasePage";
 
-    return SharedWithMePage;
+var SharedWithMePage = BasePage.extend({
+    template: "templates/user/uma/views/resource/SharedWithMePageTemplate.html",
+    render (args, callback) {
+        this.renderGrid(this.createSetCollection(true), this.createColumns("sharedwithme"), callback);
+    }
 });
+
+export default SharedWithMePage;

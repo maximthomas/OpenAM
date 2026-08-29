@@ -18,40 +18,35 @@
  * @module org/forgerock/openam/ui/admin/utils/FormHelper
  * @deprecated
  */
-define([
-    "org/forgerock/openam/ui/admin/utils/form/bindSavePromiseToElement",
-    "org/forgerock/openam/ui/admin/utils/form/showConfirmationBeforeAction",
-    "org/forgerock/openam/ui/admin/utils/form/setActiveTab",
-    "org/forgerock/openam/ui/admin/utils/deprecatedWarning"
-], (bindSavePromiseToElement, showConfirmationBeforeAction, setActiveTab, deprecatedWarning) => {
+import bindSavePromiseToElement from "org/forgerock/openam/ui/admin/utils/form/bindSavePromiseToElement";
+import showConfirmationBeforeAction from "org/forgerock/openam/ui/admin/utils/form/showConfirmationBeforeAction";
+import setActiveTab from "org/forgerock/openam/ui/admin/utils/form/setActiveTab";
+import deprecatedWarning from "org/forgerock/openam/ui/admin/utils/deprecatedWarning";
 
-    const obj = {};
+const obj = {};
 
-    showConfirmationBeforeAction = showConfirmationBeforeAction.default;
+obj.bindSavePromiseToElement = function (promise, element) {
+    deprecatedWarning(
+        "FormHelper.bindSavePromiseToElement",
+        "org/forgerock/openam/ui/admin/utils/form/bindSavePromiseToElement"
+    );
+    return bindSavePromiseToElement(promise, element);
+};
 
-    obj.bindSavePromiseToElement = function (promise, element) {
-        deprecatedWarning(
-            "FormHelper.bindSavePromiseToElement",
-            "org/forgerock/openam/ui/admin/utils/form/bindSavePromiseToElement"
-        );
-        return bindSavePromiseToElement(promise, element);
-    };
+obj.showConfirmationBeforeDeleting = function (msg, deleteCallback) {
+    deprecatedWarning(
+        "FormHelper.showConfirmationBeforeDeleting",
+        "org/forgerock/openam/ui/admin/utils/form/showConfirmationBeforeAction"
+    );
+    return showConfirmationBeforeAction(msg, deleteCallback);
+};
 
-    obj.showConfirmationBeforeDeleting = function (msg, deleteCallback) {
-        deprecatedWarning(
-            "FormHelper.showConfirmationBeforeDeleting",
-            "org/forgerock/openam/ui/admin/utils/form/showConfirmationBeforeAction"
-        );
-        return showConfirmationBeforeAction(msg, deleteCallback);
-    };
+obj.setActiveTab = function (msg, deleteCallback) {
+    deprecatedWarning(
+        "FormHelper.setActiveTab",
+        "org/forgerock/openam/ui/admin/utils/form/setActiveTab"
+    );
+    return setActiveTab(msg, deleteCallback);
+};
 
-    obj.setActiveTab = function (msg, deleteCallback) {
-        deprecatedWarning(
-            "FormHelper.setActiveTab",
-            "org/forgerock/openam/ui/admin/utils/form/setActiveTab"
-        );
-        return setActiveTab(msg, deleteCallback);
-    };
-
-    return obj;
-});
+export default obj;

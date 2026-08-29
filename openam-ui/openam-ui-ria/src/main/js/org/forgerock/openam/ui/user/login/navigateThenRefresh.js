@@ -14,10 +14,8 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([], () =>
-    (event) => {
-        event.preventDefault();
-        window.location.href = event.target.href;
-        window.location.reload();
-    }
-);
+export default (event) => {
+    event.preventDefault();
+    window.location.href = event.target.href;
+    window.location.reload();
+};

@@ -14,32 +14,29 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/components/Messages",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/commons/ui/common/util/Constants"
-], function ($, _, Messages, EventManager, Constants) {
+import $ from "jquery";
+import _ from "lodash";
+import Messages from "org/forgerock/commons/ui/common/components/Messages";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
 
-    /**
-     * @exports org/forgerock/openam/ui/admin/utils/ModelUtils
-     */
-    var obj = {};
+/**
+ * @exports org/forgerock/openam/ui/admin/utils/ModelUtils
+ */
+var obj = {};
 
-    function hasError (response) {
-        return _.has(response, "responseJSON.message") && _.isString(response.responseJSON.message);
+function hasError (response) {
+    return _.has(response, "responseJSON.message") && _.isString(response.responseJSON.message);
+}
+
+obj.errorHandler = function (response) {
+    if (_.get(response, "status") === 401) {
+        EventManager.sendEvent(Constants.EVENT_UNAUTHORIZED, { error: response.error() });
+    } else if (hasError(response)) {
+        Messages.addMessage({ type: Messages.TYPE_DANGER, escape: true, response });
+    } else {
+        Messages.addMessage({ type: Messages.TYPE_DANGER, message: $.t("config.messages.CommonMessages.unknown") });
     }
+};
 
-    obj.errorHandler = function (response) {
-        if (_.get(response, "status") === 401) {
-            EventManager.sendEvent(Constants.EVENT_UNAUTHORIZED, { error: response.error() });
-        } else if (hasError(response)) {
-            Messages.addMessage({ type: Messages.TYPE_DANGER, escape: true, response });
-        } else {
-            Messages.addMessage({ type: Messages.TYPE_DANGER, message: $.t("config.messages.CommonMessages.unknown") });
-        }
-    };
-
-    return obj;
-});
+export default obj;

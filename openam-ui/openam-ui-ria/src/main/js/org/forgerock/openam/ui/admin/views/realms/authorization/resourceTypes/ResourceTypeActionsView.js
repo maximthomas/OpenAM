@@ -15,138 +15,136 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/EventManager",
-    "org/forgerock/commons/ui/common/util/Constants",
-    "org/forgerock/commons/ui/common/util/UIUtils"
-], ($, _, AbstractView, EventManager, Constants, UIUtils) =>
-    AbstractView.extend({
-        element: "#actions",
-        template: "templates/admin/views/realms/authorization/resourceTypes/ResourceTypesActionsTemplate.html",
-        noBaseTemplate: true,
-        events: {
-            "click [data-toggle-item]": "toggleRadio",
-            "keyup [data-toggle-item]": "toggleRadio",
-            "click [data-add-item]": "addItem",
-            "keyup [data-add-item]": "addItem",
-            "keyup [data-editing-input]": "addItem",
-            "click button[data-delete]": "deleteItem",
-            "keyup button[data-delete]": "deleteItem"
-        },
-        render (data, el, callback) {
-            var self = this;
-            _.extend(this.data, data);
-            this.element = el;
+import $ from "jquery";
+import _ from "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import EventManager from "org/forgerock/commons/ui/common/main/EventManager";
+import Constants from "org/forgerock/commons/ui/common/util/Constants";
+import UIUtils from "org/forgerock/commons/ui/common/util/UIUtils";
 
-            this.parentRender(function () {
-                self.renderActionsTable(callback);
-            });
-        },
+export default AbstractView.extend({
+    element: "#actions",
+    template: "templates/admin/views/realms/authorization/resourceTypes/ResourceTypesActionsTemplate.html",
+    noBaseTemplate: true,
+    events: {
+        "click [data-toggle-item]": "toggleRadio",
+        "keyup [data-toggle-item]": "toggleRadio",
+        "click [data-add-item]": "addItem",
+        "keyup [data-add-item]": "addItem",
+        "keyup [data-editing-input]": "addItem",
+        "click button[data-delete]": "deleteItem",
+        "keyup button[data-delete]": "deleteItem"
+    },
+    render (data, el, callback) {
+        var self = this;
+        _.extend(this.data, data);
+        this.element = el;
 
-        renderActionsTable (callback) {
-            var self = this;
-            UIUtils.fillTemplateWithData(
-                "templates/admin/views/realms/authorization/common/ActionsTableTemplate.html",
-                { "items": this.data.actions },
-                function (tpl) {
-                    self.$el.find("#createdActions").html(tpl);
-                    if (callback) {
-                        callback();
-                    }
-                });
-        },
+        this.parentRender(function () {
+            self.renderActionsTable(callback);
+        });
+    },
 
-        updateEntity () {
-            var actions = null;
-
-            if (this.data.actions.length) {
-                actions = {};
-                this.data.actions.forEach(function (el) {
-                    actions[el.name] = el.value;
-                });
-            }
-
-            this.data.entity.actions = actions;
-        },
-
-        isExistingItem (itemPending, itemFromCollection) {
-            return itemPending.name === itemFromCollection.name;
-        },
-
-        addItem (e) {
-            const actionName = this.$el.find("[data-editing-input]").val();
-
-            if (e.type === "keyup" && e.keyCode !== 13) {
-                this.toggleAddButton(actionName !== "");
-                return;
-            }
-
-            const pending = { "name": actionName, "value": true };
-            let duplicateIndex = -1;
-            let counter = 0;
-
-            if (pending.name === "") {
-                EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "invalidItem");
-                return;
-            }
-
-            _.each(this.data.actions, (item) => {
-                if (this.isExistingItem(pending, item)) {
-                    duplicateIndex = counter;
-                    return;
+    renderActionsTable (callback) {
+        var self = this;
+        UIUtils.fillTemplateWithData(
+            "templates/admin/views/realms/authorization/common/ActionsTableTemplate.html",
+            { "items": this.data.actions },
+            function (tpl) {
+                self.$el.find("#createdActions").html(tpl);
+                if (callback) {
+                    callback();
                 }
-                counter++;
             });
+    },
 
-            if (duplicateIndex >= 0) {
-                EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "duplicateItem");
-            } else {
-                this.data.actions.push(pending);
-                this.updateEntity();
-                this.renderActionsTable(() => {
-                    this.toggleAddButton(false);
-                    this.$el.find("[data-editing-input]").val("").focus();
-                });
-            }
-        },
+    updateEntity () {
+        var actions = null;
 
-        deleteItem (e) {
-            if (e.type === "keyup" && e.keyCode !== 13) {
+        if (this.data.actions.length) {
+            actions = {};
+            this.data.actions.forEach(function (el) {
+                actions[el.name] = el.value;
+            });
+        }
+
+        this.data.entity.actions = actions;
+    },
+
+    isExistingItem (itemPending, itemFromCollection) {
+        return itemPending.name === itemFromCollection.name;
+    },
+
+    addItem (e) {
+        const actionName = this.$el.find("[data-editing-input]").val();
+
+        if (e.type === "keyup" && e.keyCode !== 13) {
+            this.toggleAddButton(actionName !== "");
+            return;
+        }
+
+        const pending = { "name": actionName, "value": true };
+        let duplicateIndex = -1;
+        let counter = 0;
+
+        if (pending.name === "") {
+            EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "invalidItem");
+            return;
+        }
+
+        _.each(this.data.actions, (item) => {
+            if (this.isExistingItem(pending, item)) {
+                duplicateIndex = counter;
                 return;
             }
+            counter++;
+        });
 
-            var $target = $(e.target),
-                actionName = $target.closest("tr").find(".action-name").text().trim();
-
-            this.data.actions = _.without(this.data.actions, _.find(this.data.actions, { name: actionName }));
+        if (duplicateIndex >= 0) {
+            EventManager.sendEvent(Constants.EVENT_DISPLAY_MESSAGE_REQUEST, "duplicateItem");
+        } else {
+            this.data.actions.push(pending);
             this.updateEntity();
-            this.renderActionsTable();
-        },
+            this.renderActionsTable(() => {
+                this.toggleAddButton(false);
+                this.$el.find("[data-editing-input]").val("").focus();
+            });
+        }
+    },
 
-        toggleRadio (e) {
-            var $target = $(e.target),
-                permitted,
-                actionName;
+    deleteItem (e) {
+        if (e.type === "keyup" && e.keyCode !== 13) {
+            return;
+        }
 
-            permitted = $target.val() || $target.find("input").val();
+        var $target = $(e.target),
             actionName = $target.closest("tr").find(".action-name").text().trim();
 
-            if (!actionName) {
-                return;
-            }
+        this.data.actions = _.without(this.data.actions, _.find(this.data.actions, { name: actionName }));
+        this.updateEntity();
+        this.renderActionsTable();
+    },
 
-            _.find(this.data.actions, function (action) {
-                return action.name === actionName;
-            }).value = (permitted === "true");
+    toggleRadio (e) {
+        var $target = $(e.target),
+            permitted,
+            actionName;
 
-            this.updateEntity();
-        },
+        permitted = $target.val() || $target.find("input").val();
+        actionName = $target.closest("tr").find(".action-name").text().trim();
 
-        toggleAddButton (enabled) {
-            this.$el.find("[data-add-item]").prop("disabled", !enabled);
+        if (!actionName) {
+            return;
         }
-    })
-);
+
+        _.find(this.data.actions, function (action) {
+            return action.name === actionName;
+        }).value = (permitted === "true");
+
+        this.updateEntity();
+    },
+
+    toggleAddButton (enabled) {
+        this.$el.find("[data-add-item]").prop("disabled", !enabled);
+    }
+});

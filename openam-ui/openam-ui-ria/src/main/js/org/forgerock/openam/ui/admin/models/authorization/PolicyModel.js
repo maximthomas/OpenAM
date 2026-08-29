@@ -14,53 +14,51 @@
  * Copyright 2015-2016 ForgeRock AS.
  */
 
-define([
-    "lodash",
-    "backbone",
-    "org/forgerock/openam/ui/common/util/URLHelper",
-    "org/forgerock/openam/ui/admin/utils/ModelUtils"
-], function (_, Backbone, URLHelper, ModelUtils) {
-    return Backbone.Model.extend({
-        idAttribute: "name",
-        urlRoot: URLHelper.substitute("__api__/policies"),
+import "lodash";
+import Backbone from "backbone";
+import URLHelper from "org/forgerock/openam/ui/common/util/URLHelper";
+import ModelUtils from "org/forgerock/openam/ui/admin/utils/ModelUtils";
 
-        defaults () {
-            return {
-                name: null,
-                description: "",
-                resources: [],
-                actionValues: {}
-            };
-        },
+export default Backbone.Model.extend({
+    idAttribute: "name",
+    urlRoot: URLHelper.substitute("__api__/policies"),
 
-        validate (attrs) {
-            if (attrs.name.trim() === "") {
-                return "errorNoName";
-            }
+    defaults () {
+        return {
+            name: null,
+            description: "",
+            resources: [],
+            actionValues: {}
+        };
+    },
 
-            // entities that are stored in LDAP can't start with '#'. http://www.jguru.com/faq/view.jsp?EID=113588
-            if (attrs.name.indexOf("#") === 0) {
-                return "errorCantStartWithHash";
-            }
-
-            if (attrs.resources.length === 0) {
-                return "policyErrorNoResources";
-            }
-        },
-
-        sync (method, model, options) {
-            options = options || {};
-            options.beforeSend = function (xhr) {
-                xhr.setRequestHeader("Accept-API-Version", "protocol=1.0,resource=2.0");
-            };
-            options.error = ModelUtils.errorHandler;
-
-            if (model.id === null) {
-                method = "create";
-                options.url = `${this.urlRoot()}/?_action=create`;
-            }
-
-            return Backbone.Model.prototype.sync.call(this, method, model, options);
+    validate (attrs) {
+        if (attrs.name.trim() === "") {
+            return "errorNoName";
         }
-    });
+
+        // entities that are stored in LDAP can't start with '#'. http://www.jguru.com/faq/view.jsp?EID=113588
+        if (attrs.name.indexOf("#") === 0) {
+            return "errorCantStartWithHash";
+        }
+
+        if (attrs.resources.length === 0) {
+            return "policyErrorNoResources";
+        }
+    },
+
+    sync (method, model, options) {
+        options = options || {};
+        options.beforeSend = function (xhr) {
+            xhr.setRequestHeader("Accept-API-Version", "protocol=1.0,resource=2.0");
+        };
+        options.error = ModelUtils.errorHandler;
+
+        if (model.id === null) {
+            method = "create";
+            options.url = `${this.urlRoot()}/?_action=create`;
+        }
+
+        return Backbone.Model.prototype.sync.call(this, method, model, options);
+    }
 });

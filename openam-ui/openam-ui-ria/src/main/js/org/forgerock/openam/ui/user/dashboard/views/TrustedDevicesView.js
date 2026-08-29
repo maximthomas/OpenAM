@@ -15,43 +15,41 @@
  */
 
 
-define([
-    "jquery",
-    "lodash",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/openam/ui/user/dashboard/services/TrustedDevicesService"
-], function ($, _, AbstractView, TrustedDevicesService) {
-    var TrustedDevices = AbstractView.extend({
-        template: "templates/user/dashboard/TrustedDevicesTemplate.html",
-        noBaseTemplate: true,
-        element: "#myTrustedDevicesSection",
-        events: {
-            "click  a.deleteDevice" : "deleteDevice"
-        },
+import "jquery";
+import "lodash";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import TrustedDevicesService from "org/forgerock/openam/ui/user/dashboard/services/TrustedDevicesService";
 
-        render () {
-            var self = this;
+var TrustedDevices = AbstractView.extend({
+    template: "templates/user/dashboard/TrustedDevicesTemplate.html",
+    noBaseTemplate: true,
+    element: "#myTrustedDevicesSection",
+    events: {
+        "click  a.deleteDevice" : "deleteDevice"
+    },
 
-            TrustedDevicesService.getTrustedDevices().then(function (data) {
-                self.data.devices = data.result;
-                self.parentRender(function () {
-                    self.$el.find("[data-toggle=\"tooltip\"]").tooltip();
-                });
+    render () {
+        var self = this;
+
+        TrustedDevicesService.getTrustedDevices().then(function (data) {
+            self.data.devices = data.result;
+            self.parentRender(function () {
+                self.$el.find("[data-toggle=\"tooltip\"]").tooltip();
             });
-        },
+        });
+    },
 
-        deleteDevice (event) {
-            event.preventDefault();
-            var self = this;
+    deleteDevice (event) {
+        event.preventDefault();
+        var self = this;
 
-            TrustedDevicesService.deleteTrustedDevice(event.currentTarget.id).then(function () {
-                console.log("Deleted trusted device");
-                self.render();
-            }, function () {
-                console.error("Failed to delete trusted device");
-            });
-        }
-    });
-
-    return new TrustedDevices();
+        TrustedDevicesService.deleteTrustedDevice(event.currentTarget.id).then(function () {
+            console.log("Deleted trusted device");
+            self.render();
+        }, function () {
+            console.error("Failed to delete trusted device");
+        });
+    }
 });
+
+export default new TrustedDevices();

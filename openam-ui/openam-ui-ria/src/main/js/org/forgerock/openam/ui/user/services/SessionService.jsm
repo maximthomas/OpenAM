@@ -15,6 +15,8 @@
  * Portions copyright 2026 3A Systems, LLC.
  */
 
+// D21: AM grafts `context` onto the commons Constants object; this must evaluate first.
+import "org/forgerock/openam/ui/common/util/Constants";
 import _ from "lodash";
 
 import { sessionAddInfo } from "store/actions/creators";

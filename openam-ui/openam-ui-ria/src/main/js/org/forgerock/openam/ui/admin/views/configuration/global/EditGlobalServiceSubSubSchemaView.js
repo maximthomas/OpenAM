@@ -14,40 +14,38 @@
  * Copyright 2016 ForgeRock AS.
  */
 
-define([
-    "jquery",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/openam/ui/admin/services/global/ServicesService",
-    "org/forgerock/openam/ui/admin/views/common/Backlink",
-    "org/forgerock/openam/ui/admin/views/common/schema/EditSchemaComponent"
-], ($, AbstractView, ServicesService, Backlink, EditSchemaComponent) => {
-    const EditGlobalServiceSubSchemaView = AbstractView.extend({
-        template: "templates/admin/views/configuration/EditGlobalConfigurationBaseTemplate.html",
-        render ([serviceType, subSchemaType, subSchemaInstanceId, subSubSchemaType, subSubSchemaInstanceId]) {
-            const editComponent = new EditSchemaComponent({
-                data: {
-                    serviceType,
-                    subSchemaType,
-                    subSchemaInstanceId,
-                    subSubSchemaType,
-                    subSubSchemaInstanceId,
-                    type: $.t("console.services.subSchema.title", { subSchema: subSubSchemaType })
-                },
+import $ from "jquery";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import ServicesService from "org/forgerock/openam/ui/admin/services/global/ServicesService";
+import Backlink from "org/forgerock/openam/ui/admin/views/common/Backlink";
+import EditSchemaComponent from "org/forgerock/openam/ui/admin/views/common/schema/EditSchemaComponent";
 
-                template: "templates/admin/views/common/schema/EditServiceSubSubSchemaTemplate.html",
+const EditGlobalServiceSubSchemaView = AbstractView.extend({
+    template: "templates/admin/views/configuration/EditGlobalConfigurationBaseTemplate.html",
+    render ([serviceType, subSchemaType, subSchemaInstanceId, subSubSchemaType, subSubSchemaInstanceId]) {
+        const editComponent = new EditSchemaComponent({
+            data: {
+                serviceType,
+                subSchemaType,
+                subSchemaInstanceId,
+                subSubSchemaType,
+                subSubSchemaInstanceId,
+                type: $.t("console.services.subSchema.title", { subSchema: subSubSchemaType })
+            },
 
-                getInstance: () => ServicesService.type.subSchema.type.subSchema.instance.get(
-                    serviceType, subSchemaType, subSchemaInstanceId, subSubSchemaType, subSubSchemaInstanceId),
-                updateInstance: (values) => ServicesService.type.subSchema.type.subSchema.instance.update(
-                    serviceType, subSchemaType, subSchemaInstanceId, subSubSchemaType, values)
-            });
+            template: "templates/admin/views/common/schema/EditServiceSubSubSchemaTemplate.html",
 
-            this.parentRender(() => {
-                new Backlink().render(5);
-                this.$el.find("[data-global-configuration]").append(editComponent.render().$el);
-            });
-        }
-    });
+            getInstance: () => ServicesService.type.subSchema.type.subSchema.instance.get(
+                serviceType, subSchemaType, subSchemaInstanceId, subSubSchemaType, subSubSchemaInstanceId),
+            updateInstance: (values) => ServicesService.type.subSchema.type.subSchema.instance.update(
+                serviceType, subSchemaType, subSchemaInstanceId, subSubSchemaType, values)
+        });
 
-    return new EditGlobalServiceSubSchemaView();
+        this.parentRender(() => {
+            new Backlink().render(5);
+            this.$el.find("[data-global-configuration]").append(editComponent.render().$el);
+        });
+    }
 });
+
+export default new EditGlobalServiceSubSchemaView();

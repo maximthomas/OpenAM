@@ -22,25 +22,23 @@
  * "Portions Copyrighted [year] [name of copyright owner]"
  */
 
-define([
-    "backbone",
-    "org/forgerock/commons/ui/common/main/AbstractView",
-    "org/forgerock/commons/ui/common/main/Configuration",
-    "org/forgerock/openam/ui/user/login/RESTLoginView",
-    "org/forgerock/openam/ui/user/login/tokens/SessionToken"
-], (Backbone, AbstractView, Configuration, RESTLoginView, SessionToken) => {
-    var LoginDialog = AbstractView.extend({
-        template: "templates/common/DefaultBaseTemplate.html",
-        data : {},
-        actions: [],
-        render () {
-            Configuration.backgroundLogin = true;
-            // The session cookie does not expire until the browser is closed. So if the server session expires and
-            // the browser remains, the XUI will attempt to login sending the old cookie and the server will assume
-            // this is a session upgrade. Removing the old session cookie first resolves this problem.
-            SessionToken.remove();
-            RESTLoginView.render();
-        }
-    });
-    return new LoginDialog();
+import "backbone";
+import AbstractView from "org/forgerock/commons/ui/common/main/AbstractView";
+import Configuration from "org/forgerock/commons/ui/common/main/Configuration";
+import RESTLoginView from "org/forgerock/openam/ui/user/login/RESTLoginView";
+import { remove as removeSessionToken } from "org/forgerock/openam/ui/user/login/tokens/SessionToken";
+
+var LoginDialog = AbstractView.extend({
+    template: "templates/common/DefaultBaseTemplate.html",
+    data : {},
+    actions: [],
+    render () {
+        Configuration.backgroundLogin = true;
+        // The session cookie does not expire until the browser is closed. So if the server session expires and
+        // the browser remains, the XUI will attempt to login sending the old cookie and the server will assume
+        // this is a session upgrade. Removing the old session cookie first resolves this problem.
+        removeSessionToken();
+        RESTLoginView.render();
+    }
 });
+export default new LoginDialog();

@@ -30,10 +30,19 @@
             complete pure-JS fallback besides.
 
             WHY THE VERSION QUERY IS STILL ON THE src BELOW. It is the direct successor of
-            RequireJS's `urlArgs`, not a leftover: main.js is the one JS file the build emits
-            UNHASHED, so it is the one a browser could serve stale across a redeploy. Every other
-            asset is either content-hashed by Vite or fetched through resolveAssetUrl, which
-            main.js configures with the same version (design.md D4). `readIndexHtmlSource` in
+            RequireJS's `urlArgs`, not a leftover: main.js is emitted UNHASHED, so it is the one a
+            browser could serve stale across a redeploy. Every other asset is either content-hashed
+            by Vite or fetched through resolveAssetUrl, which the entry configures with the same
+            version (design.md D4).
+
+            SINCE TASK 6.1 main.js IS A ONE-LINE STUB that imports the real, hashed entry chunk
+            under assets/. That makes this query MORE load-bearing, not less: the stub is unhashed
+            at a fixed URL and its only content is a chunk hash that moves on nearly every build,
+            so a browser holding a stale stub would import a chunk that no longer exists. web.xml
+            excludes /XUI/ and /XUI/index.html from CacheForAMonth, so this file is always re-read
+            and the query below is always current. The stub exists because index.html and rollup's
+            own chunk imports would otherwise name the entry by two different URLs -- two module
+            records, entry body evaluated twice; see MODULE_LOADED_ENTRIES in vite.config.js. `readIndexHtmlSource` in
             vite.config.js fails the build if that query string disappears -- and it looks for it
             INSIDE the module script's src attribute, so writing the token in a comment (as this
             one deliberately does not) would not satisfy it.

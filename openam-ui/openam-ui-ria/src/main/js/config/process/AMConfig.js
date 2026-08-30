@@ -41,7 +41,7 @@ export default [{
         SessionValidator.stop();
 
         sessionManager.logout(function (response) {
-            store.default.dispatch(creators.sessionRemoveInfo());
+            store.dispatch(creators.sessionRemoveInfo());
             EventManager.sendEvent(Constants.EVENT_AUTHENTICATION_DATA_CHANGED, { anonymousMode: true });
             delete conf.gotoURL;
 
@@ -285,7 +285,7 @@ export default [{
              * has expired with a message telling them as such
              */
              // TODO move the logout logic to the Sesion Expiry view
-            return logout.default().then(() => {
+            return logout().then(() => {
                 Router.routeTo(Router.configuration.routes.sessionExpired, { trigger: true });
             });
         } else {

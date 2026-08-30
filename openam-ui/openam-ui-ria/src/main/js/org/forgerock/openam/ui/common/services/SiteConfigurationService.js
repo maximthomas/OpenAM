@@ -20,6 +20,7 @@ import "org/forgerock/commons/ui/common/main/Configuration";
 import { getConfiguration as getServerConfiguration } from
     "org/forgerock/openam/ui/common/services/ServerService";
 import isRealmChanged from "org/forgerock/openam/ui/common/util/isRealmChanged";
+import ModuleLoader from "org/forgerock/commons/ui/common/util/ModuleLoader";
 import { get as getSessionToken } from "org/forgerock/openam/ui/user/login/tokens/SessionToken";
 import { updateSessionInfo } from "org/forgerock/openam/ui/user/services/SessionService";
 import UserProfileView from "UserProfileView";
@@ -30,23 +31,24 @@ const setRequireMapConfig = function (serverInfo) {
         /*
          * DELIBERATELY NOT A STATIC IMPORT. Design decision D1 keeps this a RUNTIME module-registry
          * lookup: the tab is loaded only when the server reports KBA is enabled, so hoisting it to
-         * a static `import` would change it from conditional to unconditional. Task 6.1 owns
-         * replacing this `require([...])` with the `import.meta.glob` registry; until then it stays
-         * verbatim. Do not convert it in an AMD->ESM batch.
+         * a static `import` would change it from conditional to unconditional.
+         *
+         * Task 6.1 replaced the original `require([...])` with this call. It was the last
+         * resolve-by-string path in AM that did not go through ModuleLoader, and since index.html
+         * stopped loading RequireJS it was dead: the `typeof require === "function"` guard was
+         * false on the console page and this branch only logged. `ModuleLoader.load` now resolves
+         * the id through moduleRegistry.js, where the ui-user tree's glob produces it.
+         *
+         * `UserProfileView` here is the ALIASED module, and the route renders the one the registry
+         * returns for the logical name "UserProfileView". Both specifiers normalise to the same
+         * absolute path, so Rollup keeps one module record and `registerTab` lands on the instance
+         * the route actually renders. If that ever stops being true the tab silently never appears.
          */
-        if (typeof require === "function") {
-            require(["org/forgerock/commons/ui/user/profile/UserProfileKBATab"], (tab) => {
-                UserProfileView.registerTab(tab);
-            });
-        } else {
-            /*
-             * REVIEW FIX. index.html no longer loads RequireJS, so this call is a ReferenceError on
-             * the console page -- it threw during startup configuration whenever the server reported
-             * kbaEnabled. `env: { amd: true }` means no-undef never flagged it. The guard turns a
-             * startup exception into a named message until 6.1 lands the registry.
-             */
-            console.error("KBA tab not loaded: needs the 6.1 import.meta.glob module registry (D1).");
-        }
+        ModuleLoader.load("org/forgerock/commons/ui/user/profile/UserProfileKBATab").then((tab) => {
+            UserProfileView.registerTab(tab);
+        }, (error) => {
+            console.error("KBA tab not loaded.", error);
+        });
     }
     return serverInfo;
 };

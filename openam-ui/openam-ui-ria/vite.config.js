@@ -1341,8 +1341,19 @@ const SLOPPY_MODE_PATCHES = [
          */
         match: /libs[\\/]jsoneditor-0\.7\.23-custom\.js$/,
         from: "a.extend=function(a){",
-        to: "a.extend=function __jsonEditorExtend(a){",
+        to: "a.extend=function __jsonEditorExtend(a){"
         /*
+         * ==== TASK 6.1 CLOSED THIS DEFERRAL. The history below is kept because it is the
+         * measurement that dated it. ====
+         *
+         * This entry carried `requiredFrom: "6.1"` until 6.1 landed D1's runtime module registry.
+         * It fires now -- `src/main/js/moduleRegistry.js`'s glob over `/src/main/js/**` puts
+         * `libs/jsoneditor-0.7.23-custom.js` in the graph -- so buildEnd failed and told whoever
+         * landed 6.1 to delete the field, exactly as the last paragraph below said it would. Done;
+         * both entries are back under the hard check.
+         *
+         * ---- the original note, unchanged ----
+         *
          * ==== NOT YET REQUIRED, AND 5.2's STATED PREMISE FOR THE PROMOTION WAS WRONG ====
          *
          * 5.2 wrote that once 5.4 converted the tree "both files ARE reachable". B12 converted the
@@ -1364,14 +1375,13 @@ const SLOPPY_MODE_PATCHES = [
          * buildEnd check FAILS if a `requiredFrom` patch starts firing, so whoever lands 6.1 is told
          * to delete these two fields rather than left to remember.
          */
-        requiredFrom: "6.1"
     },
     {
         match: /libs[\\/]jsoneditor-0\.7\.23-custom\.js$/,
         from: "d.extend=arguments.callee",
-        to: "d.extend=__jsonEditorExtend",
-        // Same file, same reachability story as the entry above.
-        requiredFrom: "6.1"
+        to: "d.extend=__jsonEditorExtend"
+        // Same file, same reachability story as the entry above -- and the same closure: 6.1's
+        // registry put the file in the graph, so this deferral is spent too and the field is gone.
     }
 ];
 
@@ -1500,14 +1510,17 @@ const GLOBAL_FREE_REACT_PACKAGES = {
  * with no reader. What was missing is the CHECK, not the files. This is that check, in the same
  * bidirectional shape as the sloppy-mode deferral: it cannot become a permanent exemption.
  */
-const DEFERRED_ALIASED_LIBRARIES = [
-    {
-        label: "libs/codemirror  ->  node_modules/codemirror (D23 prefix alias)",
-        consumer: "/src/main/js/org/forgerock/openam/ui/admin/views/realms/scripts/EditScriptView.js",
-        inGraph: (id) => /\/node_modules\/codemirror\//.test(id),
-        requiredFrom: "6.1 (D1 runtime module registry -- what makes EditScriptView statically reachable)"
-    }
-];
+/*
+ * TASK 6.1 SPENT THE ONLY ENTRY THIS LIST HELD. D1's registry made EditScriptView statically
+ * reachable, `node_modules/codemirror` is bundled through the D23 prefix alias exactly as
+ * predicted, and buildEnd's spent-deferral branch fired and said to delete the entry. Deleted.
+ *
+ * The list is kept, empty, because both of its branches are still live for the next deferral: it
+ * is the shape a "this alias is not yet exercised" exemption has to take here, and the check is
+ * what stops one outliving its reason. The note above records why restoring the four staged
+ * `libs/codemirror` rows would be the wrong fix if this ever looks broken again.
+ */
+const DEFERRED_ALIASED_LIBRARIES = [];
 
 const assertAliasedLibrariesBundled = () => ({
     name: "xui-assert-aliased-libraries",
@@ -1876,8 +1889,8 @@ const REQUIREJS_LOADED_ENTRIES = new Set(["main-authorize", "main-device"]);
  * index.html loads the console as `<script type="module" src="main.js?v=${version}">` (5.4's
  * option c1). Rollup's own chunk imports name the entry as a bare `../main.js`. Before 6.1 that
  * was harmless -- almost nothing was code-split, so nothing imported the entry chunk. The registry
- * changes that: the entry chunk holds the modules the lazily-loaded views share, so nearly every
- * emitted view chunk imports it. `main.js?v=dev` and `main.js` are two URLs, and two URLs are
+ * changed that: the entry chunk holds the modules the lazily-loaded views share, so nearly every
+ * emitted view chunk now imports it. `main.js?v=dev` and `main.js` are two URLs, and two URLs are
  * TWO MODULE RECORDS, so the entry body runs twice.
  *
  * The second run reaches `resolveAssetUrl.configure(...)` (main.js:105) after the first run has

@@ -78,6 +78,7 @@ import "./config/main.js";
 /* global __TARGET_VERSION__ */
 import "store/index";
 import { configure as configureLoader } from "org/forgerock/commons/ui/common/util/esm/LoaderRuntime";
+import { resolveModule } from "./moduleRegistry.js";
 
 /*
  * D4 -- THE CACHE-BUSTER, AND WHY IT IS ONLY CONFIGURED IN *THIS* ENTRY.
@@ -111,6 +112,21 @@ resolveAssetUrl.configure({ urlArgs: `v=${__TARGET_VERSION__}` });
  * templates after an upgrade, which is precisely what D4 exists to prevent. baseUrl is left at its "" default deliberately: the
  * console IS served from /XUI/, so document-relative resolution is already correct here.
  */
-configureLoader({ urlArgs: `v=${__TARGET_VERSION__}` });
+/*
+ * D1 -- resolveModule is the registry (task 6.1). `./moduleRegistry.js` holds the three
+ * import.meta.glob calls, the seven logical names and the two library names, and its header is
+ * where the reasons live. It is a separate module rather than inline here for two reasons: the
+ * root-absolute glob patterns make its keys independent of where it sits, so nothing about the ids
+ * is tied to this file; and tasks 6.2-6.4 evolve resolution without touching the entry point.
+ *
+ * main-authorize.js and main-device.js deliberately do NOT pass resolveModule -- see
+ * NOTES-entry-templates.md section 6.1, which traces both graphs. Neither entry EXECUTES a
+ * ModuleLoader.load path. Be precise about that: ModuleLoader is in both static graphs, via
+ * UIUtils (commons UIUtils.js:25 imports it and calls load("bootstrap-dialog") at :345) and via
+ * Router -> AbstractConfigurationAware:25 -- it is reached but never called on those two pages.
+ * So configuring resolveModule there would pull the whole 361-module registry into two pages that
+ * ask nothing of it. They configure only baseUrl, which they DO need.
+ */
+configureLoader({ resolveModule, urlArgs: `v=${__TARGET_VERSION__}` });
 
 EventManager.sendEvent(Constants.EVENT_DEPENDENCIES_LOADED);

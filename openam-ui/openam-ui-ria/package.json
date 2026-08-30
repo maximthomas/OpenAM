@@ -11,7 +11,7 @@
     "dev": "vite",
     "build:production": "vite build",
     "build:grunt": "cross-env NODE_ENV=production grunt prod --verbose",
-    "lint": "eslint --ext .js,.jsm,.jsx --ignore-pattern \"src/main/js/libs/**\" --format ./node_modules/eslint-formatter-warning-summary/eslint-formatter-warning-summary.js src/main/js src/test/js",
+    "lint": "eslint --ext .js,.jsm,.jsx --ignore-pattern \"src/main/js/libs/**\" --ignore-pattern \"src/main/js/moduleRegistry.js\" --format ./node_modules/eslint-formatter-warning-summary/eslint-formatter-warning-summary.js src/main/js src/test/js",
     "test": "echo \"unit tests: the 17 Karma specs migrate to Vitest in group 9 (D12). Until then run: npm run test:karma against a Grunt tree.\" && exit 0",
     "test:unit": "vitest run",
     "test:karma": "grunt karma:build",

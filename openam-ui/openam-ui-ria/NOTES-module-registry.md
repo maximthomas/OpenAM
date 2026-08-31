@@ -24,6 +24,7 @@ Nothing in `src/main/js` and nothing in `vite.config.js` was modified by this su
 | 12 | Hand-offs and traps for the apply run | **read this before writing the registry** |
 | 13 | Not determined | open items |
 | 14 | **fallback** — resolving an identifier the build never saw (task 6.3) | **the derived url, the module format, and what a miss does** |
+| 15 | **on-demand loading** — MEASURED in the browser (task 6.5) | **what the initial payload contains, and what arrives per route** |
 
 ---
 
@@ -1157,3 +1158,278 @@ fallback either.
 4. **Whether the fallback should probe `.jsm`/`.jsx`.** Not measured and, in this spike's view, not
    wanted: `.js` unconditionally is what the deployed layout's convention says. Flagged only because
    6.1 found ten *registry* ids that carry `.jsm`, and someone may reasonably ask.
+
+---
+
+## 15. ON-DEMAND LOADING — MEASURED (task 6.5)
+
+Measured 2026-08-31 against a clean `npm run build:production` (exit 0) of the tree as it stands
+after 6.4, served by `<repo root>/e2e/local/server.mjs` at `http://localhost:8090/openam/XUI/` and driven with
+`@playwright/test` 1.60 / chromium. **Nothing in `src`, `vite.config.js` or any spec was modified by
+this measurement.** Fail-fast: this file present, 6.1–6.4 all `[x]`, `require.resolve("vite")` =
+`openam-ui-ria/node_modules/vite/index.cjs` at **5.4.21**, build exit 0.
+
+### 15.1 The tree, against §1's pre-registry baseline
+
+| | before (§1) | after (this build) |
+|---|---|---|
+| `target/compiled/main.js` | **183 842 B** — the real entry | **982 B** — the 6.1a stub, whose only statement is `import("./assets/main-DN_XC4oM.js")`, plus 6.1a's `.catch` console handler |
+| the real console entry | *(was the root file)* | `assets/main-DN_XC4oM.js` = **295 326 B** |
+| `target/compiled/assets/` | **10 files** (5 chunks + 5 maps) | **592 files** = **296 `.js` + 296 `.map`** |
+
+The root-`main.js` number is not a like-for-like comparison after 6.1a and should not be read as
+one: 183 842 → 982 is a rename, not a shrink. The comparable pair is 183 842 B against the entry
+chunk's 295 326 B, and the entry grew because the registry, the route/process configs and the login
+path now live there.
+
+### 15.2 What is IN the entry chunk — its sourcemap has **56 sources**
+
+Read with `JSON.parse(fs.readFileSync("assets/main-DN_XC4oM.js.map")).sources` and filtered; the map
+was never printed whole.
+
+**No administrative view module is among the 56.** Specifically:
+
+| module | where it landed |
+|---|---|
+| `org/forgerock/openam/ui/admin/main.js` | **not in the entry chunk, and not in ANY chunk's `sources`** — it compiles to nothing but side-effect imports, so its chunk `assets/main-B3Pf5FGc.js` (5 119 B) has an *empty* `sources` array. Identified by its import list, not by its map. |
+| `ListRealmsView` | `assets/ListRealmsView-D5H7d25f.js` |
+| `EditRealmView` | `assets/EditRealmView-DUTypzY3.js` |
+| `EditPolicyView` | `assets/EditPolicyView-DQlE0NNp.js` |
+| `EditScriptView` | `assets/EditScriptView-CtphAOo0.js` |
+| `ChainsView` | `assets/ChainsView-t9QpGQ-H.js` |
+
+**Trap for anyone repeating this**: **15 of the 296 chunks have an empty `sources` array** — the
+four aggregators `main-B3Pf5FGc` (admin), `main-B_Wews0U` (user), `main-CCPq-kmR` (uma),
+`main-Bp2jAqX7` (openam common), and eleven `libs/*` shims (`autosize-input`, `backbone`,
+`backbone.paginator`, `backgrid`, `backgrid-paginator`, `bootstrap-tabdrop`, `clockpicker`,
+`do-timeout`, `placeholder`, `popover-clickaway`, `sortable`). A membership test written only over
+`sources` reports "`admin/main` is in no chunk", which is false — it is in its own chunk and simply
+has no mappings, and the same test will lie about whether a *library* is in the initial payload.
+Check the emitted chunk's import list too. §15.8 records a further limit: the heuristic finds only
+side-effect modules rollup left ALONE in a chunk, and misses one that was merged with a live module.
+
+The entry chunk DOES carry `config/routes/admin/RealmsRoutes.js` and
+`config/routes/admin/GlobalRoutes.js`. Those are route **tables**, which name their views as
+strings; that is exactly the shape that makes the views loadable on demand, and is not a violation.
+
+**The claim holds for the whole initial payload, not just the entry chunk** — which is what the
+requirement actually asks. Unioning the `sources` of ALL TWELVE asset chunks fetched in phase 1
+(§15.5) gives **150 sources**, and within them the only `admin/`-path modules are the same two route
+tables, while the only `*View` modules of any kind are `AbstractView`, `BootstrapDialogView`,
+`UserProfileView` and `RESTLoginView`. `index.html` also emits **no `modulepreload` links** and
+carries exactly one `src=` script tag, the module stub, so nothing widens the payload behind the
+measurement's back.
+
+### 15.3 The seven runtime-only logical names, and `UserProfileView`
+
+`LoginView` → `RESTLoginView` and `UserProfileView` are **in the entry chunk**; the other five are
+separate chunks:
+
+| logical name | target | landed |
+|---|---|---|
+| `LoginView` | `RESTLoginView` | **in `main-DN_XC4oM.js`** |
+| `LoginDialog` | `RESTLoginDialog` | `assets/RESTLoginDialog-uolQLmnx.js` |
+| `ForgotUsernameView` | AM's | `assets/ForgotUsernameView-DGS8H_yQ.js` (commons' own is a separate chunk, `-CY8LmHzW`) |
+| `PasswordResetView` | AM's | `assets/PasswordResetView-BDvI55HY.js` (commons' own: `-DHHRxpTE`) |
+| `RegisterView` | `SelfRegistrationView` | `assets/SelfRegistrationView-DYryjesO.js` (commons' own: `-CWRLANn5`) |
+| `Footer` | AM's `common/components/Footer` | `assets/Footer-EgLXs6es.js` — fetched on the initial load, because the login page renders it |
+| `UserProfileView` | ui-user's | **in `main-DN_XC4oM.js`** |
+
+**Why the two are in the entry, and it is not the thunks failing.** Both are *also* reachable
+STATICALLY from the entry, so rollup assigns them to it regardless of the thunk:
+`main.js:67 import "org/forgerock/openam/ui/main"` → `:22 import "./user/login/RESTLoginView"`, and
+the same aggregator → `SiteConfigurationService.js:26 import UserProfileView from "UserProfileView"`,
+which is §9's aliased static consumer — note §9's own line numbers have drifted again, the alias is
+now `SiteConfigurationService.js:26` and `registerTab` is at `:48`. 6.1's 1 015 415 → 4 083 B
+thunk measurement still holds for
+the other five.
+
+**Read, offered and not decided here** (§15.7 item 2 records the call the change owner
+subsequently took: leave it). `LoginView` in the entry is defensible and arguably right: the
+login form is the first screen every unauthenticated visitor sees, so a separate chunk for it buys a
+second round-trip on the *only* path everyone takes. `UserProfileView` is the weaker case — it is a
+post-authentication route, nothing on the login screen needs it, and it is there as a side effect of
+`SiteConfigurationService`'s `registerTab` alias rather than by a payload decision. Splitting it
+would mean giving `registerTab` a path that does not statically import the view, and §9 records why
+that alias exists; the cost of leaving it is bounded by the fact that `ConfirmPasswordDialog`,
+`AbstractUserProfileTab` and `UserProfileView` are three of the 56 sources. **Neither is an
+administrative view, so neither touches the requirement 6.5 is about.**
+
+### 15.4 The chunk graph — 296 `.js` under `assets/`
+
+2 006 877 B total. min **105 B**, p25 503 B, **median 1 255 B** (the two middle values are 1 253
+and 1 257), p75 2 400 B, max 336 715 B, mean
+6 780 B. Buckets: **<1 kB: 134 · 1–4 kB: 121 · 4–16 kB: 26 · 16–64 kB: 9 · >64 kB: 6**.
+
+So it is a long tail of small view/service chunks plus six large ones, in order: `i18nManager`
+336 715 B, the entry 295 326 B, `index-CU645Rn-` 184 237 B, `EditScriptView` 163 350 B, `jsoneditor`
+138 634 B, `index-AZXombQ3` 115 432 B. It is
+neither "split nothing" nor "hundreds of equal crumbs": half the chunks are under 1.3 kB, but the
+two that dominate are both in the initial payload.
+
+**Static-import closure of the entry chunk = 2 files, 632 041 B** (`main-DN_XC4oM.js` +
+`i18nManager-Co6QgOIE.js`). Everything else in the tree is reached only through `import()` — the
+entry chunk alone carries **310** dynamic import specifiers, `main-B3Pf5FGc` (admin) among them.
+
+### 15.5 THE NETWORK, and this is the half a build measurement cannot see
+
+Four phases in one browser session, one page, request log written to a file and grepped. Phases 3
+and 4 are hash-only navigations: **neither refetched `main.js` or the entry chunk**, so they are
+in-app routing and not reloads.
+
+**Phase 1 — initial load of `/openam/XUI/` through to the visible login form: 13 JS requests,
+647 367 B.** In order:
+
+`main.js?v=dev` (the 982 B stub) · `assets/main-DN_XC4oM.js` · `assets/i18nManager-Co6QgOIE.js` ·
+`CommonMessages` · `UserMessages` · `AppMessages` · `CommonValidators` · `AMValidators` ·
+`AMRoutesConfig` · `UserRoutesConfig` · `UMARoutes` · `Footer-EgLXs6es.js` · `LoginHeader`.
+
+**ZERO administrative chunks.** No `ListRealmsView`, no `EditRealmView`, no `EditPolicyView`, no
+`EditScriptView`, no `ChainsView`, and `assets/main-B3Pf5FGc.js` — the admin aggregator — **was
+never fetched in any of the four phases**. The three `*Routes*` files are route tables, i.e. the
+strings the router later resolves.
+
+**Phase 2 — submit `amadmin`, router lands on `#realms`: 16 further JS requests**, the admin view
+among them and fetched only now:
+
+`RealmsService` · `SMSServiceUtils` · `Promise` · `ServicesService` · `JSONSchema` ·
+`transformBooleanTypeToCheckboxFormat` · `transformEnumTypeToString` ·
+`warnOnInferredPasswordWithoutFormat` · `JSONValues` · `RealmHelper` · `SessionValidator` ·
+`MaxIdleTimeLeftStrategy` · `NavigationHelper` · **`ListRealmsView-D5H7d25f.js`** ·
+`TemplateBasedView` · `ToggleCardListView`.
+
+**Phase 3 — `#realms/%2F/authentication-chains`, never visited: 15 further JS requests**, including
+**`ChainsView-t9QpGQ-H.js`**, plus its first-use dependencies `RealmTreeNavigationView`,
+`TreeNavigation`, `index-AZXombQ3` / `React` / `react` (the React runtime, arriving only now),
+`normaliseModule`, `createBreadcrumbs`, `createTreeNavigation`, `AuthenticationService`,
+`FormHelper`, `bindSavePromiseToElement`, `showConfirmationBeforeAction`, `setActiveTab`,
+`deprecatedWarning`. The local backend answers 501 for the chain list; that is
+`ui-local-backend`'s coverage, not a loading failure, and the view module was fetched either way. It
+also *evaluated* — that is an inference, not a reading of the log: a request log shows fetches only,
+but `ChainsView`'s first-use dependencies above arrive in the same phase, which happens only if
+`ChainsView` ran.
+
+**Phase 4 — `#realms/%2F/scripts`, a different view: 19 further JS requests**, including
+**`ScriptsView-C6KRz14A.js`** and the Backgrid/paginator stack it is the first route to need
+(`backgrid`, `backbone.paginator`, `ThemeableServerSideFilter`, `ThemeablePaginator`,
+`ThemeableSelectAllCell`, `BackgridUtils`, `ScriptModel`, `ScriptsService`, …). So it happens again,
+for a different view, with a different dependency set.
+
+**63 distinct JS files were fetched across all four phases** (13 + 16 + 15 + 19). One of the 63 is
+the root `main.js?v=dev` stub, which is not one of the 296 files in `assets/`, so **62 of the 296
+asset chunks were fetched and 234 were never requested at all**.
+
+### 15.6 The finding
+
+On-demand loading is **working as the requirement describes**. The initial payload contains no
+administrative view module; **every administrative route sampled** fetched its own view at the
+moment it was opened, three times over for three different views (`ListRealmsView`, `ChainsView`,
+`ScriptsView`); and three quarters of the emitted chunks were never asked for in a session that
+logged in and visited three admin routes.
+
+Three of the registry's ~40 administrative views were exercised. That every *other* admin route
+behaves the same is an **inference from the mechanism** — route tables name views as strings, which
+`ModuleLoader.load` resolves through a registry thunk, and that path is identical for all of them —
+not something these four phases measured.
+
+### 15.7 Not determined
+
+1. **The four zero-`sources` aggregator chunks are shipped but appear unreachable.**
+   `main-B3Pf5FGc` (admin) is named by ONE of the entry's 310 dynamic specifiers — not by 310, as an
+   earlier draft of this line said — and was fetched in none of the four phases. **RESOLVED in
+   §15.8:** pure AMD-era dead weight, and it is five modules rather than four — nothing in AM's
+   source, and nothing in the packaged `ui-commons`/`ui-user` trees, asks for those ids.
+2. **`UserProfileView` in the entry chunk** is recorded above with a read, not a decision. The
+   change owner's call, taken: **LEFT AS-IS** — it is not an administrative view, so it does not
+   bear on the requirement, and the alias that pulls it in is §9's, not the registry's.
+3. Measured on the **local** backend only. Per `ui-local-backend`, that is a no-regression check;
+   the same four phases against a deployed AM were not run.
+4. **The browser harness was not preserved.** §15.5's phase counts cannot be re-derived from the
+   build, and the throwaway Playwright script was deleted with the scratch files, so §15.5 is
+   testimony rather than a reproducible measurement. Its phase-1 list does reconcile: the thirteen
+   named files sum on disk to exactly 647 367 B. Phases 2–4 have no such check, and no settle/wait
+   criterion was recorded, so a request in flight across a phase boundary could be attributed to the
+   wrong phase. Anyone repeating this should paste the harness in at §14's standard of detail.
+5. **JS only.** No CSS, HTML template partial or other asset was counted, so "initial payload"
+   throughout §15 means "initial **JS** payload". The XUI also fetches `.html` templates at runtime.
+6. **Fetch was measured; evaluation was not.** A request log shows only that a chunk was
+   transferred. Where §15 claims a module ran, that is inference from its dependency fan-out.
+
+### 15.8 The dead AMD aggregators — traced
+
+Follow-up to §15.7 item 1, by static analysis of the built tree and the source. No file was changed
+except this one; no rebuild was needed.
+
+**Which ones — FIVE modules, not the four chunks §15.7 started from.** The four that the
+zero-`sources` scan finds: `main-B3Pf5FGc.js` (admin, 5 119 B), `main-B_Wews0U.js` (user, 401 B),
+`main-CCPq-kmR.js` (uma, 1 516 B), `main-Bp2jAqX7.js` (openam common, 178 B). Each chunk's body is
+nothing but a run of side-effect `import` statements — which is exactly why its sourcemap `sources`
+is empty, and why the §15.2 membership test cannot see the modules.
+
+**And one the scan cannot find:** `org/forgerock/openam/ui/user/dashboard/main.js` has the same
+shape and is equally unreferenced, but rollup merged it into `main-Sl4n4sWI.js` (868 B) together
+with `dashboard/views/DashboardView.jsm`, so that chunk's `sources` is `["…/DashboardView.jsm"]` —
+non-empty — and the heuristic walks straight past it. **The zero-`sources` test finds only dead
+aggregators rollup happened to leave alone in a chunk.** `DashboardView.jsm` itself is LIVE
+(`AMRoutesConfig.js:41`), so that chunk must stay; only the 202 B registry entry for
+`…/dashboard/main.js` is removable.
+
+**Who references them.** Grepping every `.js` in `target/compiled` for each chunk filename returns
+exactly one referrer apiece, and it is the same file: the entry chunk `assets/main-DN_XC4oM.js`.
+The reference is in one syntactic position only — a lazy thunk in the registry map:
+
+```
+"/src/main/js/org/forgerock/openam/ui/admin/main.js":()=>a(()=>import("./main-B3Pf5FGc.js"),__vite__mapDeps(...))
+```
+
+Not a static import. (Each also appears once inside the entry's `__vite__mapDeps` filename array,
+which is data for the preload helper, not a fetch.)
+
+**Who asks for them — nobody.** Two independent checks:
+
+- *Import specifiers.* The only bare `.../main` specifiers anywhere under `src/main/js` are four:
+  `org/forgerock/commons/ui/common/main` and `org/forgerock/openam/ui/main`, both real static
+  imports in `main.js` (:66, :67); and `org/forgerock/openam/ui/user/main` and
+  `.../user/dashboard/main`, which occur ONLY inside those two files' own doc comments, recording
+  the AMD id the file used to carry. No module imports any of the four.
+- *String ids.* `admin/main` and `uma/main` appear nowhere in `src/main/js` outside
+  `moduleRegistry.js`'s own prose, so no route table, `AppConfiguration` or `ProcessConfiguration`
+  names them; and the packaged `@openidentityplatform/ui-commons/esm` and `ui-user/esm` trees
+  reference none of the four ids either.
+
+**Why they are in the map at all.** The AM glob at `moduleRegistry.js:122-127` enumerates every
+file under the tree — it is the ARRAY form, `["/src/main/js/**/*.{js,jsx,jsm}", "!…/main.js",
+"!…/main-authorize.js", "!…/main-device.js"]`, and 6.1's 281-vs-361 array trap did NOT fire here
+because all four patterns share one base. The aggregators are files that no exclusion names, so they
+get map entries — the glob has no way to know nothing resolves them.
+
+**Verdict: AMD-era dead weight.** They are reachable only through `resolveModule` with those ids,
+and nothing asks. That agrees with the browser trace: `main-B3Pf5FGc` was fetched in none of the
+four phases, three of them administrative routes.
+
+**Cost, measured — not the ~100 B apiece an earlier draft of this section guessed.** Each is a
+*lazy thunk*, so the entry chunk never pays the subtree; but the thunk carries a `__vite__mapDeps`
+**index list**, and its length is what dominates. Measured from the opening key quote to
+`import.meta.url)`:
+
+| registry entry | bytes in the entry chunk | dep indices | chunk shipped |
+|---|---|---|---|
+| `admin/main.js` | **544** | 129 | `main-B3Pf5FGc.js` 5 119 B |
+| `user/uma/main.js` | **276** | 41 | `main-CCPq-kmR.js` 1 516 B |
+| `user/dashboard/main.js` | **202** | 14 | *(shared with live `DashboardView`)* |
+| `user/main.js` | **163** | 10 | `main-B_Wews0U.js` 401 B |
+| `common/main.js` | **141** | 4 | `main-Bp2jAqX7.js` 178 B |
+| **total** | **1 326 B** | | **7 214 B** of chunk files shipped and never fetched |
+
+So the cleanup is worth ~1.3 kB off the entry chunk plus 7.2 kB of dead files in every deployment —
+about 5x what the first estimate said, and still small. The views and services those aggregators
+name are separately reachable through their own registry entries (that is how `ListRealmsView` et
+al. arrive on navigation), so dropping them would orphan nothing.
+
+**Do not confuse `org/forgerock/openam/ui/main.js` with these.** It is a different module
+and it is LIVE — `main.js:67` imports it statically, and it pulls `SiteConfigurationService`,
+`Helpers`, `RESTLoginHelper`, `AuthNService`, `SessionService` and `RESTLoginView`. That import is
+the reason `RESTLoginView` is in the entry chunk per §15.3, and it is not a registry artefact.
+
+**Still not established:** that no *deployed* AM code path asks for those ids. Same local-only
+caveat as §15.7 item 3.

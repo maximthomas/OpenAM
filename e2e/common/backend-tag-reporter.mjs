@@ -19,9 +19,9 @@
  *
  * D16 asks that a run declare which backends it exercised, and that a spec it did not run be
  * "reported as not run rather than as passed". The failure that guards against is a suite which
- * quietly shrinks: `--grep @local-server` drops 9 of the 14 spec files at collection time, and
+ * quietly shrinks: `--grep @local-server` drops 10 of the 15 spec files at collection time, and
  * Playwright's own summary for that run — a green "23 passed" — is the same shape as the summary
- * for the full one. Nothing in the output says the other 9 never ran.
+ * for the full one. Nothing in the output says the other 10 never ran.
  *
  * So this reporter prints a coverage block after the run: how many spec files exist on disk, which
  * of them ran, which did not and why, and any that declare no backend tag at all. It is additive

@@ -506,7 +506,7 @@ The backend is chosen outside the UI, at the point a run is pointed at one — `
 From `e2e/`:
 
 ```
-npm run test:xui                                    # the deployed instance: 57 tests, 12 files
+npm run test:xui                                    # the deployed instance: 63 tests, 13 files
 
 OPENAM_BASE_URL=http://127.0.0.1:8090/openam \
   npx playwright test xui/ --grep @local-server     # the local server: 23 tests, 5 files

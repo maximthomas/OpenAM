@@ -97,6 +97,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
 
 /*
  * Maven passes the project version through this variable. The pom's npm-build execution sets it;
@@ -1692,6 +1693,339 @@ const assertReactSelectNeedsNoGlobals = () => ({
     }
 });
 
+/*
+ * ==== 7.2 -- EVERY MODULE config/AppConfiguration.js NAMES BY STRING SURVIVES THE BUILD =====
+ *
+ * WHAT IS UNENFORCED WITHOUT THIS. AppConfiguration.js names 26 modules by string identifier and
+ * imports none of them. Nothing else in the source references most of them either -- that is the
+ * whole point of the file, and it is what "Modules named by application configuration" requires:
+ * "resolvable without the module being referenced anywhere else in the source". The consequence is
+ * that renaming or moving one of those 26 files is INVISIBLE to the build. Rollup has no edge to
+ * break; `import.meta.glob` in moduleRegistry.js simply enumerates one file fewer and the id is
+ * quietly absent from the registry. The build stays green, the zip ships, and the failure surfaces
+ * in a browser as a route that never renders or a login that stops at "Loading...".
+ *
+ * WHY generateBundle AND NOT A RUNTIME OR TEST CHECK. "Present in the built application" is a
+ * property of the emitted chunk set, which is exactly what generateBundle is handed. Confirming it
+ * at runtime would mean RESOLVING each id, and resolving is fetching -- 26 modules pulled into the
+ * initial payload to prove a build-time fact, which is precisely what the requirement
+ * "On-demand loading of resolvable modules" forbids. THIS PLUGIN ADDS NO STATIC IMPORT AND SETS NO
+ * `eager` FLAG, and neither may any future edit of it: `{ eager: true }` on moduleRegistry.js's
+ * globs would make every id trivially "present" and would drag org/forgerock/openam/ui/admin/main.js
+ * -- 43 static imports, 28 of them admin views, nothing importing it -- into the entry chunk, with
+ * a green build and a working console hiding the regression. Task 6.5 measured that tree; do not
+ * flatten it to satisfy this check.
+ *
+ * WHERE THE ID LIST COMES FROM: AppConfiguration.js ITSELF, not a copy of it. A checked-in list
+ * would need a drift check to stay honest, and the drift check would have to read the file anyway
+ * -- so reading the file is the whole job. Five rules cover the eight shapes the file uses today
+ * (10 moduleClass, 1 loginHelperClass, 1 SiteConfigurator delegate, 6 Router loader routes,
+ * 2 processConfigurationFiles, 1 defaultHandlers, 3 messages, 2 validators = 26), and a seventh
+ * route or a fourth message config is covered the moment it is added, with no edit here. The
+ * `loader` rule is deliberately generic over the entry's KEY, which is what makes routes /
+ * defaultHandlers / messages / validators one rule rather than four.
+ *
+ * THE FILE IS EVALUATED, NOT PATTERN-MATCHED. `templateUrls`, `partialUrls`, the Navigation `links`
+ * tree and `helpLinks` are also arrays of strings in this file and are NOT module ids; a text scan
+ * for quoted strings would report all of them. Walking the evaluated object reaches only the five
+ * positions that are ids.
+ *
+ * THE LOGIN HELPER IS THE ONE ID THAT IS NOT IN THE SOURCE TEXT. 6.6 replaced the literal with
+ * `__LOGIN_HELPER_CLASS__`, a build-time define. The substitution below uses the SAME
+ * `loginHelperClass` const the `define` block feeds to Vite, so this check reads the value the
+ * build actually emits -- including an operator's LOGIN_HELPER_CLASS override, which is the case
+ * that most needs checking and the one a source-text scan cannot see at all.
+ *
+ * NOT COVERED HERE, DELIBERATELY: the nine ids of NOTES-module-registry.md section 8 that no glob
+ * produces. None of AppConfiguration.js's 26 is among them -- checked, not assumed -- so every id
+ * this plugin enforces resolves through the glob, and the normalisation below is the same one
+ * moduleRegistry.js's `addTree` applies. If a future edit does put a logical name or a library name
+ * in this file, the failure message says so rather than leaving the contributor to guess.
+ */
+const APP_CONFIGURATION = "src/main/js/config/AppConfiguration.js";
+
+/*
+ * The three trees moduleRegistry.js globs, the prefix each strips to make an id, and -- for AM --
+ * the three ids its glob explicitly excludes.
+ *
+ * MATCHED WITH lastIndexOf RATHER THAN A ROOT-RELATIVE SLICE so a symlinked node_modules, whose
+ * module ids arrive as realpaths outside the Vite root, still normalises. That is the whole of
+ * the justification: a HOISTED node_modules would not work either way, because
+ * moduleRegistry.js's globs are root-absolute and would enumerate nothing in that layout, so the
+ * build would already be dead long before reaching here.
+ *
+ * THE EXCLUSIONS MATTER because without them this check is a SUPERSET of the registry. Measured
+ * on a real build: 362 normalisable ids emitted against 359 registry keys, and the three extra
+ * are exactly the entries the AM glob drops with its "!" patterns. An id that is one of those
+ * three would be present in the build and still unanswerable by the registry -- precisely the
+ * false negative this plugin exists to prevent. Keep this list in step with moduleRegistry.js's
+ * amTree patterns.
+ */
+const REGISTRY_TREES = [
+    { prefix: "/src/main/js/", excluded: ["main", "main-authorize", "main-device"] },
+    { prefix: "/node_modules/@openidentityplatform/ui-commons/esm/", excluded: [] },
+    { prefix: "/node_modules/@openidentityplatform/ui-user/esm/", excluded: [] }
+];
+
+const registryIdFor = (moduleId) => {
+    if (moduleId.startsWith("\0")) {
+        return null;
+    }
+    const posix = moduleId.replace(/\\/g, "/").split("?")[0];
+    for (const tree of REGISTRY_TREES) {
+        const at = posix.lastIndexOf(tree.prefix);
+        if (at !== -1) {
+            const match = /^(.*)\.(jsx?|jsm)$/.exec(posix.slice(at + tree.prefix.length));
+            if (match) {
+                return tree.excluded.includes(match[1]) ? null : match[1];
+            }
+        }
+    }
+    return null;
+};
+
+const configuredModuleIds = (root, resolvedLoginHelperClass) => {
+    const file = path.resolve(root, APP_CONFIGURATION);
+    const source = fs.readFileSync(file, "utf8");
+    const lines = source.split("\n");
+
+    /*
+     * TAGGED, because the transform below is deliberately narrow and four realistic future edits
+     * of AppConfiguration.js break it: an object-literal `export default { ... }`, a second
+     * `export`, any `import`, or a comment containing the phrase "export default obj". All four
+     * fail LOUDLY rather than silently -- the right side of the safety line -- but untagged they
+     * surface as a bare `SyntaxError: Unexpected token 'export'` pointing into vite.config.js,
+     * which tells an operator nothing. Every other assertion in this file explains itself when it
+     * fires; so does this one.
+     */
+    let evaluated;
+    try {
+        evaluated = vm.runInNewContext(
+            source
+                .replace(/__LOGIN_HELPER_CLASS__/g, JSON.stringify(resolvedLoginHelperClass))
+                .replace(/\bexport\s+default\s+(\w+)\s*;?/, "$1;"),
+            Object.create(null),
+            { filename: file, timeout: 5000 }
+        );
+    } catch (cause) {
+        throw new Error(
+            "[xui-assert-configured-modules] could not evaluate " + APP_CONFIGURATION + " to " +
+            "read the module ids it names.\n\n" +
+            "This check strips a single `export default <identifier>;` and evaluates the rest in " +
+            "node:vm. It cannot handle an object-literal default export, a second `export`, or " +
+            "an `import` -- if the file has grown one of those, widen the transform here.\n\n" +
+            "Original failure: " + cause.message
+        );
+    }
+
+    const lineOf = (needle) => {
+        const index = lines.findIndex((line) => line.includes(needle));
+        return index === -1 ? "" : `:${index + 1}`;
+    };
+
+    const found = [];
+    const record = (id, where, needle) => {
+        if (typeof id === "string" && id.length > 0) {
+            found.push({ id, where: `config/AppConfiguration.js${lineOf(needle ?? `"${id}"`)} ${where}` });
+        }
+    };
+
+    ((evaluated && evaluated.moduleDefinition) || []).forEach((entry, index) => {
+        const base = `moduleDefinition[${index}]`;
+        const configuration = (entry && entry.configuration) || {};
+
+        record(entry && entry.moduleClass, `${base}.moduleClass`);
+
+        /*
+         * KEY PRESENCE, NOT VALUE TYPE. The requirement behind this check names loginHelperClass
+         * as the one id that must not be silently skipped, and a `typeof === "string"` test does
+         * exactly that when the value is anything else. There is a concrete path to it:
+         * `JSON.stringify(undefined)` returns the JS value `undefined`, so a `define` that lost
+         * its fallback would substitute the TEXT `undefined`, evaluate to `loginHelperClass:
+         * undefined`, and drop the id with a green build. Unreachable today -- the
+         * `loginHelperClass` const above has a `||` fallback -- but that guard lives a long way
+         * from here, and this is the id least able to afford a silent skip.
+         */
+        if ("loginHelperClass" in configuration) {
+            const where = `config/AppConfiguration.js${lineOf("loginHelperClass:")} ` +
+                `${base}.configuration.loginHelperClass -- a build-time define, not a source ` +
+                "literal: vite.config.js sets __LOGIN_HELPER_CLASS__ from the " +
+                "LOGIN_HELPER_CLASS environment variable";
+
+            if (typeof configuration.loginHelperClass !== "string" ||
+                    configuration.loginHelperClass.length === 0) {
+                throw new Error(
+                    "[xui-assert-configured-modules] " + where + " is not a non-empty string " +
+                    `(got ${JSON.stringify(configuration.loginHelperClass)}).\n\n` +
+                    "It names the login helper module and must be an identifier. Check that " +
+                    "vite.config.js still defines __LOGIN_HELPER_CLASS__, and that a " +
+                    "LOGIN_HELPER_CLASS override, if set, is not empty."
+                );
+            }
+
+            found.push({ id: configuration.loginHelperClass, where });
+        }
+
+        record(configuration.delegate, `${base}.configuration.delegate`);
+
+        (configuration.processConfigurationFiles || []).forEach((id, slot) => {
+            record(id, `${base}.configuration.processConfigurationFiles[${slot}]`);
+        });
+
+        /*
+         * GENERIC OVER THE ENTRY KEY, which is what makes routes / defaultHandlers / messages /
+         * validators one rule instead of four, and what makes a fourth message config covered
+         * with no edit here. The cost of that genericity: a loader entry that ever gains a
+         * non-id string field -- `{ "routes": "...", "when": "admin" }` -- would make "admin" a
+         * required module id and fail the build. Narrow this to a key allow-list if that day
+         * comes; until then the open form is the one that keeps the check self-maintaining.
+         */
+        (configuration.loader || []).forEach((entryForSlot, slot) => {
+            Object.keys(entryForSlot || {}).forEach((key) => {
+                record(entryForSlot[key], `${base}.configuration.loader[${slot}].${key}`);
+            });
+        });
+    });
+
+    /*
+     * ==== THE SHAPE CROSS-CHECK -- what stops a PARTIAL restructure passing green ====
+     *
+     * The walk above knows five positions. A "found nothing at all" floor (in the plugin below)
+     * catches only the total failure; the likelier one is PARTIAL. Rename `loader` to `loaders`,
+     * or move `processConfigurationFiles` under a new key, and the ten moduleClass ids still
+     * come back -- the count stays plausible, no floor fires, and SIXTEEN OF THE TWENTY-SIX
+     * silently stop being enforced behind a green build. That is the same vacuous pass the floor
+     * exists to prevent, wearing a disguise.
+     *
+     * So: deep-walk every string in the evaluated object, keep the ones SHAPED like module ids,
+     * and require that set to be a subset of what the structured walk found. This asserts a
+     * SHAPE INVARIANT, not a count -- adding or removing a configured module stays a one-file
+     * change with no edit here, which is the property this check was chosen for.
+     *
+     * THE PREDICATE, AND WHY EACH CLAUSE IS THERE. Measured against the current file: 109
+     * distinct strings, of which exactly 26 survive, and they are exactly the 26 the structured
+     * walk returns. A slash is required (excludes the i18n keys, "fa fa-cloud hidden-md", the
+     * role names and loggerLevel); "#" excludes the Navigation hrefs (#realms, #profile/details);
+     * ".." excludes ../task/Home; the extension test excludes the 3 templateUrls and 19
+     * partialUrls, which are the only other slash-bearing strings in the file; "://" excludes a
+     * documentation URL, should one ever be added.
+     *
+     * A FALSE POSITIVE HERE IS THE POINT, not a flaw. If a future edit adds an id-shaped string
+     * somewhere the walk does not look, this fails and says so -- which is the loud failure the
+     * derive-from-the-file approach otherwise trades away for being self-maintaining.
+     */
+    const foundIds = new Set(found.map((entry) => entry.id));
+    const idShaped = (value) => typeof value === "string" &&
+        value.includes("/") &&
+        !value.startsWith("#") &&
+        !value.startsWith("..") &&
+        !value.includes("://") &&
+        !/\.(html|css)$/.test(value);
+
+    const everyString = [];
+    const collect = (node) => {
+        if (typeof node === "string") {
+            everyString.push(node);
+        } else if (node && typeof node === "object") {
+            Object.keys(node).forEach((key) => collect(node[key]));
+        }
+    };
+    collect(evaluated);
+
+    const uncovered = [...new Set(everyString.filter(idShaped))].filter((id) => !foundIds.has(id));
+
+    if (uncovered.length > 0) {
+        throw new Error(
+            "[xui-assert-configured-modules] " + APP_CONFIGURATION + " contains strings shaped " +
+            "like module identifiers that this check does not know how to collect:\n\n" +
+            uncovered.map((id) => `    "${id}"${lineOf(`"${id}"`)}`).join("\n") + "\n\n" +
+            "The walk understands five positions: moduleClass, loginHelperClass, the " +
+            "SiteConfigurator delegate, processConfigurationFiles, and the values of loader " +
+            "entries. A string that looks like an id but sits somewhere else means either the " +
+            "file grew a new kind of configuration -- teach the walk that position, or those " +
+            "modules go unenforced -- or the string is not a module id at all, in which case " +
+            "widen the idShaped predicate above and say why."
+        );
+    }
+
+    return found;
+};
+
+const assertConfiguredModulesBundled = () => {
+    let root = null;
+
+    return {
+        name: "xui-assert-configured-modules",
+
+        configResolved(config) {
+            root = config.root;
+        },
+
+        generateBundle(_options, bundle) {
+            const configured = configuredModuleIds(root, loginHelperClass);
+
+            /*
+             * THE TOTAL case of a vacuous pass: the file no longer parses into anything the walk
+             * recognises, so it finds nothing and enforces nothing behind a green build. The
+             * PARTIAL case -- a restructure that moves some ids out of the walk's reach while
+             * others still come back -- is caught upstream by the shape cross-check in
+             * configuredModuleIds, which is the more likely of the two and the one a bare floor
+             * cannot see. Both are floors on SHAPE, not on count: adding or removing a configured
+             * module stays a one-file change.
+             */
+            if (configured.length === 0) {
+                throw new Error(
+                    "[xui-assert-configured-modules] found no module identifiers in " +
+                    `${APP_CONFIGURATION}.\n\n` +
+                    "The file has always named at least one. Either it no longer exports a " +
+                    "`moduleDefinition` array, or it now names modules in a shape this check does " +
+                    "not walk (moduleClass, loginHelperClass, delegate, processConfigurationFiles " +
+                    "and loader entries). Teach the walk the new shape -- passing green while " +
+                    "covering nothing is the one outcome this check must not have."
+                );
+            }
+
+            const emitted = new Set();
+            Object.keys(bundle).forEach((fileName) => {
+                Object.keys(bundle[fileName].modules || {}).forEach((moduleId) => {
+                    const id = registryIdFor(moduleId);
+                    if (id !== null) {
+                        emitted.add(id);
+                    }
+                });
+            });
+
+            const missing = configured.filter((entry) => !emitted.has(entry.id));
+
+            if (missing.length > 0) {
+                throw new Error(
+                    "[xui-assert-configured-modules] config/AppConfiguration.js names modules by " +
+                    "string identifier that no chunk in this build carries:\n\n" +
+                    missing
+                        .map((entry) => `    "${entry.id}"\n        named at ${entry.where}`)
+                        .join("\n\n") +
+                    "\n\n" +
+                    "Nothing imports these statically. The application reaches them only through " +
+                    "moduleRegistry.js's import.meta.glob, so a renamed, moved or deleted file " +
+                    "breaks no build edge -- it just stops being enumerated, and the failure " +
+                    "surfaces in a browser as a route that never renders or a login that stops at " +
+                    '"Loading...". Restore the file under its old path, or update the ' +
+                    "configuration entry named above to the new one.\n\n" +
+                    "IF AN ID ABOVE IS A LOGICAL NAME OR A LIBRARY NAME rather than a module " +
+                    "path, no glob produces it and this check cannot see it: it compares against " +
+                    "the glob-derived ids only, not against moduleRegistry.js's explicit " +
+                    "`logicalNames` and `libraries` tables. NOTES-module-registry.md section 8 " +
+                    "lists the nine such ids. None of AppConfiguration.js's ids was one when " +
+                    "this check was written, which is why covering those tables was left " +
+                    "unbuilt. If that has changed, the id may well ALREADY resolve correctly at " +
+                    "runtime -- confirm it against those two tables, and teach this check to " +
+                    "treat a table entry as satisfying rather than deleting the check."
+                );
+            }
+        }
+    };
+};
+
 const sloppyModeLibraries = () => {
     /*
      * Indices of SLOPPY_MODE_PATCHES that actually fired. Checked in buildEnd, because the
@@ -2327,6 +2661,14 @@ export default defineConfig({
          * window globals unnecessary. Defined above; the measurement is NOTES-shims.md 3.2 B.
          */
         assertReactSelectNeedsNoGlobals(),
+
+        /*
+         * 7.2. Bundle-time only. Reads config/AppConfiguration.js, walks the 26 module ids it
+         * names by string, and fails the build naming any one no emitted chunk carries.
+         * Nothing imports those modules statically, so without this a rename is a green build
+         * and a broken route. Defined above, with why it is not a runtime or eager check.
+         */
+        assertConfiguredModulesBundled(),
 
         /*
          * 5.4/B12. Option (c1). Emits the two unhashed classic-script stubs the six openam-oauth2

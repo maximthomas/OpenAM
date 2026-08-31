@@ -283,13 +283,8 @@ module.exports = function (grunt) {
                     include: ["main"],
                     preserveLicenseComments: false,
                     generateSourceMaps: true,
-                    optimize: "uglify2",
-                    // These files are excluded from optimization so that the UI can be customized without having to
-                    // repackage it.
-                    excludeShallow: [
-                        "config/AppConfiguration",
-                        "config/ThemeConfiguration"
-                    ]
+                    optimize: "uglify2"
+                    // No `excludeShallow`: D6 bundles the two config modules as source, so nothing is left to exclude.
                 }
             }
         },

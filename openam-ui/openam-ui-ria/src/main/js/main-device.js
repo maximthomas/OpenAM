@@ -57,6 +57,7 @@ import i18nManager from "org/forgerock/commons/ui/common/main/i18nManager";
 import ThemeManager from "ThemeManager";
 import Router from "Router";
 import { configure as configureLoader } from "org/forgerock/commons/ui/common/util/esm/LoaderRuntime";
+import warnRetiredConfig from "./warnRetiredConfig.js";
 
 var data = window.pageData;
 
@@ -67,6 +68,21 @@ var data = window.pageData;
  * locale fetch 404. MUST precede i18nManager.init, which computes `resGetPath` at call time.
  */
 configureLoader({ baseUrl: data.baseUrl, urlArgs: `v=${__TARGET_VERSION__}` });
+
+/*
+ * D6 (task 7.4). Two HEAD requests, deferred to idle, warning if this deployed tree still carries
+ * `config/AppConfiguration.js` or `config/ThemeConfiguration.js` -- retired files that an in-place
+ * upgrade leaves behind and that nothing reads any more.
+ *
+ * This page is served from /oauth2/, not /XUI/, so the probe MUST resolve against the baseUrl
+ * configured just above: a document-relative url lands on
+ * `/oauth2/realms/root/config/AppConfiguration.js` and 404s with the file plainly present, which is
+ * design.md D22's regression exactly and fails without a symptom. warnRetiredConfig.js resolves
+ * inside its deferred callback, so it reads that baseUrl whenever it runs -- which is what makes
+ * this safe rather than the position of this call. That file carries the rest, including why `?v=`
+ * is not what defeats the cached 404 and `no-store` is.
+ */
+warnRetiredConfig();
 
 i18nManager.init({
     paramLang: {

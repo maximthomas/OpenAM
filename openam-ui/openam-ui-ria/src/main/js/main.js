@@ -79,6 +79,7 @@ import "./config/main.js";
 import "store/index";
 import { configure as configureLoader } from "org/forgerock/commons/ui/common/util/esm/LoaderRuntime";
 import { resolveModule } from "./moduleRegistry.js";
+import warnRetiredConfig from "./warnRetiredConfig.js";
 
 /*
  * D4 -- THE CACHE-BUSTER, AND WHY IT IS ONLY CONFIGURED IN *THIS* ENTRY.
@@ -128,5 +129,22 @@ resolveAssetUrl.configure({ urlArgs: `v=${__TARGET_VERSION__}` });
  * ask nothing of it. They configure only baseUrl, which they DO need.
  */
 configureLoader({ resolveModule, urlArgs: `v=${__TARGET_VERSION__}` });
+
+/*
+ * D6 (task 7.4). Two HEAD requests, deferred to idle, warning if this deployed tree still carries
+ * `config/AppConfiguration.js` or `config/ThemeConfiguration.js` -- retired files that an in-place
+ * upgrade leaves behind and that nothing reads any more.
+ *
+ * Placed after configureLoader by convention, NOT because the ordering is load-bearing: the probe
+ * runs in a deferred callback, which cannot fire before this module body has finished, and it
+ * resolves its url at that point rather than at module evaluation. So do not read this placement
+ * as the thing keeping it correct -- the lazy resolution in warnRetiredConfig.js is. That file
+ * carries the rest, including why `?v=` is not what defeats the cached 404 and `no-store` is.
+ *
+ * This entry leaves baseUrl at "" (the console IS served from /XUI/), so the probe's url happens to
+ * match a document-relative one here. On the other two entries it does not, which is why the probe
+ * goes through `toUrl` rather than the document.
+ */
+warnRetiredConfig();
 
 EventManager.sendEvent(Constants.EVENT_DEPENDENCIES_LOADED);

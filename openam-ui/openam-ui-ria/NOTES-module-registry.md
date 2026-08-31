@@ -23,6 +23,7 @@ Nothing in `src/main/js` and nothing in `vite.config.js` was modified by this su
 | 11 | What the registry itself costs | entry-chunk bytes, measured three ways |
 | 12 | Hand-offs and traps for the apply run | **read this before writing the registry** |
 | 13 | Not determined | open items |
+| 14 | **fallback** — resolving an identifier the build never saw (task 6.3) | **the derived url, the module format, and what a miss does** |
 
 ---
 
@@ -834,3 +835,325 @@ Returning `m.default` from the registry itself would double-unwrap.
 3. **Whether the `?v=<version>` cache-busting applies to registry-loaded chunks.** `LoaderRuntime.toUrl`
    handles `urlArgs` for templates and locales, but Vite's own chunk URLs are content-hashed and do
    not pass through it. Probably fine (hash *is* the cache key), not verified.
+
+---
+
+## 14. FALLBACK — RESOLVING AN IDENTIFIER THE BUILD NEVER SAW (TASK 6.3 SPIKE)
+
+Spike run 2026-08-31 against the tree as it stands after 6.1/6.1a and 6.2. Everything below was
+measured; nothing was reasoned from the docs. The scratch entry (`src/main/js/spike63.js`) and the
+files dropped into `target/compiled/` were deleted afterwards — `git status` is back to the two
+untracked `NOTES-*.md` it started with, and `npm run build:production` exits 0 at **1523 modules
+transformed** with `target/compiled/main.js` = 982 B (the 6.1a stub).
+
+**Harness.** `node local/server.mjs ../openam-ui/openam-ui-ria/target/compiled` from `OpenAM/e2e`,
+answering on `http://localhost:8090/openam/XUI/`; Playwright 1.60.0 (`@playwright/test`, already an
+e2e devDependency), headless chromium. The probe module was loaded into the live page as
+`<script type="module">` importing the spike's own emitted chunk, so **every dynamic import below
+runs from inside a bundled chunk under `assets/`, which is where a real fallback would run** — not
+from `page.evaluate`'s document context, which resolves against a different base and would have
+given the wrong answer to §14.2.
+
+### 14.1 A RUNTIME-COMPUTED `import()` SURVIVES THE BUILD UNTOUCHED, AND `@vite-ignore` DOES NOT
+
+The smallest module, dropped at `src/main/js/spike63.js` — it needs no entry-point wiring, because
+6.1's AM glob `/src/main/js/**/*.{js,jsx,jsm}` reaches it and rollup gives it its own chunk:
+
+```js
+export const withIgnore    = (url) => import(/* @vite-ignore */ url);
+export const withoutIgnore = (url) => import(url);
+export const moduleUrl     = import.meta.url;
+```
+
+**The emitted chunk, `target/compiled/assets/spike63-D_G3gzjw.js` (0.51 kB), verbatim:**
+
+```js
+const o=e=>import(e),r=e=>import(e),n=import.meta.url,…export{n as moduleUrl,…,o as withIgnore,r as withoutIgnore};
+```
+
+Read the first fourteen characters twice. `o` (with the comment) and `r` (without it) are **byte-for-byte
+the same function**. The `/* @vite-ignore */` comment **does not survive** — esbuild's minify pass
+strips it — and its absence changes nothing, because nothing in the *build* pipeline was ever going
+to act on `import(e)` where `e` is a plain identifier.
+
+- **No warning, either form.** The build log's warning set is *byte-identical* to the pre-spike
+  baseline: **55 `(!)` lines in both**, same subjects (all of them 6.1's pre-existing
+  "dynamically imported by moduleRegistry.js but also statically imported by …" notices). Zero
+  occurrences of `not be analyzed`, `string literal`, `@vite-ignore` or `spike63` anywhere in the
+  log except the one size-report line. Exit 0.
+- **Rollup bundles nothing for it.** The chunk's only static imports are the ones the spike itself
+  wrote; the dynamic specifier contributes no module to the graph and no chunk to the output.
+- **A function call as the specifier is equally untouched.** The larger spike compiled
+  `import(/* @vite-ignore */ derive(id))` to `import(r(t))`.
+- **`import.meta.url` survives as `import.meta.url`** in the ES-format chunk, so it evaluates to the
+  chunk's own URL at runtime. §14.2 uses that.
+
+**Position for 6.3: keep the `/* @vite-ignore */` comment anyway.** It costs nothing, it states the
+intent at the one line where a reader will ask, and *this spike did not measure the dev server*
+(`vite serve`), where `vite:import-analysis` does warn on an unanalysable dynamic import. What is
+established is only that the **production build** neither warns nor rewrites with or without it.
+
+### 14.2 WHAT THE URL RESOLVES AGAINST — MEASURED, NOT ASSUMED
+
+Served page: `http://localhost:8090/openam/XUI/`, which the app immediately turns into
+`…/XUI/#login/`. The probe chunk reported its own location as
+
+```
+http://localhost:8090/openam/XUI/assets/spike63-D_G3gzjw.js
+```
+
+Seven candidate forms for the identifier `config/E2EStandInLoginHelper`, all imported **from that
+chunk**:
+
+| form | what the browser did |
+|---|---|
+| `config/E2EStandInLoginHelper.js` (bare) | ✗ `TypeError: Failed to resolve module specifier 'config/E2EStandInLoginHelper.js'` |
+| `config/E2EStandInLoginHelper.js?v=dev` (what `LoaderRuntime.toUrl` returns today) | ✗ same `TypeError` |
+| `./config/E2EStandInLoginHelper.js` | ✗ `TypeError: Failed to fetch dynamically imported module: http://localhost:8090/openam/XUI/`**`assets/`**`config/E2EStandInLoginHelper.js` |
+| `../config/E2EStandInLoginHelper.js` | ✓ fetched from the tree root |
+| `new URL(id + ".js", document.baseURI).href` | ✓ fetched from the tree root |
+| `new URL(id + ".js?v=dev", document.baseURI).href` | ✓ fetched from the tree root |
+| `new URL("../" + id + ".js", import.meta.url).href` | ✓ fetched from the tree root |
+
+Three facts follow, and the first two are the ones that would have been got wrong by reasoning:
+
+1. **A bare specifier is not a URL and never resolves.** `import()` applies module-specifier rules,
+   not URL rules: anything not starting with `/`, `./` or `../` (or a scheme) needs an import map,
+   and **the served page has none** (measured: `document.querySelector('script[type="importmap"]')`
+   is null; the only `<script src>` on the page is `main.js?v=dev`). So the naive
+   `import(LoaderRuntime.toUrl(id + ".js"))` — the one-liner that looks obviously right, since
+   `toUrl` is exactly the `require.toUrl` this build replaced — **fails on every id**, including
+   ones whose file is present.
+2. **A `./`-relative specifier resolves against the importing CHUNK, i.e. `/XUI/assets/`,** not
+   against the deployed tree root. That is the whole difference the task warns about, and it is why
+   the correct answer cannot be a relative string.
+3. **`document.baseURI` is the deployed tree root, context path included, and is fragment-proof.**
+   Measured at three different document URLs:
+
+   | document URL | `document.baseURI` | derived |
+   |---|---|---|
+   | `…/openam/XUI/` | `…/openam/XUI/#login/` | `http://localhost:8090/openam/XUI/config/E2EStandInLoginHelper.js` |
+   | `…/openam/XUI/index.html#login/` | `…/openam/XUI/index.html#login/` | *same* |
+   | `…/openam/XUI/#realms/%2F/dashboard` | `…/openam/XUI/#login/` | *same* |
+
+   No `<base>` tag is emitted, so `baseURI` is the document URL; `new URL()` discards the base's
+   fragment and the `index.html` filename alike. This is the same origin RequireJS used — its
+   `baseUrl` was inferred from the document — which is why §"THE PATH CONVENTION TASK 6.3 NEEDS
+   SURVIVES THIS" in `vite.config.js` is confirmed rather than merely preserved.
+
+**`import.meta.url` + `"../"` also works today and is the worse anchor.** It is correct only while
+every chunk sits exactly one directory below the tree root; it is a property of
+`chunkFileNames`/`assetFileNames`, not of the deployment, and it would break silently the day a
+chunk is emitted at a different depth. `document.baseURI` is a property of the deployment.
+
+### 14.3 THE EXACT DERIVED URL
+
+**Recommended derivation, measured working in the live page:**
+
+```js
+import { toUrl } from "org/forgerock/commons/ui/common/util/esm/LoaderRuntime";
+
+const fallbackUrl = (id) => new URL(toUrl(`${id}.js`), document.baseURI).href;
+```
+
+Measured outputs on the served build (`__TARGET_VERSION__` unset, so the version stamp is `dev`):
+
+| id | derived url |
+|---|---|
+| `config/E2EStandInLoginHelper` | `http://localhost:8090/openam/XUI/config/E2EStandInLoginHelper.js?v=dev` |
+| `org/forgerock/commons/ui/common/main/Configuration` | `http://localhost:8090/openam/XUI/org/forgerock/commons/ui/common/main/Configuration.js?v=dev` |
+
+So: **prefix** = the directory `index.html` is served from, context path and all, taken from
+`document.baseURI`; **extension** = `.js`, always and unconditionally (no `.jsm`/`.jsx` probing — an
+operator drops a browser-loadable file, and the convention `org/forgerock/…/Foo` → `Foo.js` is what
+1.11 and RequireJS's `nameToUrl` both used); **query** = `?v=<version>`, see §14.4.
+
+**Why compose `toUrl` rather than hand-rolling the string.** `toUrl` already owns the two things that
+vary — `baseUrl` and `urlArgs` — and `new URL(…, document.baseURI)` only supplies the origin that
+`import()` needs and `toUrl` deliberately does not. That makes one derivation correct on all three
+entry points: `main.js` leaves `baseUrl` at `""` (measured: the derived url is document-relative and
+right), while `main-authorize.js:99` and `main-device.js:69` inject
+`configureLoader({ baseUrl: data.baseUrl })` where `data.baseUrl` is already `"<serverBase>/XUI"` —
+and those two pages are served from `/oauth2/…`, where `document.baseURI` is **not** the XUI root.
+Measured with `baseUrl` flipped to `"http://localhost:8090/openam/XUI"`: the derived url is
+unchanged and correct. (Neither secondary configures `resolveModule` today, so the fallback is not
+reachable there — but writing the derivation this way means it is not *wrong* there either, which a
+bare `document.baseURI` version would have been.)
+
+### 14.4 SHOULD THE FALLBACK URL CARRY THE VERSION? — POSITION: YES
+
+**Recommendation: yes, `?v=${__TARGET_VERSION__}`, i.e. exactly what `toUrl` already appends. This
+is the change owner's call; here is both sides and the measurement that settles the tie.**
+
+The requirement reads two ways because the operator's module has two properties at once, and
+`ui-build-and-packaging`'s *Cache invalidation for runtime-fetched assets* only names the first:
+*"Assets fetched by path at runtime SHALL carry the build version in the URL used to fetch them."*
+
+- **For.** It *is* fetched by path at runtime, which is the requirement's literal subject. It sits
+  under `/XUI/*`, which `openam-server-only/src/main/webapp/WEB-INF/web.xml:226-228` maps to
+  `CacheForAMonth` → `public, max-age=2592000`, with excludes for only `/XUI/`, `/XUI/index.html`
+  and the two RequireJS stubs (`:97`). An operator's module therefore gets a **30-day browser cache
+  at a URL that never changes**. The failure this prevents is concrete: an AM upgrade replaces the
+  webapp, the operator re-drops their updated module at the same path, and a returning browser
+  serves the month-old copy. With the version on the url, the upgrade changes the key and the
+  refetch happens.
+- **Against.** The version is the *product's*, and the operator's module is not a build artifact —
+  editing it within one deployed version does not change the url, so the query buys no invalidation
+  for the change most likely to happen. That is true, and it is an argument that the version is
+  *insufficient*, not that it is *wrong*: without it the same edit is equally uncached, and the
+  upgrade case above additionally breaks. The version strictly dominates.
+- **The one real cost, measured.** A file imported at two different urls is **two module records and
+  two evaluations** — the 6.1a hazard, reproduced here directly: a module that increments a counter
+  at top level was imported as `…/config/SpikeCount.js` and then as `…/config/SpikeCount.js?v=dev`,
+  and `window.__spikeEvalCount` came back **2**. Its own `import.meta.url` carried the query. So the
+  rule is *consistency*, not *absence*: the fallback must use one derivation for every id, and an
+  operator who ships two files must be told that a sibling `import("./Other.js")` from inside their
+  own module resolves **without** the query (measured: `import.meta.url` is
+  `…/config/SpikeCount.js?v=dev`, so a sibling relative import inherits the directory but not the
+  query) and would therefore double-evaluate a module the fallback also loads. That belongs in 6.6's
+  operator documentation.
+
+### 14.5 FORMAT: ESM. AMD IS FETCHED, PARSED, AND THEN THROWS
+
+Both forms were dropped into the served tree at the path their identifier implies
+(`target/compiled/config/E2EStandInLoginHelper.js`, id `config/E2EStandInLoginHelper` — the same id
+task 1.11's fixture declares for itself) and imported through the derived url.
+
+| dropped file | result |
+|---|---|
+| `fixtures/E2EStandInLoginHelper.js` **verbatim (AMD)** | ✗ `ReferenceError: define is not defined` |
+| an ESM module whose first line is `import … from "org/forgerock/openam/ui/user/login/RESTLoginHelper"` | ✗ `TypeError: Failed to resolve module specifier "org/forgerock/openam/ui/user/login/RESTLoginHelper". Relative references must start with either "/", "./", or "../".` |
+| a self-contained ESM module | ✓ namespace with `Symbol.toStringTag === "Module"` and a `default`; `LoaderRuntime.unwrapModule` returns the default; the module's `window` marker was written |
+
+Three things worth keeping from that:
+
+- **`ReferenceError`, not `SyntaxError`.** `define([…], function (…) {…})` is valid ES-module syntax,
+  so the AMD fixture is fetched and *parsed* successfully and dies at evaluation on the missing
+  global. The failure is therefore indistinguishable, from the outside, from any other bug in the
+  operator's module — it does not say "this file is AMD", and it names neither the url nor the id.
+- **An operator's ESM module cannot reach a shipped module by its AMD id.** Bare specifiers need an
+  import map and the page has none. Measured what the page *does* expose: comparing
+  `Object.getOwnPropertyNames(window)` against a pristine same-origin iframe, the XUI's own additions
+  are exactly **`$`, `jQuery`** and jQuery's internal expando — **no module-resolution global at
+  all**. So 1.11's "delegate to the shipped `RESTLoginHelper`" design has *no channel* under D1 as it
+  stands. See §14.8; this is 6.6's to settle, not 6.3's to invent.
+- The ESM module's own `import.meta.url` is its served url, so **relative imports between two
+  operator-supplied files work** (`./Other.js` resolves inside `/XUI/config/`).
+
+**The working ESM stand-in, verbatim — 6.6 starts from this.** It is deliberately *not* a port of
+1.11's fixture: the delegation half is the part that has no channel, so what is proved working here
+is the format, the marker and the three-formal-parameter arity constraint that `_.curry` imposes
+(`SessionManager` takes the arity from `fn.length`; rest args make it 0 and login hangs silently —
+1.11's note applies unchanged).
+
+```js
+const marker = window.__spikeEsmPlain = {
+    loaded: true,
+    moduleId: "config/SpikeEsmPlain",
+    calls: []
+};
+
+export default {
+    login (params, successCallback, errorCallback) { marker.calls.push("login"); },
+    logout (successCallback, errorCallback) { marker.calls.push("logout"); },
+    getLoggedUser (successCallback, errorCallback) { marker.calls.push("getLoggedUser"); }
+};
+```
+
+A second file at `org/forgerock/openam/ui/spike/DeepEsm.js`, identifier
+`org/forgerock/openam/ui/spike/DeepEsm`, resolved identically — **the path convention holds at full
+depth**, not only for the shallow `config/` case.
+
+### 14.6 WHAT A MISS LOOKS LIKE
+
+Importing the derived url of a file that is not there, with the local server answering
+`404 Not Found` / `Content-Type: text/plain` / `Cache-Control: no-store`:
+
+```
+TypeError: Failed to fetch dynamically imported module: http://localhost:8090/openam/XUI/config/ThisFileIsNotThere.js
+```
+
+- **Type:** `TypeError` (`error instanceof Error` true, `error.constructor.name === "TypeError"`).
+- **Catchable:** yes, as an ordinary promise rejection — `await` inside `try/catch` caught it every
+  time, and it is a rejection rather than a synchronous throw, so it composes with
+  `LoaderRuntime.loadModule`'s existing promise chain with no special handling.
+- **Names the url:** yes, in full and absolute. It does **not** name the identifier as such — though
+  by construction the identifier is a substring of the url (`…/no/such/Module.js?v=dev` for the id
+  `no/such/Module`). It carries no HTTP status, no `cause`, and nothing that distinguishes 404 from
+  a network failure or a CORS refusal.
+- **Stable on repeat:** a second import of the same missing url produced the identical `TypeError`;
+  the browser does not degrade or cache a miss into a different error.
+- A **500 or a 200 serving HTML** would be different shapes (a non-JS content type yields the same
+  `Failed to fetch…` form; a JS-typed body that does not parse yields a `SyntaxError` naming a line).
+  Not measured — the local server only ever answered 404 or 200.
+
+### 14.7 WHERE THE FALLBACK SITS, AND WHETHER THE TWO MISSES CAN BE TOLD APART
+
+`moduleRegistry.js` ends in
+
+```js
+export const resolveModule = (id) =>
+    (logicalNames[id] || modules[id] || libraries[id] || (() => undefined))();
+```
+
+**The fallback replaces the trailing `(() => undefined)` and nothing else.** That placement is what
+makes both halves of the requirement hold, and both halves were measured on the live page by
+installing a 6.3-shaped resolver through `LoaderRuntime.configure` and re-running `loadModule`:
+
+```js
+configure({ resolveModule: (id) => {
+    const hit = resolveModule(id);
+    return hit === undefined ? import(/* @vite-ignore */ fallbackUrl(id)) : hit;
+} });
+```
+
+| id | table | with the fallback installed |
+|---|---|---|
+| `org/forgerock/commons/ui/common/main/Configuration` | glob | ✓ resolved from the registry — **not** from `…/XUI/org/…/Configuration.js`, which does not exist in the deployed tree, so a fallback that had fired would have 404'd |
+| `LoginView` | logical name | ✓ resolved from the registry (same argument: `…/XUI/LoginView.js` does not exist) |
+| `bootstrap` | library | ✓ (`resolveModule` returns non-undefined before the fallback) |
+| `constructor` | none — the tables are null-prototype | falls through to the fallback, as it must |
+| `config/SpikeEsmPlain` | none | ✓ loaded from `/XUI/config/SpikeEsmPlain.js?v=dev` |
+| `no/such/Module` | none | ✗ `TypeError: Failed to fetch dynamically imported module: …/no/such/Module.js?v=dev` |
+
+A registered id therefore **never** reaches the fallback (the three tables are consulted first, in
+order, and §12.4 already establishes there are no collisions), and an unregistered id **always**
+does. The null-prototype tables are load-bearing here for a second reason beyond 6.1's: with plain
+`{}`, `constructor` / `toString` / `valueOf` would resolve to an inherited member and never reach the
+fallback either.
+
+**Can the two be told apart from outside? Partly — and the part that is lost matters to 6.4.**
+
+- **What is lost, and it is the important one.** With the fallback installed, `resolveModule` can no
+  longer return nullish for *any* id, so **`LoaderRuntime.loadModule`'s named error becomes
+  unreachable**. Measured, before installing the fallback:
+  `Error: [LoaderRuntime] The configured resolveModule returned nothing for "config/SpikeEsmPlain". …`
+  — an `Error` that names the identifier, which is what `ui-module-loading`'s *Unresolvable
+  identifier fails observably* ("fails with an error naming the unresolved identifier") is currently
+  satisfied by. After installing it, the same id fails as an anonymous `TypeError` about a url.
+  **6.4 must re-supply the identifier**: catch the rejection inside the fallback and rethrow naming
+  both the id and the derived url. Do not rely on the id being a substring of the url.
+- **What can still be told apart, by url shape.** A registry hit whose chunk fails to load also
+  rejects with `Failed to fetch dynamically imported module:` — but at
+  `…/XUI/assets/<Name>-<8-char-hash>.js`, whereas a fallback miss is always at the identifier's own
+  path below the tree root with no hash. So the discriminator is the **url**, not the error type;
+  both are `TypeError` with the same message prefix. An operator module that loads and then throws
+  (the AMD case, §14.5) is a third shape again — whatever error the module itself threw, with no url
+  and no id anywhere.
+
+### 14.8 NOT DETERMINED
+
+1. **How an operator's ESM module reaches a shipped module.** Measured that it cannot today: no
+   import map, no module-resolution global (only `$`/`jQuery`), and no stable ESM export surface in
+   the emitted tree — `main.js` is the 982 B stub and exports nothing, and every real chunk name
+   carries a content hash. Task 1.11's fixture is built entirely on delegating to
+   `RESTLoginHelper`, so **6.6 cannot be a straight AMD→ESM transcription of it**. The candidate
+   channels (a documented global exposing `ModuleLoader.load`; an import map stamped into
+   `index.html`; a self-contained fixture that drops the delegation) each change something outside
+   6.3's scope and none was chosen here.
+2. **Dev-server behaviour (`vite serve`).** Not measured. `@vite-ignore` may well matter there even
+   though it provably does not in the production build; §14.1's finding is scoped to `vite build`.
+3. **Non-404 miss shapes** (500, or a 200 with a non-JS body) — §14.6.
+4. **Whether the fallback should probe `.jsm`/`.jsx`.** Not measured and, in this spike's view, not
+   wanted: `.js` unconditionally is what the deployed layout's convention says. Flagged only because
+   6.1 found ten *registry* ids that carry `.jsm`, and someone may reasonably ask.

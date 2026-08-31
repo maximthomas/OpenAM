@@ -63,8 +63,17 @@
  * matches `main.js`, `main-authorize.js` and `main-device.js`, so `resolveModule("main")` would
  * re-execute an entry body that calls `configureLoader(...)`, `resolveAssetUrl.configure(...)` and
  * `EventManager.sendEvent(...)` at top level -- reconfiguring the console's loader mid-flight.
- * Nothing asks for those ids today, so this closes a trap rather than repairing damage.
  * NOTES-module-registry.md section 12.4 records the name-collision half; this is the sharper half.
+ *
+ * SINCE 6.3 THE EXCLUSION NO LONGER CLOSES THAT TRAP. It keeps the entry bodies out of the glob
+ * map, but an excluded id now reaches the dynamic-import fallback instead, and all three files
+ * exist at the deployed tree root. `main` is saved only by URL IDENTITY: the fallback derives
+ * `main.js?v=<version>` and `index.html` is stamped with the same `main.js?v=${version}`, so it
+ * resolves to the SAME module record and the body does not re-run -- which is precisely the
+ * coincidence 6.1a exists to stop depending on. `main-authorize` and `main-device` are the two
+ * classic-IIFE RequireJS stubs, and nothing stops those being fetched and evaluated as ES modules,
+ * body and side effects included. Nothing asks for any of the three ids today, so this stays
+ * latent -- but read the exclusion as payload and name-collision hygiene now, not as a guarantee.
  *
  * `config/main` stays in: an orphan aggregator with no top-level side effects.
  *
@@ -104,6 +113,8 @@
  * solved it per-file too. Revisit when ESLint is upgraded; nothing else here needs the exclusion.
  */
 
+import { toUrl } from "org/forgerock/commons/ui/common/util/esm/LoaderRuntime";
+
 const AM_PREFIX = "/src/main/js/";
 const COMMONS_PREFIX = "/node_modules/@openidentityplatform/ui-commons/esm/";
 const USER_PREFIX = "/node_modules/@openidentityplatform/ui-user/esm/";
@@ -132,11 +143,12 @@ const userTree = import.meta.glob("/node_modules/@openidentityplatform/ui-user/e
 /*
  * NULL-PROTOTYPE, all three tables. A plain `{}` inherits from `Object.prototype`, so the ids
  * `constructor`, `toString`, `valueOf`, `hasOwnProperty` and `__proto__` would find an inherited
- * member and never reach the `(() => undefined)` fallback below -- `constructor` would resolve to
- * a non-nullish placeholder, which is the one thing the resolver's contract forbids, and
- * `__proto__` would throw with the id lost. No id in the current corpus is affected; this keeps
- * the fallback's guarantee true for every possible string rather than for the ids we happen to
- * have today. It also stops `addTree` writing through `__proto__` if a file were ever so named.
+ * member and never reach the LAST BRANCH of `resolveModule` at all -- `constructor` would resolve
+ * to a non-nullish placeholder and `__proto__` would throw with the id lost. Since 6.3 that last
+ * branch is the dynamic-import fallback, so this is what keeps the open-set guarantee true for
+ * every possible string rather than for the ids we happen to have today; the reasoning lives with
+ * the resolver. No id in the current corpus is affected. It also stops `addTree` writing through
+ * `__proto__` if a file were ever so named.
  */
 const modules = Object.create(null);
 
@@ -179,10 +191,20 @@ const libraries = Object.assign(Object.create(null), {
  * password-reset and self-registration each resolve to nothing.
  *
  * Kept as a SEPARATE table consulted BEFORE the glob map, and looked up under the RAW id as
- * commons passes it. That is what satisfies the requirement's third scenario -- a logical name
- * left unbound must be reported AGAINST THE LOGICAL NAME. The id commons passes is `"LoginView"`,
- * not a path, so `LoaderRuntime`'s "returned nothing for ..." error names it. Mapping a name to a
- * path first and then failing on the path would report the path and lose the scenario.
+ * commons passes it. That is what keeps the requirement's third scenario REACHABLE -- a logical
+ * name left unbound must be reported AGAINST THE LOGICAL NAME -- because the id commons passes is
+ * `"LoginView"`, not a path. Mapping a name to a path first and then failing on the path would
+ * report the path and lose the scenario outright.
+ *
+ * SINCE 6.3 THE RAW ID IS NECESSARY BUT NO LONGER SUFFICIENT. Until then an unbound name fell
+ * through to `undefined` and `LoaderRuntime` threw `returned nothing for "LoginView"`, which named
+ * it, and that error was the whole of what satisfied the scenario. It is now UNREACHABLE: an
+ * unbound name reaches the fallback, which derives `<tree root>/LoginView.js?v=<version>` -- a path
+ * that is meaningless for a logical name by construction -- and fails with `TypeError: Failed to
+ * fetch dynamically imported module: ...`, which reads as "a file is missing" rather than "a
+ * binding is missing". 6.4 is what restores a legible failure, and because the fallback is entered
+ * with the RAW id the error it rethrows can still name `"LoginView"` -- which is the reason this
+ * table must go on looking up the raw id and must not be folded into the glob map.
  *
  * THUNKS, NOT STATIC IMPORTS. Measured: binding these seven with static `import` puts 1 015 415
  * bytes in the entry chunk against 4 083 for thunks -- the login view, login dialog, profile view
@@ -219,30 +241,155 @@ const logicalNames = Object.assign(Object.create(null), {
 });
 
 /**
- * Resolves a runtime module identifier to the module (or a promise of it), or to `undefined` when
- * nothing covers it.
+ * THE OPEN-SET HALF OF D1 -- task 6.3. Derives the url of a module the build never saw from its
+ * identifier, using the deployed layout's own convention: `org/forgerock/.../Foo` -> `Foo.js` at
+ * that same path below the deployed tree root, which is what RequireJS's `nameToUrl` did and what
+ * the PATH CONVENTION block in vite.config.js preserves.
  *
- * THE TRAILING `(() => undefined)` IS LOAD-BEARING and must not be tidied away. Written the
- * natural way -- `(logicalNames[id] || modules[id] || libraries[id])()` -- an unknown id throws
- * `TypeError: ... is not a function`. `LoaderRuntime` catches that (it calls the resolver inside a
- * promise chain precisely because a missing entry in an `import.meta.glob` map is a TypeError, not
- * a rejection), but the rejection then carries "x is not a function" and THE IDENTIFIER IS GONE.
- * Returning `undefined` instead lets `loadModule` reject with a message naming the id, which is
- * what ui-module-loading's "Unresolvable identifier fails observably" asks for.
+ * `new URL(..., document.baseURI)` is not decoration, and the three obvious spellings are all
+ * wrong -- measured in a served build under the `/openam/XUI/` context path
+ * (NOTES-module-registry.md section 14.2):
  *
- * Equally, this must not resolve with a placeholder for an unknown id. `LoaderRuntime` turns a
- * nullish result into a named error; anything non-nullish defeats that and the failure resurfaces
- * later as a property access on the wrong object.
+ *   `import("config/Foo.js")`     -> TypeError: Failed to resolve module specifier. `import()`
+ *                                    applies MODULE SPECIFIER rules, not url rules; a bare
+ *                                    specifier needs an import map and the deployed page has none.
+ *                                    So the one-liner that looks obviously right --
+ *                                    `import(toUrl(id + ".js"))`, since `toUrl` is the
+ *                                    `require.toUrl` this build replaced -- fails on EVERY id,
+ *                                    including ids whose file is present.
+ *   `import("./config/Foo.js")`   -> fetches `/XUI/assets/config/Foo.js`. A relative specifier
+ *                                    resolves against the importing CHUNK, and this file is
+ *                                    bundled into a chunk under `assets/`. 404.
+ *   `import(new URL("../" + ..., import.meta.url))` -> works today and is the worse anchor: it is
+ *                                    correct only while every chunk sits exactly one directory
+ *                                    below the tree root, which is a property of `chunkFileNames`,
+ *                                    not of the deployment.
  *
- * There is deliberately NO dynamic-import fallback here for ids absent from the registry. That is
- * task 6.3's, and adding it now would hide which branch a resolution took.
+ * `document.baseURI` is the directory `index.html` is served from, context path included, and is
+ * fragment-proof -- measured identical at `/XUI/`, `/XUI/index.html#login/` and
+ * `/XUI/#realms/%2F/dashboard`, because `new URL()` discards the base's fragment and filename and
+ * no `<base>` tag is emitted. That is the same origin RequireJS inferred from the document.
+ *
+ * COMPOSE `toUrl` RATHER THAN HAND-ROLLING THE STRING. `toUrl` owns the two things that vary here
+ * -- `baseUrl` and `urlArgs` -- and `new URL(..., document.baseURI)` supplies only the origin that
+ * `import()` needs and `toUrl` deliberately does not. That makes ONE derivation correct on all
+ * three entry points: `main.js` leaves `baseUrl` at `""` (the derived url is document-relative and
+ * right), while `main-authorize.js` and `main-device.js` configure `baseUrl` to
+ * `"<serverBase>/XUI"` and are served from `/oauth2/...`, where `document.baseURI` is NOT the XUI
+ * root. Neither secondary entry configures a `resolveModule`, so the fallback is unreachable there
+ * today -- but written this way it is not wrong there either.
+ *
+ * `toUrl` has a THIRD branch this deliberately inherits: a configured `resolveUrl` short-circuits
+ * both `baseUrl` and `urlArgs`. Nothing in AM configures one (LoaderRuntime documents it for a
+ * consumer whose asset urls come from a bundler manifest, which is the wrong answer for a module
+ * id, since the point of this path is ids the bundler never saw). If a consumer ever sets it, this
+ * derivation changes meaning silently -- that is the price of composing rather than hand-rolling,
+ * and it is the right side of the trade while `resolveUrl` stays unused.
+ *
+ * THE VERSION QUERY IS DELIBERATE. `toUrl` appends `urlArgs`, which `main.js` sets to
+ * `v=${__TARGET_VERSION__}`, so the derived url ends `?v=<build version>`. D4 and
+ * ui-build-and-packaging's "Cache invalidation for runtime-fetched assets" cover assets fetched by
+ * path at runtime, which this is: `/XUI/*` is mapped to `CacheForAMonth` (`public, max-age=2592000`)
+ * in `openam-server-only/.../web.xml`, with excludes for only `/XUI/`, `/XUI/index.html` and the two
+ * RequireJS stubs, so without the query an AM upgrade plus a re-dropped operator module serves a
+ * month-old cached copy at an unchanged url. The version does not invalidate an operator's edit
+ * WITHIN one deployed version -- but neither does its absence, so it strictly dominates.
+ *
+ * The one real cost is measured and is a consistency rule, not an argument against: a file imported
+ * at two different urls is TWO module records and TWO evaluations (the 6.1a hazard, reproduced
+ * directly -- `?v=` and no `?v=` gave an evaluation count of 2). So every id goes through THIS
+ * derivation and no other, and an operator shipping two files must be told that a sibling
+ * `import("./Other.js")` from inside their own module inherits the directory but NOT the query.
+ * That belongs in 6.6's operator documentation.
+ *
+ * `.js`, ALWAYS AND UNCONDITIONALLY -- no `.jsm`/`.jsx` probing. Ten registry ids carry `.jsm`, but
+ * those are build-time source files reached by glob; the deployed layout's convention for a file an
+ * operator drops in is `Foo.js`, which is what 1.11 and RequireJS both used.
+ *
+ * THE OPERATOR'S MODULE MUST BE AN ES MODULE. Measured: task 1.11's AMD fixture dropped at the path
+ * its identifier implies is fetched and PARSED successfully -- `define([...], function () {})` is
+ * valid ES-module syntax -- and dies at evaluation with `ReferenceError: define is not defined`,
+ * naming neither the file nor the format. A self-contained ES module resolves cleanly and
+ * `LoaderRuntime.unwrapModule` returns its default export. Section 14.5 carries a working stand-in.
+ *
+ * NO IDENTIFIER VALIDATION, AND THAT IS A CHOICE RATHER THAN AN OVERSIGHT -- recorded because this
+ * is the one place in the application where a string becomes a url that then gets EXECUTED. With
+ * `baseUrl` at `""`, a protocol-relative id `//host/x` derives `http://host/x.js` (cross-origin
+ * script execution), a leading slash escapes the context path, `..` segments are normalised away
+ * by `new URL`, an id containing `?` makes `toUrl` append `&v=` instead of `?v=`, and everything
+ * after a `#` becomes a fragment. There is no live injection path today: every id that reaches
+ * here is developer-controlled -- `config/AppConfiguration.js` holds `loginHelperClass` and
+ * `delegate` as literals, the route and process view ids are bundled, and D6 makes configuration
+ * compile-time. A guard rejecting `^[a-z]+:`, `^//`, `^/` and ids containing `?` or `#` belongs
+ * with 6.4, which is already writing the error path this would reject into; adding it here would
+ * mean inventing a failure shape 6.4 then has to replace.
+ * @returns {String} The absolute url to import it from.
+ */
+const fallbackUrl = (id) => new URL(toUrl(`${id}.js`), document.baseURI).href;
+
+/**
+ * Resolves a runtime module identifier to the module, or to a promise of it.
+ *
+ * FOUR BRANCHES IN ONE `||` CHAIN, AND THE ORDER IS THE CONTRACT. The three tables are consulted
+ * first, in order, and the dynamic-import fallback is the last alternative -- so a REGISTERED id can
+ * never reach the fallback and an UNREGISTERED id always does, structurally rather than by luck.
+ * `||` short-circuits, so `fallbackUrl` is not even evaluated for an id a table covers. There are no
+ * cross-table collisions (section 12.4) and every table value is a function, hence truthy, so no
+ * registered id can fall through by being falsy.
+ *
+ * The null-prototype tables are load-bearing for this as well as for 6.1's reason: with a plain
+ * `{}`, the ids `constructor`, `toString`, `valueOf` and `__proto__` would find an INHERITED member
+ * and never reach the fallback at all. Measured with the fallback installed: `constructor` and
+ * `no/such/Module` fall through, while `org/forgerock/commons/ui/common/main/Configuration`,
+ * `LoginView` and `bootstrap` still resolve from their tables -- none of which has a file at the
+ * url its identifier implies, so a fallback that had fired would have 404'd.
+ *
+ * A TRAILING THUNK IS STILL LOAD-BEARING, and that is why the fallback is written as one rather
+ * than bolted on outside. Written the natural way -- `(logicalNames[id] || modules[id] ||
+ * libraries[id])()` -- an unknown id throws `TypeError: ... is not a function` and THE IDENTIFIER
+ * IS GONE. `LoaderRuntime` calls this resolver inside a promise chain precisely because a missing
+ * entry in an `import.meta.glob` map is a TypeError rather than a rejection, so it would catch it
+ * and reject carrying "x is not a function".
+ *
+ * DO NOT CATCH THE FALLBACK'S REJECTION HERE. Task 6.4 turns a miss into a legible rejection and
+ * needs the raw failure intact. Its raw shape, measured: `TypeError: Failed to fetch dynamically
+ * imported module: http://<host>/openam/XUI/config/ThisFileIsNotThere.js` -- an ordinary catchable
+ * promise rejection, naming the url in full, carrying no HTTP status and no `cause`, and not naming
+ * the identifier as such.
+ *
+ * WHAT 6.3 COSTS, RECORDED HERE BECAUSE 6.4 IS WHERE IT IS PAID. This function can no longer return
+ * nullish for any id, so `LoaderRuntime.loadModule`'s named
+ * `"The configured resolveModule returned nothing for <id>"` error -- what ui-module-loading's
+ * "Unresolvable identifier fails observably" was satisfied by until now -- becomes UNREACHABLE, and
+ * an unresolvable id fails instead as an anonymous `TypeError` about a url. 6.4 must re-supply the
+ * identifier by catching inside the fallback and rethrowing with both the id and the derived url;
+ * it must not rely on the id being a substring of the url, and it should reuse `fallbackUrl` rather
+ * than re-derive the string, so that the url it names and the url it fetched cannot drift apart. Until then the two miss shapes are
+ * distinguishable only by url: a registry hit whose CHUNK fails to load rejects with the same
+ * message prefix but at `assets/<Name>-<hash>.js`, while a fallback miss is always at the
+ * identifier's own path below the tree root with no hash.
+ *
+ * The `/* @vite-ignore *\/` comment does not survive the production build -- esbuild's minify pass
+ * strips it, and `import(/* @vite-ignore *\/ url)` and `import(url)` emit byte-identically, with no
+ * warning either way and nothing added to the module graph. It is kept because it states the intent
+ * at the one line where a reader will ask, and because `vite serve` was not measured, where
+ * `vite:import-analysis` does warn on an unanalysable dynamic import.
  *
  * @param {string} id Module id, e.g. `"org/forgerock/commons/ui/common/main/Router"`, or a logical
  *                    name such as `"LoginView"`, or a library name such as `"bootstrap"`.
- * @returns {Promise|Object|undefined} The module namespace or a promise of it; `undefined` when no
- *                                     table covers `id`. Never throws.
+ * @returns {Promise|Object} The module namespace or a promise of it. For an id no table covers, a
+ *                           promise of the module fetched from the deployed instance, which rejects
+ *                           when nothing is there.
+ *
+ * Before 6.3 this never threw at all. It still never REJECTS-BY-THROWING in practice, but the
+ * claim is now approximate rather than exact: `fallbackUrl` can throw synchronously if `document`
+ * is absent (a unit-test context -- `npm run test:unit`) or if `new URL` refuses a pathological id.
+ * `LoaderRuntime.loadModule` calls the resolver inside `Promise.resolve().then(...)`, precisely
+ * because a missing `import.meta.glob` entry is a synchronous TypeError, so the OBSERVABLE
+ * contract -- always a promise, never a throw at the call site -- is unchanged.
  */
 export const resolveModule = (id) =>
-    (logicalNames[id] || modules[id] || libraries[id] || (() => undefined))();
+    (logicalNames[id] || modules[id] || libraries[id] ||
+        (() => import(/* @vite-ignore */ fallbackUrl(id))))();
 
 export default resolveModule;

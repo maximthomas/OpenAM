@@ -105,6 +105,28 @@ import path from "node:path";
 const targetVersion = process.env.TARGET_VERSION || "dev";
 
 /*
+ * The login helper config/AppConfiguration names, overridable at build time, defaulting to the one
+ * the product ships. Deliberately the same shape as TARGET_VERSION above -- an environment variable
+ * read here once and handed to source through `define` below -- so that no module under src/ ever
+ * names `process.env`, which does not exist in a browser bundle.
+ *
+ * WHY IT EXISTS. OpenAM/e2e/xui/xui-operator-module.spec.mjs defends the capability that an operator
+ * can drop a module into the deployed /XUI, name it in configuration, and have the XUI load it. It
+ * therefore needs a deployed tree whose configuration names that module. Under this build the
+ * string is compiled into a content-hashed chunk, so there is no deployed config/AppConfiguration.js
+ * left to edit and the only remaining instruction would have been "edit tracked product source,
+ * build, deploy, and remember to put the line back" -- a source mutation with no teardown, resting
+ * on human memory. This flag removes the mutation: nothing tracked changes, so nothing has to be
+ * restored.
+ *
+ * UNSET IS THE SHIPPED BEHAVIOUR, AND THAT IS THE POINT. The fallback below is character for
+ * character the string config/AppConfiguration.js carried before this flag existed, so a plain
+ * `npm run build:production` emits exactly what it always emitted.
+ */
+const loginHelperClass = process.env.LOGIN_HELPER_CLASS
+    || "org/forgerock/openam/ui/user/login/RESTLoginHelper";
+
+/*
  * ==== 5.1 -- WHICH VITE RUNS. PINNED, AND MADE TO FAIL LOUDLY WHEN IT IS NOT ====
  *
  * SETTLED IN 5.1 because it is the first task in group 5 and so the first one to build anything.
@@ -3304,7 +3326,16 @@ export default defineConfig({
          * Grunt's replace:buildNumber substituted ${version} into index.html (Gruntfile.js:246-258).
          * 4.5 owns the index.html half; this exposes the same value to source.
          */
-        __TARGET_VERSION__: JSON.stringify(targetVersion)
+        __TARGET_VERSION__: JSON.stringify(targetVersion),
+
+        /*
+         * The login helper id, from the environment variable above. `define` is a textual
+         * substitution, so what reaches the chunk is a quoted string literal -- never a
+         * `process.env` lookup, which would be a ReferenceError in the browser. `loginHelperClass`
+         * has already fallen back to the shipped id, so the unset case substitutes that id and
+         * never the token `undefined`.
+         */
+        __LOGIN_HELPER_CLASS__: JSON.stringify(loginHelperClass)
     },
 
     build: {

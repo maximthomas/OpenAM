@@ -12,13 +12,25 @@
  * information: "Portions copyright [year] [name of copyright owner]".
  *
  * Portions copyright 2011-2016 ForgeRock AS.
+ * Portions copyright 2026 3A Systems, LLC.
  */
+
+/* global __LOGIN_HELPER_CLASS__ */
 
 var obj = {
     moduleDefinition: [{
         moduleClass: "org/forgerock/commons/ui/common/main/SessionManager",
         configuration: {
-            loginHelperClass: "org/forgerock/openam/ui/user/login/RESTLoginHelper"
+            /*
+             * "org/forgerock/openam/ui/user/login/RESTLoginHelper", unless the build was told
+             * otherwise. vite.config.js `define`s this identifier from the LOGIN_HELPER_CLASS
+             * environment variable and falls back to that exact string, so an ordinary build emits
+             * what this file has always carried and the identifier is a quoted literal in the
+             * chunk, not a lookup. The override is how a tree can be built naming an
+             * operator-supplied login helper without editing this tracked file -- see
+             * OpenAM/e2e/xui/xui-operator-module.spec.mjs, which needs exactly that.
+             */
+            loginHelperClass: __LOGIN_HELPER_CLASS__
         }
     }, {
         moduleClass: "org/forgerock/commons/ui/common/main/Router",

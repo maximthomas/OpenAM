@@ -89,7 +89,7 @@
                 fetch them by fixed name through RequireJS data-main. Each stub embeds the hashed
                 name of the chunk it imports, so its CONTENT changes on almost every build while
                 its URL never does. Cached for a month it would import a chunk that no longer
-                exists -- a blank consent page for returning browsers after any upgrade. The
+                exists - a blank consent page for returning browsers after any upgrade. The
                 chunks themselves are content-hashed and stay cacheable; only these two must not
                 be. openam-ui-ria's vite.config.js asserts this list still names them.
             -->

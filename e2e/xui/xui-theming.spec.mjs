@@ -23,7 +23,9 @@
  * === Theme selection by realm ===
  *
  * An operator gives a realm its own look by adding an entry to `mappings` in
- * `config/ThemeConfiguration.js` inside the deployed `/XUI`. `ThemeManager.getTheme()` walks that
+ * `config/ThemeConfiguration.js` and rebuilding -- under D6 that file is bundled source, not a
+ * deployed one, and the D6 section below is the whole of what that changes for this spec.
+ * `ThemeManager.getTheme()` walks that
  * array in order, takes the first entry whose `realms` match the realm the page was opened for, and
  * applies `themes[<that theme>]`: `applyThemeToPage` removes every `<link>` in the document and
  * writes the theme's own list back, and the resolved theme object is what the login templates read
@@ -46,8 +48,9 @@
  * assertion below is shaped the way it is:
  *
  *   - the store lowercases the realm before ThemeManager compares it, so a mapping literal that is
- *     not already lowercase never matches. The realm names here come from `uniqueRealmName()`, and
- *     the fixture asserts they are lowercase rather than trusting that they will stay so;
+ *     not already lowercase never matches. The realm names here are fixed literals shared with the
+ *     build flag below, and the fixture asserts they are lowercase rather than trusting that
+ *     whoever next edits them will keep them so;
  *   - `?realm=/name` is the only form that sets it. `#login/name` leaves the realm at "/" and every
  *     realm then gets the default theme — a spec written against the hash form passes for the wrong
  *     reason on the default-theme half and fails on the other;
@@ -66,41 +69,115 @@
  * resolved theme still reaches the page there, including that identical navbar logo. Showing a
  * post-login difference would mean authoring a theme rather than using the one that ships.
  *
- * === This spec asserts post-deploy config editing, which D6 removes ===
+ * === The theme configuration is bundled source, so this spec asserts the build (D6) ===
  *
- * The premise here is that an operator can edit `config/ThemeConfiguration.js` inside the deployed
- * `/XUI` and have the running UI pick it up — that is what the fixture does, and it is exactly the
- * capability D6 drops when config becomes ordinary bundled source. So a failure in this file after
- * phase 2 begins is likely the intended break rather than a regression: check whether
- * `config/ThemeConfiguration.js` is still fetched as its own module before treating it as one.
- * "the theme configuration is fetched as its own module, at a stable URL" pins that request
- * specifically, so the intended break has a name of its own — if config has been bundled, it fails
- * and says so, and every other test in this file fails merely as a consequence, including both
- * override tests. What has to keep working past D6 is theme *selection by realm*; how the operator
- * expresses the mapping is what changes, and this file will need rewriting around whatever replaces
- * the file, not deleting.
+ * This file used to write its mappings into `config/ThemeConfiguration.js` inside the deployed
+ * `/XUI` and restore the file afterwards. That file does not exist in a built tree any more: the
+ * theme configuration is an ordinary bundled module, reached by a static ESM import at
+ * `ThemeManager.js:19` and emitted inside a content-hashed chunk together with ~30 other modules.
+ * Two consequences shape every fixture below.
+ *
+ *   - **There is nothing left to intercept, and intercepting is now actively harmful.** One request
+ *     for `config/ThemeConfiguration.js` is still issued on every page load, which makes the naive
+ *     answer look like "yes" — but it is a `HEAD`, it 404s, and it is issued by
+ *     `warnRetiredConfig.js` (task 7.4), whose entire job is to tell an operator that a file left
+ *     behind in a tree upgraded in place is no longer read. Measured: fulfilling that route with a
+ *     body mapping the root realm to `fr-dark-theme` leaves the applied theme completely unchanged,
+ *     and does convince `warnRetiredConfig` that the tree is stale — which is the opposite of what
+ *     `xui-retired-config.spec.mjs`'s "a clean tree produces no warning at all" asserts. So the
+ *     "preferred alternative" NOTES-theming.md recommends, and the fallback the two describes below
+ *     used to offer, are both superseded. Do not restore them.
+ *   - **The mapping is a build input, so this spec asserts the build and never performs it.**
+ *     `vite.config.js` reads `THEME_CONFIG_OVERRIDE` from the environment and substitutes it as the
+ *     `__THEME_CONFIG_OVERRIDE__` define; `config/ThemeConfiguration.js` merges it over the shipped
+ *     object. The alternative — having the spec edit tracked product source and run a build — was
+ *     rejected for the reason task 6.6 rejected it for `AppConfiguration`: a killed worker leaves
+ *     the source tree dirty with no teardown able to reach it. The fixtures probe for the flag and
+ *     fail with the exact build command when it is absent, and deliberately never `test.skip()`: a
+ *     skipped test reads as a passing one in everything that consumes the result, and the whole
+ *     point of the probe is that a missing precondition must be loud.
+ *
+ * === A mapping needs a realm, and a build flag cannot create one ===
+ *
+ * That is the difference from 6.6, and it is why the fixture is in two halves that compose in one
+ * order and no other. The flag names realms as **fixed lowercase literals** at build time; the
+ * fixture creates exactly those realms over REST *before* it probes, and deletes them in teardown.
+ * The ordering is load-bearing: an unknown realm renders the default theme just as a tree built
+ * without the flag does, so a probe run before the realms exist cannot tell the two apart.
+ *
+ * Fixed names, where every other realm in this suite comes from `uniqueRealmName()`, and that is a
+ * deliberate loss. Uniqueness existed to stop a stale mapping in an editable *deployed file*
+ * matching a later run's realm. The mapping now lives in the bundle, this spec never writes it, and
+ * there is nothing left to go stale — so the guard protects against nothing while costing the
+ * ability to name the realm at build time at all. What it does cost is that two concurrent runs
+ * against one instance would collide on a realm name; that is already true of the suite generally,
+ * and `playwright.config.mjs` runs one worker. The fixtures delete before they create, so a run
+ * killed outright self-repairs on the next one rather than failing it.
+ *
+ * === Where the expected values come from ===
+ *
+ * The stylesheet lists, logos and favicon asserted below are read out of the product's own
+ * `config/ThemeConfiguration.js`. They used to be read out of the deployed copy of that file, and
+ * the reason is unchanged: what is asserted should be "the page shows what the product configures"
+ * and not "the page shows what this file remembers the product shipping in 2026", and the spec
+ * should fail rather than silently assert nothing if `fr-dark-theme` stops shipping. Only the
+ * source moved — from the container to the source tree — because D6 is precisely the decision that
+ * those are now the same thing.
  */
 
 import { test as base, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import vm from "node:vm";
 import { getAdminToken } from "../common/openam-commons.mjs";
-import { createRealm, removeRealm, uniqueRealmName } from "../common/realms-commons.mjs";
-import { DEFAULT_REALM, XUI_BASE } from "../common/xui-commons.mjs";
+import { createRealm, removeRealm } from "../common/realms-commons.mjs";
+import { XUI_BASE } from "../common/xui-commons.mjs";
 import {
     XUI_ROOT,
     deployedPathExists,
-    deployedSha256,
     placeDeployedFile,
-    readDeployedFile,
     removeDeployedFile,
-    sha256,
     waitForServed,
-    writeDeployedFile,
 } from "../common/deployed-xui-commons.mjs";
 
-const THEME_CONFIG_PATH = process.env.OPENAM_THEME_CONFIG
-    ?? `${XUI_ROOT}/config/ThemeConfiguration.js`;
+/** The product's own theme configuration — see "Where the expected values come from" above. */
+const THEME_CONFIG_SOURCE = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
+    "../../openam-ui/openam-ui-ria/src/main/js/config/ThemeConfiguration.js");
 
-const THEME_CONFIG_URL = `${XUI_BASE}/config/ThemeConfiguration.js`;
+/**
+ * The configuration the product ships, read out of its source rather than out of deployed bytes.
+ *
+ * Evaluated rather than `import`ed, and that is forced rather than chosen: the file is `.js` under a
+ * package.json with no `"type": "module"`, so Playwright's loader treats it as CommonJS and dies on
+ * `export default`. Making the import work would mean flipping the whole module to `"type":
+ * "module"`, which breaks the three CommonJS files at its root (`.eslintrc.js`, `Gruntfile.js`,
+ * `karma.conf.js`). The same technique reads `config/AppConfiguration.js` inside
+ * `vite.config.js`'s xui-assert-configured-modules plugin, so it is the established way to read a
+ * config module from outside the build.
+ *
+ * `__THEME_CONFIG_OVERRIDE__` is supplied as `""`, which is the *unset* build. So `shippedThemes`
+ * is always the baseline the flag adds to and never the flagged result — which is what a themed
+ * page has to be compared against.
+ *
+ * `new Function` is avoided in favour of `vm.runInNewContext` so that the evaluated source cannot
+ * see this file's scope. Nothing test-controlled or network-sourced is interpolated into it either
+ * way: the only input is a tracked file in this repository, read from disk.
+ */
+const shippedThemes = (() => {
+    const source = fs.readFileSync(THEME_CONFIG_SOURCE, "utf8");
+    const context = { __THEME_CONFIG_OVERRIDE__: "", exported: undefined };
+
+    // One anchored replacement, not a parse: `export default` is the module's last statement and
+    // the only ESM syntax in the file. If that ever stops being true this throws below rather than
+    // silently yielding an empty object, because `exported` stays undefined.
+    vm.runInNewContext(source.replace(/^export default /m, "exported = "), context,
+        { filename: THEME_CONFIG_SOURCE });
+
+    expect(context.exported && context.exported.themes,
+        `${THEME_CONFIG_SOURCE} must export a configuration declaring themes`).toBeTruthy();
+    return context.exported.themes;
+})();
 
 /** The two themes the product ships. Note the key is not the directory name, which is `dark`. */
 const DEFAULT_THEME = "default";
@@ -111,8 +188,14 @@ const THEMED = "fr-dark-theme";
  *
  * Neither shipped theme can drive template resolution: `default` sets `path: ""` and
  * `fr-dark-theme` does not declare `path` at all, so `extendTheme` gives it the default's empty
- * one. A theme with a non-empty `path` has to be authored, and one key is all it takes —
- * everything else merges down from `default`.
+ * one. A theme with a non-empty `path` has to be REGISTERED AT BUILD TIME — under D6 the theme
+ * configuration is bundled source, so there is no deployed file to insert one into — and one key is
+ * all it takes, everything else merging down from `default`. That registration is what
+ * `THEME_CONFIG_OVERRIDE` below carries, and it is why the flag needs a `themes` half and not only
+ * a `mappings` one. Measured, so that the next reader does not file it as a bug: with the shipped
+ * configuration a file placed at `themes/dark/templates/common/FooterTemplate.html` is served 200
+ * by the container and the page issues *zero* requests under `/XUI/themes/` — on disk, served, and
+ * unreachable, because with an empty path `UIUtils` never constructs a themed URL at all.
  *
  * `themes/dark/` is the path because it already exists in the deployed tree and holds only
  * `config.json`, `css/` and `images/`. That absence of templates is the fixture for the fallback
@@ -120,6 +203,73 @@ const THEMED = "fr-dark-theme";
  */
 const TEMPLATE_THEME = "e2e-template-path";
 const TEMPLATE_THEME_PATH = "themes/dark/";
+
+/**
+ * The realms this spec drives, as fixed lowercase literals — see "A mapping needs a realm" above.
+ *
+ * Lowercase because the store lowercases the realm before ThemeManager compares it against the
+ * mapping, so an uppercase literal here would match nothing and every realm would quietly render
+ * the default theme. The fixtures assert it rather than trusting this comment.
+ */
+const THEME_REALMS = {
+    default: "e2e-theme-default",
+    themed: "e2e-theme-dark",
+    templated: "e2e-theme-template",
+};
+
+/**
+ * The theme configuration the deployed tree must have been built with.
+ *
+ * This is the whole of what the flag carries, and it is deliberately one object rather than two
+ * flags: the selection tests need a `mappings` entry, the override tests additionally need a theme
+ * that declares a non-empty `path` to exist at all, and a mappings-only flag could not register
+ * one. `vite.config.js` passes it through as a JSON *string* — esbuild only inlines primitive
+ * `define` values, so an object-valued define would be hoisted into a shared binding and would
+ * never tree-shake away when the flag is unset.
+ *
+ * The mapping order matters and is asserted by the tests rather than by this comment: matching is
+ * first-match-wins, and `applyOverride` concatenates these ahead of the shipped `mappings`, which
+ * are entirely commented-out examples.
+ *
+ * The default realm is mapped explicitly rather than left to fall through. That does not change
+ * what it renders — the fallback theme is `default` too — but it means a matcher broken in the
+ * over-matching direction fails the default half of each assertion instead of going unnoticed.
+ */
+const THEME_CONFIG_OVERRIDE = {
+    themes: { [TEMPLATE_THEME]: { path: TEMPLATE_THEME_PATH } },
+    mappings: [
+        { theme: THEMED, realms: [`/${THEME_REALMS.themed}`] },
+        { theme: DEFAULT_THEME, realms: [`/${THEME_REALMS.default}`] },
+        { theme: TEMPLATE_THEME, realms: [`/${THEME_REALMS.templated}`] },
+    ],
+};
+
+/**
+ * What to tell whoever hit the precondition failure.
+ *
+ * The JSON is stringified from the constant above rather than written out again, so the command
+ * printed here cannot drift from what the fixtures assert. It is left as a placeholder rather
+ * than derived, because `e2e/local/lib.sh` is a sourced library and not a command. `TARGET_VERSION`
+ * is named at all because
+ * `npm run build:production` leaves it unset, `vite.config.js` then falls back to "dev", and every
+ * runtime-fetched asset gets `?v=dev` — which `xui-cache-busting.spec.mjs` asserts against the
+ * deployed AM version, so an otherwise correct rebuild would turn this failure into that one.
+ */
+const BUILD_REMEDIATION = `
+
+The deployed /XUI was not built with THEME_CONFIG_OVERRIDE. Under design.md D6 the theme
+configuration is bundled source, so this spec asserts the build as a precondition and never
+performs it. Rebuild and redeploy:
+
+    cd openam-ui/openam-ui-ria
+    TARGET_VERSION=<the deployed AM version> \\
+        THEME_CONFIG_OVERRIDE='${JSON.stringify(THEME_CONFIG_OVERRIDE)}' \\
+        npm run build:production
+    ../../e2e/local/xui-deploy.sh target/compiled
+
+Note that xui-deploy.sh replaces the whole tree, so any theme asset placed in the deployed /XUI by
+hand is removed by the redeploy. The fixtures here place theirs on every run for that reason.
+`;
 
 /**
  * The template the override tests replace, and where a theme's copy of it goes.
@@ -169,10 +319,12 @@ const SEL = {
 /**
  * A theme's replacement for FooterTemplate.
  *
- * The marker text is the realm name, which is unique per run: a stale copy of this file left by an
- * earlier run — or served out of a cache — cannot satisfy the assertion. It deliberately contains
- * no mailto anchor, so the override test can also assert the shipped template's content is *gone*
- * rather than that both rendered.
+ * The marker text carries `RUN_ID`, so a stale copy of this file left by a killed run — or served
+ * out of a cache — cannot satisfy the assertion. It used to carry the realm name, which was unique
+ * per run until the build flag forced the realms to be fixed literals; the uniqueness had to move
+ * somewhere, and this is the only place it was doing any work. It deliberately contains no mailto
+ * anchor, so the override test can also assert the shipped template's content is *gone* rather than
+ * that both rendered.
  */
 function overrideFooter (marker) {
     return `<div class="container"><p id="e2e-template-override">${marker}</p></div>`;
@@ -192,18 +344,6 @@ function normalizeHref (href) {
  * for a file of its own. What stays here is only this spec's binding of them to its own paths.
  */
 
-function readDeployedConfig () {
-    return readDeployedFile(THEME_CONFIG_PATH);
-}
-
-function writeDeployedConfig (contents) {
-    writeDeployedFile(THEME_CONFIG_PATH, contents);
-}
-
-function deployedConfigSha256 () {
-    return deployedSha256(THEME_CONFIG_PATH);
-}
-
 /**
  * Take the override and the two directories it needed back out of the deployed tree.
  *
@@ -215,81 +355,6 @@ function deployedConfigSha256 () {
  */
 function removeDeployedOverride () {
     removeDeployedFile(OVERRIDE_PATH, OVERRIDE_DIRS);
-}
-
-/**
- * The deployed config as an object, evaluated the way RequireJS evaluates it.
- *
- * The expectations below are read out of this rather than written as literals, so what they assert
- * is "the page shows what the operator configured" rather than "the page shows what this file
- * remembers the product shipping in 2026". It also means the spec fails, rather than silently
- * asserting nothing, if `fr-dark-theme` stops shipping.
- *
- * `new Function` will draw a security-review eye, so: the only thing ever passed here is bytes read
- * straight back out of the container this same process writes to, and nothing test-controlled or
- * network-sourced is interpolated into the body. There is no safe-parser alternative — the file is
- * JavaScript, not JSON, and it is evaluated for its side effect of calling `define`.
- */
-function parseThemeConfig (source) {
-    let captured;
-    new Function("define", source)((value) => {
-        captured = value;
-    });
-    expect(captured, "the deployed ThemeConfiguration must be an AMD module calling define()")
-        .toBeTruthy();
-    return captured;
-}
-
-/**
- * The same file with `mappings` entries inserted at the head of the array.
- *
- * Inserted rather than substituted: everything else in the file, including the ~660 bytes of
- * commented-out example mappings the product ships as operator documentation, is carried over byte
- * for byte. The teardown restores the whole file anyway, but a run killed outright leaves whatever
- * was last written, and that should be a file with one extra mapping in it rather than one with the
- * examples stripped out. It also means this makes no assumption about `mappings` being the last key
- * in the module — everything after the insertion point is untouched.
- *
- * The entries go first because matching is first-match-wins; a trailing comma before the shipped
- * comments and the closing bracket is legal and leaves no array hole.
- */
-function withMappings (source, mappings) {
-    const opening = "mappings: [";
-    const start = source.indexOf(opening);
-    expect(start, "the deployed ThemeConfiguration must declare a mappings array")
-        .toBeGreaterThan(-1);
-
-    const rendered = mappings.map((mapping) => `    ${JSON.stringify(mapping)},`).join("\n");
-    const at = start + opening.length;
-    return `${source.slice(0, at)}\n${rendered}\n${source.slice(at)}`;
-}
-
-/**
- * The same file with extra entries inserted at the head of the `themes` object.
- *
- * Inserted, for the reasons `withMappings` is: everything the product ships — including the
- * commented-out key-by-key documentation of what a theme may declare — is carried over byte for
- * byte, so a run killed between the write and the restore leaves a file with one theme too many
- * rather than one with the shipped themes rewritten. The head of the object is a safe insertion
- * point because a later key would win over an earlier one of the same name, and these names do not
- * collide with the shipped ones; the fixture asserts both of those by parsing the result back.
- */
-function withThemes (source, themes) {
-    const opening = "themes: {";
-    const start = source.indexOf(opening);
-    expect(start, "the deployed ThemeConfiguration must declare a themes object")
-        .toBeGreaterThan(-1);
-
-    const rendered = Object.entries(themes)
-        .map(([name, theme]) => `    ${JSON.stringify(name)}: ${JSON.stringify(theme)},`)
-        .join("\n");
-    const at = start + opening.length;
-    return `${source.slice(0, at)}\n${rendered}\n${source.slice(at)}`;
-}
-
-function waitForServedConfig (request, predicate, what) {
-    return waitForServed(request, THEME_CONFIG_URL,
-        (status, body) => status === 200 && predicate(body), what);
 }
 
 /**
@@ -306,93 +371,146 @@ function waitForOverrideAbsent (request, what) {
     return waitForServed(request, OVERRIDE_URL, (status) => status === 404, what);
 }
 
+/**
+ * Unique per run. See `overrideFooter` — the realms cannot carry this any more.
+ */
+const RUN_ID = Date.now().toString(36);
+
+/**
+ * Load a realm's login page in a throwaway context and read one thing off it.
+ *
+ * Its own context, and deliberately not the test's `page`: these probes run before `use()`, and
+ * everything under `/XUI/*` is served `Cache-Control: public, max-age=2592000`. A probe that shared
+ * the test's context would leave the page it loaded in that cache, and the test's own navigation —
+ * which for three of the four tests is the thing being measured — would then be answered from the
+ * cache rather than from the container.
+ */
+async function probeThemeFor (browser, realm, read) {
+    // `ignoreHTTPSErrors` is restated and is not decoration: a context created straight off
+    // `browser` does not inherit the config's `use` block, where playwright.config.mjs sets it, and
+    // OPENAM_BASE_URL may be a self-signed https instance. Without it `page.goto` rejects on the TLS
+    // error and BUILD_REMEDIATION -- the entire payoff of failing loudly here -- is never printed.
+    // xui-operator-module.spec.mjs restates it in its own probe for the same reason.
+    const context = await browser.newContext({ ignoreHTTPSErrors: true });
+    try {
+        const page = await context.newPage();
+        await page.goto(`${XUI_BASE}/?realm=${realm}#login/`);
+        await expect(page.locator(SEL.loginLogo)).toBeVisible();
+        return await read(page);
+    } finally {
+        await context.close();
+    }
+}
+
+/*
+ * Both preconditions are memoised across the file. The build under test cannot change while a run
+ * is in flight, so checking once per worker is sound, and the probe costs a page load that would
+ * otherwise be paid by all four tests instead of by the first two.
+ *
+ * They are separate booleans, not one, because they establish different halves of the flag: the
+ * `mappings` half selects a shipped theme by realm, the `themes` half registers a theme that does
+ * not otherwise exist. A tree built with a hand-edited flag carrying only mappings would pass the
+ * first and fail the second, and the failure should name which half is missing.
+ */
+let mappingPreconditionChecked = false;
+let themePreconditionChecked = false;
+
+/** The built configuration maps this realm to the shipped dark theme. */
+async function assertMappingWasBuilt (browser, realm) {
+    if (mappingPreconditionChecked) {
+        return;
+    }
+    const hrefs = await probeThemeFor(browser, realm, (page) => page.locator(SEL.stylesheets)
+        .evaluateAll((links) => links.map((link) => link.getAttribute("href"))));
+
+    expect(hrefs.map(normalizeHref),
+        `${realm} must resolve to the "${THEMED}" theme, and resolves to the default one.`
+        + BUILD_REMEDIATION)
+        .toEqual(shippedThemes[THEMED].stylesheets.map(normalizeHref));
+
+    mappingPreconditionChecked = true;
+}
+
+/**
+ * The built configuration registers a theme with a non-empty `path` and maps this realm to it.
+ *
+ * The favicon is the observable, for the same reason `expectThemePathApplied` uses it below:
+ * `applyThemeToPage` builds its href as `theme.path + theme.icon` unconditionally, so a non-empty
+ * path is visible in the DOM whether or not any template resolved. A stylesheet comparison could
+ * not tell this theme from `default`, because it inherits the default's stylesheet list.
+ */
+async function assertThemeWasBuilt (browser, realm) {
+    if (themePreconditionChecked) {
+        return;
+    }
+    const href = await probeThemeFor(browser, realm,
+        (page) => page.locator(SEL.favicon).getAttribute("href"));
+
+    expect(normalizeHref(href),
+        `${realm} must resolve to a theme declaring path "${TEMPLATE_THEME_PATH}".`
+        + BUILD_REMEDIATION)
+        .toBe(normalizeHref(`${TEMPLATE_THEME_PATH}${shippedThemes[DEFAULT_THEME].icon}`));
+
+    themePreconditionChecked = true;
+}
+
+/**
+ * Create one of the realms the build flag names.
+ *
+ * Deletes first, which `removeRealm` tolerates doing to a realm that is not there. The names are
+ * fixed literals now, so a run killed between `createRealm` and its teardown would otherwise fail
+ * every subsequent run with "already exists" — a self-inflicted red that says nothing about the
+ * product. Deleting first makes that state self-repairing.
+ *
+ * The lowercase assertion is here rather than in each fixture because it is a property of the
+ * literals in `THEME_REALMS`, and those are what a future edit would get wrong.
+ */
+async function ensureRealm (adminToken, request, name) {
+    await removeRealm(adminToken, request, `/${name}`);
+    const realm = await createRealm(adminToken, request, { name });
+    expect(realm, "a mapping only matches a lowercase realm").toBe(realm.toLowerCase());
+    return realm;
+}
+
 const test = base.extend({
     /**
-     * Two realms mapped to two themes in the deployed config, and a teardown that puts the
-     * deployed config back.
+     * Two realms that the built configuration maps to two themes, and a teardown that deletes them.
      *
-     * The restore is here, in fixture teardown, and not at the end of a test body: a test that
-     * fails half way through leaves the mapping in place otherwise, and a leftover mapping does not
-     * fail this spec — it changes the theme under every spec that runs after it, which surfaces
-     * somewhere else entirely. The `finally` covers the case the fixture itself throws between the
-     * write and `use()`.
+     * Much smaller than it was, and D6 is the reason: the deployed configuration is not written any
+     * more, so there is no file to restore, no Tomcat cache window to wait out on the way in or the
+     * way out, and no mutation that could outlive this file and change the theme under a later
+     * spec. What is left is the half a build flag cannot do — creating the realms the flag names.
      *
-     * Test-scoped rather than worker-scoped for the same reason. Worker fixtures are torn down when
-     * the worker exits, not when this file finishes, so a worker-scoped version of this would hold
-     * the mutation across every later file in the run.
+     * Still test-scoped rather than worker-scoped, and still for the original reason: worker
+     * fixtures are torn down when the worker exits, not when this file finishes, so a worker-scoped
+     * version would hold two realms in existence across every later file in the run.
      */
-    themedRealms: async ({ request }, use) => {
+    themedRealms: async ({ browser, request }, use) => {
         const adminToken = await getAdminToken(request);
         expect(adminToken, "the fixture needs an admin session").toBeTruthy();
 
-        const pristine = readDeployedConfig();
-        const pristineSha = sha256(pristine);
-        const { themes } = parseThemeConfig(pristine);
-        expect(Object.keys(themes), `the deployed config must still ship the "${THEMED}" theme`)
+        // Read out of the product source, so this fails loudly if the theme stops shipping rather
+        // than leaving the assertions below comparing undefined against undefined.
+        expect(Object.keys(shippedThemes), `the product must still ship the "${THEMED}" theme`)
             .toContain(THEMED);
 
         let defaultRealm;
         let themedRealm;
         try {
-            defaultRealm = await createRealm(adminToken, request,
-                { name: uniqueRealmName("e2e-theme-default") });
-            themedRealm = await createRealm(adminToken, request,
-                { name: uniqueRealmName("e2e-theme-dark") });
+            defaultRealm = await ensureRealm(adminToken, request, THEME_REALMS.default);
+            themedRealm = await ensureRealm(adminToken, request, THEME_REALMS.themed);
 
-            // The realm has been through the store's toLowerCase() by the time ThemeManager
-            // compares it, so a mapping literal that is not lowercase matches nothing and both
-            // realms quietly get the default theme. Asserted rather than assumed: it is a property
-            // of the prefix passed to uniqueRealmName, which is this file's to get wrong.
-            for (const realm of [defaultRealm, themedRealm]) {
-                expect(realm, "a mapping only matches a lowercase realm").toBe(realm.toLowerCase());
-            }
+            // After the realms exist and never before. An unknown realm renders the default theme
+            // exactly as a tree built without the flag does, so a probe run first cannot tell those
+            // two apart — it would report a missing build for what is really a missing realm, and
+            // send the reader off to rebuild something that is already correct.
+            await assertMappingWasBuilt(browser, themedRealm);
 
-            // Order is load-bearing: mappings are first-match-wins, so a broader entry placed first
-            // swallows the one after it. The default realm is mapped explicitly rather than left to
-            // fall through — that does not change what it renders, since the fallback theme is
-            // `default` too, but it means a matcher broken in the over-matching direction fails the
-            // default half of each assertion instead of going unnoticed.
-            const mappings = [
-                { theme: THEMED, realms: [themedRealm] },
-                { theme: DEFAULT_THEME, realms: [defaultRealm] },
-            ];
-            const mutated = withMappings(pristine, mappings);
-
-            // Parse the rewritten module back before it goes anywhere near the container. Without
-            // this, a shape change in the deployed file that broke the rewrite would still satisfy
-            // waitForServedConfig — the body does contain the realm name — and surface 15s later as
-            // "img.main-logo never became visible", which names the wrong cause entirely.
-            const rewritten = parseThemeConfig(mutated);
-            expect(rewritten.themes, "rewriting mappings must leave the themes untouched")
-                .toEqual(themes);
-            expect(rewritten.mappings, "the rewritten module must declare exactly these mappings")
-                .toEqual(mappings);
-
-            writeDeployedConfig(mutated);
-            expect(deployedConfigSha256(), "the mapping must have reached the container")
-                .toBe(sha256(mutated));
-            // The realm names are unique per run, so finding one in the served body cannot be
-            // satisfied by a cached copy of anything earlier.
-            await waitForServedConfig(request, (body) => body.includes(themedRealm),
-                "with this test's realm mapping");
-
-            await use({ defaultRealm, themedRealm, themes });
+            await use({ defaultRealm, themedRealm, themes: shippedThemes });
         } finally {
-            // Nested, so that a docker hiccup on the write or a timeout on the poll cannot skip the
-            // realm cleanup and leave two realms in a long-lived instance. The config restore goes
-            // first because it is the one step whose absence is felt by another spec rather than by
-            // this one; it is also synchronous, so it completes even when the test timed out and
-            // the surrounding await would have been cut short.
-            try {
-                writeDeployedConfig(pristine);
-                await waitForServedConfig(request, (body) => body === pristine, "unmodified again");
-            } finally {
-                for (const realm of [themedRealm, defaultRealm].filter(Boolean)) {
-                    await removeRealm(adminToken, request, realm);
-                }
+            for (const realm of [themedRealm, defaultRealm].filter(Boolean)) {
+                await removeRealm(adminToken, request, realm);
             }
-            expect(deployedConfigSha256(), "the deployed config must be back to its original bytes")
-                .toBe(pristineSha);
         }
     },
 
@@ -407,54 +525,31 @@ const test = base.extend({
      * either test being able to leave the file behind for the other: the removal in teardown runs
      * whether or not it was ever placed.
      *
-     * Teardown, not test body: a test that fails part way through would otherwise leave the
-     * mutated config deployed. Later specs in the same run survive that — the leftover mapping
-     * names a realm the teardown has deleted, so they fall through to `default` — but the next
-     * *run* does not, because the mutated file is what its `pristine` is read from. The injection
-     * would then be restored rather than removed, and would stay in the deployed tree
-     * indefinitely. That is what the `finally` is protecting against, and it is why the
-     * post-conditions below are asserted rather than assumed.
+     * The theme itself is registered by the build flag, not by this fixture, and that is the one
+     * thing here D6 took away. What remains on disk is the override file, which is the subject of
+     * the test rather than a means of configuring one.
      */
-    templateTheme: async ({ request }, use) => {
+    templateTheme: async ({ browser, request }, use) => {
         const adminToken = await getAdminToken(request);
         expect(adminToken, "the fixture needs an admin session").toBeTruthy();
 
-        const pristine = readDeployedConfig();
-        const pristineSha = sha256(pristine);
-        const { themes } = parseThemeConfig(pristine);
+        // The override tests exist to show that a theme registered ONLY at build time takes effect.
+        // A product that started shipping this key would make them prove nothing at all, while
+        // still passing.
+        expect(shippedThemes[TEMPLATE_THEME],
+            `"${TEMPLATE_THEME}" must not be a theme the product ships — the override tests exist `
+            + "to show a theme registered only through THEME_CONFIG_OVERRIDE takes effect")
+            .toBeUndefined();
 
         let realm;
         try {
-            realm = await createRealm(adminToken, request,
-                { name: uniqueRealmName("e2e-theme-template") });
-            expect(realm, "a mapping only matches a lowercase realm").toBe(realm.toLowerCase());
-
-            const injected = { [TEMPLATE_THEME]: { path: TEMPLATE_THEME_PATH } };
-            const mappings = [{ theme: TEMPLATE_THEME, realms: [realm] }];
-            const mutated = withMappings(withThemes(pristine, injected), mappings);
-
-            // Same reason as above: parse the rewritten module before it reaches the container, so
-            // a shape change in the deployed file surfaces here rather than as a render timeout.
-            // The default theme is compared whole because the injected theme inherits from it —
-            // if the insertion had disturbed it, every assertion downstream would be measuring the
-            // wrong baseline.
-            const rewritten = parseThemeConfig(mutated);
-            expect(rewritten.themes[TEMPLATE_THEME], "the injected theme must declare only a path")
-                .toEqual({ path: TEMPLATE_THEME_PATH });
-            expect(rewritten.themes[DEFAULT_THEME], "inserting a theme must leave `default` intact")
-                .toEqual(themes[DEFAULT_THEME]);
-            expect(rewritten.mappings, "the rewritten module must declare exactly these mappings")
-                .toEqual(mappings);
-
-            writeDeployedConfig(mutated);
-            expect(deployedConfigSha256(), "the mapping must have reached the container")
-                .toBe(sha256(mutated));
-            await waitForServedConfig(request, (body) => body.includes(realm),
-                "with this test's themed-path mapping");
+            realm = await ensureRealm(adminToken, request, THEME_REALMS.templated);
 
             // Start from a known-absent override rather than assuming it. A previous run killed
             // outright leaves the file, and a fallback test that ran against it would fail while
-            // pointing at the wrong thing entirely.
+            // pointing at the wrong thing entirely. `xui-deploy.sh` `rm -rf`s the tree before it
+            // copies, so a redeploy also takes the file away — which is why nothing here may assume
+            // a previous run left anything behind, in either direction.
             //
             // The poll is also what puts the *miss* into Tomcat's resource cache, which is why
             // `placeFooterOverride` then has a TTL to wait out — a file written at a path nobody
@@ -477,10 +572,14 @@ const test = base.extend({
                 `${OVERRIDE_DIRS[1]} must not exist — a theme that ships its own templates makes `
                 + "the fallback test assert the opposite of what it claims").toBe(false);
 
-            const marker = `template-override-${realm}`;
+            // Last, so that it runs against the same absent-override tree the tests do, and after
+            // the realm exists for the reason given in `themedRealms`.
+            await assertThemeWasBuilt(browser, realm);
+
+            const marker = `template-override-${RUN_ID}`;
             await use({
                 realm,
-                themes,
+                themes: shippedThemes,
                 marker,
                 placeFooterOverride: async () => {
                     placeDeployedFile(OVERRIDE_PATH, overrideFooter(marker));
@@ -493,28 +592,33 @@ const test = base.extend({
                 },
             });
         } finally {
-            // Both mutations go back synchronously and before any await, so that a test killed by
-            // its timeout cannot be cut short between them. The config first: a leftover override
-            // under a themed path no other spec selects is inert, whereas a leftover mapping is
-            // felt by whatever runs next.
+            // The removal is synchronous and comes before any await, so a test killed by its
+            // timeout cannot be cut short before it.
+            removeDeployedOverride();
             try {
-                writeDeployedConfig(pristine);
-                removeDeployedOverride();
-                await waitForServedConfig(request, (body) => body === pristine, "unmodified again");
-                await waitForOverrideAbsent(request, "gone from the deployed tree again");
-            } finally {
-                if (realm) {
-                    await removeRealm(adminToken, request, realm);
+                try {
+                    await waitForOverrideAbsent(request, "gone from the deployed tree again");
+                } finally {
+                    if (realm) {
+                        await removeRealm(adminToken, request, realm);
+                    }
                 }
-            }
-            expect(deployedConfigSha256(), "the deployed config must be back to its original bytes")
-                .toBe(pristineSha);
-            // The directories are checked as well as the file. They did not exist before this
-            // fixture ran, and an empty `themes/dark/templates/` left behind is a deployed tree
-            // that no longer matches what the product ships.
-            for (const path of [OVERRIDE_PATH, ...OVERRIDE_DIRS]) {
-                expect(deployedPathExists(path), `${path} must not be left in the deployed /XUI`)
-                    .toBe(false);
+            } finally {
+                // The directories are checked as well as the file. They did not exist before this
+                // fixture ran, and an empty `themes/dark/templates/` left behind is a deployed tree
+                // that no longer matches what the product ships.
+                //
+                // In its own `finally` so that a timeout in waitForOverrideAbsent, or a realm that
+                // would not delete, cannot skip it. Those are the runs most likely to have left
+                // something behind, so they are the ones the check exists for -- and skipping it
+                // there was the whole of the bug. A failure here does mask one raised above it,
+                // which is the right way round: a deployed tree that no longer matches the product
+                // breaks every later run, and a realm that outlived its fixture breaks only this
+                // one, which `ensureRealm` already repairs on the next.
+                for (const path of [OVERRIDE_PATH, ...OVERRIDE_DIRS]) {
+                    expect(deployedPathExists(path), `${path} must not be left in the deployed /XUI`)
+                        .toBe(false);
+                }
             }
         }
     },
@@ -538,21 +642,21 @@ async function openLoginPageForRealm (page, realm) {
 
 /**
  * Deployed AM only. Not because of anything it asserts — theme application is UI behaviour, which
- * D16 puts on both backends — but because of how it establishes its premise: it edits a file inside
- * a Docker container by name. The local API server serves the XUI tree from disk (task 2.5) and has
- * no container to exec into, so this fixture cannot run against it as written.
+ * D16 puts on both backends — but because of how it establishes its premise: it needs a tree built
+ * with a specific `THEME_CONFIG_OVERRIDE` and deployed by `local/xui-deploy.sh`. The local API
+ * server of D13 serves whatever tree it is pointed at and knows nothing of a build flag, so the
+ * precondition these fixtures assert has no meaning there.
  *
- * That was a choice, not a necessity, and the alternative was tried: NOTES-theming.md records
- * `context.route("**\/config/ThemeConfiguration.js*", …fulfill…)` driving theme selection with the
- * deployed file left pristine — no container, no Tomcat cache window, no restore step, and a spec
- * valid on both backends. It is rejected here because editing the deployed file is what an operator
- * actually does, which makes it the stronger oracle for the capability D6 removes, and because it
- * additionally proves the deployed tree is served live from disk — something interception, which
- * never reaches the server, cannot show. Interception remains the right fallback if this fixture
- * ever becomes the reason the suite cannot run somewhere.
+ * Note what that reason is NOT. These two tests no longer touch the container at all — under D6
+ * there is no deployed configuration file to edit, so all they do is create realms over REST and
+ * read a page. The tag is about the deployment, not about a `docker exec`, and it is deliberately
+ * left as `@deployed-am` alone rather than widened: task 7.4 established that `@local-server` must
+ * not be declared until CI can actually run it, and `.github/workflows/xui-local-server.yml:261`
+ * starts `node local/server.mjs` with no tree of its own and no container behind it.
  *
- * The last test in here mutates nothing and would be valid against either backend; it carries the
- * describe's tag rather than one of its own, so it is under-declared rather than mis-declared.
+ * The interception fallback this block used to offer is gone; the file header says why. There is no
+ * `config/ThemeConfiguration.js` request left whose fulfilment would change a theme, and fulfilling
+ * the one that does remain breaks `xui-retired-config.spec.mjs`.
  */
 test.describe("XUI theme selection by realm", { tag: ["@deployed-am"] }, () => {
     test("each realm gets the stylesheets of the theme it is mapped to", async ({ page, themedRealms }) => {
@@ -623,26 +727,6 @@ test.describe("XUI theme selection by realm", { tag: ["@deployed-am"] }, () => {
             .toBe(normalizeHref(`${path}${icon}`));
     });
 
-    test("the theme configuration is fetched as its own module, at a stable URL", async ({ page }) => {
-        // No mapping and no realm: this asserts the mechanism the other two tests stand on, so it
-        // must not depend on them having been set up.
-        const fetched = [];
-        page.on("request", (request) => {
-            if (new URL(request.url()).pathname.endsWith("/config/ThemeConfiguration.js")) {
-                fetched.push(request.url());
-            }
-        });
-
-        await openLoginPageForRealm(page, DEFAULT_REALM);
-
-        // One request, separate from main.js, at a path an operator can write to. This is the
-        // baseline for D6 — see the note at the top of this file. When config becomes bundled
-        // source, this is the test that is *supposed* to fail, and it failing alongside the other
-        // two is how that break is told apart from a theming regression.
-        expect(fetched, `${THEME_CONFIG_URL} must be fetched exactly once, as its own module`)
-            .toHaveLength(1);
-        expect(new URL(fetched[0]).pathname).toBe(new URL(THEME_CONFIG_URL).pathname);
-    });
 });
 
 /**
@@ -716,21 +800,21 @@ async function expectThemePathApplied (page, themes) {
  *
  * === Deployed AM only, and why the file really goes on disk ===
  *
- * Same reason as the describe above: this execs into a container by name. The fixture could have
- * served the override from `context.route(...).fulfill(...)` instead — verified to work, and it
- * would run against the local API server too — but the capability under test is precisely that a
- * file placed in the deployed tree is picked up, so faking the response would assert the fallback
- * logic while assuming away the thing D3 promises. Interception stays the fallback for the day the
- * migration stops serving templates over the network at all, at which point the fixture changes and
- * these assertions do not.
+ * The describe above needs a specific build; this one needs that AND execs into a container by
+ * name, because the override file genuinely goes on disk. The fixture could have served it from
+ * `context.route(...).fulfill(...)` instead — verified to work — but the capability under test is
+ * precisely that a file placed in the deployed tree is picked up, so faking the response would
+ * assert the fallback logic while assuming away the thing D3 promises. D6 does not change that
+ * trade. What D6 changes is the other half: the *theme* can no longer be injected at all, and is a
+ * build precondition instead.
  *
  * The cost of that choice, which D16 requires be said out loud rather than discovered: once the
  * local API server of D13 exists, these two tests are absent from every run against it. Neither the
  * theme-path template contract nor the partial fallback is covered there, and both are instances of
  * "a broken runtime template fetch" — one of the three failure modes D11 names as the reason this
- * suite exists. If that gap needs closing before sign-off, the cheap half is to inject the theme by
- * intercepting `config/ThemeConfiguration.js` and keep only the override file on disk; the describe
- * above already establishes the deployed-config-editing capability, so nothing would be lost.
+ * suite exists. The cheap half used to be to intercept `config/ThemeConfiguration.js` and keep only
+ * the override file on disk. D6 removes that option, so closing the gap now means teaching the
+ * local server about a built tree, which is more than this file can decide. It is not closed here.
  */
 test.describe("XUI theme template override", { tag: ["@deployed-am"] }, () => {
     test("a template the theme supplies replaces the default one", async ({ page, templateTheme }) => {

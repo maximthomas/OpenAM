@@ -128,6 +128,95 @@ const loginHelperClass = process.env.LOGIN_HELPER_CLASS
     || "org/forgerock/openam/ui/user/login/RESTLoginHelper";
 
 /*
+ * Extra themes and theme mappings to merge into config/ThemeConfiguration.js at build time, as a
+ * JSON string. Empty -- the shipped configuration, untouched -- unless the environment sets it.
+ *
+ * WHY IT EXISTS, and it is the same argument as `loginHelperClass` above with one addition.
+ * OpenAM/e2e/xui/xui-theming.spec.mjs defends per-realm theme selection and the theme-path template
+ * override. Both need a *configuration* the shipped one does not contain: a mapping from a test's
+ * realm to a theme, and -- for the override half -- a theme declaring a non-empty `path`, which no
+ * shipped theme does (`default` sets `path: ""` and `fr-dark-theme` declares none, so `extendTheme`
+ * gives it `""` too). Before D6 the spec wrote both into the deployed config/ThemeConfiguration.js
+ * and restored it afterwards. That file no longer exists in a built tree, so without this flag the
+ * only remaining instruction would be "edit tracked product source, build, deploy, and remember to
+ * put it back" -- a source mutation with no teardown, resting on human memory.
+ *
+ * THE ADDITION, and it is the difference from __LOGIN_HELPER_CLASS__: a mapping needs a REALM TO
+ * EXIST, and a build flag cannot create one. So this flag is only half the fixture. It names realms
+ * as fixed literals at build time; the spec creates exactly those realms over REST before it
+ * probes, and deletes them in teardown. The spec asserts the build half as a PRECONDITION and never
+ * performs it -- see the header of xui-theming.spec.mjs.
+ *
+ * UNSET IS THE SHIPPED BEHAVIOUR. With this empty, esbuild constant-folds the ternary in
+ * ThemeConfiguration.js on the `""` literal and tree-shakes `applyOverride` and the `JSON.parse`
+ * out of the bundle entirely -- verified by extracting the emitted configuration object from the
+ * chunk and comparing it character for character against a build made before this flag existed.
+ * It is NOT hash-identical the way __LOGIN_HELPER_CLASS__ was: the source now has two bindings
+ * where it had one, which costs a few bytes of aliasing. That is the whole difference, and exact
+ * hash equality is unattainable on this tree anyway -- two builds from byte-identical source move
+ * most chunk hashes (design.md D23's open question on build reproducibility).
+ *
+ * THE VALUE MUST STAY A PRIMITIVE STRING. esbuild only inlines primitive `define` values; an object
+ * or an array is hoisted into a shared `var` so that every reference gets one identity, which
+ * changes the emitted chunk even when the flag is unset. A `__THEME_MAPPINGS__: JSON.stringify([])`
+ * shape would therefore never tree-shake away. The JSON is parsed in source, not here.
+ */
+const themeConfigOverride = process.env.THEME_CONFIG_OVERRIDE || "";
+
+/*
+ * VALIDATED HERE, AT BUILD TIME, BECAUSE THE PARSE HAPPENS IN THE BROWSER.
+ *
+ * config/ThemeConfiguration.js calls JSON.parse on the substituted literal at module evaluation.
+ * A malformed value therefore costs nothing during the build and throws a SyntaxError inside the
+ * theme chunk at runtime: a build that succeeded, deployed clean, and serves a blank page with
+ * nothing useful logged. That is worth guarding because the value is a ~200-character JSON string
+ * that xui-theming.spec.mjs's BUILD_REMEDIATION asks an operator to paste into a shell, so a
+ * quoting slip is the expected failure rather than an exotic one -- and the symptom it produces,
+ * the theming spec failing its precondition, points at the wrong remediation ("rebuild") when the
+ * rebuild is what introduced it.
+ *
+ * The same argument the xui-assert-configured-modules plugin below makes about LOGIN_HELPER_CLASS,
+ * whose substituted value it validates for the same reason. Shape and not only syntax: the two keys
+ * ThemeConfiguration.js reads are the two checked here, because an override that parses cleanly but
+ * carries `mapping` for `mappings` is silently ignored rather than rejected, and silence is the one
+ * outcome this flag cannot afford -- the spec that depends on it would report a missing mapping as
+ * a build that was never made.
+ *
+ * Unset skips all of it, so a plain `npm run build:production` never enters this block.
+ */
+if (themeConfigOverride) {
+    const fail = (why) => new Error(
+        `[vite.config.js] THEME_CONFIG_OVERRIDE ${why}.\n\n` +
+        "It is merged into config/ThemeConfiguration.js at build time and must be a JSON object " +
+        "with an optional `themes` object and an optional `mappings` array. See the " +
+        "BUILD_REMEDIATION message in OpenAM/e2e/xui/xui-theming.spec.mjs for the exact shape " +
+        `the theming spec expects.\n\nGot: ${themeConfigOverride}`);
+
+    const isPlainObject = (value) =>
+        value !== null && typeof value === "object" && !Array.isArray(value);
+
+    let parsed;
+
+    try {
+        parsed = JSON.parse(themeConfigOverride);
+    } catch (e) {
+        throw fail(`is not valid JSON (${e.message})`);
+    }
+
+    if (!isPlainObject(parsed)) {
+        throw fail("is not a JSON object");
+    }
+
+    if ("themes" in parsed && !isPlainObject(parsed.themes)) {
+        throw fail("has a `themes` key that is not an object");
+    }
+
+    if ("mappings" in parsed && !Array.isArray(parsed.mappings)) {
+        throw fail("has a `mappings` key that is not an array");
+    }
+}
+
+/*
  * ==== 5.1 -- WHICH VITE RUNS. PINNED, AND MADE TO FAIL LOUDLY WHEN IT IS NOT ====
  *
  * SETTLED IN 5.1 because it is the first task in group 5 and so the first one to build anything.
@@ -3677,7 +3766,15 @@ export default defineConfig({
          * has already fallen back to the shipped id, so the unset case substitutes that id and
          * never the token `undefined`.
          */
-        __LOGIN_HELPER_CLASS__: JSON.stringify(loginHelperClass)
+        __LOGIN_HELPER_CLASS__: JSON.stringify(loginHelperClass),
+
+        /*
+         * The theme configuration override, from the environment variable above. A quoted string
+         * literal reaches the chunk, never a `process.env` lookup; `themeConfigOverride` has
+         * already fallen back to "", so the unset case substitutes an empty string literal and
+         * never the token `undefined`.
+         */
+        __THEME_CONFIG_OVERRIDE__: JSON.stringify(themeConfigOverride)
     },
 
     build: {

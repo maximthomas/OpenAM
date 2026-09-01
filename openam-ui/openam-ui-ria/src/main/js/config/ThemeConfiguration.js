@@ -15,7 +15,31 @@
  * Portions copyright 2025 3A Systems LLC.
  */
 
-export default {
+/* global __THEME_CONFIG_OVERRIDE__ */
+
+/**
+ * Merge a build-time override into the shipped configuration.
+ *
+ * Themes are merged key by key so that an override adds a theme without restating the two the
+ * product ships; mappings are CONCATENATED WITH THE OVERRIDE'S FIRST, because ThemeManager takes
+ * the first matching mapping and the shipped `mappings` array is all commented-out examples.
+ *
+ * Only reachable when __THEME_CONFIG_OVERRIDE__ is a non-empty string, which it never is in a
+ * normal build -- see the flag's rationale in vite.config.js. esbuild folds the ternary below on
+ * the empty-string literal and tree-shakes this function and the JSON.parse out of the bundle.
+ *
+ * @param {Object} base the shipped configuration
+ * @param {Object} override an object with optional `themes` and `mappings` keys
+ * @returns {Object} the merged configuration
+ */
+function applyOverride (base, override) {
+    return {
+        themes: Object.assign({}, base.themes, override.themes),
+        mappings: (override.mappings || []).concat(base.mappings)
+    };
+}
+
+const configuration = {
     themes: {
         // There must be a theme named "default".
         "default": {
@@ -91,3 +115,19 @@ export default {
         //{ theme: "my-fourth-theme", authenticationChains: [""] }
     ]
 };
+
+/*
+ * A build-time `define`: under Vite this token is textually replaced by a string literal, so with
+ * the flag unset esbuild folds the ternary on the empty string and tree-shakes `applyOverride` and
+ * the `JSON.parse` out of the bundle entirely.
+ *
+ * Nothing outside the build may reference the token as a bare global, and one thing outside the
+ * build reads this file: OpenAM/e2e/xui/xui-theming.spec.mjs takes the shipped themes its
+ * assertions compare against from here rather than keeping a second copy that could drift. It does
+ * that by evaluating this source in a `node:vm` context that supplies __THEME_CONFIG_OVERRIDE__
+ * itself -- the same technique vite.config.js's xui-assert-configured-modules uses on
+ * config/AppConfiguration.js -- so no guard is needed here and none is wanted.
+ */
+export default __THEME_CONFIG_OVERRIDE__
+    ? applyOverride(configuration, JSON.parse(__THEME_CONFIG_OVERRIDE__))
+    : configuration;

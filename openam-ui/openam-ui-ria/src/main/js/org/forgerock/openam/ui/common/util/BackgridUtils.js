@@ -302,7 +302,7 @@ obj.sync = function (method, model, options) {
     }
 
     _.forIn(options.data, function (val, key) {
-        if (_.include(includeList, key)) {
+        if (_.includes(includeList, key)) {
             params.push(`${key}=${val}`);
         }
     });

@@ -95,7 +95,7 @@ var EditLinkView = AbstractView.extend({
 
                             self.moduleSelect = new SelectComponent({
                                 options: formData.allModules,
-                                selectedOption: _.find(formData.allModules, "_id", linkConfig.module),
+                                selectedOption: _.find(formData.allModules, { _id: linkConfig.module }),
                                 onChange (module) {
                                     linkConfig.module = module._id;
                                     linkConfig.type = module.type;
@@ -119,7 +119,7 @@ var EditLinkView = AbstractView.extend({
                         const criteriaOptions = _.map(formData.allCriteria, (value, key) => ({ key, value }));
                         self.criteriaSelect = new SelectComponent({
                             options: criteriaOptions,
-                            selectedOption: _.find(criteriaOptions, "key", linkConfig.criteria),
+                            selectedOption: _.find(criteriaOptions, { key: linkConfig.criteria }),
                             onChange (option) {
                                 linkConfig.criteria = option.key;
                                 dialog.options.validateDialog(dialog);

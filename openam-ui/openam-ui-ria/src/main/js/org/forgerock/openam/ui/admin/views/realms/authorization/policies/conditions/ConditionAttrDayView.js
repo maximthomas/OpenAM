@@ -40,10 +40,10 @@ export default ConditionAttrBaseView.extend({
 
     getWeekDays () {
         var weekdays = [], i = 0, self = this;
-        _.invoke(self.days, function () {
+        _.each(self.days, function (day) {
             weekdays[i] = {};
-            weekdays[i].title = $.t(self.i18n.weekdays.key + this + self.i18n.weekdays.full);
-            weekdays[i].value = $.t(self.i18n.weekdays.key + this + self.i18n.weekdays.short);
+            weekdays[i].title = $.t(self.i18n.weekdays.key + day + self.i18n.weekdays.full);
+            weekdays[i].value = $.t(self.i18n.weekdays.key + day + self.i18n.weekdays.short);
             i++;
         });
         return weekdays;

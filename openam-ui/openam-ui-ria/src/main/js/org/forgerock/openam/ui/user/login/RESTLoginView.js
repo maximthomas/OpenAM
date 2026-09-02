@@ -109,7 +109,7 @@ function routeToLoginUnavailable (fragmentParams) {
  * @returns {Boolean} if the "PollingWaitCallback" is present on the current stage
  */
 function hasPollingCallback (requirements) {
-    return _.some(requirements.callbacks, "type", "PollingWaitCallback");
+    return _.some(requirements.callbacks, { type: "PollingWaitCallback" });
 }
 
 /**
@@ -118,7 +118,7 @@ function hasPollingCallback (requirements) {
  * @returns {Boolean} if the "ConfirmationCallback" is present on the current stage
  */
 function hasConfirmationCallback (requirements) {
-    return _.some(requirements.callbacks, "type", "ConfirmationCallback");
+    return _.some(requirements.callbacks, { type: "ConfirmationCallback" });
 }
 
 function getFragmentParamString () {
@@ -321,9 +321,10 @@ var LoginView = AbstractView.extend({
             let redirectCallback;
 
             if (element.type === "RedirectCallback") {
-                redirectCallback = _.object(_.map(element.output, (o) => {
-                    return [o.name, o.value];
-                }));
+                redirectCallback = _.reduce(element.output, (accumulator, o) => {
+                    accumulator[o.name] = o.value;
+                    return accumulator;
+                }, {});
 
                 redirectForm = $(`<form action='${redirectCallback.redirectUrl}' method='POST'></form>`);
 

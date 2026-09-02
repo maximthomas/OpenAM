@@ -40,11 +40,23 @@
  */
 import _ from "lodash";
 
+/**
+ * lodash 4 removed predicate support from `omit`, moving it to `omitBy`, which lodash 3 does not have.
+ * Selecting the keys to keep instead behaves identically under both majors.
+ * @param {Object} object Object to omit properties from.
+ * @param {Function|string|string[]} predicate Predicate invoked per property, or the key(s) to omit.
+ * @returns {Object} Object without the omitted properties.
+ */
+function omitByPredicate (object, predicate) {
+    if (_.isFunction(predicate)) {
+        return _.pick(object, _.filter(_.keys(object), (key) => !predicate(object[key], key, object)));
+    }
+    return _.omit(object, predicate);
+}
+
 function groupTopLevelSimpleValues (raw) {
-    const collectionProperties = _(raw)
-        .pick((property) => _.isObject(property) && !_.isArray(property))
-        .keys()
-        .value();
+    const collectionProperties = _.filter(_.keys(raw), (key) =>
+        _.isObject(raw[key]) && !_.isArray(raw[key]));
 
     const predicate = ["_id", "_type", "defaults", ...collectionProperties];
     const simplePropertiesToGroup = _.omit(raw, ...predicate);
@@ -69,9 +81,11 @@ function groupTopLevelSimpleValues (raw) {
 * @returns {JSONValues} JSONValues object with new value set
 */
 function ungroupCollectionProperties (raw, groupKey) {
-    const collectionProperties = _.pick(raw[groupKey], (value) => {
+    const groupValues = raw[groupKey];
+    const collectionProperties = _.pick(groupValues, _.filter(_.keys(groupValues), (key) => {
+        const value = groupValues[key];
         return _.isObject(value) && !_.isArray(value);
-    });
+    }));
 
     if (_.isEmpty(collectionProperties)) {
         return raw;
@@ -152,7 +166,7 @@ export default class JSONValues {
         return keys;
     }
     omit (predicate) {
-        return new JSONValues(_.omit(this.raw, predicate));
+        return new JSONValues(omitByPredicate(this.raw, predicate));
     }
     pick (predicate) {
         return new JSONValues(_.pick(this.raw, predicate));

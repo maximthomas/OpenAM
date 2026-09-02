@@ -245,7 +245,7 @@ function hasAuthIndexChanged () {
 }
 obj.getRequirements = function (args) {
     if (getAuthenticationToken() &&
-        !(requirementList.length !== 0 && _.some(_.last(requirementList).callbacks, "type", "RedirectCallback"))) {
+        !(requirementList.length !== 0 && _.some(_.last(requirementList).callbacks, { type: "RedirectCallback" }))) {
         return obj.submitRequirements(_.extend({ authId: getAuthenticationToken() },
             Configuration.globalData.auth.urlParams)).done(() => {
                 knownAuth = _.clone(Configuration.globalData.auth);

@@ -48,6 +48,20 @@ import warnOnInferredPasswordWithoutFormat from
     "org/forgerock/openam/ui/common/models/schemaTransforms/warnOnInferredPasswordWithoutFormat";
 
 /**
+ * lodash 4 removed predicate support from `omit`, moving it to `omitBy`, which lodash 3 does not have.
+ * Selecting the keys to keep instead behaves identically under both majors.
+ * @param {Object} object Object to omit properties from.
+ * @param {Function|string|string[]} predicate Predicate invoked per property, or the key(s) to omit.
+ * @returns {Object} Object without the omitted properties.
+ */
+function omitByPredicate (object, predicate) {
+    if (_.isFunction(predicate)) {
+        return _.pick(object, _.filter(_.keys(object), (key) => !predicate(object[key], key, object)));
+    }
+    return _.omit(object, predicate);
+}
+
+/**
  * Determines whether the specified object is of type <code>object</code>
  * @param   {Object}  object Object to determine the type of
  * @returns {Boolean}        Whether the object is of type <code>object</code>
@@ -57,10 +71,8 @@ function isObjectType (object) {
 }
 
 function groupTopLevelSimpleProperties (raw) {
-    const collectionProperties = _(raw.properties)
-        .pick((property) => _.has(property, "properties"))
-        .keys()
-        .value();
+    const collectionProperties = _.filter(_.keys(raw.properties), (key) =>
+        _.has(raw.properties[key], "properties"));
 
     const predicate = ["defaults", ...collectionProperties];
     const simplePropertiesToGroup = _.omit(raw.properties, ...predicate);
@@ -98,9 +110,11 @@ function throwOnNoSchemaRootType (schema) {
 * @returns {JSONSchema} JSONSchema new JSONSchema object
 */
 function ungroupCollectionProperties (raw, groupKey) {
-    const collectionProperties = _.pick(raw.properties[groupKey].properties, (value) => {
+    const groupProperties = raw.properties[groupKey].properties;
+    const collectionProperties = _.pick(groupProperties, _.filter(_.keys(groupProperties), (key) => {
+        const value = groupProperties[key];
         return value.type === "object" && _.has(value, "properties");
-    });
+    }));
 
     if (_.isEmpty(collectionProperties)) {
         return raw;
@@ -197,15 +211,17 @@ export default class JSONSchema {
         }
     }
     getPasswordKeys () {
-        const passwordProperties = _.pick(this.raw.properties, _.matches({ format: "password" }));
+        const isPasswordProperty = _.matches({ format: "password" });
 
-        return _.keys(passwordProperties);
+        return _.filter(_.keys(this.raw.properties), (key) => isPasswordProperty(this.raw.properties[key]));
     }
     getPropertiesAsSchemas () {
         return _.mapValues(this.raw.properties, (property) => new JSONSchema(property));
     }
     getRequiredPropertyKeys () {
-        return _.keys(_.pick(this.raw.properties, _.matches({ required: true })));
+        const isRequiredProperty = _.matches({ required: true });
+
+        return _.filter(_.keys(this.raw.properties), (key) => isRequiredProperty(this.raw.properties[key]));
     }
     hasEnableProperty () {
         return !_.isUndefined(this.raw.properties[`${_.camelCase(this.raw.title)}Enabled`]);
@@ -233,7 +249,7 @@ export default class JSONSchema {
     }
     omit (predicate) {
         const schema = _.cloneDeep(this.raw);
-        schema.properties = _.omit(this.raw.properties, predicate);
+        schema.properties = omitByPredicate(this.raw.properties, predicate);
 
         return new JSONSchema(schema);
     }

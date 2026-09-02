@@ -56,7 +56,7 @@ var LabelTreeNavigationView = TreeNavigation.extend({
         this.callback = callback;
 
         UMAService.labels.all().done(function (data) {
-            if (!_.any(data.result, function (label) {
+            if (!_.some(data.result, function (label) {
                 return label.name.toLowerCase() === "starred";
             })) {
                 UMAService.labels.create("starred", "STAR");

@@ -105,7 +105,7 @@ var defaultThemeName = "default",
     },
 
     makeUrlsRelativeToEntryPoint = function (theme) {
-        theme = _.clone(theme, true);
+        theme = _.cloneDeep(theme);
         if (theme.settings) {
             if (theme.settings.logo) {
                 theme.settings.logo.src = resolveAssetUrl(theme.settings.logo.src);
@@ -118,7 +118,9 @@ var defaultThemeName = "default",
     },
 
     extendTheme = function (theme, parentTheme) {
-        return _.merge({}, parentTheme, theme, function (objectValue, sourceValue) {
+        // lodash 4 moved customizer support out of `merge` and into `mergeWith`. This is a feature
+        // test rather than a version test, so it holds under both majors.
+        return (_.mergeWith || _.merge)({}, parentTheme, theme, function (objectValue, sourceValue) {
             // We don't want to merge arrays. If a theme has specified an array, it should be used verbatim.
             if (_.isArray(sourceValue)) {
                 return sourceValue;

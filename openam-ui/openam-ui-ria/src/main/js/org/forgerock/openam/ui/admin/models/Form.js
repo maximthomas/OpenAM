@@ -81,13 +81,13 @@ var obj = function Form (element, schema, values) {
  * @returns {Object}          Filtered object
  */
 function filterEmptyAttributes (object, attributes) {
-    return _.omit(object, function (value, key) {
+    return _.pick(object, _.filter(_.keys(object), function (key) {
         if (_.includes(attributes, key)) {
-            return _.isEmpty(value);
+            return !_.isEmpty(object[key]);
         } else {
-            return false;
+            return true;
         }
-    });
+    }));
 }
 
 obj.prototype.data = function () {

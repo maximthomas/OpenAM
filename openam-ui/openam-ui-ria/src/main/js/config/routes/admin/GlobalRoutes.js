@@ -113,9 +113,12 @@ const routes = {
     }
 };
 
+// lodash 4's `capitalize` lower-cases the tail, so it is not a replacement for lodash 3's.
+const upperFirst = (string) => string.charAt(0).toUpperCase() + string.slice(1);
+
 // Add routes for "Server Edit" tree navigation
 _.each(["general", "security", "session", "sdk", "cts", "uma", "advanced", "directoryConfiguration"], (suffix) => {
-    routes[`editServer${_.capitalize(suffix)}`] = {
+    routes[`editServer${upperFirst(suffix)}`] = {
         view: "org/forgerock/openam/ui/admin/views/deployment/servers/EditServerTreeNavigationView",
         page: "org/forgerock/openam/ui/admin/views/common/server/EditServerView",
         url: new RegExp(`deployment/servers/([^/]+)/(${suffix})`),
@@ -128,7 +131,7 @@ _.each(["general", "security", "session", "sdk", "cts", "uma", "advanced", "dire
 
 // Add routes for "Server Defaults" tree navigation
 _.each(["general", "security", "session", "sdk", "cts", "uma", "advanced"], (suffix) => {
-    routes[`editServerDefaults${_.capitalize(suffix)}`] = {
+    routes[`editServerDefaults${upperFirst(suffix)}`] = {
         view: "org/forgerock/openam/ui/admin/views/configuration/server/EditServerDefaultsTreeNavigationView",
         page: "org/forgerock/openam/ui/admin/views/common/server/EditServerView",
         url: new RegExp(`configure/(server-defaults)/(${suffix})`),

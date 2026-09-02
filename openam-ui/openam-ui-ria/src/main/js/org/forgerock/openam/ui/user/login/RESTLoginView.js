@@ -312,7 +312,7 @@ var LoginView = AbstractView.extend({
             template,
             self = this;
 
-        this.userNamePasswordStage = _.contains(usernamePasswordStages, reqs.stage);
+        this.userNamePasswordStage = _.includes(usernamePasswordStages, reqs.stage);
 
         requirements.callbacks = [];
 

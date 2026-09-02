@@ -20,7 +20,7 @@ import Footer from "org/forgerock/commons/ui/common/components/Footer";
 import { getVersion as getServerVersion } from "org/forgerock/openam/ui/common/services/ServerService";
 
 function isAdmin () {
-    return Configuration.loggedUser && _.contains(Configuration.loggedUser.uiroles, "ui-realm-admin");
+    return Configuration.loggedUser && _.includes(Configuration.loggedUser.uiroles, "ui-realm-admin");
 }
 
 var Component = Footer.extend({

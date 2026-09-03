@@ -371,10 +371,13 @@ const fromPkgPath = (id) => {
  *                                 src/main/js/libs/ and deleted both suppliers, so the file now
  *                                 has exactly one source and the CDN drift channel behind it is
  *                                 closed. See NOTES-libs-retire.md section 13, decision 2.
- *   libs/lodash-3.10.1-min.js     GONE. 4.3 vendored lodash into src/main/js/libs/, where it beat
- *                                 the commons.ui.libs copy in target/dependencies; 4.7 retired
- *                                 that supplier, so the vendored file now stands alone. 8.3 still
- *                                 replaces it.
+ *   libs/lodash-3.10.1-min.js     GONE, TWICE OVER. 4.3 vendored lodash into src/main/js/libs/,
+ *                                 where it beat the commons.ui.libs copy in target/dependencies;
+ *                                 4.7 retired that supplier, so the vendored file stood alone.
+ *                                 TASK 8.3 THEN DELETED THE VENDORED FILE ITSELF: lodash is a
+ *                                 `dependencies` entry at an exact 4.18.1 pin and comes from
+ *                                 node_modules like any other managed dependency, so there is no
+ *                                 libs/ copy and no duplicate-supplier question left to answer.
  *
  * FIVE remain, and libs/ is no longer among them -- copyLibraries now THROWS on a duplicate
  * rather than resolving one, because after 4.7 a second supplier means a stale target/ far more
@@ -2820,16 +2823,26 @@ export default defineConfig({
      *     importee === pattern || importee.startsWith(pattern + "/")
      *
      * so entries.find() means FIRST MATCH WINS and exactly one entry applies per import; and a
-     * bare-word key is a PREFIX CAPTURE, not an exact match. "lodash" below therefore also
-     * captures "lodash/fp", "lodash/merge" and every other subpath, rewriting them to
-     * <abs>/libs/lodash-3.10.1-min.js/fp -- which resolves to nothing. Checked: there are ZERO
-     * lodash/ or underscore/ subpath imports in AM source today, so it is currently harmless. It
-     * will not stay harmless once 4.7 and 8.3 add npm libraries; revisit it there.
+     * bare-word key is a PREFIX CAPTURE, not an exact match. Until task 8.3 the `lodash` entry
+     * below therefore also captured "lodash/fp", "lodash/merge" and every other subpath, rewriting
+     * them to <abs>/libs/lodash-3.10.1-min.js/fp -- which resolves to nothing. It was harmless
+     * only because there were ZERO lodash/ or underscore/ subpath imports in AM source, and this
+     * paragraph said it would not stay harmless once 4.7 and 8.3 added npm libraries. 8.3 IS THAT
+     * REVISIT: lodash is now a real npm dependency, so subpath imports became natural to write,
+     * and the entry was deleted rather than repointed. Bare `lodash` and every `lodash/<subpath>`
+     * now fall through to normal node resolution. `underscore` remains a bare-word key and remains
+     * a prefix capture, but nothing imports an `underscore/` subpath and no npm package supplies
+     * that id here, so it captures only the exact name it is meant to. Any bare-word key added
+     * below inherits this property -- check it.
      *
      * Therefore every replacement below must resolve in ONE HOP: an absolute filesystem path, or
      * a package specifier that normal node resolution can finish on its own. A replacement that is
-     * itself another aliasable id is silently NOT re-aliased -- which is exactly the trap that
-     * `"underscore": "lodash"`, the naive transcription of main.js:33, falls into. See entry 6.
+     * itself another aliasable id is silently NOT re-aliased -- which was exactly the trap that
+     * `"underscore": "lodash"`, the naive transcription of main.js:33, fell into while `lodash`
+     * was itself an entry in this table. Task 8.3 deleted that entry, so `lodash` is no longer an
+     * aliasable id and the fall-through it names is now ordinary node resolution onto the npm
+     * package -- which is why entry 6 may finally point at it. The rule is unchanged; what changed
+     * is that "lodash" stopped being a second hop. See entry 6.
      *
      * A further consequence worth knowing before editing: an unmatched name falls through to
      * normal resolution and ends as a Rollup "unresolved dependency" WARNING treated as external,
@@ -3000,62 +3013,107 @@ export default defineConfig({
             },
 
             /*
-             * 6. underscore -> lodash 3.10.1, VENDORED BY THIS TASK. Bound identically by all
-             * three entries (main.js:33, main-authorize.js:33, main-device.js:24). 29 consumers
-             * today: 25 modules in ui-commons, 3 in ui-user, 0 in AM application code, and 1 in
-             * AM's own vendored libs/backgrid-paginator-0.3.5-custom.min.js:8 -- which does consume
-             * the binding and would break if it were dropped.
+             * 6. underscore -> THE REAL underscore PACKAGE. TASK 8.3 REPOINTED THIS ENTRY AND
+             * DELETED THE `lodash` ONE THAT USED TO FOLLOW IT. Bound identically by all three
+             * entries (main.js:33, main-authorize.js:33, main-device.js:24).
              *
-             * WHAT THIS ENTRY IS NOT: `"underscore": "lodash"`. That is the literal transcription
-             * of main.js:33 and it is WRONG here, because aliases do not chain (see the block
-             * above). "lodash" would not be re-entered into this table; it would be handed to
-             * normal node resolution, land on node_modules/lodash, and that is 4.18.1 and a
-             * devDependency. (When 4.3 wrote this, package.json had NO `dependencies` key at all;
-             * TASK 4.7 ADDED ONE, 31 runtime libraries. Re-checked there: lodash is still absent
-             * from it, no dependency of it pulls a lodash in, and no AM source imports a `lodash/`
-             * subpath -- so the prefix-capture alias below is still harmless and this reasoning
-             * still holds. 8.3 is where it stops holding.) Writing it that way would silently perform
-             * group 8's lodash 3 -> 4 upgrade inside task 4.3, untested, in a commit that does not
-             * say so, and without task 8.3's "phase-0a suite green either side" gate. It is not a
-             * benign upgrade: it breaks _.contains x4 (ui-commons util/UIUtils.js:611,631,
-             * components/Navigation.js:180, navigation/filters/RoleFilter.js:37), _.findWhere x2
-             * (ui-user anonymousProcess/KBAView.js:108,130) and _.object x1
-             * (ui-commons util/URIUtils.js:120) in the underscore-bound trees, plus 25 further
-             * call sites in AM's directly-lodash-importing modules.
+             * READ THIS BEFORE "SIMPLIFYING" IT TO lodash. The obvious move at 8.3 is to point
+             * `underscore` at lodash 4 and be done -- 4.3's comment here even predicted that, and
+             * so did the 8.3 discovery notes. IT WAS TRIED AND IT IS WRONG, measured against the
+             * deployed instance: the XUI never leaves "Loading...", because backbone@1.1.2's
+             * History.loadUrl calls `_.any` and lodash 4 removed it. Routing dies before the login
+             * form renders. The consumers of this id are not only our own modules:
              *
-             * So 4.3 stays behaviour-neutral and both ids point at the real lodash 3.10.1 file in
-             * one hop. src/main/js/libs/lodash-3.10.1-min.js is NEW: it was vendored by this task,
-             * byte-identical (md5 7629cac4f079926ef505e2271bb5135f) to
-             * target/dependencies/libs/lodash-3.10.1-min.js, the Maven unpack that supplies it
-             * today. It had no source copy at all before -- every copy on disk was under target/,
-             * which 4.1 has already repointed to Vite's outDir. The four files already in
-             * src/main/js/libs are the precedent for vendoring it there.
+             *   backbone@1.1.2   require("underscore")   -- calls _.any
+             *   backgrid@0.3.5   require("underscore")   -- calls _.contains, _.pluck, _.all,
+             *                    _.any, _.where, _.object, _.pairs, _.findWhere, _.indexBy,
+             *                    _.select, _.detect, _.collect, _.compose, _.foldl, _.foldr,
+             *                    _.inject, _.include, _.methods, _.unique
+             *   libs/backgrid-paginator-0.3.5-custom.min.js:8   require("underscore")
+             *   24 modules in the emitted ui-commons / ui-user ESM trees (22 + 2)
+             *   shims/backgrid-globals.js -- see there; `window._` must be underscore too
              *
-             * GROUP 8 CHANGES THIS, and that is the point of pinning it. Task 8.3 drops the
-             * 3.10.1-at-runtime / 4.18.1-as-a-build-dependency split as its own reviewable commit;
-             * at that point both this entry and the one below repoint to the npm lodash 4, and
-             * "underscore" disappears altogether once its consumers are gone -- which is what the
-             * TODO at main.js:32, main-authorize.js:32 and main-device.js:23 asks for. Task 4.7
-             * owns where the vendored file finally lives, through its per-file destination table.
+             * lodash 4 exports NONE of those 19 names. underscore@1.13.8 exports all 19, which is
+             * why this points there. It is a real dependency now -- `underscore: "1.13.8"`, exact,
+             * in `dependencies` -- rather than the transitive copy backbone and backgrid drag in,
+             * because an alias that resolves through someone else's dependency is one `npm dedupe`
+             * away from moving. 1.13.7 is what the tree already carried transitively and is NOT the
+             * version to pin: GHSA-qpx9-hpmf-5gmw covers `<=1.13.7`. 1.13.8 is what keeps this
+             * dependency out of `npm audit`, so do not "correct" it down to match an older note.
+             *
+             * TWO RESOLUTION DETAILS THAT LOOK LIKE MISTAKES AND ARE NOT. `fromPkg("underscore")`
+             * resolves through the `node` condition to `underscore-node.cjs` rather than the browser
+             * UMD build; both export the same 147 names and the node build reaches for no Node
+             * built-in, so it bundles cleanly -- checked, not assumed. And
+             * `node_modules/backgrid/node_modules/` still carries a nested `underscore@1.5.2` that
+             * only this alias masks. Deleting this entry later would not raise an error, it would
+             * quietly hand backgrid a 2013 copy of underscore. This entry retires WITH backgrid,
+             * never before it.
+             *
+             * There is a second, quieter reason. Backbone's `Collection.prototype.pluck` is
+             * `_.invoke(this.models, "get", attr)`. Under lodash 4 `_.invoke` is a PATH invocation
+             * and that returns undefined, which would silently empty five AM views --
+             * uma/views/resource/ResourcePage.js:219, uma/views/share/CommonShare.js:165,236,241
+             * and uma/views/request/EditRequest.js:112. Those five call Backbone, not lodash, so
+             * no lodash-API scan sees them. underscore's `_.invoke` keeps the old semantics.
+             *
+             * WHAT THIS COST, recorded so it is not rediscovered: FOUR commons modules had to move
+             * off `underscore` and onto `lodash`. Three of them for a plain missing name --
+             * `_.cloneDeep` in ChangesPending.js and UserProfileView.js, `_.curry` in
+             * SessionManager.js, neither of which underscore has. The fourth, UIUtils.js, moved for
+             * a subtler reason given below. Every other API those four use exists in BOTH lodash
+             * majors, so they stay valid for openidm-ui / openig-ui, which still take commons
+             * through the Maven zip:www channel at lodash 3.10.1 -- and in fact those products map
+             * `underscore` -> `lodash` AND bind `lodash: "libs/lodash-3.10.1-min"`, so both names
+             * resolve to one file there and the rebinding is a no-op for them. After the four, the
+             * 24 remaining underscore-bound commons modules use 32 distinct APIs and underscore
+             * 1.13.8 has every one -- checked, not assumed.
+             *
+             * A NAME-PRESENCE CHECK IS NOT ENOUGH, AND ASSUMING IT WAS COST THIS TASK A ROUND OF
+             * REVIEW. Splitting one `_` into two instances creates three failure modes that "every
+             * name exists on both" cannot see, and all three were live in 8.3's first draft while
+             * the e2e gate -- set-equality of failing Playwright ids -- stayed identical, because
+             * none of them is on a page the suite visits:
+             *
+             *   1. A NAME THAT EXISTS ONLY BECAUSE SOMETHING ADDED IT. commons UIUtils.js does
+             *      `_.mixin({findByValues, removeByValues, isUrl})`. While both ids were one module
+             *      that mixin was visible to everybody; with two instances it lands on whichever
+             *      library UIUtils itself binds, and five lodash-bound AM modules read those names
+             *      -- EditPolicyView.js:154,156, EditPolicySetView.js:131, SessionsTable.jsx:42 and
+             *      UMAPolicyPermissionScope.js:24. That is why UIUtils.js is lodash-bound now.
+             *   2. A GLOBAL CARRYING THE WRONG LIBRARY. `window._` is read by the vendored
+             *      backgrid-paginator on its accidental second factory call; see
+             *      shims/backgrid-globals.js, which must import underscore for that reason.
+             *   3. THE SAME NAME BEHAVING DIFFERENTLY. `_.get(o, "a.b")` is undefined on underscore
+             *      -- its toPath is `isArray(p) ? p : [p]` and never splits a string. Four sites had
+             *      to become array paths, which work in underscore and both lodash majors.
+             *
+             * `npm run verify:lib-split` enforces all three mechanically and runs in about a
+             * second. Run it after ANY change to a binding, a mixin or this alias table.
+             *
+             * So the split this file has carried since 4.3 is now between TWO libraries rather than
+             * two majors of one: `lodash` is npm lodash 4.18.1 for our own code, `underscore` is
+             * npm underscore 1.13.8 for the code written against underscore. Both are managed
+             * dependencies with lockfile entries and integrity hashes, which is what
+             * `ui-build-and-packaging`'s *Runtime libraries are managed package dependencies* asks
+             * for, and D20's register no longer carries a lodash row. The TODO at main.js:32,
+             * main-authorize.js:32 and main-device.js:23 still asks for the underscore consumers to
+             * be migrated; when the last one goes, so does this entry.
+             *
+             * THE `lodash` ENTRY THAT USED TO FOLLOW THE `underscore` ENTRY BELOW THIS COMMENT IS
+             * GONE, AND ITS DELETION IS DELIBERATE.
+             * 4.3 wrote `{ find: "lodash", replacement: fromSrc("libs/lodash-3.10.1-min.js") }` so
+             * that AM's own direct `import _ from "lodash"` statements could not resolve to a
+             * different major than the one `underscore` got. Bare `lodash` now falls through to
+             * normal node resolution and lands on 4.18.1, so the entry says nothing the resolver
+             * would not do anyway. Deleting rather than repointing also retires the hazard the
+             * block above records under "PREFIX CAPTURE": `find: "lodash"` is a prefix match, so it
+             * captured `lodash/fp`, `lodash/merge` and every other subpath and rewrote them to a
+             * path underneath the vendored file, which resolves to nothing. That was harmless only
+             * while zero lodash/ subpath imports existed; with lodash a real npm package they
+             * become natural to write, so the trap is removed rather than left armed.
              */
-            { find: "underscore", replacement: fromSrc("libs/lodash-3.10.1-min.js") },
-
-            /*
-             * NOT ONE OF THE TWELVE, AND DELIBERATELY WRITTEN ANYWAY. "lodash" is a main.js PATHS
-             * entry (main.js:62 -> libs/lodash-3.10.1-min, repeated at main-authorize.js:40 and
-             * main-device.js:31), and the paths block belongs to task 4.7, not to 4.3. This single
-             * entry is the seam where the two tasks touch. It is written rather than left silent
-             * because omitting it is NOT neutral: without it, ui-commons and ui-user modules would
-             * get lodash 3 through "underscore" while AM's own 16 direct `import _ from "lodash"`
-             * statements and its many define([... "lodash" ...]) declarations resolved to 4.18.1
-             * from node_modules -- TWO major versions of lodash in one bundle, split down the
-             * middle of the dependency graph, which is worse than either version uniformly. One
-             * version, and it is the one that ships today.
-             *
-             * 4.7 still owns the paths block and where this file comes from; 8.3 still owns the
-             * version. This entry is a pin, not a decision about either.
-             */
-            { find: "lodash", replacement: fromSrc("libs/lodash-3.10.1-min.js") },
+            { find: "underscore", replacement: fromPkg("underscore") },
 
             /*
              * 5.4/B7 -- D23. CodeMirror by LITERAL libs/ path.
@@ -3779,10 +3837,17 @@ export default defineConfig({
 
     build: {
         /*
-         * ==== 4.3 -- MAKING THE VENDORED lodash USABLE, NOT MERELY RESOLVABLE ====
+         * ==== 4.3 -- MAKING A VENDORED UMD LIBRARY USABLE, NOT MERELY RESOLVABLE ====
          *
-         * The two lodash aliases above point at src/main/js/libs/lodash-3.10.1-min.js, and that
-         * file is UMD: its export mechanism is the tail
+         * WRITTEN FOR lodash BY 4.3; lodash IS NO LONGER WHY IT IS HERE -- SEE THE 5.2 PARAGRAPH
+         * AND THE SCOPE NOTE BELOW. Task 8.3 took lodash from npm and deleted the vendored file,
+         * and this setting stays exactly as it was because five OTHER aliased ids depend on it.
+         * The reasoning below is kept verbatim because it is the measurement that established what
+         * the setting does; read "the vendored lodash file" in it as "any UMD/CommonJS file under
+         * src/main/js/libs/", which is what the regex actually covers.
+         *
+         * 4.3's two lodash aliases pointed at src/main/js/libs/lodash-3.10.1-min.js, and that
+         * file was UMD: its export mechanism is the tail
          *
          *     typeof define == "function" && typeof define.amd == "object" && define.amd
          *       ? (Zn._ = Yn, define(...)) : Mn && qn ? ... : Zn._ = Yn;
@@ -3820,21 +3885,37 @@ export default defineConfig({
          * SCOPE: no task owns build.commonjsOptions. 4.3 sets it because 4.3 created the file that
          * needs it. Task 4.7 owns where libs/ files finally live and MUST update this regex when
          * it moves them -- the coupling is deliberate and is called out here so it is not silently
-         * broken. Task 8.3 deletes both the file and this entry when lodash 4 lands.
+         * broken.
          *
-         * The regex is scoped to src/main/js/libs/ rather than to the one file on purpose: the
-         * other four vendored files there are AMD/UMD in exactly the same way, and 4.7 will be
-         * reasoning about them as a group.
-        *
+         * THAT SENTENCE USED TO READ "Task 8.3 deletes both the file and this entry when lodash 4
+         * lands." IT WAS WRONG ABOUT THE ENTRY, and task 8.3 corrected it rather than obeying it.
+         * 8.3 deleted the FILE and left this include exactly as it is. The sentence was written by
+         * 4.3, when lodash was the only thing under src/main/js/libs/ that this regex existed for;
+         * 5.2 then added five more consumers -- form2js, js2form, bootstrap-datetimepicker,
+         * backgrid.paginator and jsonEditor -- without rewriting it, so the file carried an
+         * instruction and its own refutation six lines apart. The refutation is the correct half:
+         * see the 5.2 paragraph below, which spells out that deleting this breaks all five
+         * SILENTLY, because the ids still resolve and the imported value is simply undefined.
+         *
+         * After 8.3, lodash reaches this transform through the FIRST pattern instead: it is an npm
+         * dependency now, and node_modules/lodash@4.18.1 is CommonJS (main: lodash.js, no "module"
+         * field, no "exports" map), so /node_modules/ covers it. Nothing about the second pattern
+         * changed, and nothing about it should.
+         *
+         * The regex is scoped to src/main/js/libs/ rather than to any one file on purpose: the
+         * other vendored files there -- nine, after 8.3 removed the lodash one -- are AMD/UMD in
+         * exactly the same way, and 4.7 reasoned about them as a group.
+         *
          * TASK 5.2 DEPENDS ON THIS REGEX AND ADDED NOTHING TO IT, which is worth stating so that
-         * "no diff here" is not read as "no stake here". Five aliased ids now resolve to files
-         * under src/main/js/libs/ that are UMD or CommonJS and would have no ES exports without
-         * this include: form2js, js2form, bootstrap-datetimepicker, backgrid.paginator (through
-         * shims/backgrid-paginator.js) and jsonEditor (through shims/json-editor.js), on top of
-         * lodash and underscore. Narrowing this regex to the one lodash file, or deleting it when
-         * task 8.3 removes lodash, breaks all five silently -- the ids still RESOLVE, and the
-         * imported value is simply undefined. Everything else 5.2 binds lives under node_modules
-         * and is covered by the first pattern.
+         * "no diff here" is not read as "no stake here". Five aliased ids resolve to files under
+         * src/main/js/libs/ that are UMD or CommonJS and would have no ES exports without this
+         * include: form2js, js2form, bootstrap-datetimepicker, backgrid.paginator (through
+         * shims/backgrid-paginator.js) and jsonEditor (through shims/json-editor.js). Those five
+         * are now the ONLY reason this pattern exists -- lodash left for node_modules in 8.3 and
+         * `underscore` is an npm package covered by the first pattern too. Narrowing this regex to
+         * a single file, or deleting it because "the lodash file is gone", breaks all five silently
+         * -- the ids still RESOLVE, and the imported value is simply undefined. Everything else 5.2
+         * binds lives under node_modules and is covered by the first pattern.
          *
          * The shims themselves are ordinary ES modules and need no transform.
          */

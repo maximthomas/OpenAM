@@ -4,7 +4,7 @@ Third-party JavaScript that ships to the browser but is **not** installed from n
 this directory is copied verbatim into the built tree's `/libs` by `copyLibraries` in
 `vite.config.js`, under the same filename. Task 5.4 deleted the `require.config.paths` block in
 `src/main/js/main.js` that used to bind them by id, so what binds each file now is either a
-`resolve.alias` entry in `vite.config.js` (the ten library files) or a literal `<script src>` in a
+`resolve.alias` entry in `vite.config.js` (the nine library files) or a literal `<script src>` in a
 FreeMarker template outside this Maven module (`requirejs-2.3.7-min.js`, and only that one).
 
 **This directory is an exception to a spec requirement, not the normal route.**
@@ -57,7 +57,6 @@ CDN minifications with the upstream header stripped, and those are marked so rat
 | `jquery.ba-dotimeout-1.0-min.js` | `f10a418e` | 1,065 | `cdnjs.cloudflare.com/ajax/libs/jquery-dotimeout/1.0/jquery.ba-dotimeout.min.js` | MIT and GPL (dual) | 4.7 |
 | `js2form-2.0-769718a.js` | `fc83dc6a` | 9,118 | `raw.githubusercontent.com/maxatwork/form2js/769718a159ff88da82613c2c7e5b1eaa2e0c73e7/src/js2form.js` | MIT | 4.7 |
 | `jsoneditor-0.7.23-custom.js` | `6c39c8be` | 138,961 | local fork of jsoneditor 0.7.23 | MIT | pre-existing |
-| `lodash-3.10.1-min.js` | `7629cac4` | 50,543 | lodash 3.10.1 | MIT | 4.3 |
 | `popover-clickaway.js` | `e92d40fd` | 3,668 | **this project's own source**, not a dependency | CDDL (project) | pre-existing |
 | `requirejs-2.3.7-min.js` | `01252f25` | 17,420 | `cdnjs.cloudflare.com/ajax/libs/require.js/2.3.7/require.min.js` | **not stated** (minified; upstream RequireJS is MIT / new BSD) | 4.7 |
 
@@ -66,6 +65,29 @@ One vendored file lives outside this directory, for the same reason and under th
 `cdnjs.cloudflare.com/ajax/libs/bootstrap-datetimepicker/4.14.30/css/bootstrap-datetimepicker.min.css`.
 It sits in `resources/css` because that is where the LESS pipeline expects stylesheets, not because
 it is a different kind of thing.
+
+## What has left the register
+
+**`lodash-3.10.1-min.js` — removed by task 8.3.** It was the one 4.3 row, vendored so that task 4.3
+could repoint `underscore` and `lodash` at a single file and stay behaviour-neutral while the source
+still called APIs lodash 4 removed. **It never met the bar above** — lodash has been on npm under its
+own name, at its own lineage, the entire time — so the row was a deliberate, temporary pin rather
+than a case of npm being unable to supply the library. Tasks 8.1 and 8.2 replaced the call sites,
+and 8.3 spent the pin: `lodash` is a `dependencies` entry at an exact `4.18.1`, with a lockfile
+entry and an integrity hash, and it is bundled from `node_modules` rather than copied into `/libs`.
+That is rule 4 above — *"If a real npm package appears later, the row is a removal candidate. That
+is the exit."* — taken on its own terms, and it is the second time the register has shrunk;
+`base64-1.0.0-min.js` was the first, under the different clause recorded below.
+
+*What did not leave with it, and why that matters to `backgrid-paginator-0.3.5-custom.min.js` below.*
+The `underscore` alias outlived the file it used to point at. 8.3 could not repoint it at lodash 4 —
+backbone 1.1.2 and backgrid 0.3.5 call 19 names lodash 4 removed — so it now resolves to the real
+npm `underscore` at an exact `1.13.8`, and the build runs **two** libraries where it used to run one
+file under two names. The vendored paginator is where they meet: its UMD prologue runs the factory
+twice, once on `require("underscore")` and once on `window._`, and the second call wins. That is why
+`src/main/js/shims/backgrid-globals.js` imports `underscore` rather than `lodash`, and why nothing
+should "simplify" it. `vite.config.js` alias 6 carries the full reasoning, and
+`npm run verify:lib-split` fails the build if a module ever calls a name its own library lacks.
 
 ## Why each 4.7 row is here
 

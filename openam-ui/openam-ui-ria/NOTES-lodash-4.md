@@ -1182,3 +1182,320 @@ below are the corrected run, after Pass 4 and Pass 5 were added to the method.
 | `vite` | `node_modules/vite/index.cjs`, **5.4.21** |
 
 ---
+
+## The flip (task 8.3)
+
+*Measurement pass, 2026-09-02. Nothing in this section was applied: no lodash version moved, no
+alias changed, `src/main/js/libs/lodash-3.10.1-min.js` was not deleted and `design.md` was not
+edited. What follows is the ground truth the apply run needs.*
+
+### F1. Preconditions, all five confirmed
+
+`OpenAM` on `features/openam-ui-migration`; `commons` on `features/ui-migration`; tasks 8.1 and 8.2
+both `[x]`; `NOTES-lodash-4.md` present and tracked; `openam-idp` and `opendj-idp` both Up and
+healthy. The AM container is a **fresh provision**, so its `/XUI` was the pristine tree shipped in
+`OpenAM-16.2.0-SNAPSHOT.war`, not a build left behind by task 7.5 — see F10.
+
+### F2. THE REFERENCE LANE RUN — 57 passed / 8 failed / 1 skipped
+
+Built with a bare `npx vite build` (exit 0, 11.24 s, "copied 263 static files verbatim and 38
+runtime libraries … stamped index.html with version dev"), deployed with
+`e2e/local/xui-deploy.sh target/compiled` (900 files), then, from `OpenAM/e2e`:
+
+```
+npx playwright test xui/ --reporter=line --trace=off > /tmp/8.3-lane-reference.txt 2>&1
+```
+
+`Running 66 tests using 1 worker` → **8 failed, 1 skipped, 57 passed (4.3m)**.
+
+| # | Spec | Why | Known? |
+|---|---|---|---|
+| 1 | `xui-cache-busting.spec.mjs:106` — a template fetched at runtime carries the build version | `index.html must configure RequireJS urlArgs as v=<version>`, received `null` | **known**, 7.5 |
+| 2 | `xui-cache-busting.spec.mjs:144` — `require.toUrl()` applies the configured urlArgs | same RequireJS `urlArgs` form Vite no longer emits | **known**, 7.5 |
+| 3 | `xui-operator-module.spec.mjs:461` — an operator module named in the built configuration is loaded | tree "was not built naming `config/E2EStandInLoginHelper` as its loginHelperClass"; needs `LOGIN_HELPER_CLASS` | **known**, 7.5 |
+| 4 | `xui-operator-module.spec.mjs:491` — login and logout still complete through the operator's module | same | **known**, 7.5 |
+| 5 | `xui-theming.spec.mjs:662` — each realm gets the stylesheets of the theme it is mapped to | "The deployed /XUI was not built with `THEME_CONFIG_OVERRIDE`", prints the rebuild command | **known**, by design |
+| 6 | `xui-theming.spec.mjs:688` — each realm gets the login logo of the theme it is mapped to | same precondition | **known**, by design |
+| 7 | `xui-theming.spec.mjs:820` — a template the theme supplies replaces the default one | same precondition | **known**, by design |
+| 8 | `xui-theming.spec.mjs:838` — a template the theme does not supply still renders from the default path | same precondition | **known**, by design |
+
+Skipped: `xui-httponly.spec.mjs:186`, `test.skip(!httpOnly, …)` — the instance is not in HttpOnly
+mode. **No login test failed**; `xui-login.spec.mjs:123`'s intermittent did not fire on this run.
+
+**NEW REDS: none.** Every one of the eight matches a case already recorded by 7.5 or by the spec's
+own by-design precondition.
+
+**The divergence from 7.5's 61/4/1 is the build command, not the provisioning and not a
+regression.** 66 tests both times, and the four extra reds are exactly the four theming specs,
+each failing on `THEME_CONFIG_OVERRIDE` being absent from the build. 7.5's tree was built with that
+override; this one was built with a bare `npx vite build` because that is what the task asked for.
+Rebuild with the override and this lane is 61/4/1. The fresh provision is visible nowhere in the
+result — it is visible only in F10.
+
+### F3. WHAT "GREEN EITHER SIDE" CAN MEAN — position
+
+**It cannot mean zero failures, and it must mean no delta — against a named list of expected
+failures, not against a summary line.** Three independent reasons, all measured above:
+
+1. 7.5 already recorded, as an open item with no owner, that **no single deployed tree can make
+   this lane green today**. The two cache-busting specs assert a RequireJS `urlArgs` form Vite
+   structurally cannot emit, so they are red against *every* Vite build. Zero-failures is not a
+   bar 8.3 can clear by doing 8.3 correctly; it is a bar nothing can clear.
+2. The failure *count* is a function of build flags, not of lodash. This pass got 8; the same
+   source with `THEME_CONFIG_OVERRIDE` gets 4; with `LOGIN_HELPER_CLASS` as well it would get 2 —
+   and task 7.2's assertion plugin forbids shipping that flag. A summary line therefore compares
+   two build invocations, not two lodash versions, and can differ by four while nothing regressed
+   or be equal while something did.
+3. Per-spec *counts* are only marginally better: they would catch a spec moving from pass to fail
+   but not a swap, and they still move with the flags.
+
+So the comparable unit is **the set of failing test ids** — `<file>:<line> › <title>` as the line
+reporter prints them — from two runs **made with the same build command against the same
+container**, and the acceptance is set equality. Concretely, for the apply commit: build both
+sides with the identical command, and require that the before-run and after-run produce the same
+eight ids as F2's table (or the same four, if the change owner prefers the flagged build). Any id
+appearing in the after set and not the before set is 8.3's; any id leaving it is a bonus to be
+explained, not silently banked. **This is the change owner's call and the notes do not decide it —
+F3 is a recommendation.**
+
+### F4. THE REFERENCE INVENTORY — every place the file and the two aliases are named
+
+`src/main/js/libs/lodash-3.10.1-min.js` (md5 `7629cac4`, 50,543 B) and the `underscore` / `lodash`
+`resolve.alias` entries. Grep basis: `git grep -n "lodash-3\.10\.1"` over both repositories, plus
+`grep -n 'find: "underscore"\|find: "lodash"'`.
+
+**Code and configuration — 8.3 acts on these**
+
+| Where | What it is | 8.3 |
+|---|---|---|
+| `vite.config.js:3041` | `{ find: "underscore", replacement: fromSrc("libs/lodash-3.10.1-min.js") }` | **CHANGE — retarget, do not delete.** 28 `from "underscore"` statements survive in the emitted `ui-commons`/`ui-user` ESM trees, and `libs/backgrid-paginator-0.3.5-custom.min.js:8` does `require("underscore")`. See F5 for the form. |
+| `vite.config.js:3058` | `{ find: "lodash", replacement: fromSrc("libs/lodash-3.10.1-min.js") }` | **DELETE.** Bare `lodash` then resolves through normal node resolution to `node_modules/lodash`. Deleting it also retires the prefix-capture hazard the entry's own comment records at `:2825` (`find: "lodash"` is a prefix match, so `lodash/fp` was being rewritten to `<abs>/lodash-3.10.1-min.js/fp`). |
+| `src/main/js/shims/backgrid-globals.js:11` | `import _ from "../libs/lodash-3.10.1-min.js";` — **a hard-coded relative path in product source**, not an alias | **CHANGE** to `import _ from "lodash";`. This is the one that does not show up if you only look at the alias table, and it hard-fails the build (missing file) rather than failing silently. |
+| `package.json:89` | `lodash: "4.18.1"` in **devDependencies** | **CHANGE** — move into `dependencies` at the same exact pin. Every entry in `dependencies` is already an exact pin (33 of 33, checked), so `4.18.1` matches house style. Nothing in `vite.config.js` asserts the `dependencies` block, and `VENDORED_VERSION_CHECKS` covers only the two `eonasdan-bootstrap-datetimepicker` files, so no build assertion needs updating. |
+| `src/main/js/libs/lodash-3.10.1-min.js` | the vendored file | **DELETE** |
+| `src/main/js/libs/README.md:60` | the register row `| lodash-3.10.1-min.js | 7629cac4 | 50,543 | lodash 3.10.1 | MIT | 4.3 |` | **DELETE the row**, and update the prose at the head of the file: it says the binding is "a `resolve.alias` entry in `vite.config.js` (the **ten** library files)" — that becomes nine. |
+| `src/test/js/test-main.js:53` | `"lodash": "libs/lodash-3.10.1-min"`, a RequireJS `paths` entry | **CHANGE** (one line) or record as knowingly stale. The runner is dead today — `npm test` is a stub that echoes and exits 0, and `test:karma` (`grunt karma:build`) fails on the composed tree before any assertion; D12 / group 9 owns restoring it. But leaving a `paths` entry pointing at a deleted file is a trap for whoever does. |
+| `src/test/js/test-main.js:30` | `"underscore": "lodash"` in the AMD `map` block | **LEAVE ALONE.** It maps a logical name onto the `paths` key above and stays correct whatever that key points at. |
+| `vite.config.js` comments at `:374`, `:2825`, `:3002-3058`, `:3784`, `:3799`, and the SCOPE paragraph above `:3841` | prose that names the file, the split, and what 8.3 does | **CHANGE.** In particular the SCOPE paragraph is wrong — F5. |
+
+**Names it that 8.3 must NOT touch**
+
+| Where | Why leave alone |
+|---|---|
+| `src/main/js/moduleRegistry.js:122` | The AM glob is `"/src/main/js/**/*.{js,jsx,jsm}"` — a wildcard. It never names lodash; deleting the file just removes a dead key from the registry map. No edit, and no build assertion counts those keys. |
+| `Gruntfile.js:20` — `var _ = require("lodash")` | The **build script's** own use of the npm package, already 4.18.1. Moving the declaration from `devDependencies` to `dependencies` does not change what resolves here. |
+| `PHASE1-TREE.md:268` | The Grunt-tree digest oracle, a historical record of what Grunt shipped. It is not read by the build. F6. |
+| `OpenAM/legal/THIRDPARTYREADME.txt:878` | Product legal notice for the whole distribution. Out of a build change's scope; flag to the change owner rather than editing. |
+| `commons/ui/mock/src/main/js/main.js:46` — `lodash: "libs/lodash-3.10.1-min"` | The AMD/QUnit harness, fed by the `commons.ui:*:zip:www` channel that still ships 3.10.1. Touching it would move the AMD side of the dual build, which is not 8.3's. |
+| `commons/ui/AMD-PARITY.md:582`, `commons/ui/LIBS-INVENTORY.md:287` | Records of the Maven channel as it is. |
+| `commons/ui/{commons,user}/package-lock.json` | Lockfile entries for each module's own `lodash` **devDependency** 3.10.1 — see F9, which does not move. |
+| every `NOTES-*.md` hit | Prior tasks' records. |
+
+### F5. WHAT MUST NOT BE DELETED ALONGSIDE — vite.config.js contradicts itself, and the later half is right
+
+`build.commonjsOptions.include` is `[/node_modules/, /src[\\/]main[\\/]js[\\/]libs[\\/]/]`
+(`vite.config.js:3842`). The comment above it makes **two claims that cannot both hold**:
+
+* the 4.3 SCOPE paragraph: *"Task 8.3 deletes both the file and this entry when lodash 4 lands."*
+* the 5.2 paragraph immediately below it: *"Narrowing this regex to the one lodash file, or
+  deleting it when task 8.3 removes lodash, breaks all five silently — the ids still RESOLVE, and
+  the imported value is simply undefined."*
+
+**The SCOPE sentence is WRONG. Do not delete the second pattern.** It is stale: 4.3 wrote it when
+lodash was the only consumer, and 5.2 added five more without rewriting it. Verified from the
+alias table rather than from the comment — each of these resolves to a UMD/CommonJS file under
+`src/main/js/libs/` that has no ES exports without the transform:
+
+| id | resolves to |
+|---|---|
+| `form2js` | `libs/form2js-2.0-769718a.js` (`vite.config.js:3457`) |
+| `js2form` | `libs/js2form-2.0-769718a.js` (`:3458`) |
+| `bootstrap-datetimepicker` | `libs/bootstrap-datetimepicker-4.14.30-min.js` (`:3460`) |
+| `backgrid.paginator` | `shims/backgrid-paginator.js` (`:3445`) → `import "../libs/backgrid-paginator-0.3.5-custom.min.js"` |
+| `jsonEditor` | `shims/json-editor.js` (`:3433`) → `import "../libs/jsoneditor-0.7.23-custom.js"` |
+
+**8.3's edit here is to the prose only**: strike the SCOPE sentence's "and this entry", and record
+that after the flip lodash reaches the transform through the *first* pattern (`/node_modules/`),
+because `node_modules/lodash@4.18.1` is CommonJS — `main: lodash.js`, no `module` field, no
+`exports` map (checked in the installed tree). A wrong deletion here is silent by construction:
+the five ids keep resolving and every import of them becomes `undefined`.
+
+**The alias form after the flip.** Aliases do not chain in Vite — that is the reason 4.3 refused to
+write `{ find: "underscore", replacement: "lodash" }`, because `"lodash"` would be handed to normal
+node resolution and land on 4.18.1 in `node_modules`. **At 8.3 that is exactly the wanted target**,
+so the entry 4.3 refused becomes the correct one. `assertAliasOrdering` permits it: it only rejects
+duplicate `find` patterns and a later pattern shadowed by an earlier `<earlier>/` prefix, and
+imposes nothing on the replacement. Either write `{ find: "underscore", replacement: "lodash" }` and
+let node resolution do it, or keep the existing one-hop-absolute idiom with
+`requireFromConfig.resolve("lodash")`; the second is more consistent with the file's other entries
+and fails loudly at config load if the package is missing.
+
+### F6. ZIP IMPACT — one file, and no build assertion goes stale
+
+`src/main/assembly/zip.xml` is a single `<fileSet>` of `target/compiled` onto `/`, so the www zip
+is the built tree verbatim.
+
+* **Built `/libs` before:** 38 files, including `lodash-3.10.1-min.js`. **After:** 37. lodash 4
+  arrives as a bundled npm import and gets **no** `/libs` entry — it has no `NPM_LIBRARY_FILES`
+  key and `copyLibraries` only walks `libs/` directories under the composition sources.
+* **Built tree before:** 900 files. **After:** 899. The www zip loses exactly
+  `libs/lodash-3.10.1-min.js` and gains nothing.
+* Worth stating plainly: **the shipped `/libs/lodash-3.10.1-min.js` is already dead weight today.**
+  Both aliases point at the *source* copy, which Rollup bundles into the hashed chunks; nothing in
+  the built tree fetches the `/libs` copy. Deleting it removes a file no deployed page loads.
+* **No count assertion goes stale.** `grep` for hard-coded totals in `vite.config.js` finds none —
+  the "263 static files … 38 runtime libraries" line is a `console.log`, not an assertion, and the
+  only library-shape guard is `copyLibraries`'s duplicate-supplier throw plus 4.8's CodeMirror
+  literal-path check, neither of which counts anything.
+* `PHASE1-TREE.md` records **652 files** and carries `7629cac4f079926ef505e2271bb5135f  50543
+  libs/lodash-3.10.1-min.js` at line 268. It is the **Grunt** tree's digest — the acceptance oracle
+  for phase 1, a record of what Grunt shipped — not a description of the Vite tree and not read by
+  any build step. It does not go stale, because it was never a claim about the post-flip tree.
+  Leave it untouched.
+
+### F7. THE VERSION — recommend **4.18.1**, and it is the only clean choice
+
+`npm view lodash dist-tags` → `latest: 4.18.1`. Versions near the candidates, from
+`npm view lodash versions`: … `4.17.20`, `4.17.21`, **`4.17.23`** (there is no `4.17.22`),
+`4.18.0`, `4.18.1`. `npm audit`, run per candidate in a throwaway tree:
+
+| version | `npm audit` |
+|---|---|
+| `4.17.21` | **1 high** — `lodash <=4.17.23`: code injection via `_.template` imports key names (GHSA-r5fr-rjxr-66jc), prototype pollution via array-path bypass in `_.unset`/`_.omit` (GHSA-f23m-r3pf-42rh), prototype pollution in `_.unset`/`_.omit` (GHSA-xxjr-mmjv-4gpg). Fix is `4.18.1`. |
+| `4.17.23` | **1 high** — the first two of the three above. Fix is `4.18.1`. |
+| `4.18.0` | **found 0 vulnerabilities** |
+| `4.18.1` | **found 0 vulnerabilities** |
+
+**Recommendation: `lodash` `"4.18.1"`, exact, moved into `dependencies`.** It is `latest`, it is the
+only pair of clean versions' upper half, and it is *already* the number in this module's
+`package.json` and `package-lock.json` — so the flip changes which dependency block the line lives
+in and deletes a vendored file, rather than also moving a version. That keeps the commit reviewable,
+which is the whole point of 8.3 being its own commit. Note the register's own bar: once lodash comes
+from npm it is back inside `npm audit`'s view, which is the exception D20 exists to shrink.
+
+*One caution the apply run should carry, not resolve:* 4.18.0 is the release that **fixed**
+`_.omit`/`_.unset` array-path handling. AM has 13 `_.omit` call sites, all of them key-list or
+routed through 8.1's `omitByPredicate` helper, so none is a predicate call; but the path-semantics
+class in §10 item 9 is about key lists, so 4.18 is the version whose behaviour that item should be
+re-read against. See F11.
+
+### F8. THE TWO PEER RANGES
+
+`commons/ui/commons/package.json` and `commons/ui/user/package.json` both declare
+`"lodash": ">=3.10.1"` under `peerDependencies`, with a long `//peerDependencies-lodash` note in
+each. Both notes give the same reason for the width — *"the source is written against lodash 3
+semantics and 8.1 has not yet replaced the 25 call sites"* — and ui-user's adds that the two
+packages must state the same range *"or the conflict simply moves"*.
+
+**Both should become `"^3.10.1 || ^4.0.0"`, identically, and both notes should be rewritten to say
+that 8.1/8.2 landed and that the range is now a two-major compatibility claim rather than a
+placeholder.** `>=3.10.1` should not survive: it also admits lodash 5, which nothing has tested.
+The replacement must still satisfy **both** `4.18.1` (so the packed tarball still installs into
+openam-ui-ria, which is what `>=` was protecting — measured as ERESOLVE in the 3.7 pass) **and**
+`3.10.1` (see below). §9 of this file reached the same conclusion; F8 confirms it against the files.
+
+The notes' rewrite also has to fix two things §9 already flagged: the count is **91 sites, not 25**,
+and "APIs lodash 4 removed" understates the job — 44 of the 91 use an API lodash 4 still exports
+under the same name with different behaviour.
+
+**Does narrowing break `openidm-ui` or `openig-ui`? — FLAGGED, NOT DECIDED.** Two separate things,
+and they should not be conflated:
+
+* *The range itself cannot break them.* Both consume commons through
+  `commons.ui:*:zip:www` — a Maven artifact. Maven does not read `peerDependencies`; npm peer
+  resolution is not in their build at all. `^3.10.1 || ^4.0.0` is satisfied by 3.10.1 anyway, so
+  even if it were read, it admits them.
+* *The shared source can.* Those products bind `libs/lodash-3.10.1-min` in their own `main.js`
+  (`OpenIG/openig-ui/src/main/js/main.js:46` and the openidm equivalent; `commons/ui/pom.xml:85-90`
+  still ships 3.10.1), and 8.1/8.2 rewrote commons **source** that flows into their zips. §5 of this
+  file records that every one of the 91 replacements behaves identically under both majors, and F9
+  is direct evidence for the commons half. **That claim is what protects them, not the range.** The
+  decision to put to the change owner is therefore not "may we narrow the range" but "do we accept
+  §5's both-major claim as the standing guarantee for the two products this change never builds or
+  tests" — and, if so, whether that guarantee gets written down somewhere the next lodash bump will
+  find it. `openidm-ui` and `openig-ui` additionally carry **61 removed-API calls of their own**
+  (§10 item 8) which are nobody's in this change.
+
+### F9. DEVDEP — **no**, neither has to move
+
+`commons/ui/commons` and `commons/ui/user` each declare `lodash: "3.10.1"` in `devDependencies` and
+each has it installed at 3.10.1. Both suites were run against those trees on this pass, unmodified:
+
+| module | `npx vitest run` |
+|---|---|
+| `commons/ui/commons` | **9 test files, 32 tests, all passed** (3.72 s) |
+| `commons/ui/user` | **1 test file, 15 tests, all passed** (1.92 s) |
+
+Both run against the **emitted** `target/npm/esm` tree, so this is evidence about what the packages
+ship. So the answer to "does the devDependency have to move for the suites to keep passing" is a
+measured **no** — 8.1/8.2's rewrites are lodash-3-clean, which is what §5's both-major claim
+predicted.
+
+**But leaving it at 3.10.1 means the suites only ever prove the lodash 3 half of the widened range.**
+That is a coverage gap, not a breakage, and it is a real choice for the change owner: bump both
+devDependencies to 4.18.1 and the suites prove the half the range newly asserts while losing the
+half `openidm-ui`/`openig-ui` actually run; leave them and the new half of `^3.10.1 || ^4.0.0` is
+asserted by nobody. The honest third option is a matrix run. **8.3 should not decide this silently
+by editing the pin.**
+
+### F10. CONTAINER
+
+**Found:** the pristine Grunt/RequireJS tree baked into `OpenAM-16.2.0-SNAPSHOT.war` and expanded by
+Tomcat — 19 top-level entries with `main.js` + `main.js.map`, **no `assets/`**, `index.html` ending
+in the `var require = { urlArgs : "v=16.2.0-SNAPSHOT", deps : ['main'] }` block, `libs/` carrying 47
+entries including `lodash-3.10.1-min.js`, owner `openam:root`. `XUI/index.html` is sha256
+`961345a9af3f523af921b73f8f5501d1fa212b0a9ed378c79127961b97bee4d7`, `config/AppConfiguration.js`
+`343bee5c…`, `main.js` `cd9c73e5…` — **the same three digests `NOTES-operator-module-d6.md` §9.2
+recorded**, so this fresh provision is byte-identical to the tree that task documented. It was NOT a
+tree left by 7.5.
+
+**Procedure:** `NOTES-operator-module-d6.md` §9.1 verbatim, no second procedure invented.
+`docker exec openam-idp sh -c 'cd /usr/local/tomcat/webapps/openam && tar czf - XUI'` → a 2,014,209 B
+/ 855-entry tarball, taken **before** the deploy. A full-tree manifest was taken at the same moment:
+`find . -type f | LC_ALL=C sort | xargs sha256sum`, **652 files**, manifest sha256
+`4d73ab619d3bf0ac16e58352b1885b95b560f6ecf49b31aa0e43cc86367ac3ca`.
+
+**Mutated:** deployed the Vite tree (900 files) for the F2 lane run.
+
+**Restored and verified:** `rm -rf` then `tar xzf` from the tarball as root. The same full-tree
+manifest was retaken afterwards and is `4d73ab61…` — **byte-for-byte identical, all 652 files**,
+`diff` clean. 19 top-level entries, owner `openam:root`, mtimes preserved. Live checks:
+`GET /XUI/index.html` 200 and still serving `urlArgs : "v=16.2.0-SNAPSHOT"`;
+`GET /XUI/libs/lodash-3.10.1-min.js` 200; `GET /XUI/assets/` **404**, so no Vite output survives.
+`openam-reset.sh` was not needed and was not run; no container was rebuilt or restarted.
+
+**At exit the deployed `/XUI` is the shipped Grunt/RequireJS build, exactly as found.**
+`openam-ui-ria/target/compiled` holds a clean unflagged Vite build (gitignored). No tracked file was
+modified other than this one. Throwaway scripts: none created.
+
+### F11. SETTLED HERE — §10 item 9's open question: **yes, AM property names contain dots**
+
+Item 9 says the `_.pick`/`_.omit`-with-a-key-list path-semantics class "depends on whether AM schema
+property names can contain a dot; that was not established here. **8.3 should settle it.**"
+Established against the running instance:
+
+`GET /json/global-config/servers/server-default/properties/advanced` returns **104 keys, and all 104
+contain a dot** — `com.iplanet.am.directory.ssl.enabled`, `openam.auth.distAuthCookieName`,
+`com.sun.identity.webcontainer`, and so on. Its `?_action=schema` returns **zero** `properties`, i.e.
+this view is a free-form key/value map with no per-key schema, handled by `JSONValues` rather than
+`JSONSchema` — and `JSONValues.js:98, 184, 186` are three of the nine sites item 9 lists as *not*
+safe by construction.
+
+**So the hazard class is live, not theoretical.** What it does *not* establish is that the
+divergence fires: this file's own table (line 732) measured that a dotted key which **is** an own
+property behaves the **same** under both majors, because lodash 4's `isKey()` short-circuits on
+`key in Object(object)`. The divergence needs a key that is dotted **and absent** from the target.
+The residual question is therefore narrowed to: *at the nine sites that draw keys from a different
+object, can a dotted key be absent from the object being picked or omitted?* That is a code-reading
+question over nine call sites, it is now the only part of item 9 still open, and F7's caution about
+4.18.0 being the release that changed `_.omit` array-path handling points at the same nine.
+
+### F12. Still open after this pass
+
+1. **§10 item 9's residual**, narrowed by F11 to nine named call sites. Not chased here.
+2. **Whether the commons devDependencies move** (F9) — a coverage choice, deliberately not taken.
+3. **Whether §5's both-major claim is accepted as the standing guarantee for `openidm-ui` and
+   `openig-ui`** (F8) — the change owner's, flagged not decided.
+4. **F3's acceptance unit** — recommended, not decided.
+5. **`OpenAM/legal/THIRDPARTYREADME.txt:878`** names `lodash-3.10.1-min.js`. Whether a build change
+   edits the product legal notice is out of a build task's scope; flagged.

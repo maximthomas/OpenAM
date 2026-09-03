@@ -24,12 +24,13 @@
     require.config({
         baseUrl: "/base/target/compiled",
 
-        map: {
-            "*": {
-                // TODO: Remove this when there are no longer any references to the "underscore" dependency
-                "underscore": "lodash"
-            }
-        },
+        // 8.3 REMOVED THE `"underscore": "lodash"` MAP ENTRY THAT USED TO SIT HERE. It encoded the
+        // one binding this task proved wrong: backbone 1.1.2 and backgrid 0.3.5 call 19 names
+        // lodash 4 removed, so the runtime alias table points `underscore` at the real npm
+        // underscore and this harness has to agree with the build it claims to test. The id is
+        // resolved by the `underscore` paths entry below instead.
+        // TODO: remove that entry when no module depends on the "underscore" id -- vite.config.js
+        // alias 6 tracks the same TODO and is where the reasoning lives.
         paths: {
             // TASK 4.7. These seven used to be read straight out of target/dependencies/libs,
             // the maven-assembly output that the retired commons.ui.libs dependencySet blocks
@@ -50,7 +51,10 @@
             "handlebars": "libs/handlebars-4.7.7",
             "i18next": "libs/i18next-1.7.3-min",
             "jquery": "libs/jquery-3.7.1-min",
-            "lodash": "libs/lodash-3.10.1-min",
+            // 8.3 took lodash from npm and deleted libs/lodash-3.10.1-min.js, so this now
+            // points at node_modules like the chai/sinon/squire entries below rather than at a
+            // file that no longer exists. The runner is still dead and group 9 (D12) still owns it.
+            "lodash": "/base/node_modules/lodash/lodash",
             "moment": "libs/moment-2.28.0-min",
             "redux": "libs/redux-3.5.2-min",
             "sinon-chai": "/base/node_modules/sinon-chai/lib/sinon-chai",
@@ -61,7 +65,13 @@
             // qunit js and css, are NOT replaced: nothing in this module references QUnit at
             // all - the frameworks here are mocha and requirejs - so they were dead weight.
             "sinon": "/base/node_modules/sinon/pkg/sinon",
-            "squire": "/base/node_modules/squirejs/src/Squire"
+            "squire": "/base/node_modules/squirejs/src/Squire",
+            // 8.3. Replaces the map entry to "lodash" that used to stand in for this id. Both are
+            // npm packages now, so both are addressed the same way. No `shim` entry below for this
+            // one on purpose: underscore.js registers itself as a NAMED AMD module
+            // (`define('underscore', factory)`), so RequireJS ignores shim config for it, and the
+            // id it registers under is exactly the id used here.
+            "underscore": "/base/node_modules/underscore/underscore"
         },
         shim: {
             "lodash": {

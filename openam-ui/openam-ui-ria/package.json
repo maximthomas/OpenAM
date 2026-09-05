@@ -12,7 +12,7 @@
     "build:production": "vite build",
     "build:grunt": "cross-env NODE_ENV=production grunt prod --verbose",
     "verify:lib-split": "node tools/verify-lib-split.mjs",
-    "lint": "eslint --ext .js,.jsm,.jsx,.mjs --ignore-pattern \"src/main/js/libs/**\" --ignore-pattern \"src/main/js/moduleRegistry.js\" --format ./node_modules/eslint-formatter-warning-summary/eslint-formatter-warning-summary.js src/main/js src/test/js src/test/vitest",
+    "lint": "eslint --ext .js,.jsm,.jsx,.mjs --ignore-pattern \"src/main/js/libs/**\" --ignore-pattern \"src/main/js/moduleRegistry.js\" --format ./node_modules/eslint-formatter-warning-summary/eslint-formatter-warning-summary.js src/main/js src/test/vitest",
     "test": "npm run test:unit",
     "test:unit": "vitest run",
     "test:karma": "grunt karma:build",
@@ -90,7 +90,6 @@
     "rimraf": "2.5.4",
     "sinon": "1.17.6",
     "sinon-chai": "2.8.0",
-    "squirejs": "0.2.0",
     "vite": "^5.4.21",
     "vitest": "^2.1.9"
   },

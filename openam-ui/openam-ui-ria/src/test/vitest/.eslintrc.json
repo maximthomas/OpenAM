@@ -1,0 +1,27 @@
+{
+    /*
+     * The Karma-era settings in ../.eslintrc.json are wrong for this tree: every file here
+     * imports `describe`, `it` and `expect` from "vitest" explicitly, so nothing needs a mocha
+     * env or an `expect` global. Turning off the env is what makes a forgotten import an actual
+     * no-undef error rather than a silent pass.
+     *
+     * `no-unused-expressions: 0` is deliberately NOT repeated -- it cascades from
+     * ../.eslintrc.json and is still needed, because chai property assertions
+     * (`.to.be.empty`, `.to.not.be.called`) are bare expressions.
+     *
+     * KNOWN LIMITATION: the `expect` line below does nothing. This module pins ESLint 3.8.1, and
+     * string-valued globals ("off"/"readonly"/"writable") only arrived in ESLint 6; under 3.x any
+     * truthy value means "declared and writable", so `expect` stays a declared global inherited
+     * from the parent. ESLint 3 gives no way to unset an inherited global. The clean fix is to
+     * move `globals.expect` OUT of src/test/.eslintrc.json and into a new
+     * src/test/js/.eslintrc.json where the 18 Karma originals still need it -- that is a change
+     * to the src/test/js tree, which task 9.1 was scoped to leave alone, so it belongs with 9.2
+     * when those originals are deleted. The line is kept as a statement of intent.
+     */
+    "env": {
+        "mocha": false
+    },
+    "globals": {
+        "expect": "off"
+    }
+}

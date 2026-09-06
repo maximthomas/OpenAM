@@ -220,6 +220,50 @@
                         </configuration>
                     </execution>
                     <!--
+                        FAIL FAST ON A BROKEN lodash/underscore SPLIT, BEFORE A BUNDLE IS BUILT.
+
+                        tools/verify-lib-split.mjs guards the two-library split task 8.3 created:
+                        every `_.name` a module calls must exist on the library that module
+                        actually binds. It has existed since 8.3 and nothing ran it, so a real
+                        defect shipped. The commons AbstractConfigurationAware.js called
+                        `_.pairs`, which lodash 4 removed, and the XUI died before first paint
+                        with "_.pairs is not a function" while `mvn install` reported BUILD
+                        SUCCESS. The script named the exact line the whole time. This execution
+                        is what makes it matter.
+
+                        PHASE: process-resources, and both bounds are load-bearing. The script
+                        reads node_modules, which npm-install-commons populates at initialize, so
+                        it cannot run earlier. It must precede npm-build at compile, so that no
+                        bundle is produced from a split already known to be broken.
+                        process-resources also keeps it OUT of the initialize-phase set the next
+                        comment governs: bind it there instead and it must be declared after
+                        npm-install-commons, or the commons packages are pruned.
+
+                        WHEN IT FAILS, SUSPECT ~/.m2 FIRST. The commons packages arrive as tgz:npm
+                        artifacts that resolve from the local repository only (see the
+                        commons.ui.version comment above), so a commons checkout that has moved on
+                        leaves a stale tarball behind and this module bundles weeks-old source
+                        against the current lodash. Rebuild them from the sibling checkout:
+                            mvn install -f ui/pom.xml
+                        The script exits 1 on errors only. Its semantic warnings, meaning a name
+                        present on both libraries whose behaviour differs, need a human rather
+                        than a rule and do not fail the build.
+
+                        NOT A TEST EXECUTION, deliberately. -DskipTests and
+                        -Dmaven.test.failure.ignore=true do not bypass it. A bundle whose `_`
+                        calls do not resolve is not a failing test, it is a broken artifact.
+                    -->
+                    <execution>
+                        <id>npm-verify-lib-split</id>
+                        <goals>
+                            <goal>npm</goal>
+                        </goals>
+                        <phase>process-resources</phase>
+                        <configuration>
+                            <arguments>run verify:lib-split</arguments>
+                        </configuration>
+                    </execution>
+                    <!--
                         Runs the Vite build. The script name is unchanged from the Grunt pipeline
                         on purpose: build:production is what this execution has always called, so
                         flipping the pipeline is a package.json edit, not a pom edit.

@@ -55,6 +55,29 @@ jobs:
         echo "MAVEN_PROFILE_FLAG=-P integration-test" >> $GITHUB_OUTPUT 
         echo "127.0.0.1 openam.local" | sudo tee -a /etc/hosts
       id: maven-profile-flag
+    # This `verify` passes no -DskipTests, which makes it the lane that runs the XUI unit suite
+    # on every push and pull request: openam-ui-ria's npm-test execution, `vitest run` under jsdom
+    # since task 9.1. Every documented XUI build path (e2e/local/README.md, xui-e2e.yml,
+    # xui-capture-drift.yml, xui-local-server.yml) passes the flag and therefore skips it; see the
+    # npm-test comment in openam-ui/openam-ui-ria/pom.xml for why the flag skips that execution and
+    # why those paths still get their zip. That comment also names the two lanes that are NOT this
+    # one and still run the suite -- deploy.yml, which is gated behind a green run of this workflow,
+    # and release.yml, which is gated behind nothing.
+    #
+    # Task 9.3 chose to run it on all nine matrix cells, deliberately and over two alternatives
+    # (ubuntu cells only, or a job of its own). It costs ~10-12 s per ubuntu cell and 1.5-2.5x
+    # that on the macOS and Windows cells, so roughly 2.5-4 minutes of aggregate runner time; because
+    # the cells run concurrently it adds ~20-35 s of matrix wall-clock, set by the slowest cell rather
+    # than the sum, against cells that already take tens of minutes. What it buys is a cross-platform
+    # signal and a single answer to "is the UI tested". What it costs, beyond the seconds, is that
+    # one UI unit failure appears nine times and blocks Upload artifacts on every cell. The
+    # timings and the full tradeoff for all three placements are in
+    # openam-ui/openam-ui-ria/NOTES-test-wiring.md.
+    #
+    # While that suite is red -- ten cases are deliberately red today, see the pom comment -- this
+    # step fails on every cell before Upload artifacts, and because build-docker is `needs:
+    # build-maven` it never starts, taking this workflow's own UI Smoke Tests (Playwright) steps
+    # with it. That is the cost of this placement being honest rather than advisory.
     - name: Build with Maven
       env:
         MAVEN_OPTS: -Dhttps.protocols=TLSv1.2 -Dmaven.wagon.httpconnectionManager.ttlSeconds=120 -Dmaven.wagon.http.retryHandler.requestSentEnabled=true -Dmaven.wagon.http.retryHandler.count=10

@@ -137,7 +137,16 @@ jobs:
       # migration's changes land almost entirely in that one file. Leave it out and every one of
       # those pull requests hashes identically, restores the previous zip, and goes green against a
       # UI it did not build -- precisely the assert-nothing failure the no-restore-keys rule above
-      # exists to prevent. Gruntfile.js stays in the key until 4.8 retires it.
+      # exists to prevent.
+      #
+      # Gruntfile.js is still in the key and still exists, so the key is intact today. Read that
+      # narrowly: it is a statement about hashFiles inputs, not about Grunt working. It no longer
+      # builds this zip, and 9.1 removed grunt-karma from package.json without touching
+      # Gruntfile.js's loadNpmTasks("grunt-karma") call, so `npm start` and `build:grunt` are broken
+      # too. Three tasks have now declined to delete the file: 4.8 did not retire it, 7.1 decided
+      # Grunt and Karma retire together or not at all, and 9.1 retired Karma alone. WHOEVER DELETES IT MUST REMOVE IT FROM THE KEY BELOW IN THE SAME COMMIT --
+      # hashFiles on a missing path contributes nothing rather than failing, so the key would
+      # silently lose an input and start restoring zips built from sources it no longer covers.
       #
       # What a pull request can actually restore is written by the push trigger above: its own runs
       # scope their entries to the pull request's ref, so without those pushes the first run of every
@@ -205,8 +214,13 @@ jobs:
       # with the last artifact it managed, so `clean` here is now merely pointless rather than
       # destructive. Nothing needs cleaning on a fresh runner anyway.
       #
-      # `-DskipTests` is honoured by frontend-maven-plugin -- it skips the karma execution, which
-      # would otherwise want a browser. The lane below is what tests this UI.
+      # `-DskipTests` is honoured by frontend-maven-plugin: it skips the pom's npm-test execution.
+      # Since task 9.1 that execution runs Vitest under jsdom, not Karma in a browser, so the flag
+      # is still correct here but its original reason has expired. The reason to keep it is that
+      # this step exists to PRODUCE the zip, not to test it; the unit suite's CI home is build.yml,
+      # which runs it on all nine of its matrix cells (see the npm-test comment in
+      # openam-ui-ria/pom.xml). Nothing in this lane is the acceptance gate for the UI -- that
+      # stays on the deployed AM in xui-e2e.yml, exactly as this job's name says.
       #
       # Note that this step rewrites openam-ui-ria/package-lock.json: the pom's npm-install execution
       # runs `npm install`, not `npm ci`. Harmless on a runner that is thrown away; do not add a

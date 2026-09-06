@@ -250,6 +250,68 @@
                             </environmentVariables>
                         </configuration>
                     </execution>
+                    <!--
+                        Runs the unit suite. `npm run test` is `npm run test:unit` is `vitest run`
+                        over src/test/vitest/**; task 9.1 repointed it. The execution itself is NOT
+                        this migration's: it arrived upstream in 9a9a1ac44b ("Run frontend Karma
+                        tests during the Maven test phase", #902, 2025-08-07), when `npm test` still
+                        meant `grunt karma:build`, and it is present on master byte for byte as it
+                        stands here. Flipping Karma to Vitest was a package.json edit, not a pom
+                        edit, for the same reason build:production was above.
+
+                        -DskipTests SKIPS THIS EXECUTION, and that is load-bearing rather than
+                        incidental. frontend-maven-plugin 1.15.4 binds the npm mojo's skipTests
+                        parameter to the ${skipTests} user property, and AbstractFrontendMojo skips
+                        when skipTests is true AND the execution's DECLARED phase is test or
+                        integration-test. This one declares test, so a build passing the flag logs
+                        the npm-test execution header immediately followed by `[INFO] Skipping
+                        execution.` and carries on. Two consequences are easy to get wrong:
+
+                          * -Dmaven.test.skip is NOT a synonym. Only ${skipTests} is bound to this
+                            mojo, so a build using maven.test.skip still runs the whole suite.
+                          * npm-build is bound to compile, not test, so it runs either way. The Vite
+                            build, and therefore the zip that zip.xml packs, are unaffected by the flag.
+                            That is precisely what the documented XUI build paths rely on:
+                            e2e/local/README.md (:78, :160, :177), .github/workflows/xui-e2e.yml
+                            (:108), .github/workflows/xui-capture-drift.yml (:143) and
+                            .github/workflows/xui-local-server.yml (:230) all build this module with
+                            -DskipTests to produce or deploy the zip, and none of them runs this
+                            suite. Do not "fix" that by removing the flag.
+
+                        WHICH LANE RUNS IT ON EVERY PUSH AND PULL REQUEST:
+                        .github/workflows/build.yml. That workflow runs `mvn verify` over the whole
+                        reactor with no -DskipTests, so this suite executes on all nine of its matrix
+                        cells. Task 9.3 chose that placement deliberately, over an ubuntu-only gate
+                        and over a job of its own; the timings and the tradeoffs of all three are in
+                        NOTES-test-wiring.md.
+
+                        Two other workflows also reach the test phase without the flag, so a failure
+                        here can surface in them too. Neither is the gate, and do not read build.yml
+                        as the only place this suite runs:
+
+                          * deploy.yml (`package` at :53, `deploy` at :60) is shielded in practice.
+                            Its deploy-maven job is conditional on a successful Build workflow_run,
+                            so while this suite is red that job never starts.
+                          * release.yml (:57) is NOT shielded. It is workflow_dispatch and gated on
+                            nothing, and maven-release-plugin 3.0.0-M7 is declared in the root pom
+                            with its goals element commented out (pom.xml:1817), leaving
+                            preparationGoals at the default `clean verify`. A release cut while this
+                            suite is red therefore fails inside release:prepare.
+
+                        THE SUITE IS RED ON PURPOSE TODAY, so `mvn verify` fails in this module:
+                        ten of 163 cases, documented in the two test file headers and in commit
+                        ade9c24878. Six execute a real lodash-4 defect, the `_.object` call in the
+                        commons URIUtils.js, which `npm run verify:lib-split` already reports as an
+                        error; four assert a require.toUrl branch that cannot be reached from a
+                        Vitest module scope but is still live in production on the openam-oauth2
+                        .ftl entry points. Neither set is task 9.3's to fix and neither is hidden.
+                        Because this module builds well ahead of openam-server and
+                        openam-distribution, that failure also stops build.yml's Upload artifacts
+                        step and its build-docker job, which is where build.yml's own deployed-AM
+                        Playwright coverage lives. If a reactor build has to get past it,
+                        -Dmaven.test.failure.ignore=true IS honoured by this mojo in the test phase;
+                        prefer fixing the six.
+                    -->
                     <execution>
                         <id>npm-test</id>
                         <goals>

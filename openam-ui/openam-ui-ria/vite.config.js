@@ -3560,6 +3560,50 @@ export default defineConfig({
             },
 
             /*
+             * ---- (1b) ONE ID, TWO COPIES ON DISK ---------------------------------------------
+             *
+             * `backgrid` resolves perfectly well as a bare npm name, so by the rule below it
+             * belongs in the "nothing needed" group, and for a long time it was not in this table
+             * at all. It has to be, because node_modules holds TWO backgrids:
+             *
+             *     node_modules/backgrid                                0.3.5   (package.json pins)
+             *     node_modules/backgrid-filter/node_modules/backgrid   0.3.8   (npm nested it)
+             *
+             * backgrid-filter@0.3.7 declares `backgrid: "~0.3.7"`, which 0.3.5 does not satisfy, so
+             * npm gave it a private copy. Node resolution is relative to the REQUIRING FILE, so
+             * `require("backgrid")` inside backgrid-filter reaches 0.3.8 while every other importer
+             * in the tree reaches 0.3.5 -- two unrelated Backgrid objects in one bundle.
+             *
+             * A backgrid extension is a REGISTRY MUTATION, which is what makes that split fatal
+             * rather than merely wasteful. backgrid-filter's factory runs
+             *
+             *     Backgrid.Extension.ServerSideFilter = Backbone.View.extend(...)
+             *
+             * against its own 0.3.8, and commons' ThemeableServerSideFilter then reads it off the
+             * 0.3.5 that everyone else imported:
+             *
+             *     TypeError: Cannot read properties of undefined (reading 'extend')
+             *         at XUI/assets/ThemeableServerSideFilter-*.js
+             *
+             * -- i.e. every filtered grid in the admin console (Scripts, Policies, Policy Sets,
+             * Resource Types, the UMA lists) coming up as an empty panel.
+             *
+             * RequireJS could not produce this: one AMD id meant one file, and the pairing it
+             * loaded was backgrid-filter 0.3.7 against backgrid 0.3.5 -- the asset map above still
+             * names both files. This entry restores that pairing rather than picking a new one.
+             * Bumping the `backgrid` dependency to 0.3.8 would also collapse the copies, but that
+             * is a library upgrade and this is not the change to make it in.
+             *
+             * THE SAME TRAP IS ALREADY SPRUNG FOR TWO MORE IDS AND COST NOTHING, because both are
+             * aliased for unrelated reasons: backgrid-filter/node_modules/backbone@1.2.3 and
+             * backgrid/node_modules/underscore@1.5.2 are on disk right now and unreachable, and it
+             * is the alias entries above -- not the install -- that make them so. So when deciding
+             * whether a library needs an entry here, `npm ls <name>` is part of the question: "the
+             * bare name resolves" is not the same as "the bare name resolves to ONE file".
+             */
+            { find: "backgrid", replacement: fromPkg("backgrid") },
+
+            /*
              * ---- (1) NOTHING NEEDED BUT THE NAME --------------------------------------------
              *
              * The npm package name differs from the AMD id, or the package publishes no entry

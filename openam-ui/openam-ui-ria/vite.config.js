@@ -2458,34 +2458,74 @@ const requirejsEntryStubs = () => {
         }
 
         /*
-         * REVIEW FIX. web.xml serves /XUI/* with `Cache-Control: public, max-age=2592000`. These
-         * two stubs sit at fixed URLs and embed the hashed name of the chunk they import, so
-         * their content moves on nearly every build while their URL does not -- cached for a
-         * month, a returning browser imports a chunk that no longer exists and the OAuth2 consent
-         * page goes blank. The fix is one `excludes` entry each; this asserts it is still there,
-         * because nothing else connects the two files and the failure is invisible for 30 days.
+         * REVIEW FIX. web.xml serves /XUI/* with `Cache-Control: public, max-age=2592000`. Every
+         * stub sits at a fixed URL and embeds the hashed name of the chunk it imports, so its
+         * content moves on nearly every build while its URL does not -- cached for a month, a
+         * returning browser imports a chunk that no longer exists and the page goes blank. The
+         * fix is one `excludes` entry each; this asserts it is still there, because nothing else
+         * connects these files to web.xml and the failure is invisible for 30 days.
          */
         const webXml = path.resolve(root, "../../openam-server-only/src/main/webapp/WEB-INF/web.xml");
         if (fs.existsSync(webXml)) {
-            const excluded = fs.readFileSync(webXml, "utf8");
             /*
-             * REQUIREJS_LOADED_ENTRIES only, not every stub. `main.js` is exempt BY CONSTRUCTION,
-             * not by oversight: index.html loads it as `main.js?v=${version}`, so its URL already
-             * moves on every release, and web.xml excludes /XUI/ and /XUI/index.html from the same
-             * filter -- so the browser always re-reads index.html and always sees the current
-             * query. The two stubs below have no such query (`data-main` never carried one), which
-             * is exactly why they need the exclusion and main does not.
+             * CacheForAMonth's OWN `excludes` param-value, split the way SetHeadersFilter itself
+             * splits it. Two narrowings, each of which this check was seen to need:
+             *
+             *   - Scoped to the filter. `SecurityHeaders` declares an `excludes` param too, and it
+             *     is declared FIRST, so a match against the whole document reads that filter's
+             *     list and reports every stub unexcluded no matter what CacheForAMonth says.
+             *   - The param-value, not a substring search over the file. Any mention of the path
+             *     anywhere in the document satisfies a substring search - including the comment
+             *     sitting directly above this very param to explain why the entries are there.
+             *     That comment would hold the assertion green while the list it documents was
+             *     empty, which is the exact failure this check exists to catch.
+             *
+             * Splitting on `</filter>` is safe against `</filter-name>` and `</filter-mapping>`:
+             * neither contains that string, so each segment is exactly one filter declaration.
              */
-            const unexcluded = [...stubbed.keys()].filter((name) =>
-                REQUIREJS_LOADED_ENTRIES.has(name) && !excluded.includes(`/XUI/${name}.js`));
+            const webXmlText = fs.readFileSync(webXml, "utf8");
+            const cacheFilter = webXmlText.split("</filter>")
+                .find((block) => /<filter-name>\s*CacheForAMonth\s*<\/filter-name>/.test(block));
+            const excludesParam = cacheFilter === undefined
+                ? null
+                : /<param-name>\s*excludes\s*<\/param-name>\s*<param-value>([^<]*)<\/param-value>/
+                    .exec(cacheFilter);
+            const excluded = new Set((excludesParam?.[1] ?? "").split(",").map((s) => s.trim()));
+            /*
+             * EVERY stub, main.js included. main.js was once held exempt BY CONSTRUCTION, on the
+             * grounds that index.html loads it as `main.js?v=${version}` and web.xml excludes
+             * /XUI/index.html from this filter, so the browser always re-reads index.html and
+             * always sees the current query. The re-read holds; the conclusion did not. `version`
+             * is the Maven project version, so the query moves on a RELEASE and not on a BUILD:
+             * every rebuild within one SNAPSHOT emits `main.js?v=16.2.0-SNAPSHOT` again, byte for
+             * byte the same URL, while the chunk hash inside the stub moves. A returning browser
+             * then serves a month-old stub from cache and imports a chunk that `emptyOutDir` has
+             * already deleted -- a dead console, on a deployment whose war is perfectly correct,
+             * for anyone who loaded the previous build. That is the daily case for developers and
+             * for operators tracking a snapshot, which makes it the one that matters most.
+             *
+             * The query still earns its place across releases (see stampIndexHtml); it is simply
+             * not a substitute for the exclusion within one.
+             */
+            const unexcluded = cacheFilter === undefined
+                ? []
+                : [...stubbed.keys()].filter((name) => !excluded.has(`/XUI/${name}.js`));
+            if (cacheFilter === undefined) {
+                this.warn(
+                    "[xui-requirejs-entry-stubs] web.xml declares no CacheForAMonth filter, so " +
+                    "the entry stubs' exclusion from it could not be verified. If /XUI/* is no " +
+                    "longer served `max-age=2592000` this check has nothing left to guard and " +
+                    "should go; if it moved, point this at the filter that replaced it."
+                );
+            }
             if (unexcluded.length > 0) {
                 throw new Error(
                     "[xui-requirejs-entry-stubs] web.xml does not exclude these entry stubs from " +
                     `CacheForAMonth: ${unexcluded.map((n) => `/XUI/${n}.js`).join(", ")}.\n\n` +
                     "Add them to the `excludes` param of the CacheForAMonth filter. Without it a " +
                     "returning browser holds a month-old stub pointing at a chunk hash that no " +
-                    "longer exists, and the OAuth2 consent and device-flow pages render blank " +
-                    "after every upgrade -- with this build still green."
+                    "longer exists, and the page that stub boots renders blank after every " +
+                    "upgrade -- with this build still green."
                 );
             }
         } else {

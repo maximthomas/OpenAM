@@ -84,17 +84,25 @@
         </init-param>
         <init-param>
             <!--
-                /XUI/main-authorize.js and /XUI/main-device.js are the two classic-script entry
-                stubs the XUI build emits for the six OAuth2/device-flow FreeMarker pages, which
-                fetch them by fixed name through RequireJS data-main. Each stub embeds the hashed
-                name of the chunk it imports, so its CONTENT changes on almost every build while
-                its URL never does. Cached for a month it would import a chunk that no longer
-                exists - a blank consent page for returning browsers after any upgrade. The
-                chunks themselves are content-hashed and stay cacheable; only these two must not
-                be. openam-ui-ria's vite.config.js asserts this list still names them.
+                /XUI/main.js, /XUI/main-authorize.js and /XUI/main-device.js are the three entry
+                stubs the XUI build emits: main.js for index.html, the other two for the six
+                OAuth2/device-flow FreeMarker pages, which fetch them by fixed name through
+                RequireJS data-main. Each stub embeds the hashed name of the chunk it imports, so
+                its CONTENT changes on almost every build while its URL never does. Cached for a
+                month it would import a chunk that no longer exists, and the page renders blank
+                for returning browsers after any upgrade. The chunks themselves are
+                content-hashed and stay cacheable; only these three stubs must not be.
+                openam-ui-ria's vite.config.js asserts this list still names them.
+
+                main.js is here even though index.html loads it as main.js?v=${version}. That
+                query moves on a RELEASE, not on a BUILD: every rebuild within one SNAPSHOT
+                version reuses the identical URL, so a developer or an operator tracking a
+                snapshot gets a month-old stub pointing at a chunk that emptyOutDir has already
+                deleted. The query is real cache-busting across releases and no help at all
+                within one, which is why the exclusion has to carry it.
             -->
             <param-name>excludes</param-name>
-            <param-value>/policyEditor/,/policyEditor/index.html,/scripts/,/scripts/index.html,/XUI/,/XUI/index.html,/XUI/main-authorize.js,/XUI/main-device.js</param-value>
+            <param-value>/policyEditor/,/policyEditor/index.html,/scripts/,/scripts/index.html,/XUI/,/XUI/index.html,/XUI/main.js,/XUI/main-authorize.js,/XUI/main-device.js</param-value>
         </init-param>
     </filter>
 

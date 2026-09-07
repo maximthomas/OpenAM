@@ -108,6 +108,41 @@
     pointer-events: auto;
 }
 
+/*
+ * Put the slider toggle's knob back on the track.
+ *
+ * titatoggle draws these toggles with two pseudo-elements on the label's span: `:before` is the
+ * track, `:after` is the round knob that slides along it. Neither carries a `top` of its own in
+ * 1.2.6, so both take their static position and line up.
+ *
+ * 1.2.14 -- the oldest version published to npm, and so the one the build had to move to when the
+ * libraries came off Maven -- added `.form-horizontal [class^=checkbox] input+span:after{top:7px}`.
+ * That is a compensation for Bootstrap's `.form-horizontal .checkbox{padding-top:7px}`, which pushes
+ * the span's line box (and with it the track, still positioned statically) down by 7px while the
+ * absolutely positioned knob would stay at the top of the container.
+ *
+ * Commons' toggle.less cancels that Bootstrap padding for exactly these toggles:
+ *
+ *     .form-horizontal .checkbox.checkbox-slider { padding-top: 0; }
+ *
+ * so the track does NOT move down, the knob's 7px compensates for nothing, and the knob hangs off
+ * the bottom of the track -- every boolean in the admin console rendered as a lopsided blob rather
+ * than a toggle. Both rules are third-party and neither is wrong alone; they are simply written
+ * against different assumptions about that padding, and OpenAM is where they meet.
+ *
+ * Cancelling the knob's offset rather than restoring the padding is deliberate: it reproduces the
+ * 1.2.6 geometry that JSONEditorTheme's `marginTop: -5px` and the console's row spacing were tuned
+ * against, so nothing moves except the knob that regressed. Specificity is (0,3,3) against
+ * titatoggle's (0,2,3), so it wins wherever it applies without an `!important`.
+ *
+ * Scope: OpenAM only ever uses the `--b` and `--b-flat` variants, whose track has no `top` of its
+ * own. The `--c` family DOES set one (10/20/25px by size), and its knob's 7px is real; a future
+ * `--c` toggle inside a `.form-horizontal` would need excluding here rather than covering.
+ */
+.form-horizontal .checkbox.checkbox-slider input + span:after {
+    top: 0;
+}
+
 /* XUI Overrides */
 body, .modal-open {
     /* This will prevent to sudden shift of content which can sometimes occur

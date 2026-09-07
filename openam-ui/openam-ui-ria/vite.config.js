@@ -3987,16 +3987,56 @@ export default defineConfig({
              *     bootstrap-dialog                         ->  reading 'modal' of undefined
              *     selectize                                ->  $2.extend is not a function
              *
-             * `requireReturnsDefault: "auto"` makes require() hand back the default export when
-             * the module has one, which is what every one of those libraries expects and what
-             * RequireJS gave them. All nine then build AND evaluate; verified again under
-             * "preferred", which also works, so "auto" is chosen as the narrower of the two.
+             * `requireReturnsDefault` makes require() hand back the default export instead of the
+             * namespace, which is what every one of those libraries expects and what RequireJS
+             * gave them. All nine then build AND evaluate under either "auto" or "preferred"; 5.2
+             * measured both and picked "auto" as the narrower of the two.
+             *
+             * ---- WHY IT IS "preferred" AND NO LONGER "auto" -------------------------------
+             *
+             * "auto" IS NOT THE NARROWER SETTING. It is the CONDITIONAL one, and it conditions on
+             * something that is none of its business: how many exports the required module happens
+             * to declare. The two helpers Rollup emits differ by one clause --
+             *
+             *     auto:      n && hasOwnProperty(n, "default") && Object.keys(n).length === 1
+             *                    ? n.default : n     // getDefaultExportFromNamespaceIfNotNamed
+             *     preferred: n && hasOwnProperty(n, "default")
+             *                    ? n.default : n     // getDefaultExportFromNamespaceIfPresent
+             *
+             * -- and task 5.7 later added `export const View` to shims/backbone.js for two .jsm
+             * callers that do `import { View } from "backbone"`. Reasonable on its own, and it
+             * took that shim's namespace from one key to two, so `Object.keys(n).length === 1`
+             * went false and every CommonJS `require("backbone")` in the tree went back to
+             * receiving `{ default: Backbone, View }` -- the exact shape this setting exists to
+             * prevent. Read out of the SHIPPED bundle rather than inferred:
+             *
+             *     GS = Object.freeze(Object.defineProperty(
+             *              { __proto__: null, View: WE, default: Vu }, ...))
+             *     const r = IS(GS)        // IS = ...&& keys.length === 1 ? n.default : n  ->  GS
+             *
+             * and then, in backbone.paginator's factory, `A = p.Collection.prototype` against a
+             * namespace that has no `Collection`:
+             *
+             *     TypeError: Cannot read properties of undefined (reading 'prototype')
+             *         at XUI/assets/backbone.paginator-B087Mmzu.js:7
+             *
+             * backgrid and backgrid-filter require("backbone") the same way, so the console's
+             * Scripts, Policies, Policy Sets, Resource Types and UMA list views all came up as an
+             * empty panel -- with this build green, because nothing here can see it.
+             *
+             * "preferred" drops the export-count clause, which never had anything to do with what
+             * a CommonJS requirer needs. Every ES module a CommonJS library reaches in this tree
+             * is one of the shims above, and a shim's default export IS the library; the named
+             * exports beside it (backbone's `View`, i18next's `t`, both 5.7) are there for ES
+             * callers and must not change what require() returns. i18next has no CommonJS
+             * requirer today, so its `t` is latent rather than broken -- under "auto" it becomes
+             * this same bug on the day one appears.
              *
              * THIS SETTING IS LOAD-BEARING FOR THE ALIAS TABLE, not a general preference. If the
              * four shim aliases above are ever removed, this can go with them; while they exist,
              * removing it turns nine libraries into runtime TypeErrors that no build step reports.
              */
-            requireReturnsDefault: "auto"
+            requireReturnsDefault: "preferred"
         },
 
         /*

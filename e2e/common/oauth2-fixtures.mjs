@@ -645,6 +645,355 @@ async function runClientSetup(request, operation, run) {
   }
 }
 
+async function fixtureJson(response, operation) {
+  try { return await response.json(); }
+  catch { throw new Error(operation + " returned invalid JSON"); }
+}
+
+/** Own a child realm and any clients, users, or sessions explicitly requested by its test. */
+export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {} }, run) {
+  const name = "s7j1-" + randomUUID();
+  const ownershipAlias = "s7j1-owner-" + randomUUID() + ".invalid";
+  const realmId = Buffer.from("/" + name).toString("base64url");
+  const realmsUrl = OPENAM_BASE + "/json/global-config/realms";
+  const configUrl = OPENAM_BASE + "/json/realms/root/realms/" + name;
+  const oauthUrl = OPENAM_BASE + "/oauth2/realms/root/realms/" + name;
+  const providerUrl = configUrl + "/realm-config/services/oauth-oidc";
+  const options = { ignoreHTTPSErrors, maxRedirects: 0 };
+  const admin = unreportedRequest.newContext(options);
+  const sessions = [], users = [], failures = [], pendingClients = new Set();
+  const bootstrapName = "s7j1-bootstrap-" + randomUUID();
+  let bootstrapAttempted = false, bootstrapId, clientAttempted = false;
+  let configHeaders, userHeaders, primaryError, adminToken, bootstrapped = false;
+  const realmRecord = {
+    label: "realm", url: realmsUrl + "/" + realmId, collection: realmsUrl,
+    params: { _queryFilter: "true" }, attempted: false, confirmed: false,
+    matches: (r) => r?._id === realmId || r?.name === name || r?.aliases?.includes(ownershipAlias),
+    owns: (r) => r?._id === realmId && r?.name === name && r?.parentPath === "/" &&
+      Array.isArray(r.aliases) && r.aliases.includes(ownershipAlias),
+  };
+  async function read(action) {
+    let response = await action().catch(() => undefined);
+    if (isTransientFailure(response)) response = await action();
+    if (!response) throw new Error("Cleanup read failed");
+    return response;
+  }
+  async function state(record) {
+    let direct, matches = null;
+    try {
+      const response = await read(() => admin.get(record.url, { headers: record.headers }));
+      if (response.status() === 404) {
+        direct = null;
+      } else {
+        requireStatus(response, 200, "Read " + record.label);
+        requireJsonMediaType(response, "Read " + record.label);
+        direct = await fixtureJson(response, "Read fixture response");
+        if (!isJsonObject(direct)) throw new Error("Invalid " + record.label + " record");
+      }
+    } catch (error) {
+      failures.push(error.message);
+      direct = undefined;
+    }
+    if (direct && !record.owns(direct)) throw new Error("Foreign " + record.label + " was preserved");
+    try {
+      const listed = await read(() => admin.get(record.collection, {
+        headers: record.headers, params: record.params,
+      }));
+      requireStatus(listed, 200, "List " + record.label);
+      requireJsonMediaType(listed, "List " + record.label);
+      const rows = (await fixtureJson(listed, "List fixture records"))?.result;
+      if (!Array.isArray(rows) || !rows.every((r) => isJsonObject(r) && nonemptyString(r._id))) throw new Error("Invalid " + record.label + " collection");
+      matches = rows.filter(record.matches);
+    } catch (error) {
+      failures.push(error.message);
+    }
+    if (matches && !matches.every(record.owns)) throw new Error("Foreign " + record.label + " was preserved");
+    const present = Boolean(direct || matches?.length);
+    return {
+      direct, matches, present, canDelete: present || record.confirmed,
+      absent: direct === null && matches !== null && matches.length === 0,
+    };
+  }
+  async function remove(record) {
+    if (!record.attempted) return true;
+    try {
+      const before = await state(record);
+      if (before.absent) {
+        if (record.confirmed) throw new Error("Previously confirmed " + record.label + " disappeared before cleanup");
+        return true;
+      }
+      if (!before.canDelete) throw new Error("Ownership of " + record.label + " could not be verified");
+      if (before.direct === null || (before.direct && before.matches?.length === 0)) {
+        failures.push("Inconsistent direct and collection reads for " + record.label);
+      }
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await admin.delete(record.url, { headers: record.headers }).catch(() => undefined);
+        const after = await state(record);
+        if (after.absent) {
+          if (response && !response.ok() && !isTransientFailure(response)) {
+            failures.push("Delete " + record.label + " returned HTTP " + response.status());
+          }
+          return true;
+        }
+        if (attempt === 0 && isTransientFailure(response) && after.present) continue;
+        throw new Error(record.label + " remains or its deletion could not be verified");
+      }
+    } catch (error) {
+      failures.push(error.message);
+      return false;
+    }
+  }
+
+  const sessionsUrl = OPENAM_BASE + "/json/sessions/";
+  function sessionHeaders(token) {
+    return {
+      iPlanetDirectoryPro: token, "Content-Type": "application/json",
+      "Accept-API-Version": "resource=1.2,protocol=1.0",
+    };
+  }
+  async function sessionInfo(record) {
+    const response = await read(() => admin.post(sessionsUrl + "?_action=validate", {
+      headers: sessionHeaders(record.token), data: {},
+    }));
+    requireStatus(response, 200, "Validate fixture session");
+    requireJsonMediaType(response, "Validate fixture session");
+    const body = await fixtureJson(response, "Read fixture response");
+    if (!isJsonObject(body) || typeof body.valid !== "boolean") throw new Error("Invalid session validation result");
+    return body;
+  }
+  async function closeSession(record) {
+    try {
+      const before = await sessionInfo(record);
+      if (before.valid === false) return true;
+      if (record.username && before.uid !== record.username) throw new Error("Foreign session was preserved");
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await admin.post(sessionsUrl + "?_action=logout", {
+          headers: sessionHeaders(record.token), data: {},
+        }).catch(() => undefined);
+        const after = await sessionInfo(record);
+        if (after.valid === false) {
+          if (response && !response.ok() && !isTransientFailure(response)) failures.push("Logout returned HTTP " + response.status());
+          return true;
+        }
+        if (record.username && after.uid !== record.username) throw new Error("Foreign session was preserved");
+        if (attempt === 0 && isTransientFailure(response)) continue;
+        throw new Error("Fixture session remains active after logout");
+      }
+    } catch (error) {
+      failures.push(error.message);
+      return false;
+    }
+  }
+
+  async function removeBootstrapClients() {
+    if (!bootstrapAttempted && !clientAttempted) return true;
+    const collection = configUrl + "/realm-config/agents/OAuth2Client";
+    const headers = adminHeaders(adminToken, AGENT_VERSION);
+    let rows;
+    try {
+      const response = await read(() => admin.get(collection, { headers, params: { _queryFilter: "true" } }));
+      requireStatus(response, 200, "Inventory realm clients");
+      rows = (await fixtureJson(response, "Inventory realm clients"))?.result;
+      if (!Array.isArray(rows) || !rows.every((r) => isJsonObject(r) && nonemptyString(r._id))) {
+        throw new Error("Invalid realm client inventory");
+      }
+      if (rows.some((r) => !clientNames(r).includes(bootstrapName))) {
+        throw new Error("Foreign or unresolved realm client was preserved");
+      }
+    } catch (error) {
+      failures.push(error.message);
+      rows = undefined;
+    }
+    const ids = new Set(rows?.map((r) => r._id) ?? []);
+    if (bootstrapId) ids.add(bootstrapId);
+    let gone = rows !== undefined;
+    for (const id of ids) {
+      const record = {
+        label: "bootstrap client", url: collection + "/" + encodeURIComponent(id), collection,
+        headers, params: { _queryFilter: "true" }, attempted: true,
+        confirmed: Boolean(rows?.some((r) => r._id === id && clientNames(r).includes(bootstrapName))),
+        matches: (r) => r._id === id || clientNames(r).includes(bootstrapName),
+        owns: (r) => r._id === id && clientNames(r).includes(bootstrapName),
+      };
+      gone = (await remove(record)) && gone;
+    }
+    return gone;
+  }
+  const realm = {
+    name, configUrl, oauthUrl, providerUrl,
+    getAdminToken() { return adminToken; },
+    trackClient(id) { clientAttempted = true; pendingClients.add(id); },
+    releaseClient(id) { pendingClients.delete(id); },
+    endpoint(spelling, path, params = new URLSearchParams()) {
+      const prefixes = {
+        nested: oauthUrl,
+        legacy: OPENAM_BASE + "/oauth2/" + name,
+        flat: OPENAM_BASE + "/oauth2/realms/" + name,
+        query: OPENAM_BASE + "/oauth2",
+      };
+      if (!Object.hasOwn(prefixes, spelling)) throw new Error("Unknown realm spelling");
+      const url = new URL(prefixes[spelling] + path);
+      for (const [key, value] of new URLSearchParams(params)) url.searchParams.append(key, value);
+      if (spelling === "query") url.searchParams.append("realm", name);
+      return url.href;
+    },
+    async bootstrapAgentService() {
+      if (bootstrapped) return;
+      const current = await admin.get(providerUrl, { headers: configHeaders });
+      requireStatus(current, 200, "Read realm provider");
+      const config = await fixtureJson(current, "Read realm provider");
+      config.advancedOIDCConfig = {
+        ...config.advancedOIDCConfig, allowDynamicRegistration: true,
+        generateRegistrationAccessTokens: false,
+      };
+      const enabled = await admin.put(providerUrl, { headers: configHeaders, data: config });
+      if (!enabled.ok()) throw new Error("Enable bootstrap registration failed");
+      const verified = await admin.get(providerUrl, { headers: configHeaders });
+      requireStatus(verified, 200, "Verify bootstrap provider settings");
+      const settings = await fixtureJson(verified, "Verify bootstrap provider settings");
+      if (settings?.advancedOIDCConfig?.allowDynamicRegistration !== true ||
+          settings?.advancedOIDCConfig?.generateRegistrationAccessTokens !== false) {
+        throw new Error("Bootstrap provider settings were not persisted");
+      }
+      bootstrapAttempted = true;
+      const response = await admin.post(oauthUrl + "/connect/register", {
+        data: { redirect_uris: [REDIRECT_URI], client_name: bootstrapName },
+      });
+      const body = await response.json().catch(() => undefined);
+      bootstrapId = nonemptyString(body?.client_id) ? body.client_id : undefined;
+      requireStatus(response, 201, "Bootstrap AgentService");
+      if (!bootstrapId) throw new Error("Bootstrap client ID is missing");
+      if (body.registration_access_token !== undefined) throw new Error("Bootstrap unexpectedly issued a registration access token");
+      bootstrapped = true;
+    },
+    async createUser() {
+      const username = name + "-user-" + randomUUID().slice(0, 8);
+      const password = "S7j1!" + randomUUID();
+      const marker = "s7j1-owner-" + randomUUID();
+      const collection = OPENAM_BASE + "/json/realms/root/users";
+      const record = {
+        label: "resource owner", username, url: collection + "/" + encodeURIComponent(username), collection,
+        headers: userHeaders, params: {
+          _queryFilter: 'uid eq "' + username + '" or description eq "' + marker + '"',
+          _fields: "_id,username,description",
+        }, attempted: true, confirmed: false,
+        matches: (r) => r?._id === username || r?.username === username || [r?.description].flat().includes(marker),
+        owns: (r) => r?._id === username && [r?.description].flat().includes(marker),
+      };
+      users.push(record);
+      const response = await admin.post(configUrl + "/users?_action=create", {
+        headers: userHeaders,
+        data: {
+          username, userpassword: password, description: [marker],
+          sn: "Realm", givenName: "Realm", cn: username,
+        },
+      });
+      requireStatus(response, 201, "Create realm resource owner");
+      record.confirmed = record.owns(await fixtureJson(response, "Create resource owner"));
+      if (!record.confirmed) throw new Error("Resource owner creation returned an unexpected identity");
+      return { username, password };
+    },
+    async createSession(owner) {
+      const login = unreportedRequest.newContext(options);
+      let record;
+      try {
+        const response = await login.post(configUrl + "/authenticate", {
+          headers: {
+            "X-OpenAM-Username": owner.username, "X-OpenAM-Password": owner.password,
+            "Accept-API-Version": "resource=2.0,protocol=1.0", "Content-Type": "application/json",
+          },
+        });
+        const body = await response.json().catch(() => undefined);
+        if (nonemptyString(body?.tokenId)) {
+          record = { token: body.tokenId, username: owner.username };
+          sessions.push(record);
+        }
+        requireStatus(response, 200, "Authenticate realm resource owner");
+        if (!record) throw new Error("Resource owner session is missing");
+        const info = await sessionInfo(record);
+        if (body.realm !== "/" + name || info.valid !== true ||
+            info.uid !== owner.username || info.realm !== "/" + name) {
+          throw new Error("Resource owner session has an unexpected identity or realm");
+        }
+      } finally {
+        try { await login.dispose(); } catch { failures.push("Dispose login context failed"); }
+      }
+      const context = unreportedRequest.newContext({
+        ...options,
+        storageState: {
+          cookies: [{
+            name: "iPlanetDirectoryPro", value: record.token, domain: new URL(OPENAM_BASE).hostname,
+            path: "/", expires: -1, httpOnly: false,
+            secure: new URL(OPENAM_BASE).protocol === "https:", sameSite: "Lax",
+          }],
+          origins: [],
+        },
+      });
+      record.context = context;
+      return context;
+    },
+  };
+  try {
+    const token = await runClientSetup(admin, "Get realm administrator token", (request) => getAdminToken(request));
+    adminToken = token;
+    if (!nonemptyString(token)) throw new Error("Administrator session is missing");
+    configHeaders = adminHeaders(token, CONFIG_VERSION);
+    userHeaders = adminHeaders(token, { "Accept-API-Version": "resource=3.0,protocol=2.1" });
+    realmRecord.headers = configHeaders;
+    realmRecord.attempted = true;
+    const created = await admin.post(realmsUrl + "?_action=create", {
+      headers: configHeaders, data: { name, parentPath: "/", active: true, aliases: [ownershipAlias] },
+    });
+    requireStatus(created, 201, "Create test realm");
+    realmRecord.confirmed = realmRecord.owns(await fixtureJson(created, "Create test realm"));
+    if (!realmRecord.confirmed) throw new Error("Realm creation returned an unexpected identity");
+    const provider = await admin.post(providerUrl + "?_action=create", {
+      headers: configHeaders,
+      data: {
+        ...providerConfig,
+        coreOAuth2Config: {
+          savedConsentAttribute: "description", issueRefreshToken: true,
+          ...providerConfig.coreOAuth2Config,
+        },
+        advancedOAuth2Config: {
+          clientsCanSkipConsent: true, codeVerifierEnforced: false,
+          supportedScopes: [SCOPE, "openid"], defaultScopes: [SCOPE],
+          ...providerConfig.advancedOAuth2Config,
+        },
+      },
+    });
+    requireStatus(provider, 201, "Create test realm provider");
+    return await run(realm);
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    const blockedUsers = new Set();
+    for (const session of sessions) {
+      if (!(await closeSession(session))) blockedUsers.add(session.username);
+      try { await session.context?.dispose(); } catch { failures.push("Dispose resource owner context failed"); }
+    }
+    let usersGone = true;
+    for (const record of users.reverse()) {
+      if (blockedUsers.has(record.username)) {
+        usersGone = false;
+        failures.push("Retained resource owner because session logout was not verified");
+      } else {
+        usersGone = (await remove(record)) && usersGone;
+      }
+    }
+    const bootstrapGone = await removeBootstrapClients();
+    if (usersGone && bootstrapGone && pendingClients.size === 0) {
+      await remove(realmRecord);
+    } else {
+      failures.push("Retained test realm because dependent cleanup was not verified");
+    }
+    if (nonemptyString(adminToken)) await closeSession({ token: adminToken });
+    try { await admin.dispose(); } catch { failures.push("Dispose administrator context failed"); }
+    if (failures.length) throw new Error("Realm fixture cleanup failed:\n" + failures.join("\n"), { cause: primaryError });
+  }
+}
+
 /** Own one introspection client and any tokens issued during the test. */
 export async function withIntrospectionClient({
   ignoreHTTPSErrors,

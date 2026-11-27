@@ -44,6 +44,7 @@ import org.restlet.Component;
 import org.restlet.Context;
 import org.restlet.Server;
 import org.restlet.data.Protocol;
+import org.restlet.engine.Edition;
 import org.restlet.engine.Engine;
 import org.restlet.engine.adapter.HttpServerHelper;
 import org.restlet.engine.adapter.ServerCall;
@@ -231,6 +232,12 @@ import org.restlet.routing.VirtualHost;
  * @author Jerome Louvel
  */
 public class ServerServlet extends HttpServlet {
+
+    static {
+        // Leave JUL configuration to the servlet container instead of Restlet's standalone engine.
+        Edition.JEE.setCurrentEdition();
+    }
+
     /**
      * Name of the attribute key containing a reference to the current
      * application.

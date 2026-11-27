@@ -750,9 +750,10 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
 
   const sessionsUrl = OPENAM_BASE + "/json/sessions/";
   function sessionHeaders(token) {
+    // Override the administrator cookie jar because OpenAM prefers the SSO cookie to the named header.
     return {
-      iPlanetDirectoryPro: token, "Content-Type": "application/json",
-      "Accept-API-Version": "resource=1.2,protocol=1.0",
+      Cookie: `iPlanetDirectoryPro=${token}`, iPlanetDirectoryPro: token,
+      "Content-Type": "application/json", "Accept-API-Version": "resource=1.2,protocol=1.0",
     };
   }
   async function sessionInfo(record) {

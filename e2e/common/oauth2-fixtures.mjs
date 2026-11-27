@@ -22,7 +22,7 @@
 
 import { randomUUID } from "node:crypto";
 import { MessageChannel, Worker } from "node:worker_threads";
-import { getAdminToken, OPENAM_BASE, PASSWORD, USERNAME } from "./openam-commons.mjs";
+import { ADMIN_USER, getAdminToken, OPENAM_BASE, PASSWORD, USERNAME } from "./openam-commons.mjs";
 
 export const REALM = "root";
 export const SCOPE = "profile";
@@ -661,14 +661,16 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
   const providerUrl = configUrl + "/realm-config/services/oauth-oidc";
   const options = { ignoreHTTPSErrors, maxRedirects: 0 };
   const admin = unreportedRequest.newContext(options);
+  const adminSession = { username: ADMIN_USER, realm: "/" };
   const sessions = [], users = [], failures = [], pendingClients = new Set();
   const bootstrapName = "s7j1-bootstrap-" + randomUUID();
-  let bootstrapAttempted = false, bootstrapId, clientAttempted = false;
-  let configHeaders, userHeaders, primaryError, adminToken, bootstrapped = false;
+  let bootstrapAttempted = false, bootstrapId, bootstrapConfirmed = false, clientAttempted = false;
+  let configHeaders, userHeaders, primaryError, bootstrapped = false;
   const realmRecord = {
     label: "realm", url: realmsUrl + "/" + realmId, collection: realmsUrl,
     params: { _queryFilter: "true" }, attempted: false, confirmed: false,
-    matches: (r) => r?._id === realmId || r?.name === name || r?.aliases?.includes(ownershipAlias),
+    matches: (r) => r?._id === realmId || r?.name === name ||
+      (Array.isArray(r?.aliases) && r.aliases.includes(ownershipAlias)),
     owns: (r) => r?._id === realmId && r?.name === name && r?.parentPath === "/" &&
       Array.isArray(r.aliases) && r.aliases.includes(ownershipAlias),
   };
@@ -679,7 +681,7 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
     return response;
   }
   async function state(record) {
-    let direct, matches = null;
+    let direct, matches = null, collectionComplete = false;
     try {
       const response = await read(() => admin.get(record.url, { headers: record.headers }));
       if (response.status() === 404) {
@@ -702,8 +704,10 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
       requireStatus(listed, 200, "List " + record.label);
       requireJsonMediaType(listed, "List " + record.label);
       const rows = (await fixtureJson(listed, "List fixture records"))?.result;
-      if (!Array.isArray(rows) || !rows.every((r) => isJsonObject(r) && nonemptyString(r._id))) throw new Error("Invalid " + record.label + " collection");
-      matches = rows.filter(record.matches);
+      if (!Array.isArray(rows)) throw new Error("Invalid " + record.label + " collection");
+      matches = rows.filter((r) => isJsonObject(r) && record.matches(r));
+      collectionComplete = rows.every((r) => isJsonObject(r) && nonemptyString(r._id));
+      if (!collectionComplete) throw new Error("Invalid " + record.label + " collection");
     } catch (error) {
       failures.push(error.message);
     }
@@ -711,7 +715,7 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
     const present = Boolean(direct || matches?.length);
     return {
       direct, matches, present, canDelete: present || record.confirmed,
-      absent: direct === null && matches !== null && matches.length === 0,
+      absent: direct === null && collectionComplete && matches.length === 0,
     };
   }
   async function remove(record) {
@@ -761,11 +765,14 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
     if (!isJsonObject(body) || typeof body.valid !== "boolean") throw new Error("Invalid session validation result");
     return body;
   }
+  function ownsSession(record, info) {
+    return info.uid === record.username && (record.realm === undefined || info.realm === record.realm);
+  }
   async function closeSession(record) {
     try {
       const before = await sessionInfo(record);
       if (before.valid === false) return true;
-      if (record.username && before.uid !== record.username) throw new Error("Foreign session was preserved");
+      if (!ownsSession(record, before)) throw new Error("Foreign session was preserved");
       for (let attempt = 0; attempt < 2; attempt++) {
         const response = await admin.post(sessionsUrl + "?_action=logout", {
           headers: sessionHeaders(record.token), data: {},
@@ -775,7 +782,7 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
           if (response && !response.ok() && !isTransientFailure(response)) failures.push("Logout returned HTTP " + response.status());
           return true;
         }
-        if (record.username && after.uid !== record.username) throw new Error("Foreign session was preserved");
+        if (!ownsSession(record, after)) throw new Error("Foreign session was preserved");
         if (attempt === 0 && isTransientFailure(response)) continue;
         throw new Error("Fixture session remains active after logout");
       }
@@ -788,30 +795,37 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
   async function removeBootstrapClients() {
     if (!bootstrapAttempted && !clientAttempted) return true;
     const collection = configUrl + "/realm-config/agents/OAuth2Client";
-    const headers = adminHeaders(adminToken, AGENT_VERSION);
-    let rows;
+    const headers = adminHeaders(adminSession.token, AGENT_VERSION);
+    const ownedIds = new Set(), foreignIds = new Set();
+    let inventoryComplete = false;
     try {
       const response = await read(() => admin.get(collection, { headers, params: { _queryFilter: "true" } }));
       requireStatus(response, 200, "Inventory realm clients");
-      rows = (await fixtureJson(response, "Inventory realm clients"))?.result;
-      if (!Array.isArray(rows) || !rows.every((r) => isJsonObject(r) && nonemptyString(r._id))) {
-        throw new Error("Invalid realm client inventory");
+      const rows = (await fixtureJson(response, "Inventory realm clients"))?.result;
+      if (!Array.isArray(rows)) throw new Error("Invalid realm client inventory");
+      inventoryComplete = true;
+      for (const row of rows) {
+        if (!isJsonObject(row) || !nonemptyString(row._id)) {
+          inventoryComplete = false;
+          continue;
+        }
+        const ids = clientNames(row).includes(bootstrapName) ? ownedIds : foreignIds;
+        ids.add(row._id);
       }
-      if (rows.some((r) => !clientNames(r).includes(bootstrapName))) {
-        throw new Error("Foreign or unresolved realm client was preserved");
-      }
+      if (!inventoryComplete) throw new Error("Invalid realm client inventory");
     } catch (error) {
       failures.push(error.message);
-      rows = undefined;
     }
-    const ids = new Set(rows?.map((r) => r._id) ?? []);
+    if (foreignIds.size > 0) failures.push("Foreign or unresolved realm client was preserved");
+    const ids = new Set(ownedIds);
     if (bootstrapId) ids.add(bootstrapId);
-    let gone = rows !== undefined;
+    let gone = inventoryComplete && foreignIds.size === 0;
     for (const id of ids) {
+      if (foreignIds.has(id)) continue;
       const record = {
         label: "bootstrap client", url: collection + "/" + encodeURIComponent(id), collection,
         headers, params: { _queryFilter: "true" }, attempted: true,
-        confirmed: Boolean(rows?.some((r) => r._id === id && clientNames(r).includes(bootstrapName))),
+        confirmed: ownedIds.has(id) || (id === bootstrapId && bootstrapConfirmed),
         matches: (r) => r._id === id || clientNames(r).includes(bootstrapName),
         owns: (r) => r._id === id && clientNames(r).includes(bootstrapName),
       };
@@ -821,7 +835,7 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
   }
   const realm = {
     name, configUrl, oauthUrl, providerUrl,
-    getAdminToken() { return adminToken; },
+    getAdminToken() { return adminSession.token; },
     trackClient(id) { clientAttempted = true; pendingClients.add(id); },
     releaseClient(id) { pendingClients.delete(id); },
     endpoint(spelling, path, params = new URLSearchParams()) {
@@ -861,6 +875,7 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
       });
       const body = await response.json().catch(() => undefined);
       bootstrapId = nonemptyString(body?.client_id) ? body.client_id : undefined;
+      bootstrapConfirmed = response.status() === 201 && bootstrapId !== undefined && body.client_name === bootstrapName;
       requireStatus(response, 201, "Bootstrap AgentService");
       if (!bootstrapId) throw new Error("Bootstrap client ID is missing");
       if (body.registration_access_token !== undefined) throw new Error("Bootstrap unexpectedly issued a registration access token");
@@ -936,8 +951,14 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
   };
   try {
     const token = await runClientSetup(admin, "Get realm administrator token", (request) => getAdminToken(request));
-    adminToken = token;
+    adminSession.token = token;
     if (!nonemptyString(token)) throw new Error("Administrator session is missing");
+    const verifiedAdmin = await sessionInfo(adminSession);
+    if (!verifiedAdmin.valid) throw new Error("Administrator session is inactive");
+    if (!ownsSession(adminSession, verifiedAdmin)) {
+      adminSession.token = undefined;
+      throw new Error("Foreign administrator session was preserved");
+    }
     configHeaders = adminHeaders(token, CONFIG_VERSION);
     userHeaders = adminHeaders(token, { "Accept-API-Version": "resource=3.0,protocol=2.1" });
     realmRecord.headers = configHeaders;
@@ -989,7 +1010,7 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
     } else {
       failures.push("Retained test realm because dependent cleanup was not verified");
     }
-    if (nonemptyString(adminToken)) await closeSession({ token: adminToken });
+    if (nonemptyString(adminSession.token)) await closeSession(adminSession);
     try { await admin.dispose(); } catch { failures.push("Dispose administrator context failed"); }
     if (failures.length) throw new Error("Realm fixture cleanup failed:\n" + failures.join("\n"), { cause: primaryError });
   }

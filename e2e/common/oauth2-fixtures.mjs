@@ -681,6 +681,19 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
     if (!response) throw new Error("Cleanup read failed");
     return response;
   }
+  async function listRecords(record, operation) {
+    const response = await read(() => admin.get(record.collection, { headers: record.headers, params: record.params }));
+    requireStatus(response, 200, operation);
+    requireJsonMediaType(response, operation);
+    const page = await fixtureJson(response, operation);
+    if (!Array.isArray(page?.result)) throw new Error("Invalid " + record.label + " collection");
+    const rows = page.result;
+    const complete = !page.pagedResultsCookie && !(page.remainingPagedResults > 0) &&
+      !(page.totalPagedResults > rows.length) && (page.resultCount === undefined || page.resultCount === rows.length) &&
+      rows.every((row) => isJsonObject(row) && nonemptyString(row._id));
+    if (!complete) failures.push("Invalid " + record.label + " collection");
+    return { rows, complete };
+  }
   async function state(record) {
     let direct, matches = null, collectionComplete = false;
     try {
@@ -699,23 +712,19 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
     }
     if (direct && !record.owns(direct)) throw new Error("Foreign " + record.label + " was preserved");
     try {
-      const listed = await read(() => admin.get(record.collection, {
-        headers: record.headers, params: record.params,
-      }));
-      requireStatus(listed, 200, "List " + record.label);
-      requireJsonMediaType(listed, "List " + record.label);
-      const rows = (await fixtureJson(listed, "List fixture records"))?.result;
-      if (!Array.isArray(rows)) throw new Error("Invalid " + record.label + " collection");
-      matches = rows.filter((r) => isJsonObject(r) && record.matches(r));
-      collectionComplete = rows.every((r) => isJsonObject(r) && nonemptyString(r._id));
-      if (!collectionComplete) throw new Error("Invalid " + record.label + " collection");
+      const page = record.list ? await record.list() : await listRecords(record, "List " + record.label);
+      matches = page.rows.filter((r) => isJsonObject(r) && record.matches(r));
+      collectionComplete = page.complete;
     } catch (error) {
       failures.push(error.message);
     }
     if (matches && !matches.every(record.owns)) throw new Error("Foreign " + record.label + " was preserved");
+    if ((direct === null && matches?.length) || (direct && collectionComplete && matches.length === 0)) {
+      failures.push("Inconsistent direct and collection reads for " + record.label);
+    }
     const present = Boolean(direct || matches?.length);
     return {
-      direct, matches, present, canDelete: present || record.confirmed,
+      present, canDelete: present || record.confirmed,
       absent: direct === null && collectionComplete && matches.length === 0,
     };
   }
@@ -728,9 +737,6 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
         return true;
       }
       if (!before.canDelete) throw new Error("Ownership of " + record.label + " could not be verified");
-      if (before.direct === null || (before.direct && before.matches?.length === 0)) {
-        failures.push("Inconsistent direct and collection reads for " + record.label);
-      }
       for (let attempt = 0; attempt < 2; attempt++) {
         const response = await admin.delete(record.url, { headers: record.headers }).catch(() => undefined);
         const after = await state(record);
@@ -797,43 +803,48 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
   async function removeBootstrapClients() {
     if (!bootstrapAttempted && !clientAttempted) return true;
     const collection = configUrl + "/realm-config/agents/OAuth2Client";
-    const headers = adminHeaders(adminSession.token, AGENT_VERSION);
-    const ownedIds = new Set(), foreignIds = new Set();
-    let inventoryComplete = false;
-    try {
-      const response = await read(() => admin.get(collection, { headers, params: { _queryFilter: "true" } }));
-      requireStatus(response, 200, "Inventory realm clients");
-      const rows = (await fixtureJson(response, "Inventory realm clients"))?.result;
-      if (!Array.isArray(rows)) throw new Error("Invalid realm client inventory");
-      inventoryComplete = true;
-      for (const row of rows) {
-        if (!isJsonObject(row) || !nonemptyString(row._id)) {
-          inventoryComplete = false;
-          continue;
+    const initialFailureCount = failures.length;
+    const marked = (row) => bootstrapAttempted && clientNames(row).includes(bootstrapName);
+    let id = bootstrapId;
+    let foreignClient = false, conflictingIdentity = false;
+    const record = {
+      label: "bootstrap client", collection, headers: adminHeaders(adminSession.token, AGENT_VERSION),
+      params: { _queryFilter: "true" }, attempted: true, confirmed: bootstrapConfirmed, list: inventory,
+      matches: (row) => (id !== undefined && row?._id === id) || marked(row),
+      owns: (row) => id !== undefined && row?._id === id && marked(row),
+    };
+    async function inventory(recoverMissingId = false) {
+      try {
+        const page = await listRecords(record, "Inventory realm clients");
+        if (recoverMissingId && !id && page.complete) {
+          const candidates = page.rows.filter(marked);
+          if (candidates.length === 1) id = candidates[0]._id;
         }
-        const ids = clientNames(row).includes(bootstrapName) ? ownedIds : foreignIds;
-        ids.add(row._id);
+        for (const row of page.rows) {
+          if (record.owns(row)) {
+            record.confirmed = true;
+          } else {
+            foreignClient = true;
+            if (record.matches(row)) conflictingIdentity = true;
+          }
+        }
+        return page;
+      } catch (error) {
+        failures.push(error.message);
+        return { rows: [], complete: false };
       }
-      if (!inventoryComplete) throw new Error("Invalid realm client inventory");
-    } catch (error) {
-      failures.push(error.message);
     }
-    if (foreignIds.size > 0) failures.push("Foreign or unresolved realm client was preserved");
-    const ids = new Set(ownedIds);
-    if (bootstrapId) ids.add(bootstrapId);
-    let gone = inventoryComplete && foreignIds.size === 0;
-    for (const id of ids) {
-      if (foreignIds.has(id)) continue;
-      const record = {
-        label: "bootstrap client", url: collection + "/" + encodeURIComponent(id), collection,
-        headers, params: { _queryFilter: "true" }, attempted: true,
-        confirmed: ownedIds.has(id) || (id === bootstrapId && bootstrapConfirmed),
-        matches: (r) => r._id === id || clientNames(r).includes(bootstrapName),
-        owns: (r) => r._id === id && clientNames(r).includes(bootstrapName),
-      };
-      gone = (await remove(record)) && gone;
+    const initial = await inventory(true);
+    if (bootstrapConfirmed && initial.complete && !initial.rows.some(record.owns)) {
+      failures.push("Inventory omitted the confirmed bootstrap client");
     }
-    return gone;
+    if (id && !conflictingIdentity) {
+      record.url = collection + "/" + encodeURIComponent(id);
+      await remove(record);
+    }
+    const final = await inventory();
+    if (foreignClient) failures.push("Foreign or unresolved realm client was preserved");
+    return final.complete && final.rows.length === 0 && failures.length === initialFailureCount;
   }
   const realm = {
     name, configUrl, oauthUrl, providerUrl,

@@ -869,22 +869,23 @@ export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {}
     async createUser() {
       const username = name + "-user-" + randomUUID().slice(0, 8);
       const password = "S7j1!" + randomUUID();
-      const marker = "s7j1-owner-" + randomUUID();
+      // The default embedded identity repository preserves mail on user records.
+      const marker = "s7j1-owner-" + randomUUID() + "@fixture.invalid";
       const collection = OPENAM_BASE + "/json/realms/root/users";
       const record = {
         label: "resource owner", username, url: collection + "/" + encodeURIComponent(username), collection,
         headers: userHeaders, params: {
-          _queryFilter: 'uid eq "' + username + '" or description eq "' + marker + '"',
-          _fields: "_id,username,description",
+          _queryFilter: 'uid eq "' + username + '" or mail eq "' + marker + '"',
+          _fields: "_id,username,mail",
         }, attempted: true, confirmed: false,
-        matches: (r) => r?._id === username || r?.username === username || [r?.description].flat().includes(marker),
-        owns: (r) => r?._id === username && [r?.description].flat().includes(marker),
+        matches: (r) => r?._id === username || r?.username === username || [r?.mail].flat().includes(marker),
+        owns: (r) => r?._id === username && [r?.mail].flat().includes(marker),
       };
       users.push(record);
       const response = await admin.post(configUrl + "/users?_action=create", {
         headers: userHeaders,
         data: {
-          username, userpassword: password, description: [marker],
+          username, userpassword: password, mail: [marker],
           sn: "Realm", givenName: "Realm", cn: username,
         },
       });

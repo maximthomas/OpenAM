@@ -22,7 +22,7 @@
 
 import { randomUUID } from "node:crypto";
 import { MessageChannel, Worker } from "node:worker_threads";
-import { getAdminToken, OPENAM_BASE, PASSWORD, USERNAME } from "./openam-commons.mjs";
+import { ADMIN_USER, getAdminToken, OPENAM_BASE, PASSWORD, USERNAME } from "./openam-commons.mjs";
 
 export const REALM = "root";
 export const SCOPE = "profile";
@@ -193,8 +193,9 @@ export async function ensureUmaProvider(adminToken, request) {
  * fixtures (different secret, missing scope) would otherwise survive and fail the specs in confusing ways.
  * Repeating the same PUT concurrently from two spec files is harmless.
  */
-export async function ensureClient(adminToken, request, clientId, data) {
-  const url = `${OPENAM_BASE}/json/realms/${REALM}/realm-config/agents/OAuth2Client/${clientId}`;
+export async function ensureClient(adminToken, request, clientId, data,
+  collectionUrl = `${OPENAM_BASE}/json/realms/${REALM}/realm-config/agents/OAuth2Client`) {
+  const url = `${collectionUrl}/${encodeURIComponent(clientId)}`;
   const written = await request.put(url, { headers: adminHeaders(adminToken, AGENT_VERSION), data });
   if (!written.ok()) {
     throw new Error(`Failed to write client ${clientId}: ${written.status()} ${await written.text()}`);
@@ -645,6 +646,389 @@ async function runClientSetup(request, operation, run) {
   }
 }
 
+async function fixtureJson(response, operation) {
+  try { return await response.json(); }
+  catch { throw new Error(operation + " returned invalid JSON"); }
+}
+
+/** Own a child realm and any clients, users, or sessions explicitly requested by its test. */
+export async function withRealmProvider({ ignoreHTTPSErrors, providerConfig = {} }, run) {
+  const name = "s7j1-" + randomUUID();
+  const ownershipAlias = "s7j1-owner-" + randomUUID() + ".invalid";
+  const realmId = Buffer.from("/" + name).toString("base64url");
+  const realmsUrl = OPENAM_BASE + "/json/global-config/realms";
+  const configUrl = OPENAM_BASE + "/json/realms/root/realms/" + name;
+  const oauthUrl = OPENAM_BASE + "/oauth2/realms/root/realms/" + name;
+  const providerUrl = configUrl + "/realm-config/services/oauth-oidc";
+  const options = { ignoreHTTPSErrors, maxRedirects: 0 };
+  const admin = unreportedRequest.newContext(options);
+  const adminSession = { username: ADMIN_USER, realm: "/" };
+  const sessions = [], users = [], failures = [], pendingClients = new Set();
+  const bootstrapName = "s7j1-bootstrap-" + randomUUID();
+  let bootstrapAttempted = false, bootstrapId, bootstrapConfirmed = false, clientAttempted = false;
+  let configHeaders, userHeaders, primaryError, bootstrapped = false;
+  const realmRecord = {
+    label: "realm", url: realmsUrl + "/" + realmId, collection: realmsUrl,
+    params: { _queryFilter: "true" }, attempted: false, confirmed: false,
+    matches: (r) => r?._id === realmId || r?.name === name ||
+      (Array.isArray(r?.aliases) && r.aliases.includes(ownershipAlias)),
+    owns: (r) => r?._id === realmId && r?.name === name && r?.parentPath === "/" &&
+      Array.isArray(r.aliases) && r.aliases.includes(ownershipAlias),
+  };
+  async function read(action) {
+    let response = await action().catch(() => undefined);
+    if (isTransientFailure(response)) response = await action();
+    if (!response) throw new Error("Cleanup read failed");
+    return response;
+  }
+  async function listRecords(record, operation) {
+    const response = await read(() => admin.get(record.collection, { headers: record.headers, params: record.params }));
+    requireStatus(response, 200, operation);
+    requireJsonMediaType(response, operation);
+    const page = await fixtureJson(response, operation);
+    if (!Array.isArray(page?.result)) throw new Error("Invalid " + record.label + " collection");
+    const rows = page.result;
+    const complete = !page.pagedResultsCookie && !(page.remainingPagedResults > 0) &&
+      !(page.totalPagedResults > rows.length) && (page.resultCount === undefined || page.resultCount === rows.length) &&
+      rows.every((row) => isJsonObject(row) && nonemptyString(row._id));
+    if (!complete) failures.push("Invalid " + record.label + " collection");
+    return { rows, complete };
+  }
+  async function state(record) {
+    let direct, matches = null, collectionComplete = false;
+    try {
+      const response = await read(() => admin.get(record.url, { headers: record.headers }));
+      if (response.status() === 404) {
+        direct = null;
+      } else {
+        requireStatus(response, 200, "Read " + record.label);
+        requireJsonMediaType(response, "Read " + record.label);
+        direct = await fixtureJson(response, "Read fixture response");
+        if (!isJsonObject(direct)) throw new Error("Invalid " + record.label + " record");
+      }
+    } catch (error) {
+      failures.push(error.message);
+      direct = undefined;
+    }
+    if (direct && !record.owns(direct)) throw new Error("Foreign " + record.label + " was preserved");
+    try {
+      const page = record.list ? await record.list() : await listRecords(record, "List " + record.label);
+      matches = page.rows.filter((r) => isJsonObject(r) && record.matches(r));
+      collectionComplete = page.complete;
+    } catch (error) {
+      failures.push(error.message);
+    }
+    if (matches && !matches.every(record.owns)) throw new Error("Foreign " + record.label + " was preserved");
+    if ((direct === null && matches?.length) || (direct && collectionComplete && matches.length === 0)) {
+      failures.push("Inconsistent direct and collection reads for " + record.label);
+    }
+    const present = Boolean(direct || matches?.length);
+    return {
+      present, canDelete: present || record.confirmed,
+      absent: direct === null && collectionComplete && matches.length === 0,
+    };
+  }
+  async function remove(record) {
+    if (!record.attempted) return true;
+    try {
+      const before = await state(record);
+      if (before.absent) {
+        if (record.confirmed) throw new Error("Previously confirmed " + record.label + " disappeared before cleanup");
+        return true;
+      }
+      if (!before.canDelete) throw new Error("Ownership of " + record.label + " could not be verified");
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await admin.delete(record.url, { headers: record.headers }).catch(() => undefined);
+        const after = await state(record);
+        if (after.absent) {
+          if (response && !response.ok() && !isTransientFailure(response)) {
+            failures.push("Delete " + record.label + " returned HTTP " + response.status());
+          }
+          return true;
+        }
+        if (attempt === 0 && isTransientFailure(response) && after.present) continue;
+        throw new Error(record.label + " remains or its deletion could not be verified");
+      }
+    } catch (error) {
+      failures.push(error.message);
+      return false;
+    }
+  }
+
+  const sessionsUrl = OPENAM_BASE + "/json/sessions/";
+  function sessionHeaders(token) {
+    // Override the administrator cookie jar because OpenAM prefers the SSO cookie to the named header.
+    return {
+      Cookie: `iPlanetDirectoryPro=${token}`, iPlanetDirectoryPro: token,
+      "Content-Type": "application/json", "Accept-API-Version": "resource=1.2,protocol=1.0",
+    };
+  }
+  async function sessionInfo(record) {
+    const response = await read(() => admin.post(sessionsUrl + "?_action=validate", {
+      headers: sessionHeaders(record.token), data: {},
+    }));
+    requireStatus(response, 200, "Validate fixture session");
+    requireJsonMediaType(response, "Validate fixture session");
+    const body = await fixtureJson(response, "Read fixture response");
+    if (!isJsonObject(body) || typeof body.valid !== "boolean") throw new Error("Invalid session validation result");
+    return body;
+  }
+  function ownsSession(record, info) {
+    return info.uid === record.username && (record.realm === undefined || info.realm === record.realm);
+  }
+  async function closeSession(record) {
+    try {
+      const before = await sessionInfo(record);
+      if (before.valid === false) return true;
+      if (!ownsSession(record, before)) throw new Error("Foreign session was preserved");
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await admin.post(sessionsUrl + "?_action=logout", {
+          headers: sessionHeaders(record.token), data: {},
+        }).catch(() => undefined);
+        const after = await sessionInfo(record);
+        if (after.valid === false) {
+          if (response && !response.ok() && !isTransientFailure(response)) failures.push("Logout returned HTTP " + response.status());
+          return true;
+        }
+        if (!ownsSession(record, after)) throw new Error("Foreign session was preserved");
+        if (attempt === 0 && isTransientFailure(response)) continue;
+        throw new Error("Fixture session remains active after logout");
+      }
+    } catch (error) {
+      failures.push(error.message);
+      return false;
+    }
+  }
+
+  async function removeBootstrapClients() {
+    if (!bootstrapAttempted && !clientAttempted) return true;
+    const collection = configUrl + "/realm-config/agents/OAuth2Client";
+    const initialFailureCount = failures.length;
+    const marked = (row) => bootstrapAttempted && clientNames(row).includes(bootstrapName);
+    let id = bootstrapId;
+    let foreignClient = false, conflictingIdentity = false;
+    const record = {
+      label: "bootstrap client", collection, headers: adminHeaders(adminSession.token, AGENT_VERSION),
+      params: { _queryFilter: "true" }, attempted: true, confirmed: bootstrapConfirmed, list: inventory,
+      matches: (row) => (id !== undefined && row?._id === id) || marked(row),
+      owns: (row) => id !== undefined && row?._id === id && marked(row),
+    };
+    async function inventory(recoverMissingId = false) {
+      try {
+        const page = await listRecords(record, "Inventory realm clients");
+        if (recoverMissingId && !id && page.complete) {
+          const candidates = page.rows.filter(marked);
+          if (candidates.length === 1) id = candidates[0]._id;
+        }
+        for (const row of page.rows) {
+          if (record.owns(row)) {
+            record.confirmed = true;
+          } else {
+            foreignClient = true;
+            if (record.matches(row)) conflictingIdentity = true;
+          }
+        }
+        return page;
+      } catch (error) {
+        failures.push(error.message);
+        return { rows: [], complete: false };
+      }
+    }
+    const initial = await inventory(true);
+    if (bootstrapConfirmed && initial.complete && !initial.rows.some(record.owns)) {
+      failures.push("Inventory omitted the confirmed bootstrap client");
+    }
+    if (id && !conflictingIdentity) {
+      record.url = collection + "/" + encodeURIComponent(id);
+      await remove(record);
+    }
+    const final = await inventory();
+    if (foreignClient) failures.push("Foreign or unresolved realm client was preserved");
+    return final.complete && final.rows.length === 0 && failures.length === initialFailureCount;
+  }
+  const realm = {
+    name, configUrl, oauthUrl, providerUrl,
+    getAdminToken() { return adminSession.token; },
+    trackClient(id) { clientAttempted = true; pendingClients.add(id); },
+    releaseClient(id) { pendingClients.delete(id); },
+    endpoint(spelling, path, params = new URLSearchParams()) {
+      const prefixes = {
+        nested: oauthUrl,
+        legacy: OPENAM_BASE + "/oauth2/" + name,
+        flat: OPENAM_BASE + "/oauth2/realms/" + name,
+        query: OPENAM_BASE + "/oauth2",
+      };
+      if (!Object.hasOwn(prefixes, spelling)) throw new Error("Unknown realm spelling");
+      const url = new URL(prefixes[spelling] + path);
+      for (const [key, value] of new URLSearchParams(params)) url.searchParams.append(key, value);
+      if (spelling === "query") url.searchParams.append("realm", name);
+      return url.href;
+    },
+    async bootstrapAgentService() {
+      if (bootstrapped) return;
+      const current = await admin.get(providerUrl, { headers: configHeaders });
+      requireStatus(current, 200, "Read realm provider");
+      const config = await fixtureJson(current, "Read realm provider");
+      config.advancedOIDCConfig = {
+        ...config.advancedOIDCConfig, allowDynamicRegistration: true,
+        generateRegistrationAccessTokens: false,
+      };
+      const enabled = await admin.put(providerUrl, { headers: configHeaders, data: config });
+      if (!enabled.ok()) throw new Error("Enable bootstrap registration failed");
+      const verified = await admin.get(providerUrl, { headers: configHeaders });
+      requireStatus(verified, 200, "Verify bootstrap provider settings");
+      const settings = await fixtureJson(verified, "Verify bootstrap provider settings");
+      if (settings?.advancedOIDCConfig?.allowDynamicRegistration !== true ||
+          settings?.advancedOIDCConfig?.generateRegistrationAccessTokens !== false) {
+        throw new Error("Bootstrap provider settings were not persisted");
+      }
+      bootstrapAttempted = true;
+      const response = await admin.post(oauthUrl + "/connect/register", {
+        data: { redirect_uris: [REDIRECT_URI], client_name: bootstrapName },
+      });
+      const body = await response.json().catch(() => undefined);
+      bootstrapId = nonemptyString(body?.client_id) ? body.client_id : undefined;
+      bootstrapConfirmed = response.status() === 201 && bootstrapId !== undefined && body.client_name === bootstrapName;
+      requireStatus(response, 201, "Bootstrap AgentService");
+      if (!bootstrapId) throw new Error("Bootstrap client ID is missing");
+      if (body.registration_access_token !== undefined) throw new Error("Bootstrap unexpectedly issued a registration access token");
+      bootstrapped = true;
+    },
+    async createUser() {
+      const username = name + "-user-" + randomUUID().slice(0, 8);
+      const password = "S7j1!" + randomUUID();
+      // The default embedded identity repository preserves mail on user records.
+      const marker = "s7j1-owner-" + randomUUID() + "@fixture.invalid";
+      const collection = OPENAM_BASE + "/json/realms/root/users";
+      const record = {
+        label: "resource owner", username, url: collection + "/" + encodeURIComponent(username), collection,
+        headers: userHeaders, params: {
+          _queryFilter: 'uid eq "' + username + '" or mail eq "' + marker + '"',
+          _fields: "_id,username,mail",
+        }, attempted: true, confirmed: false,
+        matches: (r) => r?._id === username || r?.username === username || [r?.mail].flat().includes(marker),
+        owns: (r) => r?._id === username && [r?.mail].flat().includes(marker),
+      };
+      users.push(record);
+      const response = await admin.post(configUrl + "/users?_action=create", {
+        headers: userHeaders,
+        data: {
+          username, userpassword: password, mail: [marker],
+          sn: "Realm", givenName: "Realm", cn: username,
+        },
+      });
+      requireStatus(response, 201, "Create realm resource owner");
+      record.confirmed = record.owns(await fixtureJson(response, "Create resource owner"));
+      if (!record.confirmed) throw new Error("Resource owner creation returned an unexpected identity");
+      return { username, password };
+    },
+    async createSession(owner) {
+      const login = unreportedRequest.newContext(options);
+      let record;
+      try {
+        const response = await login.post(configUrl + "/authenticate", {
+          headers: {
+            "X-OpenAM-Username": owner.username, "X-OpenAM-Password": owner.password,
+            "Accept-API-Version": "resource=2.0,protocol=1.0", "Content-Type": "application/json",
+          },
+        });
+        const body = await response.json().catch(() => undefined);
+        if (nonemptyString(body?.tokenId)) {
+          record = { token: body.tokenId, username: owner.username };
+          sessions.push(record);
+        }
+        requireStatus(response, 200, "Authenticate realm resource owner");
+        if (!record) throw new Error("Resource owner session is missing");
+        const info = await sessionInfo(record);
+        if (body.realm !== "/" + name || info.valid !== true ||
+            info.uid !== owner.username || info.realm !== "/" + name) {
+          throw new Error("Resource owner session has an unexpected identity or realm");
+        }
+      } finally {
+        try { await login.dispose(); } catch { failures.push("Dispose login context failed"); }
+      }
+      const context = unreportedRequest.newContext({
+        ...options,
+        storageState: {
+          cookies: [{
+            name: "iPlanetDirectoryPro", value: record.token, domain: new URL(OPENAM_BASE).hostname,
+            path: "/", expires: -1, httpOnly: false,
+            secure: new URL(OPENAM_BASE).protocol === "https:", sameSite: "Lax",
+          }],
+          origins: [],
+        },
+      });
+      record.context = context;
+      return context;
+    },
+  };
+  try {
+    const token = await runClientSetup(admin, "Get realm administrator token", (request) => getAdminToken(request));
+    adminSession.token = token;
+    if (!nonemptyString(token)) throw new Error("Administrator session is missing");
+    const verifiedAdmin = await sessionInfo(adminSession);
+    if (!verifiedAdmin.valid) throw new Error("Administrator session is inactive");
+    if (!ownsSession(adminSession, verifiedAdmin)) {
+      adminSession.token = undefined;
+      throw new Error("Foreign administrator session was preserved");
+    }
+    configHeaders = adminHeaders(token, CONFIG_VERSION);
+    userHeaders = adminHeaders(token, { "Accept-API-Version": "resource=3.0,protocol=2.1" });
+    realmRecord.headers = configHeaders;
+    realmRecord.attempted = true;
+    const created = await admin.post(realmsUrl + "?_action=create", {
+      headers: configHeaders, data: { name, parentPath: "/", active: true, aliases: [ownershipAlias] },
+    });
+    requireStatus(created, 201, "Create test realm");
+    realmRecord.confirmed = realmRecord.owns(await fixtureJson(created, "Create test realm"));
+    if (!realmRecord.confirmed) throw new Error("Realm creation returned an unexpected identity");
+    const provider = await admin.post(providerUrl + "?_action=create", {
+      headers: configHeaders,
+      data: {
+        ...providerConfig,
+        coreOAuth2Config: {
+          savedConsentAttribute: "description", issueRefreshToken: true,
+          ...providerConfig.coreOAuth2Config,
+        },
+        advancedOAuth2Config: {
+          clientsCanSkipConsent: true, codeVerifierEnforced: false,
+          supportedScopes: [SCOPE, "openid"], defaultScopes: [SCOPE],
+          ...providerConfig.advancedOAuth2Config,
+        },
+      },
+    });
+    requireStatus(provider, 201, "Create test realm provider");
+    return await run(realm);
+  } catch (error) {
+    primaryError = error;
+    throw error;
+  } finally {
+    const blockedUsers = new Set();
+    for (const session of sessions) {
+      if (!(await closeSession(session))) blockedUsers.add(session.username);
+      try { await session.context?.dispose(); } catch { failures.push("Dispose resource owner context failed"); }
+    }
+    let usersGone = true;
+    for (const record of users.reverse()) {
+      if (blockedUsers.has(record.username)) {
+        usersGone = false;
+        failures.push("Retained resource owner because session logout was not verified");
+      } else {
+        usersGone = (await remove(record)) && usersGone;
+      }
+    }
+    const bootstrapGone = await removeBootstrapClients();
+    if (usersGone && bootstrapGone && pendingClients.size === 0) {
+      await remove(realmRecord);
+    } else {
+      failures.push("Retained test realm because dependent cleanup was not verified");
+    }
+    if (nonemptyString(adminSession.token)) await closeSession(adminSession);
+    try { await admin.dispose(); } catch { failures.push("Dispose administrator context failed"); }
+    if (failures.length) throw new Error("Realm fixture cleanup failed:\n" + failures.join("\n"), { cause: primaryError });
+  }
+}
+
 /** Own one introspection client and any tokens issued during the test. */
 export async function withIntrospectionClient({
   ignoreHTTPSErrors,
@@ -653,20 +1037,26 @@ export async function withIntrospectionClient({
   prefix = "s7a",
   additionalGrantTypes = [],
   allowInactiveBeforeCleanup = false,
+  realm,
+  resourceOwner = { username: USERNAME, password: PASSWORD },
+  clientData = {},
 }, run) {
   const id = prefix + "-" + randomUUID();
-  const name = id + "-name";
+  const name = id + "-owner-" + randomUUID();
   const secret = randomUUID();
-  const url = OAUTH2_CLIENTS + "/" + id;
+  const clientsUrl = realm ? realm.configUrl + "/realm-config/agents/OAuth2Client" : OAUTH2_CLIENTS;
+  const oauthUrl = realm?.oauthUrl ?? INTROSPECTION_OAUTH2;
+  const url = clientsUrl + "/" + encodeURIComponent(id);
   const credentials = { Authorization: basicAuth(id, secret) };
   const options = { ignoreHTTPSErrors, maxRedirects: 0 };
   const failures = [];
   const grantTypes = [grantType ?? "client_credentials", ...additionalGrantTypes];
   const issuedTokens = { refresh_token: new Set(), access_token: new Set() };
   let issuanceCount = 0;
-  let admin, oauth, headers;
+  let admin, oauth, headers, rootAdminToken;
   let attemptedWrite = false;
   let confirmedOwnership = false;
+  let absentBeforeWriteCleanup = false, deletionVerified = false;
   let primaryError;
 
   async function attempt(operation, action) {
@@ -677,21 +1067,25 @@ export async function withIntrospectionClient({
     }
   }
 
-  async function issueTokens(type, priorRefreshToken) {
-    const operation = `Issue ${type} grant tokens (#${++issuanceCount})`;
-    const form = { grant_type: type, scope: SCOPE };
-    if (type === "password") {
-      Object.assign(form, { username: USERNAME, password: PASSWORD });
-    } else if (type === "refresh_token") {
-      form.refresh_token = priorRefreshToken;
-    }
-    const response = await oauth.post(INTROSPECTION_OAUTH2 + "/access_token", { headers: credentials, form });
-    const body = await response.json().catch(() => undefined);
+  function adoptTokens(body) {
     const accessToken = nonemptyString(body?.access_token) ? body.access_token : undefined;
     const refreshToken = nonemptyString(body?.refresh_token) ? body.refresh_token : undefined;
     if (accessToken) issuedTokens.access_token.add(accessToken);
     if (refreshToken) issuedTokens.refresh_token.add(refreshToken);
+    return { accessToken, refreshToken };
+  }
 
+  async function issueTokens(type, priorRefreshToken) {
+    const operation = `Issue ${type} grant tokens (#${++issuanceCount})`;
+    const form = { grant_type: type, scope: SCOPE };
+    if (type === "password") {
+      Object.assign(form, { username: resourceOwner.username, password: resourceOwner.password });
+    } else if (type === "refresh_token") {
+      form.refresh_token = priorRefreshToken;
+    }
+    const response = await oauth.post(oauthUrl + "/access_token", { headers: credentials, form });
+    const body = await response.json().catch(() => undefined);
+    const { accessToken, refreshToken } = adoptTokens(body);
     requireStatus(response, 200, operation);
     requireJsonMediaType(response, operation);
     if (!accessToken) throw new Error(operation + ": access_token must be a nonempty string");
@@ -702,30 +1096,32 @@ export async function withIntrospectionClient({
     return { accessToken, refreshToken };
   }
 
-  async function introspect(token, hint, method, operation) {
+  async function introspect(token, hint, method = "POST", operation = "Introspection", endpoint = oauthUrl + "/introspect") {
     const fields = { token };
     if (hint !== undefined) fields.token_type_hint = hint;
-    const endpoint = INTROSPECTION_OAUTH2 + "/introspect";
     const response = method === "GET"
       ? await oauth.get(endpoint, { headers: credentials, params: fields })
       : await oauth.post(endpoint, { headers: credentials, form: fields });
     requireStatus(response, 200, operation);
     requireJsonMediaType(response, operation);
-    return response.json();
+    return fixtureJson(response, operation);
   }
 
   const matchesClient = (record) => record?._id === id || clientNames(record).includes(name);
   const ownsClient = (record) => record?._id === id && clientNames(record).includes(name);
 
   async function listClients() {
-    const response = await admin.get(OAUTH2_CLIENTS, { headers, params: { _queryFilter: "true" } });
+    const read = () => admin.get(clientsUrl, { headers, params: { _queryFilter: "true" } });
+    let response = await read().catch(() => undefined);
+    if (isTransientFailure(response)) response = await read();
     requireStatus(response, 200, "List OAuth2 clients");
     requireJsonMediaType(response, "List OAuth2 clients");
-    const result = (await response.json())?.result;
-    if (!Array.isArray(result) || !result.every((record) => nonemptyString(record?._id))) {
-      throw new Error("OAuth2 client collection must contain a result array with client IDs");
-    }
-    return result;
+    const rows = (await fixtureJson(response, "List OAuth2 clients"))?.result;
+    if (!Array.isArray(rows)) throw new Error("OAuth2 client collection must contain a result array");
+    const matches = rows.filter(matchesClient);
+    const complete = rows.every((record) => isJsonObject(record) && nonemptyString(record._id));
+    if (!complete) failures.push("OAuth2 client collection contains a record without a client ID");
+    return { matches, complete };
   }
 
   async function readClientBeforeCleanup() {
@@ -737,32 +1133,44 @@ export async function withIntrospectionClient({
     if (response.status() === 404) return null;
     requireStatus(response, 200, "Read OAuth2 client before cleanup");
     requireJsonMediaType(response, "Read OAuth2 client before cleanup");
-    const record = await response.json();
+    const record = await fixtureJson(response, "Read OAuth2 client before cleanup");
     if (!isJsonObject(record)) throw new Error("OAuth2 client read must return a JSON object");
     return record;
   }
 
-  async function confirmClientOwnership() {
-    const record = await attempt("Verify OAuth2 client ownership", readClientBeforeCleanup);
-    if (record) {
-      if (ownsClient(record)) return true;
+  async function readClientState() {
+    const direct = await attempt("Verify OAuth2 client ownership", readClientBeforeCleanup);
+    const collection = await attempt("Find OAuth2 client in collection", listClients);
+    const matches = collection?.matches;
+    if (direct && !ownsClient(direct)) {
       failures.push("Cleanup found an OAuth2 client with an unexpected ID or name");
-      return false;
+      return {};
     }
-
-    const matches = await attempt("Find OAuth2 client in collection", async () => (await listClients()).filter(matchesClient));
-    if (matches?.length) {
-      if (record === null) {
-        failures.push("Cleanup GET returned HTTP 404 for a client still present in the OAuth2 client collection");
-      }
-      if (matches.every(ownsClient)) return true;
+    if (matches && !matches.every(ownsClient)) {
       failures.push("Cleanup found a collection entry with an unexpected OAuth2 client ID or name");
-      return false;
+      return {};
     }
-    if (matches && confirmedOwnership) {
-      failures.push("Previously verified OAuth2 client is missing from the OAuth2 client collection before cleanup");
+    const present = Boolean(direct || matches?.length);
+    const absent = direct === null && collection?.complete && matches.length === 0;
+    if (direct === null && matches?.length) {
+      failures.push("Cleanup GET returned HTTP 404 for a client still present in the OAuth2 client collection");
     }
-    return confirmedOwnership;
+    if (direct && collection?.complete && matches.length === 0) {
+      failures.push("Cleanup collection omitted a directly readable OAuth2 client");
+    }
+    if (present) confirmedOwnership = true;
+    return { present, absent, owned: confirmedOwnership };
+  }
+
+  async function confirmClientOwnership() {
+    const { absent, owned } = await readClientState();
+    if (absent) {
+      if (owned) failures.push("Previously verified OAuth2 client disappeared before cleanup");
+      else absentBeforeWriteCleanup = true;
+      return owned;
+    }
+    if (!owned) failures.push("OAuth2 client ownership could not be verified");
+    return owned;
   }
 
   async function readTokenState(token, type) {
@@ -780,14 +1188,14 @@ export async function withIntrospectionClient({
     });
   }
 
-  function postRevocation(token) {
-    return oauth.post(INTROSPECTION_OAUTH2 + "/token/revoke", {
+  function postRevocation(token, endpoint = oauthUrl + "/token/revoke") {
+    return oauth.post(endpoint, {
       form: { token, client_id: id, client_secret: secret },
     });
   }
 
-  function getRevocation(token) {
-    return oauth.get(INTROSPECTION_OAUTH2 + "/token/revoke", { headers: credentials, params: { token } });
+  function getRevocation(token, endpoint = oauthUrl + "/token/revoke") {
+    return oauth.get(endpoint, { headers: credentials, params: { token } });
   }
 
   async function revokeAndVerify(token, type) {
@@ -797,7 +1205,7 @@ export async function withIntrospectionClient({
         response = await postRevocation(token);
         requireStatus(response, 200, "Revoke token");
         requireJsonMediaType(response, "Revoke token");
-        const body = await response.json();
+        const body = await fixtureJson(response, "Revoke token");
         if (!isJsonObject(body) || Object.keys(body).length !== 0) {
           throw new Error("Revocation must return an empty JSON object");
         }
@@ -810,39 +1218,91 @@ export async function withIntrospectionClient({
         failures.push("Revoke " + type + ": " + revocationError.message);
       }
       if (active === true) failures.push("Verify " + type + " cleanup: Token is still active");
-      return;
+      return active === false;
     }
+  }
+
+  function rootSessionRequest(action) {
+    // Target the captured session explicitly because OpenAM prefers the SSO cookie to the named header.
+    return admin.post(OPENAM_BASE + "/json/sessions/?_action=" + action, {
+      headers: {
+        Cookie: `iPlanetDirectoryPro=${rootAdminToken}`, iPlanetDirectoryPro: rootAdminToken,
+        "Content-Type": "application/json", "Accept-API-Version": "resource=1.2,protocol=1.0",
+      },
+      data: {},
+    });
+  }
+
+  async function rootSessionActive() {
+    let response = await rootSessionRequest("validate").catch(() => undefined);
+    if (isTransientFailure(response)) response = await rootSessionRequest("validate");
+    requireStatus(response, 200, "Validate fixture administrator session");
+    requireJsonMediaType(response, "Validate fixture administrator session");
+    const info = await fixtureJson(response, "Validate fixture administrator session");
+    if (info?.valid === false) return false;
+    if (info?.valid !== true) throw new Error("Invalid administrator session validation result");
+    if (info.uid !== ADMIN_USER || info.realm !== "/") {
+      rootAdminToken = undefined;
+      throw new Error("Foreign administrator session was preserved");
+    }
+    return true;
+  }
+
+  async function logoutRootAdministrator() {
+    if (!(await rootSessionActive())) return;
+    for (let retry = 0; retry < 2; retry++) {
+      const response = await rootSessionRequest("logout").catch(() => undefined);
+      const active = await rootSessionActive();
+      if (response && !response.ok() && !isTransientFailure(response)) {
+        throw new Error("Logout returned HTTP " + response.status());
+      }
+      if (!active) return;
+      if (!isTransientFailure(response)) break;
+    }
+    throw new Error("Administrator session remains active after logout");
   }
 
   try {
     admin = unreportedRequest.newContext(options);
     oauth = unreportedRequest.newContext(options);
-    const adminToken = await runClientSetup(admin, "Authenticate administrator", async (safeRequest) => {
+    const adminToken = realm ? realm.getAdminToken() : await runClientSetup(admin, "Authenticate administrator", async (safeRequest) => {
       const token = await getAdminToken(safeRequest);
       if (!nonemptyString(token)) throw new Error("Administrator session is missing");
+      rootAdminToken = token;
       return token;
     });
+    if (rootAdminToken && !(await rootSessionActive())) throw new Error("Administrator session is inactive");
     headers = adminHeaders(adminToken, AGENT_VERSION);
-    const provider = await runClientSetup(admin, "Ensure root OAuth2 provider",
-      (safeRequest) => ensureOAuth2Provider(adminToken, safeRequest));
-    if (grantTypes.includes("password") && requireRefreshToken
-      && (await provider.json())?.coreOAuth2Config?.issueRefreshToken !== true) {
+    const provider = await runClientSetup(admin, realm ? "Read realm OAuth2 provider" : "Ensure root OAuth2 provider",
+      (safeRequest) => realm
+        ? safeRequest.get(realm.providerUrl, { headers: adminHeaders(adminToken, CONFIG_VERSION) })
+        : ensureOAuth2Provider(adminToken, safeRequest));
+    if (realm) {
+      requireStatus(provider, 200, "Read realm OAuth2 provider");
+      requireJsonMediaType(provider, "Read realm OAuth2 provider");
+    }
+    if (grantTypes.includes("password") && requireRefreshToken &&
+        (await fixtureJson(provider, "Read OAuth2 provider"))?.coreOAuth2Config?.issueRefreshToken !== true) {
       throw new Error(`Provider must enable issueRefreshToken for the password grant fixture (HTTP ${provider.status()})`);
     }
+    requireStatus(await admin.get(url, { headers }), 404, "Verify test client ID is unused");
     attemptedWrite = true;
+    realm?.trackClient(id);
     const written = await runClientSetup(admin, "Write OAuth2 client", (safeRequest) => ensureClient(adminToken, safeRequest, id, {
-      userpassword: secret,
-      [CLIENT_NAME]: ["[0]=" + name],
       [CLIENT_ATTR + "clientType"]: "Confidential",
       [CLIENT_ATTR + "grantTypes"]: grantTypes.map((type, index) => `[${index}]=${type}`),
       [CLIENT_ATTR + "tokenEndPointAuthMethod"]: "client_secret_basic",
       [CLIENT_ATTR + "scopes"]: ["[0]=" + SCOPE],
       sunIdentityServerDeviceStatus: "Active",
-    }));
-    confirmedOwnership = ownsClient(await written.json());
+      ...clientData,
+      userpassword: secret,
+      [CLIENT_NAME]: ["[0]=" + name],
+    }, clientsUrl));
+    confirmedOwnership = ownsClient(await fixtureJson(written, "Write OAuth2 client"));
     if (!confirmedOwnership) throw new Error("OAuth2 client write did not confirm the test ID and name");
     const { accessToken, refreshToken } = grantType ? await issueTokens(grantType) : {};
-    await run({ id, accessToken, refreshToken, introspect, issueTokens, postRevocation, getRevocation, request: oauth });
+    await run({ id, accessToken, refreshToken, introspect, issueTokens, postRevocation, getRevocation,
+      request: oauth, credentials, adoptTokens });
   } catch (error) {
     primaryError = error;
     throw error;
@@ -852,44 +1312,34 @@ export async function withIntrospectionClient({
         for (const token of tokens) await checkTokenBeforeRevocation(token, type);
       }
       // Revoke refresh tokens first, then explicitly revoke access tokens left outside a cascade.
+      let tokensInactive = true;
       for (const [type, tokens] of Object.entries(issuedTokens)) {
-        for (const token of tokens) await revokeAndVerify(token, type);
-      }
-      let response, deletionError;
-      try {
-        try {
-          response = await admin.delete(url, { headers });
-        } catch (error) {
-          deletionError = error;
+        for (const token of tokens) {
+          if (!(await revokeAndVerify(token, type))) tokensInactive = false;
         }
-        if (isTransientFailure(response)) {
-          const record = await attempt("Verify OAuth2 client ownership before retry", readClientBeforeCleanup);
-          if (record && ownsClient(record)) {
-            response = await admin.delete(url, { headers });
-            deletionError = undefined;
-          } else if (record) {
-            failures.push("Cleanup found an OAuth2 client with an unexpected ID or name before retry");
+      }
+      if (!tokensInactive) failures.push("Retained OAuth2 client because token cleanup was not verified");
+      for (let retry = 0; tokensInactive && retry < 2; retry++) {
+        const response = await admin.delete(url, { headers }).catch(() => undefined);
+        const state = await readClientState();
+        if (state.absent) {
+          deletionVerified = true;
+          if (response && !response.ok() && !isTransientFailure(response)) {
+            failures.push("Delete OAuth2 client returned HTTP " + response.status());
           }
+          break;
         }
-        if (deletionError) throw deletionError;
-        if (!response.ok()) throw new Error("HTTP " + response.status());
-      } catch (error) {
-        deletionError = error;
-      }
-      const absent = await attempt("Read OAuth2 client after cleanup", async () => {
-        requireStatus(await admin.get(url, { headers }), 404, "Read deleted OAuth2 client");
-        return true;
-      });
-      const absentFromCollection = await attempt("Verify OAuth2 client collection after cleanup", async () => {
-        if ((await listClients()).some(matchesClient)) throw new Error("Test OAuth2 client is still present");
-        return true;
-      });
-      if (deletionError && !(isTransientFailure(response) && absent === true && absentFromCollection === true)) {
-        failures.push("Delete OAuth2 client: " + deletionError.message);
+        if (retry === 0 && isTransientFailure(response) && state.present) continue;
+        failures.push("OAuth2 client remains or its deletion could not be verified");
+        break;
       }
     }
+    if (rootAdminToken) await attempt("Logout fixture administrator", logoutRootAdministrator);
     if (oauth) await attempt("Dispose OAuth2 request context", () => oauth.dispose());
     if (admin) await attempt("Dispose administrator request context", () => admin.dispose());
+    if (realm && attemptedWrite && failures.length === 0 && (absentBeforeWriteCleanup || deletionVerified)) {
+      realm.releaseClient(id);
+    }
     if (failures.length) {
       throw new Error("OAuth2 fixture cleanup failed:\n" + failures.join("\n"), { cause: primaryError });
     }

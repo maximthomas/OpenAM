@@ -1167,7 +1167,7 @@ export async function withIntrospectionClient({
     if (absent) {
       if (owned) failures.push("Previously verified OAuth2 client disappeared before cleanup");
       else absentBeforeWriteCleanup = true;
-      return false;
+      return owned;
     }
     if (!owned) failures.push("OAuth2 client ownership could not be verified");
     return owned;

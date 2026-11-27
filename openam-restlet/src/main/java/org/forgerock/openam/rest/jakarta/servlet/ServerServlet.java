@@ -42,10 +42,7 @@ import org.restlet.Application;
 import org.restlet.Client;
 import org.restlet.Component;
 import org.restlet.Context;
-import org.restlet.Request;
-import org.restlet.Response;
 import org.restlet.Server;
-import org.restlet.data.Method;
 import org.restlet.data.Protocol;
 import org.restlet.engine.Engine;
 import org.restlet.engine.adapter.HttpServerHelper;
@@ -54,7 +51,6 @@ import org.restlet.engine.component.ComponentContext;
 import org.forgerock.openam.rest.jakarta.servlet.internal.ServletCall;
 import org.forgerock.openam.rest.jakarta.servlet.internal.ServletServerAdapter;
 import org.forgerock.openam.rest.jakarta.servlet.internal.ServletWarClient;
-import org.restlet.representation.Representation;
 import org.restlet.routing.Route;
 import org.restlet.routing.TemplateRoute;
 import org.restlet.routing.VirtualHost;
@@ -66,9 +62,8 @@ import org.restlet.routing.VirtualHost;
  * applications, and declaring client connectors, for example for the CLAP, FILE
  * or HTTP protocols.<br>
  * <br>
- * There are three separate ways to configure the deployment using this Servlet.
- * Please note that you can also combine the two first of them whereas the last
- * one is a full alternative. They are described below by order of priority:
+ * There are two separate ways to configure the deployment using this Servlet.
+ * They are described below by order of priority:
  * <table>
  * <caption>Servlet deployment configuration modes</caption>
  * <tr>
@@ -77,22 +72,13 @@ import org.restlet.routing.VirtualHost;
  * </tr>
  * <tr>
  * <td><b>1</b></td>
- * <td>A "/WEB-INF/restlet.xml" file exists and contains a valid XML
- * configuration as described in the documentation of the {@link Component}
- * class. It is used to instantiate and attach the described component,
- * contained applications and connectors. Please note that you can combine the
- * usage of such configuration file and method 2.</td>
- * </tr>
- * <tr>
- * <td><b>2</b></td>
  * <td>The "/WEB-INF/web.xml" file contains a parameter named
  * "org.restlet.component". Its value must be the path of a class that inherits
  * from {@link Component}. It is used to instantiate and attach the described
- * component, contained applications and connectors. Please note that you can
- * combine the definition of your own custom Component subclass and method 1.</td>
+ * component, contained applications and connectors.</td>
  * </tr>
  * <tr>
- * <td><b>3</b></td>
+ * <td><b>2</b></td>
  * <td>The "/WEB-INF/web.xml" file contains a parameter named
  * "org.restlet.application". Its value must be the path of a class that
  * inherits from {@link Application}. It is used to instantiate the application
@@ -100,7 +86,7 @@ import org.restlet.routing.VirtualHost;
  * </tr>
  * </table>
  * <br>
- * In deployment mode 3, you can also add an optional "org.restlet.clients"
+ * In deployment mode 2, you can also add an optional "org.restlet.clients"
  * context parameter that contains a space separated list of client protocols
  * supported by the underlying component. For each one, a new client connector
  * is added to the implicit {@link Component} instance.<br>
@@ -164,19 +150,19 @@ import org.restlet.routing.VirtualHost;
  *                 &lt;servlet-name&gt;RestletAdapter&lt;/servlet-name&gt;
  *                 &lt;servlet-class&gt;org.forgerock.openam.rest.jakarta.servlet.ServerServlet&lt;/servlet-class&gt;
  *
- *                 &lt;!-- Your component class name (Optional - For mode 2) --&gt;
+ *                 &lt;!-- Your component class name (Optional - For mode 1) --&gt;
  *                 &lt;init-param&gt;
  *                         &lt;param-name&gt;org.restlet.component&lt;/param-name&gt;
  *                         &lt;param-value&gt;test.MyComponent&lt;/param-value&gt;
  *                 &lt;/init-param&gt;
  *
- *                 &lt;!-- Your application class name (Optional - For mode 3) --&gt;
+ *                 &lt;!-- Your application class name (Optional - For mode 2) --&gt;
  *                 &lt;init-param&gt;
  *                         &lt;param-name&gt;org.restlet.application&lt;/param-name&gt;
  *                         &lt;param-value&gt;test.MyApplication&lt;/param-value&gt;
  *                 &lt;/init-param&gt;
  *
- *                 &lt;!-- List of supported client protocols (Optional - Only in mode 3) --&gt;
+ *                 &lt;!-- List of supported client protocols (Optional - Only in mode 2) --&gt;
  *                 &lt;init-param&gt;
  *                         &lt;param-name&gt;org.restlet.clients&lt;/param-name&gt;
  *                         &lt;param-value&gt;HTTP HTTPS FILE&lt;/param-value&gt;
@@ -219,10 +205,10 @@ import org.restlet.routing.VirtualHost;
  * attaching Restlets to the host. The important conclusion is that both routing
  * configurations must be consistent in order to work fine.<br>
  * <br>
- * In deployment mode 3, the context path of the servlet is automatically added.
+ * In deployment mode 2, the context path of the servlet is automatically added.
  * That's what we call the auto-wire feature. This is the default case, and is
  * equivalent to setting the value "true" for the "org.restlet.autoWire"
- * parameter as described above. In modes 1 or 2, if you want to manually
+ * parameter as described above. In mode 1, if you want to manually
  * control the URI wiring, you can disable the auto-wiring by setting the
  * property to "false".<br>
  * <br>
@@ -412,7 +398,6 @@ public class ServerServlet extends HttpServlet {
      *
      * @return The newly created Component or null if unable to create.
      */
-    @SuppressWarnings("deprecation")
     protected Component createComponent() {
         // Detect customized Component
         String componentClassName = getInitParameter(COMPONENT_KEY, null);
@@ -429,32 +414,14 @@ public class ServerServlet extends HttpServlet {
         }
         log("[Restlet] ServerServlet: component class is " + componentClassName);
 
-        // Detect the configuration of Component using restlet.xml file.
-        Client warClient = createWarClient(new Context(), getServletConfig());
-        Response response = warClient.handle(new Request(Method.GET,
-                "war:///WEB-INF/restlet.xml"));
-
-        boolean xmlConfiguration = response.getStatus().isSuccess()
-                && response.isEntityAvailable();
-
         if (targetClass != null) {
             try {
-                if (xmlConfiguration) {
-                    @SuppressWarnings("unchecked")
-                    Constructor<? extends Component> ctor = ((Class<? extends Component>) targetClass)
-                            .getConstructor(Representation.class);
+                @SuppressWarnings("unchecked")
+                Constructor<? extends Component> ctor = ((Class<? extends Component>) targetClass)
+                        .getConstructor();
 
-                    log("[Restlet] ServerServlet: configuring custom component from war:///WEB-INF/restlet.xml");
-                    component = (Component) ctor.newInstance(response
-                            .getEntity());
-                } else {
-                    @SuppressWarnings("unchecked")
-                    Constructor<? extends Component> ctor = ((Class<? extends Component>) targetClass)
-                            .getConstructor();
-
-                    log("[Restlet] ServerServlet: instantiating custom component");
-                    component = (Component) ctor.newInstance();
-                }
+                log("[Restlet] ServerServlet: instantiating custom component");
+                component = (Component) ctor.newInstance();
             } catch (IllegalAccessException e) {
                 log("[Restlet] ServerServlet couldn't instantiate the target class. Please check that you have proper access rights to "
                         + componentClassName, e);
@@ -464,19 +431,12 @@ public class ServerServlet extends HttpServlet {
             } catch (InstantiationException e) {
                 log(String.format(
                         "[Restlet] ServerServlet couldn't instantiate the target class. Please check that %s has %s.",
-                        componentClassName,
-                        ((xmlConfiguration) ? "a constructor taking a Representation as single parameter"
-                                : "an empty constructor")), e);
+                        componentClassName, "an empty constructor"), e);
             } catch (NoSuchMethodException e) {
                 log(String.format(
                         "[Restlet] ServerServlet couldn't instantiate the target class. Please check that %s has %s.",
-                        componentClassName,
-                        ((xmlConfiguration) ? "a constructor taking Representation as single parameter"
-                                : "an empty constructor")), e);
+                        componentClassName, "an empty constructor"), e);
             }
-        } else if (xmlConfiguration) {
-            log("[Restlet] ServerServlet: configuring component from war:///WEB-INF/restlet.xml");
-            component = new Component(response.getEntity());
         }
 
         // Create the default Component
@@ -1073,14 +1033,6 @@ public class ServerServlet extends HttpServlet {
      * @return True if the Component is the default one, false otherwise.
      */
     private boolean isDefaultComponent() {
-        // The Component is provided via an XML configuration file.
-        Client client = createWarClient(new Context(), getServletConfig());
-        Response response = client.handle(new Request(Method.GET,
-                "war:///WEB-INF/restlet.xml"));
-        if (response.getStatus().isSuccess() && response.isEntityAvailable()) {
-            return false;
-        }
-
         // The Component is provided via a context parameter in the "web.xml"
         // file.
         String componentAttributeName = getInitParameter(COMPONENT_KEY, null);

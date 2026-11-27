@@ -318,22 +318,22 @@ Version: org.apache.servicemix.bundles.javax-inject-1_2.jar
 Copyright: Copyright (C) 2009 The JSR-330 Expert Group
            Copyright 2005-2012 The Apache Software Foundation
 
-Version: org.restlet.ext.freemarker-2.3.4.jar
+Version: org.restlet.ext.freemarker-2.5.2.jar
 Copyright: Copyright 2005-2012 Restlet S.A.S.
 
-Version: org.restlet.ext.jackson-2.3.4.jar
+Version: org.restlet.ext.jackson-2.5.2.jar
 Copyright: Copyright 2005-2012 Restlet S.A.S.
 
-Version: org.restlet.ext.json-2.3.4.jar
+Version: org.restlet.ext.json-2.5.2.jar
 Copyright: Copyright 2005-2012 Restlet S.A.S.
 
-Version: org.restlet.ext.slf4j-2.3.4.jar
+Version: org.restlet.ext.slf4j-2.5.2.jar
 Copyright: Copyright 2005-2012 Restlet S.A.S.
 
-Version: org.restlet.ext.xml-2.3.4.jar
+Version: org.restlet.ext.xml-2.5.2.jar
 Copyright: Copyright 2005-2012 Restlet S.A.S.
 
-Version: org.restlet-2.3.4.jar
+Version: org.restlet-2.5.2.jar
 Copyright: Copyright 2005-2012 Restlet S.A.S.
 
 Version: serializer-2.7.1.jar

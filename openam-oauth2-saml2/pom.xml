@@ -29,12 +29,6 @@
     <name>OpenAM OAuth2 SAML2 Grant Flow</name>
     <description>OpenAM OAuth2 SAML2 integration</description>
 	
-	<repositories>
-	     <repository>
-       		<id>maven-restlet</id>
-       		<url>https://maven.restlet.talend.com</url>
-       </repository>
-	</repositories>
     <dependencies>
 
         <dependency>
@@ -59,12 +53,12 @@
         </dependency>
 
         <dependency>
-            <groupId>org.restlet.jee</groupId>
+            <groupId>org.restlet</groupId>
             <artifactId>org.restlet</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.restlet.jee</groupId>
+            <groupId>org.restlet</groupId>
             <artifactId>org.restlet.ext.jackson</artifactId>
         </dependency>
     </dependencies>

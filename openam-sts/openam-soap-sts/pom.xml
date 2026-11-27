@@ -24,12 +24,6 @@
     <artifactId>openam-soap-sts</artifactId>
     <packaging>pom</packaging>
     <name>OpenAM SOAP STS</name>
-	<repositories>
-	     <repository>
-       		<id>maven-restlet</id>
-       		<url>https://maven.restlet.talend.com</url>
-       </repository>
-	</repositories>
     <modules>
         <module>openam-soap-sts-server</module>
         <module>openam-soap-sts-client</module>

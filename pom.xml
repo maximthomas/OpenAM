@@ -84,7 +84,7 @@
     <ant.contrib.version>1.0b3</ant.contrib.version>
     <guice.version>7.0.0</guice.version>
     <guice.multibindings.version>4.2.3</guice.multibindings.version>
-    <restlet.version>2.4.4</restlet.version>
+    <restlet.version>2.5.2</restlet.version>
     <powermock.version>2.0.9</powermock.version>
 <!--     <slf4j.version>1.7.25</slf4j.version> -->
     <click.version>2.3.0</click.version>
@@ -1388,17 +1388,16 @@
       </dependency>
       <!-- Session HA Module Dependencies-->
       <dependency>
-        <groupId>org.restlet.jee</groupId>
+        <groupId>org.restlet</groupId>
         <artifactId>org.restlet</artifactId>
         <version>${restlet.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.restlet.jee</groupId>
+        <groupId>org.restlet</groupId>
         <artifactId>org.restlet.ext.jackson</artifactId>
         <version>${restlet.version}</version>
-        <!-- The modules that use Jackson declare the Jackson artifacts themselves. The upstream POM would add
-             jackson-module-jaxb-annotations (javax.xml.bind) and woodstox-core-asl, and its stax2-api and
-             snakeyaml would change the versions that the declared Jackson modules resolve to. -->
+        <!-- The modules that use Jackson declare the Jackson artifacts themselves. Keep the upstream
+             javax.xml.bind-based JAXB module off the classpath and use the application's Jackson dependencies. -->
         <exclusions>
           <exclusion>
             <groupId>*</groupId>
@@ -1407,47 +1406,32 @@
         </exclusions>
       </dependency>
       <dependency>
-        <groupId>org.restlet.jee</groupId>
+        <groupId>org.restlet</groupId>
         <artifactId>org.restlet.ext.json</artifactId>
         <version>${restlet.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.restlet.jee</groupId>
+        <groupId>org.restlet</groupId>
         <artifactId>org.restlet.ext.xml</artifactId>
         <version>${restlet.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.restlet.jee</groupId>
+        <groupId>org.restlet</groupId>
         <artifactId>org.restlet.ext.freemarker</artifactId>
         <version>${restlet.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.restlet.jee</groupId>
-        <artifactId>org.restlet.ext.ssl</artifactId>
-        <version>${restlet.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.restlet.jee</groupId>
-        <artifactId>org.restlet.ext.simple</artifactId>
-        <version>${restlet.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.restlet.jee</groupId>
+        <groupId>org.restlet</groupId>
         <artifactId>org.restlet.ext.crypto</artifactId>
         <version>${restlet.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.restlet.jee</groupId>
+        <groupId>org.restlet</groupId>
         <artifactId>org.restlet.ext.httpclient</artifactId>
         <version>${restlet.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.restlet.jee</groupId>
-        <artifactId>org.restlet.ext.net</artifactId>
-        <version>${restlet.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>org.restlet.jee</groupId>
+        <groupId>org.restlet</groupId>
         <artifactId>org.restlet.ext.slf4j</artifactId>
         <version>${restlet.version}</version>
       </dependency>

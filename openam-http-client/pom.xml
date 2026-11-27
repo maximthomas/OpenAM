@@ -50,13 +50,6 @@
       <tag>HEAD</tag>
   </scm>
 
-    <repositories>
-		     <repository>
-	        		<id>maven-restlet</id>
-	        		<url>https://maven.restlet.talend.com</url>
-	        </repository>
-    </repositories>
-
     <dependencies>
         <dependency>
             <groupId>org.openidentityplatform.commons.guice</groupId>
@@ -67,7 +60,7 @@
             <artifactId>core</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.restlet.jee</groupId>
+            <groupId>org.restlet</groupId>
             <artifactId>org.restlet</artifactId>
         </dependency>
         <dependency>

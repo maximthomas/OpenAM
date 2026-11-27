@@ -29,12 +29,6 @@
     <name>OpenAM OAuth2</name>
     <description>OpenAM OAuth2 integration</description>
 
-	<repositories>
-		<repository>
-       		<id>maven-restlet</id>
-       		<url>https://maven.restlet.talend.com</url>
-       </repository>
-	</repositories>
     <dependencies>
         <dependency>
             <groupId>org.openidentityplatform.openam</groupId>
@@ -112,21 +106,21 @@
         </dependency>
 
         <dependency>
-            <groupId>org.restlet.jee</groupId>
+            <groupId>org.restlet</groupId>
             <artifactId>org.restlet.ext.json</artifactId>
         </dependency>
 
         <!-- Restlet -->
         <dependency>
-            <groupId>org.restlet.jee</groupId>
+            <groupId>org.restlet</groupId>
             <artifactId>org.restlet</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.restlet.jee</groupId>
+            <groupId>org.restlet</groupId>
             <artifactId>org.restlet.ext.jackson</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.restlet.jee</groupId>
+            <groupId>org.restlet</groupId>
             <artifactId>org.restlet.ext.freemarker</artifactId>
             <exclusions>
                 <exclusion>

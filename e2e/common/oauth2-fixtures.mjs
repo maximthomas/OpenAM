@@ -1207,7 +1207,7 @@ export async function withIntrospectionClient({
         failures.push("Revoke " + type + ": " + revocationError.message);
       }
       if (active === true) failures.push("Verify " + type + " cleanup: Token is still active");
-      return;
+      return active === false;
     }
   }
 
@@ -1301,10 +1301,14 @@ export async function withIntrospectionClient({
         for (const token of tokens) await checkTokenBeforeRevocation(token, type);
       }
       // Revoke refresh tokens first, then explicitly revoke access tokens left outside a cascade.
+      let tokensInactive = true;
       for (const [type, tokens] of Object.entries(issuedTokens)) {
-        for (const token of tokens) await revokeAndVerify(token, type);
+        for (const token of tokens) {
+          if (!(await revokeAndVerify(token, type))) tokensInactive = false;
+        }
       }
-      for (let retry = 0; retry < 2; retry++) {
+      if (!tokensInactive) failures.push("Retained OAuth2 client because token cleanup was not verified");
+      for (let retry = 0; tokensInactive && retry < 2; retry++) {
         const response = await admin.delete(url, { headers }).catch(() => undefined);
         const state = await readClientState();
         if (state.absent) {

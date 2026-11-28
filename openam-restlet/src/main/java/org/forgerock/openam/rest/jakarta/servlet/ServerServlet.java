@@ -29,8 +29,11 @@ package org.forgerock.openam.rest.jakarta.servlet;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.net.MalformedURLException;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -237,6 +240,8 @@ public class ServerServlet extends HttpServlet {
         // Leave JUL configuration to the servlet container instead of Restlet's standalone engine.
         Edition.JEE.setCurrentEdition();
     }
+
+    private static final Logger LOGGER = Logger.getLogger(ServerServlet.class.getName());
 
     /**
      * Name of the attribute key containing a reference to the current
@@ -448,6 +453,9 @@ public class ServerServlet extends HttpServlet {
 
         // Create the default Component
         if (component == null) {
+            if (componentClassName == null) {
+                warnIfLegacyComponentConfigurationExists();
+            }
             component = new Component();
 
             // The status service is disabled by default.
@@ -475,6 +483,22 @@ public class ServerServlet extends HttpServlet {
         }
 
         return component;
+    }
+
+    private void warnIfLegacyComponentConfigurationExists() {
+        if (getInitParameter(APPLICATION_KEY, null) != null
+                || getServletContext().getAttribute(getApplicationAttributeName()) instanceof Application) {
+            return;
+        }
+
+        try {
+            if (getServletContext().getResource("/WEB-INF/restlet.xml") != null) {
+                LOGGER.warning("Ignoring legacy /WEB-INF/restlet.xml. Configure the routes in a Component subclass "
+                        + "and set org.restlet.component in web.xml.");
+            }
+        } catch (MalformedURLException e) {
+            LOGGER.log(Level.WARNING, "Could not check for legacy /WEB-INF/restlet.xml", e);
+        }
     }
 
     /**
@@ -760,10 +784,7 @@ public class ServerServlet extends HttpServlet {
                     if (isDefaultComponent()) {
                         // Find the attribute name to use to store the
                         // application
-                        String applicationAttributeName = getInitParameter(
-                                NAME_APPLICATION_ATTRIBUTE,
-                                NAME_APPLICATION_ATTRIBUTE_DEFAULT + "."
-                                        + getServletName());
+                        String applicationAttributeName = getApplicationAttributeName();
 
                         // Look up the attribute for a target
                         result = (Application) getServletContext()
@@ -784,6 +805,10 @@ public class ServerServlet extends HttpServlet {
         }
 
         return result;
+    }
+
+    private String getApplicationAttributeName() {
+        return getInitParameter(NAME_APPLICATION_ATTRIBUTE, NAME_APPLICATION_ATTRIBUTE_DEFAULT + "." + getServletName());
     }
 
     /**

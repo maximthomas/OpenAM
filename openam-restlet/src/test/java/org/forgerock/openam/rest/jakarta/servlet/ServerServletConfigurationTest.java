@@ -17,8 +17,15 @@ package org.forgerock.openam.rest.jakarta.servlet;
 
 import static java.util.Collections.emptyEnumeration;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletContext;
@@ -31,9 +38,11 @@ import org.testng.annotations.Test;
 
 public class ServerServletConfigurationTest {
 
+    private final Logger servletLogger = Logger.getLogger(ServerServlet.class.getName());
     private ServletContext context;
     private ServletConfig config;
     private ServerServlet servlet;
+    private Handler logHandler;
 
     @BeforeMethod
     public void setUp() throws Exception {
@@ -47,11 +56,17 @@ public class ServerServletConfigurationTest {
         given(config.getServletContext()).willReturn(context);
         given(config.getInitParameterNames()).willReturn(emptyEnumeration());
         servlet = new ServerServlet();
+        logHandler = mock(Handler.class);
+        servletLogger.addHandler(logHandler);
     }
 
     @AfterMethod
     public void tearDown() {
-        servlet.destroy();
+        try {
+            servlet.destroy();
+        } finally {
+            servletLogger.removeHandler(logHandler);
+        }
     }
 
     @Test
@@ -61,6 +76,47 @@ public class ServerServletConfigurationTest {
         servlet.init(config);
 
         assertThat(servlet.getComponent()).isInstanceOf(CustomComponent.class);
+        verifyNoLegacyXmlWarning();
+    }
+
+    @Test
+    public void shouldWarnWhenLegacyXmlHasNoReplacement() throws Exception {
+        servlet.init(config);
+
+        verify(logHandler).publish(argThat(record -> Level.WARNING.equals(record.getLevel())
+                && record.getMessage().contains("WEB-INF/restlet.xml")
+                && record.getMessage().contains("org.restlet.component")));
+    }
+
+    @Test
+    public void shouldNotWarnWhenLegacyXmlIsAbsent() throws Exception {
+        given(context.getResource("/WEB-INF/restlet.xml")).willReturn(null);
+
+        servlet.init(config);
+
+        verifyNoLegacyXmlWarning();
+    }
+
+    @Test
+    public void shouldNotWarnWhenApplicationIsConfigured() throws Exception {
+        given(config.getInitParameter("org.restlet.application")).willReturn(Application.class.getName());
+
+        servlet.init(config);
+
+        assertThat(servlet.getApplication()).isNotNull();
+        verifyNoLegacyXmlWarning();
+    }
+
+    @Test
+    public void shouldNotWarnWhenApplicationIsRegisteredInContext() throws Exception {
+        Application application = new Application();
+        given(context.getAttribute("org.restlet.ext.servlet.ServerServlet.application.configurationTest"))
+                .willReturn(application);
+
+        servlet.init(config);
+
+        assertThat(servlet.getApplication()).isSameAs(application);
+        verifyNoLegacyXmlWarning();
     }
 
     @Test
@@ -74,6 +130,11 @@ public class ServerServletConfigurationTest {
 
         assertThat(servlet.getApplication()).isNotNull();
         assertThat(servlet.getComponent()).isSameAs(component);
+        verifyNoLegacyXmlWarning();
+    }
+
+    private void verifyNoLegacyXmlWarning() {
+        verify(logHandler, never()).publish(argThat(record -> record.getMessage().contains("WEB-INF/restlet.xml")));
     }
 
     public static class CustomComponent extends Component {

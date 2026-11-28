@@ -256,7 +256,9 @@ OpenAM now removes the host name of a server or site from the DNS aliases of the
 
 OpenAM now uses Restlet 2.5.2 from Maven Central. Custom extensions that declare Restlet Maven dependencies must use the `org.restlet` group ID instead of `org.restlet.jee` and align their Restlet versions with OpenAM. The Java package names remain `org.restlet`. Remove repository declarations for the previous Restlet Maven server from custom builds.
 
-Restlet 2.5 no longer supports native XML component configuration. The OpenAM Servlet adapter no longer reads `WEB-INF/restlet.xml`. Custom deployments that use this file must configure their component programmatically through `org.restlet.component` in `web.xml`, using a `Component` subclass with a public no-argument constructor.
+Rebuild custom extensions against Restlet 2.5.2 before redeploying them. Replace calls to removed APIs such as `Application.getTaskService()` and references to removed fields such as `Role.ALL`.
+
+Restlet 2.5 no longer supports native XML component configuration. The OpenAM Servlet adapter ignores `WEB-INF/restlet.xml` and logs a startup warning when the file is present and the servlet has no programmatic component or application configuration. Migrate the routes to a `Component` subclass with a public no-argument constructor and register it through `org.restlet.component` in `web.xml`.
 
 If your custom `web.xml` uses `<absolute-ordering>` without `<others/>`, add `<name>openam_restlet</name>` to the list. Replace an empty `<absolute-ordering/>` with `<absolute-ordering><name>openam_restlet</name></absolute-ordering>`. This lets the servlet container discover the Restlet initializer so it can preserve Java Util Logging (JUL) settings before application listeners run.
 

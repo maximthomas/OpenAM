@@ -258,6 +258,8 @@ OpenAM now uses Restlet 2.5.2 from Maven Central. Custom extensions that declare
 
 Restlet 2.5 no longer supports native XML component configuration. The OpenAM Servlet adapter no longer reads `WEB-INF/restlet.xml`. Custom deployments that use this file must configure their component programmatically through `org.restlet.component` in `web.xml`, using a `Component` subclass with a public no-argument constructor.
 
+If your custom `web.xml` uses `<absolute-ordering>` without `<others/>`, add `<name>openam_restlet</name>` to the list. Replace an empty `<absolute-ordering/>` with `<absolute-ordering><name>openam_restlet</name></absolute-ordering>`. This lets the servlet container discover the Restlet initializer so it can preserve Java Util Logging (JUL) settings before application listeners run.
+
 ==== Restlet Servlet API
 
 [IMPORTANT]
